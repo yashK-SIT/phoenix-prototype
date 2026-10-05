@@ -65,6 +65,7 @@ This section summarises the October 2026 change request. The rest of the documen
 | 11  | Evidence by project           | Evidence is grouped by project. A project page shows its evidence, linked to the project or to its Circle, Rope Team or Action Room. The Evidence module shows the project for every item, in the list and in the detail view.                                                                                    | 5.10, 5.19      |
 | 12  | API keys                      | The API keys tab and its actions are removed from Platform administration.                                                                                                                                                                                                                                         | 5.26            |
 | 13  | Task board                    | The task table is replaced by a Kanban board (Proposed, To do, In progress, Done) with drag and drop, reordering, a task detail panel, filters and a list view.                                                                                                                                                  | 0.5             |
+| 14  | Visual design                 | Content uses the full screen width (centred, capped at 1680 px). Tabs are a one-line underline bar with a **More** overflow menu. Circles, Rope Teams and Action Rooms have a workspace header (icon, type, name, state, purpose, your role, member avatars, who leads, linked project, and quick actions such as **Open in Messages**). Tables have light headers, status pills are soft tinted chips, links are quiet until hovered, and row actions look like buttons. The styles are in `assets/css/design.css`, loaded last. | 6.1             |
 
 ## 0.1 Space roles (project-wise roles)
 
@@ -992,7 +993,7 @@ Header row in navy; row hover highlight; action column right-aligned and **stick
 
 ## 6.6 Tabs
 
-Segmented tab bar with optional count badges. On phones the bar scrolls sideways and automatically scrolls the selected tab into view.
+Underline tab bar on a single line, with optional count badges. Tabs that do not fit move into a **More** menu at the end of the bar (it shows the total count of the hidden tabs); the selected tab always stays visible. The bar re-fits when the window is resized. Esc closes the menu.
 
 ## 6.7 Form behaviour (all forms)
 

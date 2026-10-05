@@ -383,8 +383,7 @@ route('circle', 'circles', () => {
   }
   const prj = byId('projects', c.project);
   return (
-    head(h(c.name), h(c.purpose), pill(c.state), [['Circles', 'circles'], [h(c.name)]]) +
-    `<div class="row wrap" style="gap:8px;margin:-6px 0 14px">${roleTag('circles', c)}${!isMem && !mgr && c.state === 'Active' ? joinBtn(c) : ''}</div>` +
+    spaceHead('circles', c, h(c.purpose), [['Circles', 'circles'], [h(c.name)]], !isMem && !mgr && c.state === 'Active' ? joinBtn(c) : isMem ? L(ic('message', 16) + 'Open in Messages', 'messages', { c: c.id, k: 'circles' }, 'btn btn-s') : '') +
     roleNote('circles', c) +
     (paused
       ? banner('warn', 'Paused for repair', h(c.pause.reason) + ' — members can read but not add records.')

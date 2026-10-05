@@ -279,3 +279,99 @@ A.reRender = () => {
   snapForms();
   render();
 };
+
+// ---------- Workspace header for Circles, Rope Teams and Action Rooms ----------
+// Icon tile, kind, name and state, purpose, then a meta line: your role, members, who leads, linked project.
+function spaceHead(kind, o, sub, crumbs, actions = '') {
+  const icon = { circles: 'users', ropes: 'route', rooms: 'room' }[kind];
+  const act = o.members.filter(m => !m.status || m.status === 'Active');
+  const avs = act
+    .slice(0, 5)
+    .map(m => `<span class="av" title="${nm(m.pid)}${spaceRole(kind, o, m.pid) ? ' · ' + h(spaceRole(kind, o, m.pid)) : ''}">${ini(m.pid)}</span>`)
+    .join('');
+  const [leadLabel, leadPid] = kind === 'circles' ? ['Facilitator', o.facilitator] : kind === 'ropes' ? ['Mentor', o.mentor] : ['Project owner', o.lead];
+  const pr = byId('projects', o.project) || S.projects.find(p => p.room === o.id);
+  const prHtml = pr ? (can('projects') && (pr.owner === myId() || role() !== 'P') ? L(h(pr.title), 'project', { id: pr.id }) : h(pr.title)) : '';
+  const meta = [
+    roleTag(kind, o),
+    `<span class="row" style="gap:8px"><span class="avstack">${avs}</span><span>${act.length} member${act.length === 1 ? '' : 's'}</span></span>`,
+    leadPid ? `<span>${leadLabel}: <b>${nm(leadPid)}</b></span>` : `<span>${leadLabel}: <b>not yet</b></span>`,
+    prHtml && `<span>Project: ${prHtml}</span>`,
+  ].filter(Boolean);
+  const nav = crumbs
+    ? `<nav class="row cap" aria-label="Breadcrumb" style="gap:6px;margin-bottom:14px">${crumbs.map(([l, r, p]) => (r ? L(l, r, p, 'cap') + ic('chevr', 14) : `<span>${l}</span>`)).join('')}</nav>`
+    : '';
+  return `<header class="shead">${nav}<div class="shead-main"><span class="shead-ic k-${kind}">${ic(icon, 26)}</span><div class="shead-t"><div class="shead-kind">${h(SPACE_KIND_LABEL(kind))}</div><div class="row wrap"><h1 class="h1">${h(o.name)}</h1>${pill(o.state)}</div>${sub ? `<p class="sub">${sub}</p>` : ''}<div class="shead-meta">${meta.join('')}</div></div>${actions ? `<div class="shead-a">${actions}</div>` : ''}</div></header>`;
+}
+
+// ---------- Tab bar overflow ----------
+// Tabs that do not fit on one line move into a "More" menu. The active tab always stays visible.
+function fitTabs(root) {
+  (root || document).querySelectorAll('.tabs').forEach(bar => {
+    bar.querySelectorAll('.tab-more, .tab-menu').forEach(n => n.remove());
+    const tabs = [...bar.querySelectorAll('.tab')];
+    tabs.forEach(t => (t.hidden = false));
+    if (bar.scrollWidth <= bar.clientWidth + 1) return;
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'tab tab-more';
+    more.dataset.a = 'tabMore';
+    more.setAttribute('aria-haspopup', 'menu');
+    more.setAttribute('aria-expanded', 'false');
+    more.innerHTML = 'More' + ic('chev', 14);
+    bar.appendChild(more);
+    const hidden = [];
+    for (let i = tabs.length - 1; i >= 0 && bar.scrollWidth > bar.clientWidth + 1; i--) {
+      if (tabs[i].classList.contains('on')) continue;
+      tabs[i].hidden = true;
+      hidden.unshift(tabs[i]);
+    }
+    if (!hidden.length) return more.remove();
+    const n = hidden.reduce((a, t) => a + (+(t.querySelector('.cnt') || {}).textContent || 0), 0);
+    if (n) more.innerHTML = `More<span class="cnt">${n}</span>` + ic('chev', 14);
+    const menu = document.createElement('div');
+    menu.className = 'tab-menu';
+    menu.setAttribute('role', 'menu');
+    menu.innerHTML = hidden
+      .map(t => `<button type="button" role="menuitem" class="tab-mi" data-a="tab" data-k="${h(t.dataset.k)}" data-v="${h(t.dataset.v)}">${t.innerHTML}</button>`)
+      .join('');
+    bar.appendChild(menu);
+    const left = Math.min(more.offsetLeft, Math.max(0, bar.clientWidth - 230));
+    menu.style.left = left + 'px';
+  });
+}
+A.tabMore = (d, el) => {
+  const menu = el.parentElement.querySelector('.tab-menu');
+  const open = !menu.classList.contains('open');
+  menu.classList.toggle('open', open);
+  el.setAttribute('aria-expanded', String(open));
+  if (open) {
+    const first = menu.querySelector('.tab-mi');
+    if (first) first.focus();
+  }
+};
+const closeTabMenus = except =>
+  document.querySelectorAll('.tab-menu.open').forEach(m => {
+    if (except && m.parentElement.contains(except)) return;
+    m.classList.remove('open');
+    const b = m.parentElement.querySelector('.tab-more');
+    if (b) b.setAttribute('aria-expanded', 'false');
+  });
+document.addEventListener('mousedown', e => {
+  if (!(e.target.closest && e.target.closest('.tab-menu, .tab-more'))) closeTabMenus();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.querySelector('.tab-menu.open')) {
+    e.stopImmediatePropagation();
+    closeTabMenus();
+    const b = document.querySelector('.tab-more[aria-expanded]');
+    if (b) b.focus();
+  }
+}, true);
+AFTER.push(el => fitTabs(el));
+let TAB_FIT_T = null;
+window.addEventListener('resize', () => {
+  clearTimeout(TAB_FIT_T);
+  TAB_FIT_T = setTimeout(() => fitTabs(document.getElementById('app')), 80);
+});
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => fitTabs(document.getElementById('app')));

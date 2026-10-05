@@ -359,8 +359,7 @@ route('rope', 'ropeteams', () => {
  ${returnsCard(x) ? `<div class="c12">${returnsCard(x)}</div>` : ''}</div>`;
   }
   return (
-    head(h(x.name), 'Rope Team · ' + (x.mentor ? 'mentor ' + nm(x.mentor) : 'no mentor yet'), pill(x.state), crumbs) +
-    `<div class="row wrap" style="gap:8px;margin:-6px 0 14px">${roleTag('ropes', x)}</div>` +
+    spaceHead('ropes', x, h(x.charter), crumbs, isMem ? L(ic('message', 16) + 'Open in Messages', 'messages', { c: x.id, k: 'ropes' }, 'btn btn-s') : '') +
     roleNote('ropes', x) +
     (pr ? stageTrack(pr, 'ropes') : '') +
     t.html +

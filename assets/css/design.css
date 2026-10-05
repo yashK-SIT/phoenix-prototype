@@ -1,0 +1,448 @@
+/* ==========================================================================
+   PHOENIX design layer (loaded last). Consolidates layout, navigation tabs,
+   tables, status pills, links, cards, workspace headers and the task board.
+   ========================================================================== */
+
+/* ---- page width: use the screen, centred, with a comfortable reading cap */
+.content {
+  width: 100%;
+  max-width: 1680px;
+  margin-inline: auto;
+  padding: 28px 40px 64px;
+}
+@container (max-width:1023px) {
+  .content {
+    padding: 24px 24px 56px;
+  }
+}
+@container (max-width:599px) {
+  .content {
+    padding: 16px 16px 110px;
+  }
+}
+
+/* ---- typography rhythm */
+.h1 {
+  letter-spacing: -0.015em;
+}
+.card-h .h2 {
+  letter-spacing: -0.005em;
+}
+.cap {
+  color: #5b6678;
+}
+
+/* ---- links: quiet by default, underline on hover */
+.lnk {
+  color: #1d4f91;
+  text-decoration: none;
+  font-weight: 600;
+}
+.lnk:hover {
+  color: #0b1a35;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.lnk:focus-visible {
+  outline: 2px solid #0b1a35;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ---- breadcrumbs */
+nav[aria-label='Breadcrumb'] a {
+  color: #5b6678;
+  text-decoration: none;
+  font-weight: 500;
+}
+nav[aria-label='Breadcrumb'] a:hover {
+  color: #0b1a35;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+nav[aria-label='Breadcrumb'] > span:last-child {
+  color: #0b1a35;
+  font-weight: 600;
+}
+
+/* ---- cards */
+.card {
+  border-color: #e6e9ef;
+  border-radius: 16px;
+  box-shadow:
+    0 1px 2px rgba(16, 24, 40, 0.04),
+    0 1px 3px rgba(16, 24, 40, 0.03);
+}
+
+/* ---- buttons: slightly tighter, crisper */
+.btn {
+  border-radius: 10px;
+  transition:
+    background-color 0.12s,
+    border-color 0.12s,
+    box-shadow 0.12s;
+}
+.btn-s {
+  border-color: #d5dae2;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+}
+.btn-s:hover {
+  border-color: #b8c0cc;
+}
+.btn:focus-visible {
+  outline: 3px solid rgba(11, 26, 53, 0.25);
+  outline-offset: 1px;
+}
+
+/* ---- status pills: soft tinted chips instead of outlined capsules */
+.pill {
+  height: 24px;
+  padding: 0 9px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  background: color-mix(in srgb, currentColor 7%, #fff);
+}
+.pill.p-grey {
+  color: #4a5568;
+  background: #f2f4f7;
+  border-color: #e3e7ed;
+}
+
+/* ---- tabs: underline navigation on one line; extra tabs move into "More" */
+.tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 26px;
+  width: 100%;
+  max-width: 100%;
+  padding: 0;
+  margin: 0 0 24px;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid #e3e7ed;
+  border-radius: 0;
+  overflow: visible;
+  position: relative;
+}
+.tab {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 46px;
+  padding: 0 1px;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: #5b6678;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tab:hover {
+  background: none;
+  color: #0b1a35;
+}
+.tab.on {
+  background: none;
+  color: #0b1a35;
+}
+.tab::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: transparent;
+  transition: background-color 0.12s;
+}
+.tab:hover::after {
+  background: #cdd3dc;
+}
+.tab.on::after {
+  background: #0b1a35;
+}
+.tab:focus-visible {
+  outline: 2px solid #0b1a35;
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+.tab .cnt {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #e4e8ee;
+  color: #2b3647;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.tab.on .cnt {
+  background: #0b1a35;
+  color: #fff;
+}
+.tab[hidden] {
+  display: none;
+}
+.tab-more svg {
+  transition: transform 0.12s;
+}
+.tab-more[aria-expanded='true'] svg {
+  transform: rotate(180deg);
+}
+.tab-more.has-on {
+  color: #0b1a35;
+}
+.tab-more.has-on::after {
+  background: #0b1a35;
+}
+.tab-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  z-index: 30;
+  min-width: 220px;
+  padding: 6px;
+  background: #fff;
+  border: 1px solid #e3e7ed;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(16, 24, 40, 0.14);
+  display: none;
+}
+.tab-menu.open {
+  display: block;
+}
+.tab-menu .tab-mi {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: #2b3647;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.tab-menu .tab-mi:hover,
+.tab-menu .tab-mi:focus-visible {
+  background: #f3f5f8;
+  outline: 0;
+}
+.tab-menu .tab-mi.on {
+  color: #0b1a35;
+  background: #eef1f5;
+}
+.tab-menu .tab-mi .cnt {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #eef1f5;
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---- tables: light header, quiet row lines */
+.tblwrap {
+  border-color: #e6e9ef;
+  border-radius: 12px;
+}
+.tbl th,
+.tbl th.act {
+  background: #f7f8fa;
+  color: #5b6678;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 11px 16px;
+  border-bottom: 1px solid #e6e9ef;
+}
+.tbl td {
+  border-bottom: 1px solid #eef1f5;
+  vertical-align: middle;
+}
+.tbl tbody tr:last-child td {
+  border-bottom: 0;
+}
+.tbl tbody tr:hover,
+.tbl tbody tr:hover td.act {
+  background: #fafbfc;
+}
+.tbl td.act {
+  box-shadow: none;
+}
+.tbl td.act .lnk {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid #d5dae2;
+  border-radius: 8px;
+  background: #fff;
+  color: #0b1a35;
+  font-size: 13px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+}
+.tbl td.act .lnk:hover {
+  background: #f3f5f8;
+  text-decoration: none;
+}
+
+/* ---- workspace header (Circle, Rope Team, Action Room) */
+.shead {
+  margin-bottom: 22px;
+}
+.shead-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.shead-ic {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+.shead-ic.k-circles {
+  background: linear-gradient(135deg, #7a5bb0, #5b3f8c);
+}
+.shead-ic.k-ropes {
+  background: linear-gradient(135deg, #24877e, #165f58);
+}
+.shead-ic.k-rooms {
+  background: linear-gradient(135deg, #24365a, #0b1a35);
+}
+.shead-t {
+  flex: 1 1 420px;
+  min-width: 0;
+}
+.shead-t .row {
+  gap: 10px;
+}
+.shead-kind {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #5b6678;
+  margin-bottom: 2px;
+}
+.shead-t .sub {
+  margin-top: 4px;
+  max-width: 820px;
+}
+.shead-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 22px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: #4a5568;
+}
+.shead-meta .sep {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #c3cad5;
+}
+.shead-meta .lnk {
+  font-size: 13px;
+}
+.shead-a {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.avstack {
+  display: inline-flex;
+  align-items: center;
+}
+.avstack .av {
+  width: 28px;
+  height: 28px;
+  font-size: 11px;
+  border: 2px solid #f3f5f8;
+  margin-left: -8px;
+  background: #dde3ec;
+}
+.avstack .av:first-child {
+  margin-left: 0;
+}
+.avstack .more {
+  margin-left: 6px;
+  font-size: 12.5px;
+  color: #4a5568;
+  font-weight: 600;
+}
+.srole {
+  background: #fff;
+  border: 1px solid #e3e7ed;
+  height: 28px;
+}
+@container (max-width:599px) {
+  .shead-ic {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+  }
+  .shead-t {
+    flex-basis: calc(100% - 64px);
+  }
+}
+
+/* ---- task board polish */
+.kb-col {
+  background: #f4f6f9;
+  min-height: 220px;
+}
+.kb-list {
+  flex: 0 0 auto;
+}
+.kb-add {
+  margin-top: 2px;
+}
+.kb-card {
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+}
+.kb-card:hover {
+  box-shadow: 0 4px 12px rgba(16, 24, 40, 0.1);
+  transform: translateY(-1px);
+}
+.kb-card.dragging {
+  transform: none;
+}
+
+/* ---- stat tiles: fainter rings; the number keeps its top-right position from app.css */
+.stat .deco {
+  opacity: 0.18;
+}
+.stat .statnum {
+  z-index: 1;
+}
