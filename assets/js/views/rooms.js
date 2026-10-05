@@ -1049,7 +1049,7 @@ A.roomClose = (d) => {
   audit(WL() + " closed", x.id, "");
   ok();
 };
-// ---- Overview: progress, timeline, next action, shared updates (Section 7.7 minimum execution features)
+// ---- Overview: progress, timeline, next action, wins, reports (Section 7.7 minimum execution features)
 function roomOverview(x, pr, lead, ro) {
   const tasks = x.tasks.filter(
     (k) => !["Proposed", "Declined"].includes(k.status),
@@ -1072,7 +1072,7 @@ function roomOverview(x, pr, lead, ro) {
   const kpi = (label, val, sub, w) =>
     `<div class="kpi"><span class="cap">${label}</span><b>${val}</b>${w != null ? `<div class="progress"><span style="width:${w}%"></span></div>` : ""}<span class="cap">${sub}</span></div>`;
   return `<div class="g12"><section class="card c12"><div class="kpis">${kpi("Tasks done", done + " of " + tasks.length, pct(done, tasks.length) + "% complete", pct(done, tasks.length))}${kpi("Milestones achieved", msDone + " of " + ms.length, "Validated against approved evidence", pct(msDone, ms.length))}${kpi("Open risks", openRisks, openRisks ? "Each has an owner" : "Nothing open")}${kpi("Next due", next ? fmt(next.due) : "—", next ? h(next.kind + ": " + next.t) + dueTag(next.due, false) : "Nothing scheduled")}</div></section>
-  ${card(
+  <div class="c7 col" style="gap:24px">${card(
     "Milestone timeline",
     "Key dates and progress. Evidence-linked completion is validated by a Reviewer.",
     ms.length
@@ -1092,8 +1092,7 @@ function roomOverview(x, pr, lead, ro) {
             : "The project lead adds milestones.",
         ),
     L("Tasks & milestones", "room", { id: x.id, tab: "plan" }),
-    "c7",
-  )}
+  )}${pr ? reportsCard(pr, "rooms", x) : ""}</div>
   <div class="c5 col" style="gap:24px">${pr ? stageGate(pr, "rooms", x) : ""}${card(
     "Visible wins",
     "Approved achievements.",
@@ -1102,45 +1101,8 @@ function roomOverview(x, pr, lead, ro) {
       .map((w) => lrow("award", h(w.t), "", pill("Approved"), "t-teal"))
       .join("") || '<p class="cap">No approved wins yet.</p>',
     L("Resources & wins", "room", { id: x.id, tab: "res" }),
-  )}</div>
-  ${card(
-    "Shared updates",
-    "Progress notes for everyone in this " +
-      WL() +
-      ". For quick conversation use the Chat tab.",
-    `${!ro && sCan("rooms", x, "post") ? `<form data-f="rup" class="col" style="gap:8px;margin-bottom:14px" novalidate><input type="hidden" name="r" value="${x.id}"><textarea class="input" name="t" rows="2" placeholder="Share an update with the team" aria-label="Update"></textarea><div class="row" style="justify-content:space-between"><span class="help">Visible to ${WL()} members.</span><button class="btn btn-p btn-sm" type="submit">${ic("send", 14)}Post update</button></div></form>` : ""}${
-      x.updates
-        .slice()
-        .reverse()
-        .map(
-          (u) =>
-            `<div class="upd"><span class="av">${ini(u.by)}</span><div class="col" style="min-width:0"><span><b>${nm(u.by)}</b> <span class="cap">· ${fmt(u.at)}</span></span><p>${h(u.t)}</p></div></div>`,
-        )
-        .join("") || '<p class="cap">No updates yet.</p>'
-    }`,
-    "",
-    "c7",
-  )}
-  <div class="c5 col" style="gap:24px">${pr ? reportsCard(pr, "rooms", x) : ""}${returnsCard(x)}</div></div>`;
+  )}${returnsCard(x)}</div></div>`;
 }
-F.rup = (d) => {
-  if (!validate("rup", d, { t: ["req", ["min", 3]] })) {
-    toast("Write an update first.", "warn");
-    return render();
-  }
-  const x = byId("rooms", d.r);
-  x.updates.push({ id: uid("up"), by: myId(), at: now(), t: d.t.trim() });
-  x.members
-    .filter((m) => m.pid !== myId() && m.status === "Active")
-    .forEach((m) =>
-      notify(m.pid, "Update in " + x.name + " from " + me().display, "room", {
-        id: x.id,
-      }),
-    );
-  audit(WL() + " update posted", x.id, "");
-  clearF("rup");
-  ok();
-};
 A.taskDecide = (d) => {
   const x = byId("rooms", d.r);
   const k = x.tasks.find((t) => t.id === d.id);

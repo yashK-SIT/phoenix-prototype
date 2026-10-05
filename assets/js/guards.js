@@ -385,7 +385,6 @@ Object.assign(G, {
   },
   rcl: d => ropeMod(d.id) || 'only the mentor or facilitator can close a Rope Team',
   taskDecide: d => roomLead(d.r) || 'only the project lead approves proposed tasks',
-  rup: d => activeMember('rooms', d.r) || 'only members of an active workspace post updates',
   cbNew: d => (activeMember('rooms', d.r) && role() !== 'F') || 'only workspace members submit contributions',
   cbn: d => (activeMember('rooms', d.r) && role() !== 'F') || 'only workspace members submit contributions',
   cbReview: d => (byId('rooms', d.r) && (role() === 'A' || ((role() === 'F' || hasB('Reviewer')) && memberOf(byId('rooms', d.r))))) || 'only a Faculty/Steward reviews contributions',
@@ -491,7 +490,6 @@ Object.assign(G, {
     const [x, k] = taskOf(d);
     return (k && x.state === 'Active' && (roomLead(d.r) || k.owner === myId())) || 'only the assignee, the project owner or the facilitator can change this task';
   },
-  rup: d => (activeMember('rooms', d.r) && sCan('rooms', byId('rooms', d.r), 'post')) || 'only contributing members of an active ' + WL() + ' post updates',
   cbNew: d => (activeMember('rooms', d.r) && sCan('rooms', byId('rooms', d.r), 'contribute')) || 'only members, partners and mentors submit contributions',
   cbn: d => (activeMember('rooms', d.r) && sCan('rooms', byId('rooms', d.r), 'contribute')) || 'only members, partners and mentors submit contributions',
   cbReview: d => (byId('rooms', d.r) && (role() === 'A' || sCan('rooms', byId('rooms', d.r), 'review'))) || 'only a Reviewer or Facilitator in this ' + WL() + ' reviews contributions',
