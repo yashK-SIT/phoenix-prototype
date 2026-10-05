@@ -1,8 +1,6 @@
 // ---------- ACTION ROOMS / WORKSPACES (E07, F07) ----------
-const isLead = x =>
-  x.lead === myId() ||
-  x.members.some(m => m.pid === myId() && m.role === 'Project Lead') ||
-  (role() === 'F' && hasB('Project Lead') && x.members.some(m => m.pid === myId()));
+// Leading an Action Room follows the person's role in that room: Project owner or Facilitator.
+const isLead = x => sCan('rooms', x, 'lead') || (hasB('Project Lead') && memberOf(x));
 const canCreateRoom = () => ['F', 'C', 'O', 'A'].includes(role()) || hasB('Project Lead');
 route('rooms', 'rooms', () => {
   const r = role();
@@ -12,7 +10,7 @@ route('rooms', 'rooms', () => {
   return (
     head(
       WL() + 's',
-      `Execution spaces. Shown in this pack as “${WL()}”; Action Room, Coherence Cell and Project Room are one service.`,
+      'Execution spaces where agreed work is planned, assigned and delivered.',
       canCreateRoom()
         ? B(ic('plus', 16) + 'Create ' + WL(), 'newRoom', { origin: 'Institutional project' }, 'btn-p')
         : r === 'P' && S.settings.participantCanProposeWorkspace
@@ -20,10 +18,11 @@ route('rooms', 'rooms', () => {
           : '',
     ) +
     table(
-      [WL(), 'Lead', 'Origin', 'Members', 'State', ''],
+      [WL(), 'Lead', 'Your role', 'Origin', 'Members', 'State', ''],
       list.map(x => [
-        `<b>${h(x.name)}</b>`,
+        `<b>${h(x.name)}</b>${unreadIn(x) && memberOf(x) ? ` <span class="mbadge">${unreadIn(x)}</span>` : ''}`,
         nm(x.lead),
+        spaceRole('rooms', x) ? h(spaceRole('rooms', x)) : (memberRec(x) || {}).status === 'Invited' ? pill('Invited') : '<span class="cap">Oversight</span>',
         h(x.origin.type) + ' · ' + cName(x.origin.id),
         x.members.length,
         pill(x.state),
@@ -71,7 +70,8 @@ F.nr = d => {
     related: pr ? [pr.id] : [],
     state: st,
     flags,
-    members: [{ pid: pr ? pr.owner : myId(), role: 'Project Lead', status: 'Active' }],
+    members: [{ pid: pr ? pr.owner : myId(), role: 'Project owner', status: 'Active' }],
+    chat: [],
     joinReqs: [],
     tasks: [],
     milestones: [],
@@ -85,7 +85,7 @@ F.nr = d => {
     final: null,
   };
   if (pr && !x.members.some(m => m.pid === myId()))
-    x.members.push({ pid: myId(), role: role() === 'F' ? 'Reviewer' : 'Member', status: 'Active' });
+    x.members.push({ pid: myId(), role: defaultSpaceRole(role()) === 'Observer' ? 'Member' : defaultSpaceRole(role()), status: 'Active' });
   if (pr) {
     const c = byId('circles', pr.circle);
     if (c)
@@ -95,7 +95,7 @@ F.nr = d => {
   }
   if (pr && pr.pendingCollab) {
     pr.pendingCollab.forEach(pc => {
-      if (!x.members.some(m => m.pid === pc.pid)) x.members.push({ pid: pc.pid, role: 'Collaborator — ' + pc.req, status: 'Invited', req: pc.req, contrib: pc.contrib, match: pc.match });
+      if (!x.members.some(m => m.pid === pc.pid)) x.members.push({ pid: pc.pid, role: 'Partner', label: pc.req, status: 'Invited', req: pc.req, contrib: pc.contrib, match: pc.match });
     });
     pr.pendingCollab = [];
   }
@@ -125,7 +125,9 @@ route('room', 'rooms', () => {
   if (!x) return empty('room', 'Not found', '');
   const r = role();
   const isM = memberOf(x);
-  const lead = isLead(x) || r === 'A' || (r === 'F' && isM);
+  const lead = isLead(x) || r === 'A';
+  const canReview = sCan('rooms', x, 'review') || r === 'A';
+  const canPropose = sCan('rooms', x, 'propose');
   const myM = memberRec(x);
   if (!isM && !(myM && myM.status === 'Invited') && !['A', 'O'].includes(r)) return deniedView('rooms');
   if (myM && myM.status === 'Invited')
@@ -142,12 +144,14 @@ route('room', 'rooms', () => {
   x.updates = x.updates || [];
   x.contribs = x.contribs || [];
   x.links = x.links || [];
+  x.chat = x.chat || [];
   const pendC = x.contribs.filter(c => c.status === 'Submitted').length;
   const t = tabs(
     'ar_' + x.id,
     [
       ['overview', 'Overview'],
       ['plan', 'Tasks & milestones', x.tasks.filter(k => k.status === 'Proposed').length || null],
+      ['chat', 'Chat', isM && unreadIn(x) ? unreadIn(x) : null],
       ['contribs', 'Contributions', pendC || null],
       ['dec', 'Decisions'],
       ['risk', 'Risks & dependencies'],
@@ -163,35 +167,12 @@ route('room', 'rooms', () => {
   const own = o => o.owner === myId();
   if (t.cur === 'overview') body = roomOverview(x, pr, lead, ro);
   if (t.cur === 'contribs') body = roomContribs(x, lead, ro);
+  if (t.cur === 'chat')
+    body =
+      `<div class="row wrap chatbar"><span class="cap">Group chat for members of this ${WL()}. ${isM ? L('Open in Messages', 'messages', { c: x.id, k: 'rooms' }) : ''}</span></div>` +
+      chatThread('rooms', x, { embedded: true });
   if (t.cur === 'plan')
-    body = `<div class="g12">${card(
-      'Tasks',
-      lead ? 'Members can propose tasks; you approve them before they are scheduled.' : 'Propose a task; the project lead approves it.',
-      table(
-        ['Task', 'Owner', 'Due', 'Status', ''],
-        x.tasks.map(k => [
-          h(k.t) + (k.by && k.status === 'Proposed' ? `<div class="cap">Proposed by ${nm(k.by)}</div>` : ''),
-          nm(k.owner),
-          fmt(k.due) + dueTag(k.due, k.status === 'Done'),
-          pill(k.status),
-          ro
-            ? ''
-            : k.status === 'Proposed'
-              ? lead
-                ? B('Decline', 'taskDecide', { r: x.id, id: k.id, v: 'Declined' }) + B('Approve', 'taskDecide', { r: x.id, id: k.id, v: 'To do' }, 'btn-p btn-sm')
-                : ''
-              : k.status === 'Declined'
-                ? ''
-                : lead || own(k)
-                  ? `<select class="input" style="min-height:36px;font-size:12px;width:auto" data-ch="taskStatus" data-r="${x.id}" data-id="${k.id}" aria-label="Status of ${h(k.t)}">${['To do', 'In progress', 'Done'].map(s => `<option ${s === k.status ? 'selected' : ''}>${s}</option>`).join('')}</select>`
-                  : '',
-        ]),
-      ),
-      !ro && isM
-        ? B(ic('plus', 14) + (lead ? 'Add task' : 'Propose task'), 'roomItem', { r: x.id, k: 'tasks' }, 'btn-p btn-sm')
-        : '',
-      'c12',
-    )}
+    body = `<div class="g12"><div class="c12">${taskBoard(x, lead, ro)}</div>
  ${card(
    'Milestones',
    'Evidence-linked completion is validated by a Reviewer.',
@@ -208,7 +189,7 @@ route('room', 'rooms', () => {
          : '—',
        !ro
          ? (m.status !== 'Achieved' && isM ? B('Link evidence', 'msEvidence', { r: x.id, id: m.id }) : '') +
-           (m.status !== 'Achieved' && m.evidence && (hasB('Reviewer') || r === 'F')
+           (m.status !== 'Achieved' && m.evidence && canReview
              ? B('Validate as achieved', 'msAchieve', { r: x.id, id: m.id }, 'btn-p btn-sm')
              : '')
          : '',
@@ -235,7 +216,7 @@ route('room', 'rooms', () => {
             : '',
         ]),
       ),
-      !ro && isM ? B(ic('plus', 14) + 'Record decision', 'roomItem', { r: x.id, k: 'decisions' }, 'btn-p btn-sm') : '',
+      !ro && canPropose ? B(ic('plus', 14) + 'Record decision', 'roomItem', { r: x.id, k: 'decisions' }, 'btn-p btn-sm') : '',
     );
   if (t.cur === 'risk')
     body = `<div class="g12">${card(
@@ -255,7 +236,7 @@ route('room', 'rooms', () => {
             : '',
         ]),
       ),
-      !ro && isM ? B(ic('plus', 14) + 'Add risk', 'roomItem', { r: x.id, k: 'risks' }, 'btn-p btn-sm') : '',
+      !ro && canPropose ? B(ic('plus', 14) + 'Add risk', 'roomItem', { r: x.id, k: 'risks' }, 'btn-p btn-sm') : '',
       'c12',
     )}${card(
       'Dependencies',
@@ -285,9 +266,9 @@ route('room', 'rooms', () => {
         ['Resource', 'From', 'Status'],
         x.resources.map(k => [h(k.t), h(k.from), pill(k.status)]),
       ),
-      !ro && isM ? B(ic('plus', 14) + 'Add', 'roomItem', { r: x.id, k: 'resources' }, 'btn-s btn-sm') : '',
+      !ro && canPropose ? B(ic('plus', 14) + 'Add', 'roomItem', { r: x.id, k: 'resources' }, 'btn-s btn-sm') : '',
       'c6',
-    )}${card('Visible wins', 'Approved achievements are displayed.', x.wins.map(w => lrow('award', h(w.t), '', pill(w.status) + (w.status !== 'Approved' && lead ? B('Approve', 'winApprove', { r: x.id, t: w.t }) : ''))).join('') || '<p class="cap">None yet.</p>', !ro && isM ? B(ic('plus', 14) + 'Record a win', 'roomItem', { r: x.id, k: 'wins' }, 'btn-s btn-sm') : '', 'c6')}</div>`;
+    )}${card('Visible wins', 'Approved achievements are displayed.', x.wins.map(w => lrow('award', h(w.t), '', pill(w.status) + (w.status !== 'Approved' && lead ? B('Approve', 'winApprove', { r: x.id, t: w.t }) : ''))).join('') || '<p class="cap">None yet.</p>', !ro && canPropose ? B(ic('plus', 14) + 'Record a win', 'roomItem', { r: x.id, k: 'wins' }, 'btn-s btn-sm') : '', 'c6')}</div>`;
   if (t.cur === 'change')
     body = card(
       'Change Objects',
@@ -307,17 +288,17 @@ route('room', 'rooms', () => {
                   'v' + c.ver + ' · ' + c.history.map(v => 'v' + v.ver + ' ' + nm(v.by) + ': ' + h(v.why)).join(' · '),
                 ],
               ],
-            )}<div class="row wrap" style="margin-top:10px">${!ro ? { Proposed: (r === 'F' || hasB('Reviewer')) && B('Mark reviewed', 'coState', { r: x.id, id: c.id, v: 'Reviewed' }), Reviewed: (r === 'F' || r === 'A') && B('Approve', 'coState', { r: x.id, id: c.id, v: 'Approved' }, 'btn-p btn-sm'), Approved: lead && B('Start implementation', 'coState', { r: x.id, id: c.id, v: 'In Implementation' }), 'In Implementation': lead && B('Mark completed', 'coState', { r: x.id, id: c.id, v: 'Completed' }), Completed: lead && B('Close', 'coState', { r: x.id, id: c.id, v: 'Closed' }) }[c.state] || '' : ''}${!ro && isM && !['Completed', 'Closed'].includes(c.state) ? B('Revise (new version)', 'coRevise', { r: x.id, id: c.id }) : ''}</div></div>`,
+            )}<div class="row wrap" style="margin-top:10px">${!ro ? { Proposed: canReview && B('Mark reviewed', 'coState', { r: x.id, id: c.id, v: 'Reviewed' }), Reviewed: (r === 'F' || r === 'A') && B('Approve', 'coState', { r: x.id, id: c.id, v: 'Approved' }, 'btn-p btn-sm'), Approved: lead && B('Start implementation', 'coState', { r: x.id, id: c.id, v: 'In Implementation' }), 'In Implementation': lead && B('Mark completed', 'coState', { r: x.id, id: c.id, v: 'Completed' }), Completed: lead && B('Close', 'coState', { r: x.id, id: c.id, v: 'Closed' }) }[c.state] || '' : ''}${!ro && canPropose && !['Completed', 'Closed'].includes(c.state) ? B('Revise (new version)', 'coRevise', { r: x.id, id: c.id }) : ''}</div></div>`,
         )
         .join('') ||
         empty('layers', 'No Change Objects', 'Compose a structured, versioned record of an intended change.'),
-      !ro && isM ? B(ic('plus', 14) + 'Compose Change Object', 'coNew', { r: x.id }, 'btn-p btn-sm') : '',
+      !ro && canPropose ? B(ic('plus', 14) + 'Compose Change Object', 'coNew', { r: x.id }, 'btn-p btn-sm') : '',
     );
   if (t.cur === 'ev') {
     const ev = S.evidence.filter(
       e =>
         e.linked.includes(x.id) &&
-        (e.owner === myId() || e.review === 'Approved' || r === 'F' || hasB('Reviewer') || e.vis === 'Room'),
+        (e.owner === myId() || e.review === 'Approved' || r === 'F' || canReview || hasB('Reviewer') || e.vis === 'Room'),
     );
     body = card(
       'Evidence linked to this ' + WL(),
@@ -332,7 +313,7 @@ route('room', 'rooms', () => {
           h(e.release),
         ]),
       ),
-      !ro && isM ? B(ic('upload', 14) + 'Upload evidence', 'go', { r: 'newevidence', link: x.id }, 'btn-p btn-sm') : '',
+      !ro && canPropose ? B(ic('upload', 14) + 'Upload evidence', 'go', { r: 'newevidence', link: x.id }, 'btn-p btn-sm') : '',
     );
   }
   if (t.cur === 'members')
@@ -340,15 +321,18 @@ route('room', 'rooms', () => {
       'Members and join approvals',
       'Risk- and authority-based join rules apply.',
       table(
-        ['Member', 'Role', 'Status', ''],
-        x.members.map((m, i) => [
-          nm(m.pid),
-          h(m.role),
-          pill(m.status),
-          lead && m.pid !== x.lead && !ro && m.status !== 'Removed'
-            ? CB('Remove', 'roomMem', { r: x.id, i, v: 'Removed' }, 'Remove ' + P(m.pid).name + ' from this ' + WL() + '? Their contributions stay in the record.')
-            : '',
-        ]),
+        ['Member', 'Role in this ' + WL(), 'Status', ''],
+        x.members.map((m, i) => {
+          const sr = m.pid === x.lead ? 'Project owner' : normRole(m.role);
+          return [
+            nm(m.pid) + ` <span class="cap">${h(ROLE[ctxRole(m.pid, x.ctx)] || '')}${m.label ? ' · ' + h(m.label) : ''}</span>`,
+            lead && m.pid !== x.lead && !ro && m.status === 'Active' ? roleSelect('memRole', { kind: 'rooms', c: x.id, i }, sr, 'Role of ' + P(m.pid).name) : h(sr) + (m.req ? `<div class="cap">Responsibility: ${h(m.req)}</div>` : ''),
+            pill(m.status),
+            lead && m.pid !== x.lead && !ro && m.status !== 'Removed'
+              ? CB('Remove', 'roomMem', { r: x.id, i, v: 'Removed' }, 'Remove ' + P(m.pid).name + ' from this ' + WL() + '? Their contributions stay in the record.')
+              : '',
+          ];
+        }),
       ) +
         `<h3 class="h3" style="margin:18px 0 8px">Join requests</h3>` +
         table(
@@ -358,7 +342,7 @@ route('room', 'rooms', () => {
             h(j.kind),
             pill(j.status),
             h(j.note || ''),
-            j.status === 'Pending' && (r === 'F' || r === 'A')
+            j.status === 'Pending' && (r === 'F' || r === 'A' || lead)
               ? B('Decline', 'joinDecide', { r: x.id, id: j.id, v: 'Declined' }) +
                 B('Approve', 'joinDecide', { r: x.id, id: j.id, v: 'Approved' }, 'btn-p btn-sm')
               : '',
@@ -372,6 +356,8 @@ route('room', 'rooms', () => {
  ${returnsCard(x) ? `<div class="c12">${returnsCard(x)}</div>` : ''}</div>`;
   return (
     head(h(x.name), h(x.purpose), pill(x.state), [[WL() + 's', 'rooms'], [h(x.name)]]) +
+    `<div class="row wrap" style="gap:8px;margin:-6px 0 14px">${roleTag('rooms', x)}</div>` +
+    roleNote('rooms', x) +
     (pr ? stageTrack(pr, 'rooms') : '') +
     (x.state === 'Pending approval'
       ? banner(
@@ -405,6 +391,7 @@ route('room', 'rooms', () => {
 A.roomInvite = d => {
   const x = byId('rooms', d.id);
   x.members.find(m => m.pid === myId()).status = d.v;
+  if (d.v === 'Active') sysMsg(x, me().name + ' joined the ' + WL());
   audit(WL() + ' invitation ' + d.v, x.id, '');
   if (d.v !== 'Active') {
     save();
@@ -419,7 +406,7 @@ A.roomItem = d => {
   const mem = x.members.filter(m => m.status === 'Active').map(m => [m.pid, P(m.pid).name]);
   modal(
     {
-      tasks: isLead(x) ? 'Add task' : 'Propose task',
+      tasks: isLead(x) || role() === 'A' ? 'Create task' : 'Propose task',
       milestones: 'Add milestone',
       decisions: 'Record decision',
       risks: 'Add risk',
@@ -428,7 +415,7 @@ A.roomItem = d => {
       wins: 'Record a visible win',
     }[k],
     () =>
-      `<form data-f="ri" class="col" style="gap:14px" novalidate><input type="hidden" name="r" value="${x.id}"><input type="hidden" name="k" value="${k}">${fi('ri', 't', k === 'deps' ? 'Dependent activity / resource' : 'Title', { req: true })}${['tasks', 'decisions', 'risks'].includes(k) ? fi('ri', 'owner', 'Owner', { type: 'select', req: true, opts: mem, value: myId() }) : ''}${['tasks', 'milestones'].includes(k) ? fi('ri', 'due', 'Due date', { type: 'date', req: true }) : ''}${k === 'deps' ? fi('ri', 'on', 'Depends on (party)', { req: true }) : ''}${k === 'resources' ? fi('ri', 'from', 'Provided by', { req: true }) : ''}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save</button></div></form>`,
+      `<form data-f="ri" class="col" style="gap:14px" novalidate><input type="hidden" name="r" value="${x.id}"><input type="hidden" name="k" value="${k}"><input type="hidden" name="st" value="${d.st || ''}">${fi('ri', 't', k === 'deps' ? 'Dependent activity / resource' : 'Title', { req: true })}${['tasks', 'decisions', 'risks'].includes(k) ? fi('ri', 'owner', k === 'tasks' ? 'Assignee' : 'Owner', { type: 'select', req: true, opts: mem, value: d.owner || myId(), help: k === 'tasks' ? 'Any active member of this ' + WL() + '.' : '' }) : ''}${['tasks', 'milestones'].includes(k) ? fi('ri', 'due', 'Due date', { type: 'date', req: true }) : ''}${k === 'tasks' ? fi('ri', 'prio', 'Priority', { type: 'select', opts: TASK_PRIOS, value: 'Medium' }) + fi('ri', 'desc', 'Description', { type: 'textarea', rows: 3 }) : ''}${k === 'deps' ? fi('ri', 'on', 'Depends on (party)', { req: true }) : ''}${k === 'resources' ? fi('ri', 'from', 'Provided by', { req: true }) : ''}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save</button></div></form>`,
   );
 };
 F.ri = d => {
@@ -440,28 +427,28 @@ F.ri = d => {
   const x = byId('rooms', d.r);
   const lead = isLead(x) || role() === 'A';
   const o = { id: uid('it'), t: d.t };
-  if (d.k === 'tasks') Object.assign(o, { owner: d.owner, due: d.due, status: lead ? 'To do' : 'Proposed', by: myId() });
-  if (d.k === 'tasks' && !lead) x.members.filter(m => m.role === 'Project Lead' && m.pid !== myId()).forEach(m => notify(m.pid, 'Task proposed in ' + x.name + ': ' + d.t, 'room', { id: x.id, tab: 'plan' }));
+  if (d.k === 'tasks' && d.st && lead && TASK_COLS.includes(d.st)) o.st0 = d.st;
+  if (d.k === 'tasks') Object.assign(o, { owner: d.owner, due: d.due, status: lead ? 'To do' : 'Proposed', by: myId(), key: nextTaskKey(x), prio: d.prio || 'Medium', desc: d.desc || '', log: [{ at: now(), by: myId(), t: lead ? 'Created' : 'Proposed' }] });
+  if (d.k === 'tasks' && !lead) x.members.filter(m => ['Project owner', 'Facilitator'].includes(spaceRole('rooms', x, m.pid)) && m.pid !== myId()).forEach(m => notify(m.pid, 'Task proposed in ' + x.name + ': ' + d.t, 'room', { id: x.id, tab: 'plan' }));
   if (d.k === 'milestones') Object.assign(o, { due: d.due, status: 'Not started', evidence: null });
   if (d.k === 'decisions') Object.assign(o, { owner: d.owner, state: 'Draft' });
   if (d.k === 'risks') Object.assign(o, { owner: d.owner, state: 'Open' });
   if (d.k === 'deps') Object.assign(o, { on: d.on, state: 'Open' });
   if (d.k === 'resources') Object.assign(o, { from: d.from, status: 'Committed' });
   if (d.k === 'wins') Object.assign(o, { status: 'Proposed' });
+  if (o.st0) {
+    o.status = o.st0;
+    delete o.st0;
+  }
   x[d.k].push(o);
+  if (d.k === 'tasks') sysMsg(x, (lead ? 'Task created: ' : 'Task proposed: ') + o.t + ' → ' + P(o.owner).name);
   if (o.owner && o.owner !== myId()) notify(o.owner, 'Assigned to you in ' + x.name + ': ' + o.t, 'room', { id: x.id });
   audit(WL() + ' ' + d.k.slice(0, -1) + ' added', x.id, o.t);
   UI.modal = null;
   clearF('ri');
   ok();
 };
-A.taskStatus = (d, el) => {
-  const x = byId('rooms', d.r);
-  const k = x.tasks.find(t => t.id === d.id);
-  k.status = el.value;
-  audit('Task status', x.id, k.t + ' → ' + el.value);
-  ok();
-};
+
 A.itemState = d => {
   const x = byId('rooms', d.r);
   const k = x[d.k].find(t => t.id === d.id);
@@ -654,7 +641,7 @@ A.joinDecide = d => {
   const j = x.joinReqs.find(j => j.id === d.id);
   j.status = d.v;
   if (d.v === 'Approved') {
-    x.members.push({ pid: j.pid, role: j.kind.split(' (')[0], status: 'Invited' });
+    x.members.push({ pid: j.pid, role: normRole(j.kind) === 'Member' ? (/Finance|External|Institutional/.test(j.kind) ? 'Partner' : 'Member') : normRole(j.kind), label: j.kind, status: 'Invited' });
     notify(j.pid, 'Invitation to join ' + x.name, 'room', { id: x.id });
   }
   audit('Join ' + d.v, x.id, j.kind);
@@ -740,8 +727,8 @@ function roomOverview(x, pr, lead, ro) {
   <div class="c5 col" style="gap:24px">${pr ? stageGate(pr, 'rooms', x) : ''}${card('Visible wins', 'Approved achievements.', x.wins.filter(w => w.status === 'Approved').map(w => lrow('award', h(w.t), '', pill('Approved'), 't-teal')).join('') || '<p class="cap">No approved wins yet.</p>', L('Resources & wins', 'room', { id: x.id, tab: 'res' }))}</div>
   ${card(
     'Shared updates',
-    'Progress notes for everyone in this ' + WL() + '. Real-time chat lives in the Circle and Rope Team. ' + assumed('OI-05 chat in rooms'),
-    `${!ro && memberOf(x) ? `<form data-f="rup" class="col" style="gap:8px;margin-bottom:14px" novalidate><input type="hidden" name="r" value="${x.id}"><textarea class="input" name="t" rows="2" placeholder="Share an update with the team" aria-label="Update"></textarea><div class="row" style="justify-content:space-between"><span class="help">Visible to ${WL()} members.</span><button class="btn btn-p btn-sm" type="submit">${ic('send', 14)}Post update</button></div></form>` : ''}${
+    'Progress notes for everyone in this ' + WL() + '. For quick conversation use the Chat tab.',
+    `${!ro && sCan('rooms', x, 'post') ? `<form data-f="rup" class="col" style="gap:8px;margin-bottom:14px" novalidate><input type="hidden" name="r" value="${x.id}"><textarea class="input" name="t" rows="2" placeholder="Share an update with the team" aria-label="Update"></textarea><div class="row" style="justify-content:space-between"><span class="help">Visible to ${WL()} members.</span><button class="btn btn-p btn-sm" type="submit">${ic('send', 14)}Post update</button></div></form>` : ''}${
       x.updates
         .slice()
         .reverse()
@@ -771,6 +758,9 @@ A.taskDecide = d => {
   const x = byId('rooms', d.r);
   const k = x.tasks.find(t => t.id === d.id);
   k.status = d.v;
+  (k.log = k.log || []).push({ at: now(), by: myId(), t: d.v === 'Declined' ? 'Declined' : 'Approved and moved to ' + d.v });
+  sysMsg(x, 'Task ' + (d.v === 'Declined' ? 'declined: ' : 'approved: ') + k.t);
+  if (UI.modal) UI.modal = null;
   notify(k.by || k.owner, `Task ${d.v === 'Declined' ? 'declined' : 'approved'} in ${x.name}: ${k.t}`, 'room', { id: x.id, tab: 'plan' });
   if (d.v !== 'Declined' && k.owner !== k.by) notify(k.owner, 'Assigned to you in ' + x.name + ': ' + k.t, 'room', { id: x.id });
   audit('Proposed task ' + (d.v === 'Declined' ? 'declined' : 'approved'), x.id, k.t);
@@ -779,7 +769,7 @@ A.taskDecide = d => {
 // ---- Collaborator contributions against a defined responsibility (Section 6.4, PCP-10)
 const CB_STATES = { Submitted: 'p-navy', 'Changes requested': 'p-amber', 'More evidence requested': 'p-amber', Accepted: 'p-green' };
 function roomContribs(x, lead, ro) {
-  const rev = role() === 'F' || hasB('Reviewer') || role() === 'A';
+  const rev = sCan('rooms', x, 'review') || role() === 'A';
   return card(
     'Contributions',
     'Partners and collaborators submit work against their defined responsibility. A Faculty/Steward accepts it, requests changes or asks for more evidence. Accepted contributions join the project record.',
@@ -791,7 +781,7 @@ function roomContribs(x, lead, ro) {
           `<div class="rvitem"><div class="row wrap" style="justify-content:space-between;gap:8px"><div class="col" style="min-width:0"><b>${h(c.t)}</b><span class="cap">${nm(c.by)} · responsibility: ${h(c.resp)} · ${fmt(c.at)}</span></div>${pill(c.status, CB_STATES[c.status])}</div>${c.desc ? `<p class="muted" style="margin-top:6px">${h(c.desc)}</p>` : ''}${c.att ? `<div style="margin-top:8px">${attCard(c.att)}</div>` : ''}${c.used ? `<div class="rvresp"><span class="cap"><b>How it was used</b></span><p>${h(c.used)}</p></div>` : ''}${c.history && c.history.length > 1 ? `<details style="margin-top:8px"><summary class="cap" style="cursor:pointer">History (${c.history.length})</summary>${c.history.map(hh => `<p class="cap">${fmt(hh.at)} · ${h(hh.t)}</p>`).join('')}</details>` : ''}<div class="row wrap" style="margin-top:10px">${rev && !ro && c.status === 'Submitted' ? B('Review contribution', 'cbReview', { r: x.id, id: c.id }, 'btn-p btn-sm') : ''}${c.by === myId() && !ro && ['Changes requested', 'More evidence requested'].includes(c.status) ? B('Revise and resubmit', 'cbNew', { r: x.id, re: c.id }) : ''}</div></div>`,
       )
       .join('') || empty('award', 'No contributions yet', 'Partners submit contributions here once they have a defined responsibility.'),
-    !ro && memberOf(x) && role() !== 'F' ? B(ic('upload', 14) + 'Submit a contribution', 'cbNew', { r: x.id }, 'btn-p btn-sm') : '',
+    !ro && sCan('rooms', x, 'contribute') ? B(ic('upload', 14) + 'Submit a contribution', 'cbNew', { r: x.id }, 'btn-p btn-sm') : '',
   );
 }
 A.cbNew = d => {
@@ -801,7 +791,7 @@ A.cbNew = d => {
   const myRole = (x.members.find(m => m.pid === myId()) || {}).role || '';
   UI.form.cbn = prev
     ? { resp: prev.resp, t: prev.t, desc: prev.desc }
-    : { resp: myRole.startsWith('Collaborator — ') ? myRole.slice(15) : '' };
+    : { resp: (x.members.find(m => m.pid === myId()) || {}).req || (myRole.startsWith('Collaborator — ') ? myRole.slice(15) : '') };
   modal(
     prev ? 'Revise and resubmit' : 'Submit a contribution',
     () =>
@@ -824,7 +814,7 @@ F.cbn = (d, form) => {
   } else
     x.contribs.push({ id: uid('cb'), by: myId(), resp: d.resp, t: d.t, desc: d.desc, att, status: 'Submitted', at: today(), used: '', history: [{ at: today(), t: 'Submitted for steward review' }] });
   S.assign
-    .filter(a => a.ctx === x.ctx && a.role === 'F' && x.members.some(m => m.pid === a.pid))
+    .filter(a => a.ctx === x.ctx && x.members.some(m => m.pid === a.pid && sCan('rooms', x, 'review', a.pid)))
     .forEach(a => notify(a.pid, 'Contribution submitted in ' + x.name + ': ' + d.t, 'room', { id: x.id, tab: 'contribs' }));
   audit('Contribution submitted', x.id, d.t);
   UI.modal = null;

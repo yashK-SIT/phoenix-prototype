@@ -17,92 +17,168 @@ function tally(c, p) {
     eligible: el.length,
   };
 }
+// Circles a project owner can create: their own accepted projects that do not have a Circle yet.
+const ownCircleProjects = () =>
+  S.projects.filter(p => inCtx(p) && p.owner === myId() && p.status === 'Accepted' && !p.circle);
+const canCreateCircle = () => ['F', 'O'].includes(role()) || (role() === 'P' && can('circles', 'C'));
+// Request state for a person who is not (or no longer) an active member.
+const joinState = c => {
+  const m = memberRec(c);
+  if (!m) return 'none';
+  if (m.status === 'Active') return 'member';
+  if (m.status === 'Requested') return 'pending';
+  if (m.status === 'Invited') return 'invited';
+  return 'ended';
+};
+const joinBtn = (c, kind = 'circles') => {
+  const s = joinState(c);
+  if (s === 'pending') return pill('Pending') + ' ' + B('Withdraw request', 'joinWithdraw', { id: c.id, kind });
+  if (s === 'invited') return B('Respond to invite', 'go', { r: kind === 'circles' ? 'circle' : 'rope', id: c.id }, 'btn-p btn-sm');
+  if (s === 'member') return '';
+  return B(s === 'ended' ? 'Request to join again' : 'Request to join', kind === 'circles' ? 'joinCircle' : 'joinRope', { id: c.id }, 'btn-p btn-sm');
+};
 route('circles', 'circles', () => {
   const r = role();
-  const list = S.circles.filter(
-    c =>
-      inCtx(c) &&
-      (memberRec(c) ||
-        r === 'A' ||
-        r === 'O' ||
-        (r === 'F' && c.facilitator === myId()) ||
-        c.visibility === 'Programme'),
-  );
+  const all = S.circles.filter(inCtx);
+  const sees = c => memberOf(c) || ['A', 'O'].includes(r) || c.facilitator === myId() || ['Requested', 'Invited'].includes((memberRec(c) || {}).status);
+  const mine = all.filter(sees);
+  const others = all.filter(c => !sees(c) && !['Archived/Closed'].includes(c.state));
+  const ownP = r === 'P' ? ownCircleProjects() : [];
   return (
     head(
       'Circles',
       'Collaboration spaces for shared learning, sensemaking and decisions.',
-      ['F', 'O'].includes(r) || r === 'P' ? B(ic('plus', 16) + 'Create Circle', 'newCircle', {}, 'btn-p') : '',
+      canCreateCircle() ? B(ic('plus', 16) + 'Create Circle', 'newCircle', ownP.length === 1 ? { project: ownP[0].id } : {}, 'btn-p') : '',
     ) +
-    table(
-      ['Circle', 'Purpose', 'Facilitator', 'Members', 'State', ''],
-      list.map(c => [
-        `<b>${h(c.name)}</b>`,
-        h(c.purpose),
-        nm(c.facilitator),
-        c.members.length,
-        pill(c.state),
-        (() => {
-          const m = memberRec(c);
-          if (m && m.status === 'Requested') return pill('Pending');
-          if (m && m.status === 'Invited')
-            return B('Respond to invite', 'go', { r: 'circle', id: c.id }, 'btn-p btn-sm');
-          return memberOf(c) || r === 'F' || r === 'A' || r === 'O' || c.visibility === 'Programme'
-            ? L('Open', 'circle', { id: c.id })
-            : B('Request to join', 'joinCircle', { id: c.id });
-        })(),
-      ]),
-    )
+    (ownP.length
+      ? banner('info', 'Your project is ready for a Circle', ownP.map(p => '“' + h(p.title) + '”').join(', ') + ' was accepted. You can create its Circle yourself; your steward joins it as facilitator.')
+      : '') +
+    card(
+      'Your Circles',
+      '',
+      table(
+        ['Circle', 'Purpose', 'Facilitator', 'Members', 'Your role', 'State', ''],
+        mine.map(c => [
+          `<b>${h(c.name)}</b>${unreadIn(c) && memberOf(c) ? ` <span class="mbadge">${unreadIn(c)}</span>` : ''}`,
+          h(c.purpose),
+          nm(c.facilitator),
+          c.members.filter(m => m.status === 'Active').length,
+          spaceRole('circles', c) ? h(spaceRole('circles', c)) : joinState(c) === 'pending' ? pill('Pending') : joinState(c) === 'invited' ? pill('Invited') : '<span class="cap">Oversight</span>',
+          pill(c.state),
+          joinState(c) === 'invited' ? B('Respond to invite', 'go', { r: 'circle', id: c.id }, 'btn-p btn-sm') : joinState(c) === 'pending' ? B('Withdraw request', 'joinWithdraw', { id: c.id, kind: 'circles' }) : L('Open', 'circle', { id: c.id }),
+        ]),
+        'You are not in a Circle yet. Ask to join one below, or wait for an invitation.',
+      ),
+    ) +
+    (others.length && !['A', 'O'].includes(r)
+      ? '<div class="section-gap"></div>' +
+        card(
+          'Other Circles in this programme',
+          'You can see what each Circle is for. Content stays with its members until the facilitator or project owner approves your request.',
+          table(
+            ['Circle', 'Purpose', 'Facilitator', 'Visibility', 'State', ''],
+            others.map(c => [
+              `<b>${h(c.name)}</b>`,
+              h(c.purpose),
+              nm(c.facilitator),
+              h(c.visibility),
+              pill(c.state),
+              (c.visibility === 'Programme' ? L('Open', 'circle', { id: c.id }) + ' ' : '') + (c.state === 'Active' ? joinBtn(c) : ''),
+            ]),
+          ),
+        )
+      : '')
   );
 });
-A.joinCircle = d => {
-  const c = byId('circles', d.id);
-  if (memberRec(c)) return;
-  c.members.push({ pid: myId(), role: 'Member', status: 'Requested' });
-  notify(c.facilitator, me().name + ' asked to join ' + c.name, 'circle', { id: c.id, tab: 'members' });
-  audit('Circle join requested', c.id, '');
-  toast('Request sent to the facilitator.');
+// Requests are always recorded, shown as Pending to the requester, and routed to the facilitator and project owner.
+const joinApprovers = (kind, o) => {
+  const ids = kind === 'circles' ? [o.facilitator, o.owner] : o.members.filter(m => ['Facilitator', 'Project owner'].includes(spaceRole('ropes', o, m.pid))).map(m => m.pid).concat(o.owner);
+  return [...new Set(ids.filter(Boolean))];
+};
+function requestJoin(kind, id) {
+  const o = byId(kind, id);
+  const m = memberRec(o);
+  if (m && ['Active', 'Requested', 'Invited'].includes(m.status)) return ok();
+  if (m) Object.assign(m, { status: 'Requested', role: 'Member', at: now() });
+  else o.members.push({ pid: myId(), role: 'Member', status: 'Requested', at: now() });
+  const r = kind === 'circles' ? 'circle' : 'rope';
+  joinApprovers(kind, o)
+    .filter(p => p !== myId())
+    .forEach(p => notify(p, me().name + ' asked to join ' + o.name + ' — approve or decline in Members', r, { id: o.id, tab: 'members' }));
+  audit(SPACE_KIND_LABEL(kind) + ' join requested', o.id, '');
+  toast('Request sent. It shows as Pending until the facilitator or project owner decides.');
+  ok();
+}
+A.joinCircle = d => requestJoin('circles', d.id);
+A.joinRope = d => requestJoin('ropes', d.id);
+A.joinWithdraw = d => {
+  const o = byId(d.kind, d.id);
+  const m = memberRec(o);
+  if (m && m.status === 'Requested') m.status = 'Withdrawn';
+  audit('Join request withdrawn', o.id, '');
+  toast('Request withdrawn.');
   ok();
 };
 A.newCircle = d => {
   clearF('nc');
-  const pr = d.project && byId('projects', d.project);
+  mselReset('nc', 'm');
+  const isP = role() === 'P';
+  const ownP = isP ? ownCircleProjects() : [];
+  const pid0 = d.project || (ownP[0] && isP ? ownP[0].id : '');
+  const pr = pid0 && byId('projects', pid0);
   UI.form.nc = {
+    project: pid0 || '',
     name: pr ? pr.title + ' Circle' : '',
     purpose: pr ? 'Discuss and agree requirements for “' + pr.title + '”' : '',
     vis: 'Members only',
   };
-  modal(
-    'Create a Circle',
-    () => `<form data-f="nc" class="col" style="gap:14px" novalidate><input type="hidden" name="project" value="${d.project || ''}">${fi('nc', 'name', 'Name', { req: true })}${fi('nc', 'purpose', 'Purpose', { type: 'textarea', rows: 2, req: true })}${fi('nc', 'outcome', 'Expected outcome', { req: true })}${fi('nc', 'agreement', 'Working agreement', { type: 'select', opts: ['Circle working agreement v1'], req: true })}${fi('nc', 'vis', 'Visibility', { type: 'select', opts: ['Members only', 'Programme'], req: true })}
- <fieldset style="border:0;padding:0;margin:0" class="col"><legend class="lbl" style="margin-bottom:8px">Invite members</legend><div class="g2">${S.assign
-   .filter(a => a.ctx === ctxId() && a.status === 'Active' && ['P', 'M', 'C'].includes(a.role) && a.pid !== myId())
-   .map(
-     a =>
-       `<label class="row"><input class="chk" type="checkbox" name="m" value="${a.pid}" ${pr && a.pid === pr.owner ? 'checked' : ''}>${nm(a.pid)} <span class="cap">${ROLE[a.role]}</span></label>`,
-   )
-   .join('')}</div></fieldset>
- ${role() === 'P' ? banner('info', '', 'As a participant group owner, your Circle starts as Pending Review until a facilitator approves it.') : ''}<div class="actions"><span></span><button class="btn btn-p" type="submit">Create Circle</button></div></form>`,
-  );
+  modal('Create a Circle', () => {
+    const cur = byId('projects', fv('nc', 'project'));
+    const exclude = [myId(), cur ? cur.owner : null];
+    const def = cur ? (cur.owner !== myId() ? [cur.owner] : []) : [];
+    const projOpts = (isP ? ownP : S.projects.filter(p => inCtx(p) && p.status === 'Accepted' && !p.circle && (role() === 'O' || stewardOf(p)))).map(p => [p.id, p.title]);
+    return `<form data-f="nc" class="col" style="gap:14px" novalidate>${fi('nc', 'project', 'Project', { type: 'select', ph: isP ? 'Not linked to a project (needs facilitator approval)' : 'Not linked to a project', opts: projOpts, ch: 'ncProject', help: isP ? 'Linking your accepted project makes the Circle active straight away; a project steward joins as facilitator.' : '' })}${fi('nc', 'name', 'Name', { req: true })}${fi('nc', 'purpose', 'Purpose', { type: 'textarea', rows: 2, req: true })}${fi('nc', 'outcome', 'Expected outcome', { req: true })}${fi('nc', 'agreement', 'Working agreement', { type: 'select', opts: ['Circle working agreement v1'], req: true })}${fi('nc', 'vis', 'Visibility', { type: 'select', opts: ['Members only', 'Programme'], req: true, help: 'Members only: others see the name and purpose and can request to join. Programme: anyone in the programme can read it.' })}
+ ${msel('nc', 'm', 'Invite members', eligiblePeople(exclude.filter(Boolean)), def, { help: 'Each person gets an invitation and a starting role you can change later in Members.' })}
+ ${isP && !cur ? banner('info', '', 'Without a linked project, your Circle starts as Pending Review until a facilitator approves it.') : ''}<div class="actions"><span></span><button class="btn btn-p" type="submit">Create Circle</button></div></form>`;
+  });
+};
+A.ncProject = (d, el) => {
+  const f = {};
+  new FormData(el.form).forEach((v, k) => {
+    if (k !== 'm') f[k] = v;
+  });
+  const pr = byId('projects', el.value);
+  if (pr) {
+    f.name = pr.title + ' Circle';
+    f.purpose = 'Discuss and agree requirements for “' + pr.title + '”';
+  }
+  clearF('nc');
+  UI.form.nc = f;
+  mselReset('nc', 'm');
+  render();
 };
 F.nc = d => {
   if (!validate('nc', d, { name: ['req'], purpose: ['req'], outcome: ['req'] })) return render();
   const pr = d.project && byId('projects', d.project);
   const isP = role() === 'P';
-  const fac = isP ? (S.assign.find(a => a.ctx === ctxId() && a.role === 'F') || {}).pid : myId();
+  if (pr && isP && (pr.owner !== myId() || pr.status !== 'Accepted' || pr.circle))
+    return deny('you can create a Circle only for your own accepted project that does not have one yet');
+  const steward = pr && (pr.stewards.find(s => S.assign.some(a => a.pid === s && a.ctx === pr.ctx && a.role === 'F' && a.status === 'Active')) || pr.stewards[0]);
+  const fac = isP ? steward || (S.assign.find(a => a.ctx === ctxId() && a.role === 'F' && a.status === 'Active') || {}).pid : myId();
+  const owner = pr ? pr.owner : myId();
   const c = {
     id: uid('ci'),
     ctx: ctxId(),
     name: d.name,
     purpose: d.purpose,
     outcome: d.outcome,
-    owner: pr ? pr.owner : myId(),
+    owner,
     facilitator: fac,
     project: pr?.id || null,
     visibility: d.vis,
-    state: isP ? 'Pending Review' : 'Active',
+    state: isP && !pr ? 'Pending Review' : 'Active',
     agreement: d.agreement,
-    members: [{ pid: pr ? pr.owner : myId(), role: pr || isP ? 'Project owner' : 'Facilitator', status: 'Active' }],
+    members: [{ pid: owner, role: pr || isP ? 'Project owner' : 'Facilitator', status: 'Active' }],
     chat: [],
     sessions: [],
     reflections: [],
@@ -111,31 +187,27 @@ F.nc = d => {
     decisions: [],
     polls: [],
     pause: null,
+    createdBy: myId(),
   };
-  if (!isP && !c.members.some(m => m.pid === myId()))
-    c.members.push({ pid: myId(), role: 'Facilitator', status: 'Active' });
+  if (fac && !c.members.some(m => m.pid === fac)) c.members.push({ pid: fac, role: 'Facilitator', status: 'Active' });
   [].concat(d.m || []).forEach(pid => {
-    if (!c.members.some(m => m.pid === pid)) {
-      const rr = S.assign.find(a => a.pid === pid && a.ctx === ctxId()).role;
-      c.members.push({
-        pid,
-        role: rr === 'M' ? 'Mentor (invited)' : rr === 'C' ? 'Partner (invited)' : 'Member',
-        status: 'Invited',
-      });
-      notify(pid, 'You were invited to join the Circle “' + c.name + '”', 'circle', { id: c.id });
-    }
+    if (c.members.some(m => m.pid === pid)) return;
+    c.members.push({ pid, role: defaultSpaceRole(ctxRole(pid)), status: 'Invited' });
+    notify(pid, 'You were invited to join the Circle “' + c.name + '”', 'circle', { id: c.id });
   });
   S.circles.push(c);
+  sysMsg(c, 'Circle created by ' + me().name);
   if (pr) {
     pr.circle = c.id;
     pr.stage = 'Circle';
-    pr.history.push({ at: today(), t: 'Circle created' });
-    notify(pr.owner, 'Circle created for your project', 'circle', { id: c.id });
+    pr.history.push({ at: today(), t: 'Circle created by ' + me().name });
+    if (pr.owner !== myId()) notify(pr.owner, 'Circle created for your project', 'circle', { id: c.id });
   }
-  if (isP) notify(fac, 'Circle awaiting your review: ' + c.name, 'circle', { id: c.id });
-  audit('Circle created', c.id, c.state);
+  if (isP && fac) notify(fac, (pr ? 'You are facilitator of the new Circle “' : 'Circle awaiting your review: “') + c.name + '”', 'circle', { id: c.id });
+  audit('Circle created', c.id, c.state + (pr ? ' · project ' + pr.id : ''));
   UI.modal = null;
   clearF('nc');
+  mselReset('nc', 'm');
   save();
   go('circle', { id: c.id });
 };
@@ -144,19 +216,31 @@ route('circle', 'circles', () => {
   if (!c) return empty('users', 'Circle not found', '');
   const r = role();
   const isMem = memberOf(c);
-  const mgr = (r === 'F' && c.facilitator === myId()) || (r === 'O' && inCtx(c));
+  const mgr = sCan('circles', c, 'facilitate') || spaceAdmin('circles', c);
+  const memMgr = mgr || sCan('circles', c, 'members');
+  const pollMgr = mgr || sCan('circles', c, 'poll');
+  const canRec = sCan('circles', c, 'record');
   const myM = memberRec(c);
   if (myM && myM.status === 'Requested')
     return (
       head(h(c.name), h(c.purpose), pill('Pending'), [['Circles', 'circles'], [h(c.name)]]) +
       banner(
         'info',
-        'Your request to join is with the facilitator',
-        nm(c.facilitator) + ' will approve or decline it. You will be notified.',
+        'Your request to join is pending',
+        nm(c.facilitator) + ' (facilitator)' + (c.owner && c.owner !== c.facilitator ? ' or ' + nm(c.owner) + ' (project owner)' : '') + ' will approve or decline it. You will be notified either way.',
+      ) +
+      card('', '', dl([['Purpose', h(c.purpose)], ['Facilitator', nm(c.facilitator)], ['Requested', fmt(myM.at || '')]]) + `<div class="row" style="margin-top:12px">${B('Withdraw request', 'joinWithdraw', { id: c.id, kind: 'circles' })}</div>`)
+    );
+  if (!(myM && myM.status === 'Invited') && !isMem && !mgr && c.visibility !== 'Programme')
+    return (
+      head(h(c.name), h(c.purpose), pill(c.state), [['Circles', 'circles'], [h(c.name)]]) +
+      card(
+        'Members only',
+        'Only members see this Circle’s chat, sessions and records.',
+        dl([['Purpose', h(c.purpose)], ['Expected outcome', h(c.outcome || '—')], ['Facilitator', nm(c.facilitator)], ['Project owner', nm(c.owner)], ['Members', c.members.filter(m => m.status === 'Active').length]]) +
+          (c.state === 'Active' ? `<div class="row" style="margin-top:14px">${joinBtn(c)}</div>` : ''),
       )
     );
-  if (!(myM && myM.status === 'Invited') && !isMem && !mgr && r !== 'A' && !(c.visibility === 'Programme'))
-    return deniedView('circles');
   if (myM && myM.status === 'Invited')
     return (
       head(h(c.name), 'You have been invited to this Circle') +
@@ -172,6 +256,7 @@ route('circle', 'circles', () => {
     );
   const paused = c.state === 'Paused/Repair';
   const ro = paused || ['Completed', 'Archived/Closed'].includes(c.state) || (!isMem && !mgr);
+  const noRec = ro || !(canRec || mgr);
   const t = tabs(
     'ci_' + c.id,
     [
@@ -217,7 +302,7 @@ route('circle', 'circles', () => {
         act = B('Request changes', 'commitReview', { c: c.id, id: x.id, v: 'changes' }) + B('Accept work', 'commitReview', { c: c.id, id: x.id, v: 'ok' }, 'btn-p btn-sm');
       return pill(x.status) + act;
     };
-    body = `<div class="g12">${card('Responsibilities and commitments', 'Facilitators assign responsibilities; members make commitments. Assigned work is reviewed before it counts as done.', c.commitments.map(x => lrow(x.assignedBy ? 'flag' : 'calendar', h(x.t), nm(x.by) + (x.assignedBy ? ' · assigned by ' + nm(x.assignedBy) : '') + ' · due ' + fmt(x.due) + dueTag(x.due, x.status === 'Done') + (x.note ? `<span class="cap" style="display:block">Changes requested: ${h(x.note)}</span>` : ''), commitRight(x))).join('') || '<p class="cap">None yet.</p>', ro ? '' : B(ic('plus', 14) + (mgr ? 'Assign or add' : 'Add commitment'), 'addRec', { id: c.id, k: 'commitments' }), 'c6')}${card('Reflections', '', c.reflections.map(x => lrow('message', h(x.t), nm(x.by) + ' · ' + fmt(x.at))).join('') || '<p class="cap">None yet.</p>', ro ? '' : B(ic('plus', 14) + 'Add', 'addRec', { id: c.id, k: 'reflections' }), 'c6')}${card('Concerns', 'Routed to the facilitator, and to the Incident/Safety Owner when escalated.', c.concerns.map(x => lrow(x.ret ? 'refresh' : 'alert', h(x.t), (x.anon ? 'Anonymous' : nm(x.by)) + ' · ' + fmt(x.at), pill(x.status) + (mgr && x.status === 'Open' ? B('Resolve', 'resolveConcern', { c: c.id, id: x.id }) + (x.ret ? '' : B('Escalate', 'escalateConcern', { c: c.id, id: x.id })) : ''))).join('') || '<p class="cap">None raised.</p>', isMem && !ro ? B(ic('plus', 14) + 'Raise concern', 'addRec', { id: c.id, k: 'concerns' }) : '', 'c6')}${card('Decisions', 'Decision history. An approved decision is what moves the project forward.', c.decisions.map(x => lrow('check', h(x.t), fmt(x.at) + ' · ' + h(x.by))).join('') || '<p class="cap">None yet. Decide by weighted vote, or record a facilitator decision.</p>', mgr && !ro ? B(ic('plus', 14) + 'Record decision', 'addRec', { id: c.id, k: 'decisions' }) : '', 'c6')}</div>`;
+    body = `<div class="g12">${card('Responsibilities and commitments', 'Facilitators assign responsibilities; members make commitments. Assigned work is reviewed before it counts as done.', c.commitments.map(x => lrow(x.assignedBy ? 'flag' : 'calendar', h(x.t), nm(x.by) + (x.assignedBy ? ' · assigned by ' + nm(x.assignedBy) : '') + ' · due ' + fmt(x.due) + dueTag(x.due, x.status === 'Done') + (x.note ? `<span class="cap" style="display:block">Changes requested: ${h(x.note)}</span>` : ''), commitRight(x))).join('') || '<p class="cap">None yet.</p>', noRec ? '' : B(ic('plus', 14) + (mgr ? 'Assign or add' : 'Add commitment'), 'addRec', { id: c.id, k: 'commitments' }), 'c6')}${card('Reflections', '', c.reflections.map(x => lrow('message', h(x.t), nm(x.by) + ' · ' + fmt(x.at))).join('') || '<p class="cap">None yet.</p>', noRec ? '' : B(ic('plus', 14) + 'Add', 'addRec', { id: c.id, k: 'reflections' }), 'c6')}${card('Concerns', 'Routed to the facilitator, and to the Incident/Safety Owner when escalated.', c.concerns.map(x => lrow(x.ret ? 'refresh' : 'alert', h(x.t), (x.anon ? 'Anonymous' : nm(x.by)) + ' · ' + fmt(x.at), pill(x.status) + (mgr && x.status === 'Open' ? B('Resolve', 'resolveConcern', { c: c.id, id: x.id }) + (x.ret ? '' : B('Escalate', 'escalateConcern', { c: c.id, id: x.id })) : ''))).join('') || '<p class="cap">None raised.</p>', isMem && !ro && canRec ? B(ic('plus', 14) + 'Raise concern', 'addRec', { id: c.id, k: 'concerns' }) : '', 'c6')}${card('Decisions', 'Decision history. An approved decision is what moves the project forward.', c.decisions.map(x => lrow('check', h(x.t), fmt(x.at) + ' · ' + h(x.by))).join('') || '<p class="cap">None yet. Decide by weighted vote, or record a facilitator decision.</p>', mgr && !ro ? B(ic('plus', 14) + 'Record decision', 'addRec', { id: c.id, k: 'decisions' }) : '', 'c6')}</div>`;
   }
   if (t.cur === 'polls')
     body = card(
@@ -233,7 +318,7 @@ route('circle', 'circles', () => {
           const canV = eligibleVoter(c, myId()) && p.status === 'Open' && !ro;
           return `<div class="card" style="margin-bottom:12px;padding:18px"><div class="row wrap" style="justify-content:space-between"><b>${h(p.q)}</b>${pill(p.status)}</div><p class="cap">Closes ${fmt(p.closes)} · ${tl.voted} of ${tl.eligible} eligible voters · total eligible weight ${tl.tot}</p>
   <div class="col" style="gap:8px;margin-top:12px">${p.options.map((o, i) => `<div class="row wrap" style="gap:10px"><div style="flex:1;min-width:200px"><div class="row" style="justify-content:space-between"><span>${h(o)}</span><span class="cap">${tl.per[i]} weight · ${tl.tot ? Math.round((tl.per[i] / tl.tot) * 100) : 0}%</span></div><div class="bar"><span style="width:${tl.tot ? (tl.per[i] / tl.tot) * 100 : 0}%"></span></div></div>${canV ? B(mv === i ? 'Your vote' : 'Vote', 'vote', { c: c.id, p: p.id, i }, mv === i ? 'btn-p btn-sm' : 'btn-s btn-sm') : ''}</div>`).join('')}</div>
-  ${p.result ? `<p class="cap" style="margin-top:8px">Result: ${h(p.result)}</p>` : ''}${p.status === 'Open' && (mgr || c.owner === myId()) ? `<div class="row" style="margin-top:12px">${B('Close poll and record result', 'closePoll', { c: c.id, p: p.id }, 'btn-p btn-sm')}</div>` : ''}${p.status === 'Closed — Not approved' && (mgr || c.owner === myId()) ? `<div class="row" style="margin-top:12px">${B('Modify and re-poll', 'repoll', { c: c.id, p: p.id })}</div>` : ''}</div>`;
+  ${p.result ? `<p class="cap" style="margin-top:8px">Result: ${h(p.result)}</p>` : ''}${p.status === 'Open' && pollMgr ? `<div class="row" style="margin-top:12px">${B('Close poll and record result', 'closePoll', { c: c.id, p: p.id }, 'btn-p btn-sm')}</div>` : ''}${p.status === 'Closed — Not approved' && pollMgr ? `<div class="row" style="margin-top:12px">${B('Modify and re-poll', 'repoll', { c: c.id, p: p.id })}</div>` : ''}</div>`;
         })
         .join('') ||
         empty(
@@ -241,43 +326,66 @@ route('circle', 'circles', () => {
           'No polls yet',
           'The project owner or an authorised member can put an important decision to a vote.',
         ),
-      !ro && (mgr || c.owner === myId()) ? B(ic('plus', 14) + 'New poll', 'newPoll', { id: c.id }, 'btn-p btn-sm') : '',
+      !ro && pollMgr ? B(ic('plus', 14) + 'New poll', 'newPoll', { id: c.id }, 'btn-p btn-sm') : '',
     );
-  if (t.cur === 'members')
-    body = card(
-      'Members',
-      'Only facilitators and authorised roles can change membership.',
-      table(
-        ['Member', 'Role', 'Status', ''],
-        c.members.map((m, i) => [
-          `<a href="#" class="lnk" data-a="viewProfile" data-pid="${m.pid}">${nm(m.pid)}</a>`,
-          h(m.role),
-          pill(m.status === 'Requested' ? 'Pending' : m.status),
-          mgr
-            ? m.status === 'Requested'
-              ? B('Approve', 'memSet', { c: c.id, i, v: 'Active' }, 'btn-p btn-sm') +
-                B('Decline', 'memSet', { c: c.id, i, v: 'Removed' })
-              : m.pid !== c.facilitator
-                ? `<select class="input" style="min-height:36px;font-size:12px;width:auto" data-ch="memRole" data-c="${c.id}" data-i="${i}" aria-label="Role">${['Member', 'Project owner', 'Mentor (invited)', 'Partner (invited)', 'Observer'].map(x => `<option ${x === m.role ? 'selected' : ''}>${x}</option>`).join('')}</select> ` +
-                  CB('Remove', 'memSet', { c: c.id, i, v: 'Removed' }, 'Remove ' + P(m.pid).name + ' from this Circle? They lose access to its chat and records.')
-                : ''
-            : '',
-        ]),
-      ),
-      mgr && !ro ? B(ic('plus', 14) + 'Invite', 'inviteMem', { c: c.id, kind: 'circles' }, 'btn-p btn-sm') : '',
-    );
+  if (t.cur === 'members') {
+    const reqs = c.members.map((m, i) => [m, i]).filter(([m]) => m.status === 'Requested');
+    body =
+      (reqs.length
+        ? card(
+            'Join requests',
+            memMgr ? 'Approve or decline. The person is notified either way.' : 'Waiting for the facilitator or project owner.',
+            table(
+              ['Person', 'Platform role', 'Requested', ''],
+              reqs.map(([m, i]) => [
+                `<a href="#" class="lnk" data-a="viewProfile" data-pid="${m.pid}">${nm(m.pid)}</a>`,
+                h(ROLE[ctxRole(m.pid, c.ctx)] || '—'),
+                fmt(m.at || ''),
+                memMgr && !ro ? B('Decline', 'memSet', { c: c.id, i, v: 'Declined' }) + B('Approve', 'memSet', { c: c.id, i, v: 'Active' }, 'btn-p btn-sm') : pill('Pending'),
+              ]),
+            ),
+          ) + '<div class="section-gap"></div>'
+        : '') +
+      card(
+        'Members',
+        'Each member’s role applies in this Circle only. ' + (memMgr ? 'You can change roles, invite and remove members.' : 'The facilitator and project owner manage membership.'),
+        table(
+          ['Member', 'Role in this Circle', 'Status', ''],
+          c.members
+            .map((m, i) => [m, i])
+            .filter(([m]) => m.status !== 'Requested')
+            .map(([m, i]) => {
+              const fixed = m.pid === c.facilitator || m.pid === c.owner;
+              const sr = m.pid === c.facilitator ? 'Facilitator' : m.pid === c.owner ? 'Project owner' : normRole(m.role);
+              return [
+                `<a href="#" class="lnk" data-a="viewProfile" data-pid="${m.pid}">${nm(m.pid)}</a> <span class="cap">${h(ROLE[ctxRole(m.pid, c.ctx)] || '')}</span>`,
+                memMgr && !ro && !fixed && m.status !== 'Removed' ? roleSelect('memRole', { c: c.id, i, kind: 'circles' }, sr, 'Role of ' + P(m.pid).name) : h(sr),
+                pill(m.status),
+                memMgr && !ro && !fixed && ['Active', 'Invited'].includes(m.status)
+                  ? CB('Remove', 'memSet', { c: c.id, i, v: 'Removed' }, 'Remove ' + P(m.pid).name + ' from this Circle? They lose access to its chat and records.')
+                  : '',
+              ];
+            }),
+        ),
+        memMgr && !ro ? B(ic('plus', 14) + 'Invite', 'inviteMem', { c: c.id, kind: 'circles' }, 'btn-p btn-sm') : '',
+      );
+  }
   if (t.cur === 'about') {
     const pr = byId('projects', c.project);
+    const fromCards = S.cards.filter(k => k.from === c.id && (k.owner === myId() || cardVisible(k) || ['A', 'F'].includes(r)));
     const hvDone = S.harvests.some(x => x.scope === c.id && ['Approved', 'Released'].includes(x.state));
     body = `<div class="g12">${c.aiSummary && c.aiSummary.status === 'Draft' && mgr ? `<div class="c12">${card('AI-drafted Circle summary', 'Class B workflow draft — review before it is shared with members.', `<p class="muted">${h(c.aiSummary.text)}</p><div style="margin:10px 0">${aiTag('AI draft · sources: chat, sessions, decisions')}</div><div class="row">${B('Reject', 'summaryDecide', { id: c.id, v: 'Rejected' })}${B('Approve and share', 'summaryDecide', { id: c.id, v: 'Approved' }, 'btn-p btn-sm')}</div>`)}</div>` : ''}${card('About', '', dl([['Purpose', h(c.purpose)], ['Expected outcome', h(c.outcome)], ['Owner', nm(c.owner)], ['Facilitator', nm(c.facilitator)], ['Agreement', h(c.agreement)], ['Visibility', h(c.visibility)], ['Project', pr ? L(h(pr.title), 'project', { id: pr.id }) : '—'], ['State', pill(c.state)], paused && ['Pause reason', h(c.pause.reason) + ' · responsible: ' + nm(c.pause.who) + ' · restart when: ' + h(c.pause.restart)]]), '', 'c7')}
   ${card('Lifecycle', 'Draft → Pending Review → Active → Paused/Repair → Completed → Archived/Closed', `<div class="col" style="gap:8px">${mgr ? [c.state === 'Pending Review' && B('Approve Circle', 'circleState', { id: c.id, v: 'Active' }, 'btn-p btn-sm'), c.state === 'Active' && B(ic('pause', 14) + 'Pause and repair', 'pauseCircle', { id: c.id }), paused && B('Resume Circle', 'circleState', { id: c.id, v: 'Active' }, 'btn-p btn-sm'), c.state === 'Active' && B('Complete Circle', 'completeCircle', { id: c.id, ok: hvDone ? 1 : 0 }), c.state === 'Completed' && CB('Archive', 'circleState', { id: c.id, v: 'Archived/Closed' }, 'Archive this Circle? It becomes read-only and leaves active lists. Retention and visibility rules apply.')].filter(Boolean).join('') : '<p class="cap">Managed by the facilitator.</p>'}</div>`, '', 'c5')}
   ${pr ? `<div class="c7 col" style="gap:24px">${stageGate(pr, 'circles', c)}${reportsCard(pr, 'circles', c)}</div>` : ''}
-  ${card('Move toward action', 'Create or link — the Circle always stays intact.', `<div class="col" style="gap:8px">${!ro ? B(ic('megaphone', 14) + 'Create Opportunity Card from this Circle', 'go', { r: 'newcard', from: c.id }) : ''}${mgr && !ro && !pr ? B(ic('room', 14) + 'Create or link ' + WL(), 'newRoom', { origin: 'Circle decision', oid: c.id }) : ''}${!ro ? B(ic('sparkle', 14) + 'Start a Learning Harvest', 'newHarvest', { scope: c.id }) : ''}</div>`, '', pr ? 'c5' : 'c12')}
+  ${card('Move toward action', 'Create or link — the Circle always stays intact.', `<div class="col" style="gap:8px">${!ro && sCan('circles', c, 'card') && can('opportunities', 'CM') ? B(ic('megaphone', 14) + 'Create Opportunity Card from this Circle', 'go', { r: 'newcard', from: c.id }) : ''}${mgr && !ro && !pr ? B(ic('room', 14) + 'Create or link ' + WL(), 'newRoom', { origin: 'Circle decision', oid: c.id }) : ''}${!ro && (sCan('circles', c, 'harvest') || mgr) ? B(ic('sparkle', 14) + 'Start a Learning Harvest', 'newHarvest', { scope: c.id }) : ''}</div>`, '', pr ? 'c5' : 'c12')}
+  ${card('Opportunity Cards from this Circle', 'Cards created here link back to this Circle. Audience is set by each card’s creator.', fromCards.map(k => lrow('megaphone', h(k.title), h(k.kind) + ' · ' + h(k.vis === 'Circle members' ? 'This Circle’s members' : k.vis) + ' · ' + nm(k.owner), pill(k.status) + ' ' + L('Open', 'card', { id: k.id }))).join('') || '<p class="cap">None yet.</p>', '', 'c12')}
   ${returnsCard(c) ? `<div class="c12">${returnsCard(c)}</div>` : ''}</div>`;
   }
   const prj = byId('projects', c.project);
   return (
     head(h(c.name), h(c.purpose), pill(c.state), [['Circles', 'circles'], [h(c.name)]]) +
+    `<div class="row wrap" style="gap:8px;margin:-6px 0 14px">${roleTag('circles', c)}${!isMem && !mgr && c.state === 'Active' ? joinBtn(c) : ''}</div>` +
+    roleNote('circles', c) +
     (paused
       ? banner('warn', 'Paused for repair', h(c.pause.reason) + ' — members can read but not add records.')
       : '') +
@@ -559,52 +667,66 @@ A.repoll = d => {
   );
 };
 A.memSet = d => {
-  const c = byId(d.kind || 'circles', d.c);
+  const kind = d.kind || 'circles';
+  const c = byId(kind, d.c);
   const m = c.members[d.i];
+  const was = m.status;
   m.status = d.v;
-  sysMsg(c, P(m.pid).name + (d.v === 'Active' ? ' joined' : ' is no longer a member'));
-  notify(m.pid, d.v === 'Active' ? 'You joined ' + c.name : 'Your membership of ' + c.name + ' ended', 'circles');
-  audit('Membership ' + d.v, c.id, m.pid);
+  const r = { circles: 'circle', ropes: 'rope', rooms: 'room' }[kind];
+  if (d.v === 'Active') {
+    m.since = today();
+    if (kind === 'ropes' && ['Member', 'Project owner'].includes(normRole(m.role)))
+      c.indicators[m.pid] = c.indicators[m.pid] || { pacing: 'On track', workload: '—', availability: '—', support: 'None reported', absence: 'None' };
+  }
+  sysMsg(c, P(m.pid).name + (d.v === 'Active' ? ' joined' : was === 'Requested' ? '’s request to join was declined' : ' is no longer a member'));
+  notify(
+    m.pid,
+    d.v === 'Active' ? (was === 'Requested' ? 'Your request to join ' + c.name + ' was approved' : 'You joined ' + c.name) : was === 'Requested' ? 'Your request to join ' + c.name + ' was declined' : 'Your membership of ' + c.name + ' ended',
+    d.v === 'Active' ? r : kind === 'circles' ? 'circles' : kind === 'ropes' ? 'ropeteams' : 'rooms',
+    d.v === 'Active' ? { id: c.id } : {},
+  );
+  audit((was === 'Requested' ? 'Join request ' : 'Membership ') + (d.v === 'Active' && was === 'Requested' ? 'approved' : d.v), c.id, m.pid);
   ok();
 };
 A.memRole = (d, el) => {
-  const c = byId('circles', d.c);
-  c.members[d.i].role = el.value;
-  audit('Member role assigned', c.id, el.value);
+  const kind = d.kind || 'circles';
+  const c = byId(kind, d.c);
+  const m = c.members[d.i];
+  m.role = el.value;
+  sysMsg(c, P(m.pid).name + ' is now ' + el.value + ' in this ' + SPACE_KIND_LABEL(kind));
+  notify(m.pid, 'Your role in ' + c.name + ' is now ' + el.value, { circles: 'circle', ropes: 'rope', rooms: 'room' }[kind], { id: c.id });
+  audit('Space role assigned', c.id, P(m.pid).name + ' → ' + el.value);
   ok();
 };
 A.inviteMem = d => {
   const c = byId(d.kind, d.c);
-  const cands = S.assign.filter(
-    a => a.ctx === ctxId() && a.status === 'Active' && ['P', 'M', 'C'].includes(a.role) && !memberOf(c, a.pid),
-  );
-  modal(
-    'Invite members',
-    `<form data-f="invm" class="col" style="gap:12px"><input type="hidden" name="c" value="${c.id}"><input type="hidden" name="kind" value="${d.kind}">${cands.map(a => `<label class="row"><input class="chk" type="checkbox" name="m" value="${a.pid}">${nm(a.pid)} <span class="cap">${ROLE[a.role]}</span></label>`).join('') || '<p class="cap">Everyone eligible is already a member.</p>'}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send invitations</button></div></form>`,
+  mselReset('invm', 'm');
+  const cands = eligiblePeople(c.members.filter(m => ['Active', 'Invited'].includes(m.status)).map(m => m.pid), d.kind === 'ropes' ? ['P', 'F', 'M'] : ['P', 'F', 'M', 'C', 'O']);
+  modal('Invite to ' + h(c.name), () =>
+    `<form data-f="invm" class="col" style="gap:14px" novalidate><input type="hidden" name="c" value="${c.id}"><input type="hidden" name="kind" value="${d.kind}">${msel('invm', 'm', 'People', cands, [], { req: true, none: 'Everyone eligible is already a member or invited.' })}${fi('invm', 'role', 'Role in this ' + SPACE_KIND_LABEL(d.kind), { type: 'select', opts: [['', 'Based on each person’s platform role'], ...SPACE_ROLES.filter(x => x !== 'Project owner').map(x => [x, x])], help: 'You can change individual roles later in Members.' })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send invitations</button></div></form>`,
   );
 };
 F.invm = d => {
+  const ids = [].concat(d.m || []);
+  if (!ids.length) {
+    UI.err.invm = { m: 'Choose at least one person.' };
+    return render();
+  }
   const c = byId(d.kind, d.c);
-  [].concat(d.m || []).forEach(pid => {
-    const rr = S.assign.find(a => a.pid === pid && a.ctx === ctxId()).role;
-    c.members.push({
-      pid,
-      role:
-        d.kind === 'circles'
-          ? rr === 'M'
-            ? 'Mentor (invited)'
-            : rr === 'C'
-              ? 'Partner (invited)'
-              : 'Member'
-          : rr === 'M'
-            ? 'Mentor'
-            : 'Participant',
-      status: d.kind === 'circles' ? 'Invited' : 'Active',
-    });
-    notify(pid, 'You were invited to ' + c.name, d.kind === 'circles' ? 'circle' : 'rope', { id: c.id });
+  const r = { circles: 'circle', ropes: 'rope', rooms: 'room' }[d.kind];
+  ids.forEach(pid => {
+    const rl = d.role || defaultSpaceRole(ctxRole(pid, c.ctx));
+    const ex = memberRec(c, pid);
+    if (ex) Object.assign(ex, { role: rl, status: 'Invited' });
+    else c.members.push({ pid, role: rl, status: 'Invited' });
+    notify(pid, 'You were invited to ' + c.name + ' as ' + rl, r, { id: c.id });
   });
-  audit('Members invited', c.id, [].concat(d.m || []).join(','));
+  sysMsg(c, me().name + ' invited ' + ids.map(p => P(p).name).join(', '));
+  audit('Members invited', c.id, ids.join(','));
   UI.modal = null;
+  UI.err.invm = {};
+  mselReset('invm', 'm');
+  toast(ids.length + ' invitation' + (ids.length > 1 ? 's' : '') + ' sent.');
   ok();
 };
 A.circleState = d => {

@@ -254,14 +254,14 @@ function cfgForm(isOrg) {
   return card(
     isOrg ? 'Configure within the pack envelope' : 'Use-case pack: ' + h(pk.name),
     'Platform-controlled items cannot be changed by a tenant.',
-    `<form data-f="cfg" class="col" style="gap:14px" novalidate><div class="g3">${fi('cfg', 'workspace', 'Label for workspaces', { type: 'select', opts: ['Action Room', 'Project Room', 'Coherence Cell'], value: pk.labels.workspace })}${fi('cfg', 'circle', 'Label for Circles', { value: pk.labels.circle, req: true })}${fi('cfg', 'rope', 'Label for Rope Teams', { value: pk.labels.rope, req: true })}</div>${fi('cfg', 'compassOpt', 'Ask optional Purpose Compass questions PC7–PC12 in context', { type: 'checkbox', value: pk.compassOptional ? 'yes' : '' })}${fi('cfg', 'propose', 'Participants may propose a ' + pk.labels.workspace, { type: 'checkbox', value: S.settings.participantCanProposeWorkspace ? 'yes' : '' })}
+    `<form data-f="cfg" class="col" style="gap:14px" novalidate><div class="g3">${fi('cfg', 'workspace', 'Label for workspaces', { value: 'Action Room', ro: true, help: 'Fixed across PHOENIX so every role sees the same name.' })}${fi('cfg', 'circle', 'Label for Circles', { value: pk.labels.circle, req: true })}${fi('cfg', 'rope', 'Label for Rope Teams', { value: pk.labels.rope, req: true })}</div>${fi('cfg', 'compassOpt', 'Ask optional Purpose Compass questions PC7–PC12 in context', { type: 'checkbox', value: pk.compassOptional ? 'yes' : '' })}${fi('cfg', 'propose', 'Participants may propose a ' + pk.labels.workspace, { type: 'checkbox', value: S.settings.participantCanProposeWorkspace ? 'yes' : '' })}
  <div class="card" style="background:#F7F8FB;padding:14px"><b>Platform-controlled (locked)</b><p class="cap" style="margin-top:4px">${ic('lock', 12)} Consent framework · trust controls · security rules · audit model · core data semantics · Evidence Support Level definitions</p></div>${assumed('OI-09 — final split of configurable vs locked items')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save configuration</button></div></form>`,
   );
 }
 F.cfg = d => {
   if (!validate('cfg', d, { circle: ['req'], rope: ['req'] })) return render();
   const pk = pack();
-  pk.labels = { workspace: d.workspace, circle: d.circle, rope: d.rope };
+  pk.labels = { workspace: 'Action Room', circle: d.circle, rope: d.rope };
   pk.compassOptional = d.compassOpt === 'yes';
   S.settings.participantCanProposeWorkspace = d.propose === 'yes';
   audit('Pack configuration changed', pk.id, JSON.stringify(pk.labels));
@@ -786,7 +786,6 @@ route('platform', 'platform', () => {
       ['security', 'Security & access'],
       ['health', 'Health & alerts'],
       ['storage', 'Storage & backups'],
-      ['keys', 'API keys'],
       ['lms', 'LMS deep links'],
     ],
     UI.p.tab,
@@ -989,25 +988,6 @@ route('platform', 'platform', () => {
           ['Signed URLs', 'Enabled'],
         ]),
       );
-  if (t.cur === 'keys')
-    body = card(
-      'API keys and service accounts',
-      'Least privilege; all under WSS administrative control.',
-      table(
-        ['Key', 'Scope', 'Owner', 'Status', 'Rotated', ''],
-        S.apiKeys.map(k => [
-          h(k.id),
-          h(k.scope),
-          h(k.owner),
-          pill(k.status),
-          fmt(k.rotated),
-          k.status === 'Active'
-            ? B('Rotate', 'keyAct', { id: k.id, v: 'rotate' }) + CB('Revoke', 'keyAct', { id: k.id, v: 'Revoked' }, 'Revoke ' + k.id + '? Services using it stop working immediately.')
-            : '',
-        ]),
-      ),
-      B(ic('plus', 14) + 'Issue key', 'keyNew', {}, 'btn-p btn-sm'),
-    );
   if (t.cur === 'lms')
     body = card(
       'LMS deep-link layer',
@@ -1103,25 +1083,6 @@ A.backup = () => {
 A.restoreTest = () => {
   S.backups.unshift({ at: now(), status: 'Restore test passed', size: '—' });
   audit('Restore test', 'platform', 'passed');
-  ok();
-};
-A.keyAct = d => {
-  const k = byId('apiKeys', d.id);
-  if (d.v === 'rotate') k.rotated = today();
-  else k.status = 'Revoked';
-  S.security.unshift({ at: now(), t: 'API key ' + k.id + ' ' + (d.v === 'rotate' ? 'rotated' : 'revoked') });
-  audit('API key ' + d.v, k.id, '');
-  ok();
-};
-A.keyNew = () => {
-  S.apiKeys.push({
-    id: 'key_' + uid(''),
-    scope: 'Read aggregate metrics',
-    owner: 'Platform',
-    status: 'Active',
-    rotated: today(),
-  });
-  audit('API key issued', 'platform', '');
   ok();
 };
 F.lms = d => {

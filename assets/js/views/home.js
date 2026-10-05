@@ -155,6 +155,8 @@ function nextAction() {
       c.polls.filter(p => p.status === 'Open' && p.votes[pid] == null && eligibleVoter(c, pid)).map(p => [c, p]),
     )[0];
     if (po) return ['Vote in your Circle', h(po[1].q), 'circle', { id: po[0].id, tab: 'polls' }];
+    const lt = myTasks().find(t => taskOverdue(t.k));
+    if (lt) return ['Finish an overdue task', h(lt.k.t) + ' · ' + h(lt.x.name) + ' · due ' + fmt(lt.k.due), 'room', { id: lt.x.id, tab: 'plan' }];
     const cd = S.candidates.find(c => c.pid === pid && c.status === 'Pending');
     if (cd) return ['Review a suggested profile change', h(cd.field + ': ' + cd.value), 'profile', { tab: 'cand' }];
     const pw = S.pathways.find(p => p.pid === pid && inCtx(p) && p.state === 'Proposed to participant');
@@ -224,6 +226,10 @@ function nextAction() {
     const bad = S.integrations.find(i => !['Healthy', 'Configured'].includes(i.status));
     if (bad)
       return ['Integration needs attention', h(bad.name) + ' · ' + h(bad.status), 'platform', { tab: 'integrations' }];
+  }
+  {
+    const lt = myTasks().find(t => taskOverdue(t.k));
+    if (lt) return ['Finish an overdue task', h(lt.k.t) + ' · ' + h(lt.x.name) + ' · due ' + fmt(lt.k.due), 'room', { id: lt.x.id, tab: 'plan' }];
   }
   const it = inboxItems();
   if (it.length) return [it[0][0] + ': ' + h(it[0][1]), h(it[0][2]), it[0][3], it[0][4]];
@@ -385,6 +391,7 @@ function homeP() {
  <section class="card c7" style="background:#0B1A35;color:#fff;border-color:#0B1A35"><div class="row" style="justify-content:space-between;margin-bottom:14px"><span class="over" style="color:#AEB8C8">My North Star</span><span class="vis" style="color:#C5CCD8">${ic('lock', 14)}Only you</span></div><p style="font-size:20px;line-height:30px;font-weight:700">${cp.PC2 ? '“' + h(cp.PC2) + '”' : 'Set your goal in the Purpose Compass.'}</p><div class="row wrap" style="gap:24px;margin-top:18px;font-size:13px"><div class="col"><span class="cap" style="color:#AEB8C8">What matters most</span><b>${h(cp.PC1 || '—')}</b></div><div class="col"><span class="cap" style="color:#AEB8C8">First milestone</span><b>${h(cp.PC5 || '—')}</b></div></div><div style="margin-top:18px">${B(ic('edit', 14) + 'Edit Purpose Compass', 'go', { r: 'profile', tab: 'compass' }, 'btn-sm', 'style="background:rgba(255,255,255,.12);color:#fff"')}</div><p class="cap" style="color:#AEB8C8;margin-top:10px">Your self-declared direction. Never scored.</p></section>
  ${nextCard()}</div>
  <div class="c12 g12">${stat('s-purple', 't-purple', 'folder', projects.length, 'My projects', projects.filter(p => p.status === 'Clarification requested').length + ' need clarification', 'projects')}${stat('s-teal', 't-teal', 'users', myCircles().length + myRopes().length + myRooms().length, 'Collaborations', `${myCircles().length} Circle${myCircles().length === 1 ? '' : 's'} · ${myRopes().length} Rope Team${myRopes().length === 1 ? '' : 's'} · ${myRooms().length} ${WL()}${myRooms().length === 1 ? '' : 's'}`, 'circles')}${stat('s-slate', 't-navy', 'flag', pend.length, 'Pending decisions', 'Nothing takes effect until you decide', 'home')}${stat('s-mist', 't-slate', 'award', ev.filter(e => e.review === 'Approved').length, 'Evidence approved', ev.filter(e => e.review === 'Submitted').length + ' awaiting review', 'evidence')}</div>
+ ${myTasksCard()}
  ${card('Pending decisions', 'Nothing below takes effect until you decide.', pend.length ? pend.join('') : empty('check', 'You are all caught up', 'Profile suggestions, match consents, votes and release requests appear here.'), '', 'c7')}
  ${card('My pathway', pw ? h(pw.name) : '', pw ? `<div class="progress" style="margin-bottom:12px"><span style="width:${(pw.steps.filter(s => s.done).length / pw.steps.length) * 100}%"></span></div>${pw.steps.map((s, i) => lrow(s.done ? 'check' : 'route', h(s.t), s.done ? 'Done' : i === pw.steps.findIndex(x => !x.done) ? 'Next milestone' : '', s.done ? pill('Done') : '', s.done ? 't-teal' : 't-soft')).join('')}` : empty('route', 'No current pathway', 'A facilitator or mentor may propose one. You decide whether to accept it.'), pw ? L('Open', 'pathway') : '', 'c5')}
  ${card('Collaborations', 'In this context', [...myCircles().map(c => lrow('users', h(c.name), 'Circle · ' + c.members.length + ' members' + (unreadIn(c) ? ' · ' + unreadIn(c) + ' unread' : ''), unr(c) + pill(c.state) + ' ' + L('Open', 'circle', { id: c.id }), 't-purple')), ...myRopes().map(c => lrow('route', h(c.name), 'Rope Team · mentor ' + (c.mentor ? nm(c.mentor) : '—') + (unreadIn(c) ? ' · ' + unreadIn(c) + ' unread' : ''), unr(c) + pill(c.state) + ' ' + L('Open', 'rope', { id: c.id }), 't-teal')), ...myRooms().map(c => lrow('room', h(c.name), WL(), pill(c.state) + ' ' + L('Open', 'room', { id: c.id }), 't-navy'))].join('') || empty('users', 'No collaborations yet', 'When a steward accepts your project, they create a Circle and invite you.'), '', 'c7')}
@@ -475,6 +482,7 @@ function homeF() {
     `<div class="g12">
  <section class="card c7"><span class="over">Programme purpose</span><p class="h2" style="margin-top:8px">${h(ctx().name)}: move climate ideas from learning to accountable local action.</p><p class="cap" style="margin-top:8px">${myCircles().length} Circles you facilitate or belong to · ${S.ropes.filter(r => memberOf(r)).length} Rope Teams</p></section>${nextCard()}
  <div class="c12 g12">${stat('s-purple', 't-purple', 'folder', subs.length, 'Project submissions', 'Awaiting review or clarification', 'projects')}${stat('s-teal', 't-teal', 'link', S.matches.filter(m => m.steward === pid && m.status === 'In steward review').length, 'Match Briefs', 'Awaiting your review', 'matches')}${stat('s-slate', 't-navy', 'award', S.evidence.filter(e => e.review === 'Submitted').length, 'Evidence to review', 'Set status and E0–E4', 'evidence')}${stat('s-mist', 't-slate', 'inbox', inbox.length, 'Review inbox', 'All items needing you', 'inbox')}</div>
+ ${myTasksCard()}
  ${card('Project submissions', '', subs.map(p => lrow('folder', h(p.title), nm(p.owner) + ' · ' + pill(p.status), L('Review', 'project', { id: p.id }))).join('') || empty('check', 'No submissions waiting', ''), '', 'c7')}
  ${card('Participants needing attention', 'From Rope Team support indicators (activity-derived or participant-reported)', attention.join('') || empty('users', 'No one flagged', ''), '', 'c5')}
  ${card('Upcoming commitments', '', commits.join('') || empty('calendar', 'No open commitments', ''), '', 'c7')}
@@ -486,8 +494,9 @@ function homeM() {
   return (
     head('My PHOENIX', `Mentor / Advisor · ${h(ctx().name)}`, B(ic('message', 16) + 'Messages', 'go', { r: 'messages' }, 'btn-s')) +
     `<div class="g12">${nextCard()}
+ ${myTasksCard()}
  ${card('Work awaiting your review', 'Shared by participants in your Rope Teams', myRopes().filter(rt => rt.mentor === myId()).flatMap(rt => (rt.reviews || []).filter(v => v.status === 'Awaiting review').map(v => lrow('file', h(v.title), nm(v.by) + ' · ' + h(rt.name) + ' · ' + fmt(v.at), B('Review', 'go', { r: 'rope', id: rt.id, tab: 'reviews' })))).join('') || empty('check', 'Nothing waiting', 'Participants share work for your review from their Rope Team.'), '', 'c7')}
- ${card('Mentor Requests', '', reqs.map(m => lrow('route', h(m.need), 'From ' + nm(m.from) + ' · ' + cName(m.project), pill(m.status) + (m.status === 'Pending' ? ' ' + B('Accept', 'mentorReq', { id: m.id, v: 'Accepted' }, 'btn-p btn-sm') + B('Decline', 'mentorReq', { id: m.id, v: 'Declined' }) : ''))).join('') || empty('route', 'No requests', ''), '', 'c7')}
+ ${card('Mentor Requests', '', reqs.map(m => lrow('route', h(m.need), 'From ' + nm(m.from) + ' · ' + cName(m.project) + (m.hours ? ' · ' + h(m.hours) : ''), pill(m.status) + ' ' + B('Details', 'mrDetails', { id: m.id }) + (m.status === 'Pending' ? B('Decline', 'mentorReq', { id: m.id, v: 'Declined' }) + B('Accept', 'mentorReq', { id: m.id, v: 'Accepted' }, 'btn-p btn-sm') : ''))).join('') || empty('route', 'No requests', ''), '', 'c7')}
  ${card(
    'Assigned Rope Teams',
    '',
@@ -497,7 +506,7 @@ function homeM() {
          'users',
          h(r.name),
          r.members
-           .filter(m => m.role === 'Participant')
+           .filter(m => ['Member', 'Project owner'].includes(normRole(m.role)) && m.status !== 'Removed')
            .map(m => nm(m.pid))
            .join(', '),
          L('Open', 'rope', { id: r.id }),
@@ -554,6 +563,7 @@ function homeC() {
       B(ic('plus', 16) + 'Publish a card', 'go', { r: 'newcard' }, 'btn-p'),
     ) +
     `<div class="g12">${nextCard()}
+ ${myTasksCard()}
  ${card(
    'Mandate',
    '',

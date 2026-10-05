@@ -29,6 +29,11 @@ const evVisible = e =>
       const o = byId('circles', l) || byId('rooms', l) || byId('ropes', l);
       return o && memberOf(o);
     }));
+// Evidence belongs to a project when it is linked to the project itself or to its Circle, Rope Team or Action Room.
+const evProjects = e =>
+  S.projects.filter(p => e.project === p.id || (e.linked || []).some(l => l && [p.id, p.circle, p.rope, p.room].includes(l)));
+const evProjectName = e => evProjects(e).map(p => h(p.title)).join(', ');
+const spaceProject = id => S.projects.find(p => [p.circle, p.rope, p.room].includes(id));
 route('evidence', 'evidence', () => {
   const r = role();
   if (UI.p.id) {
@@ -70,12 +75,17 @@ route('evidence', 'evidence', () => {
     ],
     ['all', 'Visible to me'],
   ]);
-  const list =
+  const base =
     t.cur === 'mine'
       ? S.evidence.filter(e => e.owner === myId())
       : t.cur === 'queue'
         ? S.evidence.filter(e => e.review === 'Submitted' && e.owner !== myId())
         : S.evidence.filter(evVisible);
+  const pf = UI.q.evp || '';
+  const projs = [...new Set(base.flatMap(e => evProjects(e).map(p => p.id)))].map(id => byId('projects', id));
+  const list = base.filter(e => !pf || (pf === 'none' ? !evProjects(e).length : evProjects(e).some(p => p.id === pf)));
+  const groups = [...projs.filter(p => !pf || p.id === pf).map(p => [p, list.filter(e => evProjects(e).includes(p))]), ...(!pf || pf === 'none' ? [[null, list.filter(e => !evProjects(e).length)]] : [])].filter(([, l]) => l.length);
+  const grouped = (UI.q.evg || 'project') === 'project';
   return (
     head(
       'Evidence',
@@ -83,22 +93,41 @@ route('evidence', 'evidence', () => {
       can('evidence', 'CRM') ? B(ic('upload', 16) + 'Upload evidence', 'go', { r: 'newevidence' }, 'btn-p') : '',
     ) +
     t.html +
-    table(
-      ['Evidence', 'Type', 'Claim', 'Owner', 'Level', 'Review', 'Release', ''],
-      list.map(e => [
+    `<div class="row wrap" style="margin-bottom:16px"><select class="input" style="width:auto" data-ch="qf" data-k="evp" aria-label="Project"><option value="">Project: all</option>${projs.map(p => `<option value="${p.id}" ${pf === p.id ? 'selected' : ''}>${h(p.title)}</option>`).join('')}<option value="none" ${pf === 'none' ? 'selected' : ''}>Not linked to a project</option></select><select class="input" style="width:auto" data-ch="qf" data-k="evg" aria-label="Layout"><option value="project" ${grouped ? 'selected' : ''}>Group by project</option><option value="flat" ${!grouped ? 'selected' : ''}>Single list</option></select></div>` +
+    (grouped
+      ? groups
+          .map(([p, l]) =>
+            card(
+              p ? h(p.title) : 'Not linked to a project',
+              p ? l.length + ' item' + (l.length > 1 ? 's' : '') + ' · ' + pill(stageLabel(p.stage || p.status)) : 'Personal or portfolio evidence',
+              evTable(l, false),
+              p && can('projects') ? L('Open project', 'project', { id: p.id }) : '',
+            ),
+          )
+          .join('<div class="section-gap"></div>') || table([], [], 'No evidence here yet.')
+      : evTable(list, true))
+  );
+});
+function evTable(list, withProject) {
+  return table(
+    ['Evidence', withProject && 'Project', 'Type', 'Claim', 'Owner', 'Linked to', 'Level', 'Review', 'Release', ''].filter(c => c !== false),
+    list.map(e =>
+      [
         `<b>${h(e.title)}</b>`,
+        withProject && (evProjectName(e) || '<span class="cap">—</span>'),
         h(e.type),
         h(e.claim),
         nm(e.owner),
+        (e.linked || []).map(cName).join(', ') || '—',
         pill(e.level, 'p-navy'),
         pill(e.review),
         h(e.release),
         L('Open', 'evidence', { id: e.id }),
-      ]),
-      'No evidence here yet.',
-    )
+      ].filter(c => c !== false),
+    ),
+    'No evidence here yet.',
   );
-});
+}
 function evDetail(e) {
   const own = e.owner === myId();
   const rev = (role() === 'F' || hasB('Reviewer')) && !own;
@@ -114,6 +143,7 @@ function evDetail(e) {
       dl([
         ['Claim', h(e.claim)],
         ['File', `<span class="att">${ic('file', 14)}${h(e.file)} · ${e.sizeMB} MB</span>`],
+        ['Project', evProjects(e).map(p => (can('projects') && (p.owner === myId() || role() !== 'P') ? L(h(p.title), 'project', { id: p.id }) : h(p.title))).join(', ') || '<span class="cap">Not linked to a project</span>'],
         ['Owner', nm(e.owner)],
         ['Source', h(e.source)],
         ['Purpose', h(e.purpose)],
@@ -261,7 +291,7 @@ route('newevidence', 'evidence', () => {
     `<form data-f="ne" class="card col" style="gap:16px;max-width:880px" novalidate>${errSum(f)}
  <div class="field"><span class="lbl">File <span class="req">*</span></span><label class="dz ${fe(f, 'file') ? 'err' : ''}" style="cursor:pointer;display:block">${ic('upload', 22)}<div><b>Choose a file</b></div><div class="cap">Up to ${S.settings.maxFileMB} MB. Video must be linked externally. Files are scanned; failures are quarantined.</div><input type="file" name="file" class="sr"><span class="fname">No file chosen</span></label>${fe(f, 'file') ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe(f, 'file')}</span>` : ''}</div>
  ${fi(f, 'title', 'Title', { req: true })}<div class="f2">${fi(f, 'type', 'Evidence type', { type: 'select', req: true, ph: 'Select', opts: EV_TYPES })}${fi(f, 'claim', 'Claim or metric it supports', { req: true })}</div>
- <fieldset style="border:0;padding:0;margin:0"><legend class="lbl" style="margin-bottom:8px">Link to (no duplication) <span class="req">*</span></legend><div class="g2">${spaces.map(s => `<label class="row"><input class="chk" type="checkbox" name="link" value="${s.id}" ${UI.p.link === s.id ? 'checked' : ''}>${h(s.name)}</label>`).join('') || '<p class="cap">Join a Circle or ' + WL() + ' to link evidence.</p>'}</div>${fe(f, 'link') ? `<span class="emsg">${ic('alert', 14)}${fe(f, 'link')}</span>` : ''}</fieldset>
+ <fieldset style="border:0;padding:0;margin:0"><legend class="lbl" style="margin-bottom:8px">Link to (no duplication) <span class="req">*</span></legend><div class="g2">${spaces.map(s => `<label class="row"><input class="chk" type="checkbox" name="link" value="${s.id}" ${UI.p.link === s.id ? 'checked' : ''}><span>${h(s.name)}${spaceProject(s.id) ? `<span class="cap" style="display:block">Project: ${h(spaceProject(s.id).title)}</span>` : ''}</span></label>`).join('') || '<p class="cap">Join a Circle or ' + WL() + ' to link evidence.</p>'}</div>${fe(f, 'link') ? `<span class="emsg">${ic('alert', 14)}${fe(f, 'link')}</span>` : ''}</fieldset>
  <div class="f2">${fi(f, 'source', 'Source', { req: true, ph: 'e.g. Field survey' })}${fi(f, 'purpose', 'Purpose', { type: 'select', req: true, opts: ['Project evidence', 'Milestone evidence', 'Learning evidence', 'Portfolio'], ph: 'Select' })}</div>
  <div class="f2">${fi(f, 'consent', 'Personal or identifiable content?', { type: 'select', req: true, ph: 'Select', opts: ['Contains no personal data', 'Contains identifiable people — consent recorded', 'Contains testimony — participant consent recorded', 'Contains third-party personal information'] })}${fi(f, 'sens', 'Sensitivity', { type: 'select', req: true, opts: ['Low', 'Medium', 'High'], ph: 'Select' })}</div>
  <div class="f2">${fi(f, 'vis', 'Visibility', { type: 'select', req: true, opts: ['Only me + reviewer', 'Circle', 'Room', 'Rope Team'], ph: 'Select' })}${fi(f, 'retention', 'Retention', { type: 'select', req: true, opts: ['Programme duration', 'Programme duration + 2 years'], ph: 'Select' })}</div>
@@ -326,6 +356,7 @@ F.ne = (d, form) => {
     type: d.type,
     claim: d.claim,
     linked: d.link,
+    project: (d.link.map(spaceProject).find(Boolean) || {}).id || null,
     file: file.name,
     sizeMB: +(file.size / 1048576).toFixed(2),
     source: d.source,

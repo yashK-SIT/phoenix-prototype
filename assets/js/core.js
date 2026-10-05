@@ -1,5 +1,5 @@
 // ---------- CORE ----------
-const KEY = 'phoenix-alpha-proto-v4';
+const KEY = 'phoenix-alpha-proto-v5';
 let S = null;
 function save() {
   try {
@@ -81,7 +81,8 @@ const role = () => asg()?.role;
 const ctxId = () => asg()?.ctx;
 const ctx = () => S.contexts.find(c => c.id === ctxId());
 const pack = () => S.packs.find(p => p.id === ctx()?.pack) || S.packs[0];
-const WL = () => pack().labels.workspace; // Action Room / Project Room / Coherence Cell
+// Execution spaces are called Action Rooms everywhere, in every pack.
+const WL = () => 'Action Room';
 const lvl = m => (MX[m] || {})[role()] || '-';
 const can = (m, need) => {
   const l = lvl(m);
@@ -293,7 +294,7 @@ function fi(f, n, label, o = {}) {
   if (o.type === 'textarea')
     ctl = `<textarea id="${id}" name="${n}" class="input${ec}" ${o.rows ? `style="min-height:${o.rows * 24}px"` : ''} placeholder="${h(o.ph || '')}" ${o.max ? `maxlength="${o.max}"` : ''} ${o.ro ? 'readonly' : ''} aria-invalid="${!!e}">${h(v)}</textarea>`;
   else if (o.type === 'select')
-    ctl = `<select id="${id}" name="${n}" class="input${ec}" aria-invalid="${!!e}" ${o.ro ? 'disabled' : ''}>${o.ph ? `<option value="">${h(o.ph)}</option>` : ''}${o.opts
+    ctl = `<select id="${id}" name="${n}" class="input${ec}" aria-invalid="${!!e}" ${o.ro ? 'disabled' : ''} ${o.ch ? `data-ch="${o.ch}"` : ''}>${o.ph ? `<option value="">${h(o.ph)}</option>` : ''}${o.opts
       .map(x => {
         const [val, l] = Array.isArray(x) ? x : [x, x];
         return `<option value="${h(val)}" ${String(v) === String(val) ? 'selected' : ''}>${h(l)}</option>`;
@@ -670,7 +671,7 @@ document.addEventListener('change', e => {
   if (A[el.dataset.ch]) A[el.dataset.ch](el.dataset, el);
 });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && UI.modal) closeM();
+  if (e.key === 'Escape' && UI.modal && !(e.target.classList && e.target.classList.contains('msel-q'))) closeM();
 });
 A.go = d => {
   const p = { ...d };
@@ -813,7 +814,7 @@ function boot() {
   } catch (e) {
     S = null;
   }
-  if (!S || S.v !== 4) {
+  if (!S || S.v !== 5) {
     S = freshData();
     save();
   }

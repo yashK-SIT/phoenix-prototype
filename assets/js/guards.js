@@ -5,13 +5,18 @@ const isSteward = pid => {
   const p = byId('projects', pid);
   return p && ((role() === 'F' && p.stewards.includes(myId())) || role() === 'A');
 };
+// Inside a space, authority follows the person's role in that space (see views/spaces.js).
 const isFac = cid => {
   const c = byId('circles', cid);
-  return c && ((role() === 'F' && c.facilitator === myId()) || (role() === 'O' && inCtx(c)));
+  return !!c && (sCan('circles', c, 'facilitate') || spaceAdmin('circles', c));
 };
 const isOwnerOrFac = cid => {
   const c = byId('circles', cid);
-  return c && (isFac(cid) || c.owner === myId());
+  return !!c && (isFac(cid) || sCan('circles', c, 'poll'));
+};
+const circleMemMgr = cid => {
+  const c = byId('circles', cid);
+  return !!c && (isFac(cid) || sCan('circles', c, 'members'));
 };
 const activeSpace = (kind, id) => {
   const o = byId(kind, id);
@@ -19,7 +24,7 @@ const activeSpace = (kind, id) => {
 };
 const roomLead = id => {
   const x = byId('rooms', id);
-  return x && (isLead(x) || role() === 'A' || (role() === 'F' && memberOf(x)));
+  return !!x && (isLead(x) || role() === 'A');
 };
 const G = {
   // projects
@@ -42,7 +47,6 @@ const G = {
   completeCircle: d => isFac(d.id) || 'only the facilitator can complete a Circle',
   memSet: d => (d.kind && d.kind !== 'circles' ? true : isFac(d.c) || 'only the facilitator can change membership'),
   memRole: d => isFac(d.c) || 'only the facilitator can assign member roles',
-  hideMsg: d => isFac(d.c) || 'only the facilitator can moderate chat',
   newSession: d =>
     (isFac(d.id) && activeSpace('circles', d.id)) || 'only the facilitator can record sessions in an active Circle',
   ses: d => isFac(d.c) || 'only the facilitator can record sessions',
@@ -296,8 +300,6 @@ const G = {
   aiToggle: () => role() === 'T' || 'not permitted',
   backup: () => role() === 'T' || 'not permitted',
   restoreTest: () => role() === 'T' || 'not permitted',
-  keyAct: () => role() === 'T' || 'not permitted',
-  keyNew: () => role() === 'T' || 'not permitted',
   revokeSessions: () => role() === 'T' || 'not permitted',
   lms: () => role() === 'T' || 'not permitted',
   // incidents
@@ -333,7 +335,14 @@ Object.assign(G, {
 // ---- chat, stage journey, Rope Team reviews, room contributions, collaborator matching
 const ropeMod = id => {
   const x = byId('ropes', id);
-  return !!x && (x.mentor === myId() || x.members.some(m => m.pid === myId() && m.role === 'Facilitator'));
+  return !!x && sCan('ropes', x, 'moderate');
+};
+const spaceMgr = (kind, id) => {
+  const o = byId(kind, id);
+  if (!o) return false;
+  if (kind === 'circles') return circleMemMgr(id);
+  if (kind === 'ropes') return ropeInviter(o);
+  return roomLead(id);
 };
 const activeMember = (kind, id) => {
   const o = byId(kind, id);
@@ -391,6 +400,129 @@ Object.assign(G, {
     const x = byId('harvests', d.id);
     return (x && x.state === 'Rejected' && (x.by === myId() || canComplete())) || 'not permitted';
   },
+});
+// ---- space roles, joins, pathway activity, task board, Action Room chat
+const taskOf = d => {
+  const x = byId('rooms', d.r);
+  return [x, x && x.tasks.find(t => t.id === d.id)];
+};
+const roomSees = x => !!x && (memberOf(x) || ['A', 'O'].includes(role()));
+Object.assign(G, {
+  memSet: d => spaceMgr(d.kind || 'circles', d.c) || 'only the facilitator or project owner manages membership here',
+  memRole: d => spaceMgr(d.kind || 'circles', d.c) || 'only the facilitator or project owner assigns roles here',
+  inviteMem: d =>
+    d.kind === 'ropes'
+      ? ropeInviter(byId('ropes', d.c)) || 'only the project owner or an assigned Faculty/Steward can invite to a Rope Team'
+      : circleMemMgr(d.c) || 'only the facilitator or project owner can invite',
+  invm: d =>
+    d.kind === 'ropes'
+      ? ropeInviter(byId('ropes', d.c)) || 'only the project owner or an assigned Faculty/Steward can invite to a Rope Team'
+      : circleMemMgr(d.c) || 'only the facilitator or project owner can invite',
+  joinCircle: d => {
+    const c = byId('circles', d.id);
+    return (c && inCtx(c) && c.state === 'Active' && !memberOf(c)) || 'you can request to join an active Circle you are not in';
+  },
+  joinRope: d => {
+    const x = byId('ropes', d.id);
+    return (x && ropeJoinable(x)) || 'you can ask to join only Rope Teams linked to your Circles';
+  },
+  joinWithdraw: d => (memberRec(byId(d.kind, d.id) || {}) || {}).status === 'Requested' || 'there is no pending request to withdraw',
+  newCircle: () => canCreateCircle() || 'you cannot create Circles in this role',
+  nc: d =>
+    canCreateCircle() &&
+    (role() !== 'P' || !d.project || ownCircleProjects().some(p => p.id === d.project))
+      ? true
+      : 'you can create a Circle only for your own accepted project',
+  rec: d => {
+    const c = byId('circles', d.c);
+    return (c && c.state === 'Active' && (sCan('circles', c, 'record') || isFac(d.c))) || 'records can be added only by contributing members while the Circle is active';
+  },
+  chat: d => {
+    const o = byId(d.kind, d.c);
+    return (o && memberOf(o) && o.state === 'Active' && sCan(d.kind, o, 'post')) || 'you can post only as a contributing member of an active space';
+  },
+  msgHide: d => {
+    const o = byId(d.k, d.c);
+    return (o && (sCan(d.k, o, 'moderate') || (d.k === 'circles' && isFac(d.c)))) || 'only a moderator of this space can hide messages';
+  },
+  msgAns: d => {
+    const o = byId(d.k, d.c);
+    const m = o && o.chat.find(x => x.id === d.id);
+    return (m && memberOf(o) && (m.by === myId() || sCan(d.k, o, 'moderate'))) || 'only the person who asked, or a moderator, can mark it answered';
+  },
+  // rope teams
+  checkin: d => sCan('ropes', byId('ropes', d.id), 'mentor') || 'only the mentor records check-ins',
+  ck: d => sCan('ropes', byId('ropes', d.id), 'mentor') || 'only the mentor records check-ins',
+  supNew: d => sCan('ropes', byId('ropes', d.id), 'ask') || 'only Rope Team members ask for support',
+  sup: d => sCan('ropes', byId('ropes', d.id), 'ask') || 'only Rope Team members ask for support',
+  supStatus: d => sCan('ropes', byId('ropes', d.r), 'support') || 'only the mentor or facilitator manages support requests',
+  ropeClose: d => sCan('ropes', byId('ropes', d.id), 'close') || 'only the mentor or facilitator can close a Rope Team',
+  rcl: d => sCan('ropes', byId('ropes', d.id), 'close') || 'only the mentor or facilitator can close a Rope Team',
+  revNew: d => (activeMember('ropes', d.id) && sCan('ropes', byId('ropes', d.id), 'share')) || 'only the project owner and members share work for review',
+  rvn: d => (activeMember('ropes', d.id) && sCan('ropes', byId('ropes', d.id), 'share')) || 'only the project owner and members share work for review',
+  engageDecide: d => {
+    const x = byId('ropes', d.id);
+    return (x && role() === 'F' && isRopeFac(x) && x.engagement?.status === 'Exit proposed') || 'the Faculty/Steward confirms the mentor’s proposal';
+  },
+  ropeInvite: d => (memberRec(byId('ropes', d.id) || {}) || {}).status === 'Invited' || 'there is no invitation to respond to',
+  mrDetails: d => {
+    const m = byId('mentorReqs', d.id);
+    return (m && (mentorReqVisible(m) || role() === 'A')) || 'you cannot view this request';
+  },
+  mrq: d => (role() === 'F' && isSteward(d.project)) || 'only an assigned Faculty/Steward raises Mentor Requests',
+  // action rooms
+  ri: d => {
+    const x = byId('rooms', d.r);
+    return (x && x.state === 'Active' && (sCan('rooms', x, 'propose') || role() === 'A')) || 'only contributing members add items to an active ' + WL();
+  },
+  roomItem: d => {
+    const x = byId('rooms', d.r);
+    return (x && x.state === 'Active' && (sCan('rooms', x, 'propose') || role() === 'A')) || 'only contributing members add items to an active ' + WL();
+  },
+  taskMove: d => {
+    const [x, k] = taskOf(d);
+    if (!k) return 'task not found';
+    if (!taskCanMove(x, k)) return 'only the assignee, the project owner or the facilitator can move this task';
+    return taskTargets(x, k).includes(d.v) || (k.status === 'Proposed' ? 'only the project owner or facilitator approves proposed tasks' : 'tasks cannot be moved back to Proposed');
+  },
+  taskView: d => roomSees(byId('rooms', d.r)) || 'members only',
+  myTaskOpen: d => roomSees(byId('rooms', d.r)) || 'members only',
+  tke: d => {
+    const [x, k] = taskOf(d);
+    return (k && x.state === 'Active' && (roomLead(d.r) || k.owner === myId())) || 'only the assignee, the project owner or the facilitator can change this task';
+  },
+  rup: d => (activeMember('rooms', d.r) && sCan('rooms', byId('rooms', d.r), 'post')) || 'only contributing members of an active ' + WL() + ' post updates',
+  cbNew: d => (activeMember('rooms', d.r) && sCan('rooms', byId('rooms', d.r), 'contribute')) || 'only members, partners and mentors submit contributions',
+  cbn: d => (activeMember('rooms', d.r) && sCan('rooms', byId('rooms', d.r), 'contribute')) || 'only members, partners and mentors submit contributions',
+  cbReview: d => (byId('rooms', d.r) && (role() === 'A' || sCan('rooms', byId('rooms', d.r), 'review'))) || 'only a Reviewer or Facilitator in this ' + WL() + ' reviews contributions',
+  cbr: d => (byId('rooms', d.r) && (role() === 'A' || sCan('rooms', byId('rooms', d.r), 'review'))) || 'only a Reviewer or Facilitator in this ' + WL() + ' reviews contributions',
+  msAchieve: d => sCan('rooms', byId('rooms', d.r), 'review') || hasB('Reviewer') || 'only a Reviewer can validate an evidence-linked milestone',
+  joinDecide: d => ['F', 'A'].includes(role()) || roomLead(d.r) || 'only a Faculty/Steward, Programme Administrator or the project owner approves elevated joins',
+  // opportunity cards from a Circle
+  card: d => {
+    if (!d.from) return true;
+    const c = byId('circles', d.from);
+    return (c && (sCan('circles', c, 'card') || isFac(c.id))) || 'only contributing members of that Circle can create cards from it';
+  },
+  // pathway
+  pwStep: d => {
+    const p = byId('pathways', d.id);
+    return (p && p.pid === myId() && p.state === 'Current' && p.steps[d.i] && !p.steps[d.i].done) || 'only the participant completes open steps of their current pathway';
+  },
+  pws: d => {
+    const p = byId('pathways', d.id);
+    return (p && p.pid === myId() && p.state === 'Current' && p.steps[d.i] && !p.steps[d.i].done) || 'only the participant completes open steps of their current pathway';
+  },
+  pwr: () => hasB('Reviewer') || 'only an authorised Reviewer returns mode 3 pathways',
+  pwRevise: d => {
+    const p = byId('pathways', d.id);
+    return (p && p.by === myId() && p.state === 'Draft') || 'only the person who proposed this pathway can revise it';
+  },
+  pwv: d => {
+    const p = byId('pathways', d.id);
+    return (p && p.by === myId() && p.state === 'Draft') || 'only the person who proposed this pathway can revise it';
+  },
+  pwActivity: d => pwCanView(byId('pathways', d.id)) || 'you cannot view this pathway',
 });
 // Wrap handlers. Same key may exist in A (click) and F (form submit); both are guarded.
 Object.keys(G).forEach(k => {

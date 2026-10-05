@@ -2,7 +2,7 @@
 function seed() {
   const d = s => s; // ISO strings
   const S = {
-    v: 4,
+    v: 5,
     session: null,
     seq: 1000,
     settings: {
@@ -38,7 +38,7 @@ function seed() {
         id: 'uni',
         name: 'University / Community',
         status: 'Active',
-        labels: { workspace: 'Project Room', circle: 'Circle', rope: 'Rope Team' },
+        labels: { workspace: 'Action Room', circle: 'Circle', rope: 'Rope Team' },
         compassOptional: true,
         flows: ['F01', 'F02', 'F03', 'F04', 'F05', 'F06', 'F07', 'F08', 'F09', 'F10', 'F11', 'F12'],
         evidenceTypes: 'A–J',
@@ -58,7 +58,7 @@ function seed() {
         id: 'we',
         name: "Women's Empowerment",
         status: 'Active',
-        labels: { workspace: 'Coherence Cell', circle: 'Circle', rope: 'Rope Team' },
+        labels: { workspace: 'Action Room', circle: 'Circle', rope: 'Rope Team' },
         compassOptional: true,
         flows: ['F01', 'F02', 'F03', 'F04', 'F05', 'F06', 'F07', 'F08', 'F09', 'F11', 'F12'],
         evidenceTypes: 'A–D, G, I',
@@ -654,10 +654,22 @@ function seed() {
         state: 'Current',
         by: 'p2',
         steps: [
-          { t: 'Join a Circle', done: true },
+          {
+            t: 'Join a Circle',
+            done: true,
+            doneBy: 'p1',
+            doneAt: '2026-09-15T18:20',
+            note: 'Joined the Ward 7 Cooling Circle and attended the scoping session.',
+            files: [{ n: 'circle-welcome-screenshot.png', mb: 0.4 }],
+          },
           { t: 'Define and submit a project', done: false },
           { t: 'Upload first evidence', done: false },
           { t: 'Complete a Learning Harvest reflection', done: false },
+        ],
+        activity: [
+          { at: '2026-09-03T10:00', by: 'p2', t: 'Proposed from the approved template “Climate project foundations” (mode 1, no review needed)' },
+          { at: '2026-09-04T09:12', by: 'p1', t: 'Accepted the pathway — it became current' },
+          { at: '2026-09-15T18:20', by: 'p1', t: 'Completed step 1 “Join a Circle” with a note and 1 file' },
         ],
       },
       {
@@ -674,6 +686,9 @@ function seed() {
           { t: 'Run one Circle session', done: false },
           { t: 'Write a lessons-learned note', done: false },
         ],
+        activity: [
+          { at: '2026-09-27T16:40', by: 'p3', t: 'Drafted a custom pathway (mode 3) and sent it for Reviewer approval' },
+        ],
       },
       {
         id: 'pw3',
@@ -688,6 +703,9 @@ function seed() {
           { t: 'Map stakeholders', done: false },
           { t: 'Run two interviews', done: false },
           { t: 'Share findings in a Circle', done: false },
+        ],
+        activity: [
+          { at: '2026-09-29T11:05', by: 'p3', t: 'Adapted the approved template “Stakeholder engagement” (mode 2) and proposed it to the participant' },
         ],
       },
     ],
@@ -939,10 +957,10 @@ function seed() {
         project: 'pr1',
         state: 'Active',
         members: [
-          { pid: 'p1', role: 'Participant' },
-          { pid: 'p9', role: 'Participant' },
-          { pid: 'p3', role: 'Mentor' },
-          { pid: 'p2', role: 'Facilitator' },
+          { pid: 'p1', role: 'Project owner', status: 'Active' },
+          { pid: 'p9', role: 'Member', status: 'Active' },
+          { pid: 'p3', role: 'Mentor', status: 'Active' },
+          { pid: 'p2', role: 'Facilitator', status: 'Active' },
         ],
         chat: [
           { id: 'm201', by: 'p3', at: '2026-09-27T18:00', t: 'Let’s agree the GIS layer structure before data collection.' },
@@ -1007,6 +1025,8 @@ function seed() {
         to: 'p3',
         project: 'pr1',
         need: 'GIS mapping guidance',
+        detail: 'Help the team choose a GIS layer structure and review the first map export.',
+        hours: '1–2 hours a week for 4 weeks',
         status: 'Accepted',
         at: '2026-09-24',
       },
@@ -1016,6 +1036,8 @@ function seed() {
         to: 'p3',
         project: 'pr5',
         need: 'Review the canopy survey method',
+        detail: 'Check the i-Tree sampling plan for streets 1–25 and advise on photo protocol before data collection continues.',
+        hours: 'About 3 hours over the next 2 weeks',
         status: 'Pending',
         at: '2026-09-30',
       },
@@ -1033,10 +1055,10 @@ function seed() {
         state: 'Active',
         flags: [],
         members: [
-          { pid: 'p10', role: 'Project Lead', status: 'Active' },
+          { pid: 'p10', role: 'Project owner', status: 'Active' },
           { pid: 'p1', role: 'Member', status: 'Active' },
-          { pid: 'p4', role: 'Partner (GreenGrid)', status: 'Active' },
-          { pid: 'p2', role: 'Reviewer', status: 'Active' },
+          { pid: 'p4', role: 'Partner', status: 'Active', label: 'GreenGrid' },
+          { pid: 'p2', role: 'Facilitator', status: 'Active' },
         ],
         joinReqs: [
           {
@@ -1048,9 +1070,11 @@ function seed() {
           },
         ],
         tasks: [
-          { id: 'tk1', t: 'Recruit 6 volunteers', owner: 'p10', due: '2026-09-01', status: 'Done' },
-          { id: 'tk2', t: 'Collect canopy data — streets 1–25', owner: 'p1', due: '2026-10-10', status: 'In progress' },
-          { id: 'tk3', t: 'Produce canopy layer', owner: 'p4', due: '2026-10-20', status: 'To do' },
+          { id: 'tk1', key: 1, t: 'Recruit 6 volunteers', owner: 'p10', due: '2026-09-01', status: 'Done', prio: 'Medium', desc: 'Two per Saturday shift, briefed on the photo protocol.', by: 'p10', log: [{ at: '2026-09-11T09:00', by: 'p10', t: 'Created and assigned to Ana Lopez' }, { at: '2026-09-21T10:00', by: 'p10', t: 'Moved from To do to Done' }] },
+          { id: 'tk2', key: 2, t: 'Collect canopy data — streets 1–25', owner: 'p1', due: '2026-10-10', status: 'In progress', prio: 'High', desc: 'Photograph each street from both ends; log canopy cover on the survey sheet.', by: 'p10', log: [{ at: '2026-09-12T09:00', by: 'p10', t: 'Created and assigned to Mary Ellis' }, { at: '2026-09-22T10:00', by: 'p1', t: 'Moved from To do to In progress' }] },
+          { id: 'tk3', key: 3, t: 'Produce canopy layer', owner: 'p4', due: '2026-10-20', status: 'To do', prio: 'High', desc: 'GIS layer with four canopy-cover bands.', by: 'p10', log: [{ at: '2026-09-13T09:00', by: 'p10', t: 'Created and assigned to Leah Park' }] },
+          { id: 'tk4', key: 4, t: 'Blur faces in streets 1–10 photos', owner: 'p10', due: '2026-10-08', status: 'In progress', prio: 'Urgent', desc: 'Required before the evidence can be approved.', by: 'p10', log: [{ at: '2026-09-14T09:00', by: 'p10', t: 'Created and assigned to Ana Lopez' }, { at: '2026-09-24T10:00', by: 'p10', t: 'Moved from To do to In progress' }] },
+          { id: 'tk5', key: 5, t: 'Draft planting-site shortlist', owner: 'p2', due: '2026-10-28', status: 'To do', prio: 'Low', desc: '', by: 'p10', log: [{ at: '2026-09-15T09:00', by: 'p10', t: 'Created and assigned to Dr Asha Rao' }] },
         ],
         milestones: [
           { id: 'ms1', t: 'Survey plan approved', due: '2026-08-30', status: 'Achieved', evidence: 'ev4' },
@@ -1085,6 +1109,12 @@ function seed() {
         ],
         returns: [],
         final: null,
+        chat: [
+          { id: 'm401', by: 'p10', at: '2026-09-30T09:15', t: 'Morning all. Streets 11–15 today; meet at the Elm Road corner at 10.' },
+          { id: 'm402', by: 'p4', at: '2026-09-30T09:40', t: 'Draft canopy layer for streets 1–10 is uploaded as a contribution.', att: { n: 'canopy-layer-1-10.zip', mb: 6.8 } },
+          { id: 'm403', by: 'p1', at: '2026-10-01T17:02', t: 'Can someone check whether street 14 counts as one segment or two?', q: true },
+          { id: 'm404', sys: true, at: '2026-10-02T08:00', t: 'Task “Blur faces in streets 1–10 photos” moved to In progress' },
+        ],
         updates: [
           { id: 'up1', by: 'p10', at: '2026-09-27T10:00', t: 'Streets 1–10 photographed. Uploading again after blurring faces.' },
           { id: 'up2', by: 'p4', at: '2026-09-29T15:30', t: 'GreenGrid GIS licence confirmed until December.' },
@@ -1176,6 +1206,7 @@ function seed() {
         ownerOrg: null,
         ctx: 'c1',
         vis: 'Circle members',
+        from: 'ci1',
         status: 'Draft',
         expires: '2026-12-01',
         project: 'pr1',
@@ -1740,7 +1771,7 @@ function seed() {
       p2: { ci1: '2026-10-02T08:45', rt1: '2026-10-01T19:02', ci3: '2026-09-21T14:22' },
       p3: { rt1: '2026-09-28T09:30', ci1: '2026-10-01T10:12' },
       p9: { ci1: '2026-10-01T10:12', rt1: '2026-09-28T09:10' },
-      p10: { ci1: '2026-10-01T10:05' },
+      p10: { ci1: '2026-10-01T10:05', ar1: '2026-09-30T09:40' },
     },
     stageReports: [
       {
@@ -1859,23 +1890,12 @@ function seed() {
     ],
     security: [
       { at: '2026-10-01T22:14', t: '5 failed sign-ins for daniel@demo.phoenix — temporary lock applied' },
-      { at: '2026-09-30T08:01', t: 'API key key_reporting rotated' },
       { at: '2026-09-29T14:30', t: 'AI gateway refused request for another user’s Purpose Compass (logged)' },
     ],
     backups: [
       { at: '2026-10-02T02:00', status: 'Completed', size: '1.8 GB' },
       { at: '2026-10-01T02:00', status: 'Completed', size: '1.8 GB' },
       { at: '2026-09-15', status: 'Restore test passed', size: '—' },
-    ],
-    apiKeys: [
-      {
-        id: 'key_reporting',
-        scope: 'Read aggregate metrics',
-        owner: 'Platform',
-        status: 'Active',
-        rotated: '2026-09-30',
-      },
-      { id: 'key_lms', scope: 'LMS deep-link signing', owner: 'Platform', status: 'Active', rotated: '2026-08-01' },
     ],
     bundles: [
       {

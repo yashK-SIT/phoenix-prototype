@@ -262,7 +262,7 @@ route('project', 'projects', () => {
     actions =
       B('Request clarification', 'clarify', { id: p.id }) +
       B('Accept project', 'acceptProj', { id: p.id }, 'btn-p btn-sm');
-  if (r === 'F' && stewardOf(p) && p.status === 'Accepted' && !p.circle)
+  if (((r === 'F' && stewardOf(p)) || own) && p.status === 'Accepted' && !p.circle && canCreateCircle())
     actions = B(ic('plus', 14) + 'Create Circle', 'newCircle', { project: p.id }, 'btn-p btn-sm');
   if (r === 'F' && stewardOf(p) && p.status === 'Accepted' && p.circle && !['Final review', 'Closed'].includes(p.stage))
     actions = B(ic('link', 14) + 'Find a collaborator', 'collabFind', { project: p.id });
@@ -293,6 +293,7 @@ route('project', 'projects', () => {
     `<div class="g12" style="margin-top:16px"><section class="card c8"><div class="card-h"><h2 class="h2">Project summary</h2></div>${p.sections ? p.sections.map((s, i) => `<div class="lrow" style="align-items:flex-start"><span class="sn" style="color:#155E58">${i + 1}</span><div class="lt"><b>${SECTIONS[i]}</b><p class="muted" style="white-space:pre-line;margin-top:4px">${h(s.text) || '<span class="cap">Empty</span>'}</p></div>${pill(s.st, { Accepted: 'p-green', Edited: 'p-teal', Rejected: 'p-red' }[s.st] || 'p-grey')}</div>`).join('') : `<p class="muted">${h(p.desc || 'No sections yet.')}</p>`}</section>
  <aside class="c4 col" style="gap:16px">${own && ['Draft', 'Clarification requested'].includes(p.status) ? card('Before you submit', '', `<form data-f="submitProj" class="col" style="gap:12px" novalidate><input type="hidden" name="id" value="${p.id}">${!ready ? banner('warn', '', 'All 8 sections must be accepted or edited first.') : ''}${fi('sp', 'c1', 'I have reviewed every AI-drafted section and accept responsibility for the content.', { type: 'checkbox', req: true })}${fi('sp', 'c2', 'I understand reviewers in this programme will see this project.', { type: 'checkbox', req: true })}<button class="btn btn-p btn-block" type="submit" ${ready ? '' : 'disabled'}>${p.status === 'Clarification requested' ? 'Resubmit for review' : 'Submit for review'}</button></form>`) : ''}
  ${(S.stageReports || []).some(x => x.project === p.id) ? card('Reports along the chain', 'Circle → Rope Team → ' + WL(), (S.stageReports || []).filter(x => x.project === p.id).slice().reverse().map(x => lrow('send', h(x.kind), h(x.t) + `<span class="cap" style="display:block;margin-top:4px">${cName(x.from)} → ${cName(x.to)} · ${nm(x.by)} · ${fmt(x.at)}</span>`)).join('')) : ''}
+ ${projEvidenceCard(p)}
  ${card('Linked spaces', '', [p.circle && lrow('users', cName(p.circle), 'Circle', L('Open', 'circle', { id: p.circle }), 't-purple'), p.rope && lrow('route', cName(p.rope), 'Rope Team', L('Open', 'rope', { id: p.rope }), 't-teal'), p.room && lrow('room', cName(p.room), WL(), L('Open', 'room', { id: p.room }), 't-navy'), p.funding && lrow('coin', 'Sponsor funding', 'Stage-wise tranches', L('Open', 'funding', {}))].filter(Boolean).join('') || '<p class="cap">Spaces are linked, not converted. A Circle is created when the project is accepted.</p>')}
  ${card(
    'Stewards and support path',
@@ -313,6 +314,19 @@ route('project', 'projects', () => {
  )}</aside></div>`
   );
 });
+// Evidence for this project: linked to the project or to its Circle, Rope Team or Action Room.
+function projEvidenceCard(p) {
+  const own = p.owner === myId();
+  const st = (role() === 'F' && stewardOf(p)) || role() === 'A';
+  const list = S.evidence.filter(e => evProjects(e).includes(p) && (own || st || evVisible(e)));
+  const space = p.room || p.rope || p.circle;
+  return card(
+    'Evidence',
+    list.length ? list.length + ' item' + (list.length > 1 ? 's' : '') + ' from this project and its spaces' : 'Evidence linked to this project or its Circle, Rope Team or ' + WL() + ' appears here.',
+    list.map(e => lrow('award', L(h(e.title), 'evidence', { id: e.id }), h(e.type) + ' · ' + (e.linked || []).map(cName).join(', ') + ' · ' + nm(e.owner), pill(e.review) + ' ' + pill(e.level, 'p-navy'))).join('') || '<p class="cap">No evidence yet.</p>',
+    (own || memberOf(byId('circles', p.circle) || byId('rooms', p.room) || {})) && space && can('evidence', 'CRM') ? B(ic('upload', 14) + 'Upload', 'go', { r: 'newevidence', link: space }) : '',
+  );
+}
 F.submitProj = d => {
   if (
     !validate('sp', d, {

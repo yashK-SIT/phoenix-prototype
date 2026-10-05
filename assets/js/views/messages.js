@@ -1,11 +1,20 @@
-// ---------- MESSAGES: real-time chat for Circles and Rope Teams (D-04, E04, OI-05) ----------
-// One conversation per Circle and per Rope Team. Action Rooms use an updates feed instead (chat for rooms is OI-05).
+// ---------- MESSAGES: real-time group chat for Circles, Rope Teams and Action Rooms (D-04, E04, OI-05) ----------
+// One conversation per space. Members only; moderation follows the person's role in that space.
 UI.chat = UI.chat || {};
-const CHAT_KINDS = { circles: 'Circle', ropes: 'Rope Team' };
+const CHAT_KINDS = {
+  circles: 'Circle',
+  ropes: 'Rope Team',
+  get rooms() {
+    return WL();
+  },
+};
+const CHAT_ROUTE = { circles: 'circle', ropes: 'rope', rooms: 'room' };
+const CHAT_IC = { circles: 'users', ropes: 'route', rooms: 'room' };
 const IMG_RE = /\.(png|jpe?g|gif|webp|heic)$/i;
 const chatSpaces = (pid = myId()) => [
   ...S.circles.filter(c => inCtx(c) && memberOf(c, pid)).map(o => ({ kind: 'circles', o })),
   ...S.ropes.filter(r => inCtx(r) && memberOf(r, pid)).map(o => ({ kind: 'ropes', o })),
+  ...S.rooms.filter(r => inCtx(r) && memberOf(r, pid) && r.state !== 'Draft').map(o => ({ kind: 'rooms', o })),
 ];
 const hasChats = () => !!S && !!S.session && chatSpaces().length > 0;
 const readMark = (id, pid = myId()) => ((S.chatRead || {})[pid] || {})[id] || '';
@@ -31,14 +40,11 @@ function sysMsg(o, t) {
 }
 // Who may post, and why not when they cannot.
 function chatAccess(kind, o) {
-  const r = role();
   const mem = memberOf(o);
-  const mod =
-    kind === 'circles'
-      ? (r === 'F' && o.facilitator === myId()) || (r === 'O' && inCtx(o))
-      : o.mentor === myId() || o.members.some(m => m.pid === myId() && m.role === 'Facilitator');
+  const mod = sCan(kind, o, 'moderate') || (kind === 'circles' && spaceAdmin('circles', o));
   let ro = '';
   if (!mem) ro = 'View only. You are not a member of this ' + CHAT_KINDS[kind] + '.';
+  else if (!sCan(kind, o, 'post')) ro = 'You are an Observer here. You can read the conversation but not post.';
   else if (o.state === 'Paused/Repair') ro = 'This Circle is paused for repair. Members can read but not post.';
   else if (o.state !== 'Active') ro = 'This ' + CHAT_KINDS[kind] + ' is ' + o.state.toLowerCase() + '. The conversation is read-only.';
   return { mem, mod, ro };
@@ -88,13 +94,13 @@ function convList(sel) {
   list.sort((a, b) => b.last.localeCompare(a.last));
   const chip = (k, l) =>
     `<button type="button" class="fchip ${f === k ? 'on' : ''}" data-a="chatFilter" data-v="${k}">${l}</button>`;
-  return `<div class="mlist-h"><h1 class="h2">Messages</h1><p class="cap">Circles and Rope Teams you belong to</p><input class="input msearch" placeholder="Search conversations" value="${h(UI.chat.q || '')}" data-ch="chatSearch" aria-label="Search conversations"><div class="row wrap" style="gap:6px">${chip('all', 'All')}${chip('unread', 'Unread')}${chip('circles', 'Circles')}${chip('ropes', 'Rope Teams')}</div></div><div class="mlist" role="list">${
+  return `<div class="mlist-h"><h1 class="h2">Messages</h1><p class="cap">Circles, Rope Teams and ${WL()}s you belong to</p><input class="input msearch" placeholder="Search conversations" value="${h(UI.chat.q || '')}" data-ch="chatSearch" aria-label="Search conversations"><div class="row wrap" style="gap:6px">${chip('all', 'All')}${chip('unread', 'Unread')}${chip('circles', 'Circles')}${chip('ropes', 'Rope Teams')}${chip('rooms', WL() + 's')}</div></div><div class="mlist" role="list">${
     list
       .map(({ kind, o, last, un }) => {
         const on = sel && sel.o.id === o.id;
-        return `<button type="button" role="listitem" class="mconv ${on ? 'on' : ''} ${un ? 'un' : ''}" data-a="chatOpen" data-id="${o.id}" data-k="${kind}" ${on ? 'aria-current="true"' : ''}><span class="mav ${kind === 'circles' ? 'c' : 'r'}">${ic(kind === 'circles' ? 'users' : 'route', 18)}</span><span class="mconv-b"><span class="row" style="gap:8px;justify-content:space-between"><b class="mname">${h(o.name)}</b><span class="mtime">${shortWhen(last)}</span></span><span class="row" style="gap:8px;justify-content:space-between"><span class="mprev">${chatPreview(o)}</span>${un ? `<span class="mbadge" aria-label="${un} unread">${un}</span>` : o.state !== 'Active' ? `<span class="mstate">${h(o.state)}</span>` : ''}</span></span></button>`;
+        return `<button type="button" role="listitem" class="mconv ${on ? 'on' : ''} ${un ? 'un' : ''}" data-a="chatOpen" data-id="${o.id}" data-k="${kind}" ${on ? 'aria-current="true"' : ''}><span class="mav ${kind === 'circles' ? 'c' : kind === 'rooms' ? 'a' : 'r'}">${ic(CHAT_IC[kind], 18)}</span><span class="mconv-b"><span class="row" style="gap:8px;justify-content:space-between"><b class="mname">${h(o.name)}</b><span class="mtime">${shortWhen(last)}</span></span><span class="row" style="gap:8px;justify-content:space-between"><span class="mprev">${chatPreview(o)}</span>${un ? `<span class="mbadge" aria-label="${un} unread">${un}</span>` : o.state !== 'Active' ? `<span class="mstate">${h(o.state)}</span>` : ''}</span></span></button>`;
       })
-      .join('') || `<div style="padding:24px 8px">${empty('message', f === 'unread' ? 'No unread messages' : 'No conversations', f === 'unread' ? 'You are all caught up.' : 'You join a conversation when you become a member of a Circle or Rope Team.')}</div>`
+      .join('') || `<div style="padding:24px 8px">${empty('message', f === 'unread' ? 'No unread messages' : 'No conversations', f === 'unread' ? 'You are all caught up.' : 'You join a conversation when you become a member of a Circle, Rope Team or ' + WL() + '.')}</div>`
   }</div>`;
 }
 // ---- conversation thread (right pane / embedded)
@@ -145,13 +151,13 @@ function chatThread(kind, o, opts = {}) {
   const reply = UI.chat.reply && UI.chat.reply.c === o.id ? byId_[UI.chat.reply.id] : null;
   const draft = (UI.chat.drafts || {})[o.id] || '';
   const asQ = UI.chat.asQ === o.id;
-  const route_ = kind === 'circles' ? 'circle' : 'rope';
+  const route_ = CHAT_ROUTE[kind];
   const avatars = members
     .slice(0, 4)
     .map(m => `<span class="av" title="${nm(m.pid)}">${ini(m.pid)}</span>`)
     .join('');
   return `<section class="mthread ${opts.embedded ? 'emb' : ''}" aria-label="Conversation: ${h(o.name)}">
-  <header class="mth-h">${!opts.embedded ? `<button type="button" class="iconbtn mback-btn" data-a="chatBack" aria-label="Back to conversations">${ic('chevl')}</button>` : ''}<span class="mav ${kind === 'circles' ? 'c' : 'r'}">${ic(kind === 'circles' ? 'users' : 'route', 18)}</span><div class="col" style="min-width:0;flex:1"><b class="mname">${h(o.name)}</b><span class="cap">${CHAT_KINDS[kind]} · ${members.length} members${o.state !== 'Active' ? ' · ' + h(o.state) : ''}</span></div><span class="mavs hide-sm">${avatars}</span>${openQ || qOnly ? `<button type="button" class="fchip ${qOnly ? 'on' : ''}" data-a="chatQOnly" data-id="${o.id}" title="Show open questions only">${ic('question', 14)}${openQ} open</button>` : ''}${acc.mem && openQ ? B(ic('sparkle', 14), 'chatQSum', { c: o.id, k: kind }, 'iconbtn mqs', 'aria-label="Summarise unresolved questions with AI" title="Summarise unresolved questions (AI, private)"') : ''}${!opts.embedded ? L(ic('arrow', 14) + '<span class="hide-sm">Open ' + CHAT_KINDS[kind] + '</span>', route_, { id: o.id }, 'btn btn-s btn-sm') : ''}</header>
+  <header class="mth-h">${!opts.embedded ? `<button type="button" class="iconbtn mback-btn" data-a="chatBack" aria-label="Back to conversations">${ic('chevl')}</button>` : ''}<span class="mav ${kind === 'circles' ? 'c' : kind === 'rooms' ? 'a' : 'r'}">${ic(CHAT_IC[kind], 18)}</span><div class="col" style="min-width:0;flex:1"><b class="mname">${h(o.name)}</b><span class="cap">${CHAT_KINDS[kind]} · ${members.length} members${o.state !== 'Active' ? ' · ' + h(o.state) : ''}</span></div><span class="mavs hide-sm">${avatars}</span>${openQ || qOnly ? `<button type="button" class="fchip ${qOnly ? 'on' : ''}" data-a="chatQOnly" data-id="${o.id}" title="Show open questions only">${ic('question', 14)}${openQ} open</button>` : ''}${acc.mem && openQ ? B(ic('sparkle', 14), 'chatQSum', { c: o.id, k: kind }, 'iconbtn mqs', 'aria-label="Summarise unresolved questions with AI" title="Summarise unresolved questions (AI, private)"') : ''}${!opts.embedded ? L(ic('arrow', 14) + '<span class="hide-sm">Open ' + CHAT_KINDS[kind] + '</span>', route_, { id: o.id }, 'btn btn-s btn-sm') : ''}</header>
   <div class="msgs" data-scroll="${o.id}" role="log" aria-live="polite">${rows || `<div class="mempty">${empty('message', qOnly ? 'No open questions' : 'No messages yet', qOnly ? 'Every question here has been answered.' : 'Start the conversation. Messages are visible to members of this ' + CHAT_KINDS[kind] + ' only.')}</div>`}${lastMine && lastSeen.length ? `<div class="mseen">Seen by ${h(lastSeen.join(', '))}</div>` : ''}</div>
   ${
     acc.ro
@@ -161,7 +167,11 @@ function chatThread(kind, o, opts = {}) {
   <div class="mhelp">${asQ ? '<b>Sending as a question.</b> ' : ''}Enter to send · Shift+Enter for a new line · files up to ${S.settings.maxFileMB} MB, video by link · members only · ${assumed('OI-05 retention and moderation')}</div></form>`
   }</section>`;
 }
-const roleIn = (o, pid) => (o.members.find(m => m.pid === pid) || {}).role || ROLE[(S.assign.find(a => a.pid === pid && a.ctx === o.ctx) || {}).role] || '';
+const roleIn = (o, pid) => {
+  const kind = S.circles.includes(o) ? 'circles' : S.ropes.includes(o) ? 'ropes' : 'rooms';
+  return spaceRole(kind, o, pid) || roleInRaw(o, pid);
+};
+const roleInRaw = (o, pid) => (o.members.find(m => m.pid === pid) || {}).role || ROLE[(S.assign.find(a => a.pid === pid && a.ctx === o.ctx) || {}).role] || '';
 // ---- the Messages hub
 route('messages', 'any', () => {
   const sp = chatSpaces();
@@ -171,7 +181,7 @@ route('messages', 'any', () => {
   }
   const sel = UI.chat.open && sp.find(x => x.o.id === UI.chat.open.id);
   if (sel) markRead(sel.o);
-  return `<div class="msgshell ${UI.chat.open && sel ? 'has-sel' : ''}"><aside class="mside">${convList(sel)}</aside><div class="mmain">${sel ? chatThread(sel.kind, sel.o) : `<div class="mnone">${empty('message', sp.length ? 'Choose a conversation' : 'No conversations yet', sp.length ? 'Real-time chat with your Circles and Rope Teams. Messages, files, questions and coordination in one place.' : 'You join a conversation when you become a member of a Circle or Rope Team.')}</div>`}</div></div>`;
+  return `<div class="msgshell ${UI.chat.open && sel ? 'has-sel' : ''}"><aside class="mside">${convList(sel)}</aside><div class="mmain">${sel ? chatThread(sel.kind, sel.o) : `<div class="mnone">${empty('message', sp.length ? 'Choose a conversation' : 'No conversations yet', sp.length ? 'Real-time chat with your Circles, Rope Teams and ' + WL() + 's. Messages, files, questions and coordination in one place.' : 'You join a conversation when you become a member of a Circle, Rope Team or ' + WL() + '.')}</div>`}</div></div>`;
 });
 A.chatOpen = d => {
   UI.chat.open = { id: d.id, k: d.k };
@@ -224,7 +234,7 @@ A.msgHide = d => {
   const o = byId(d.k, d.c);
   const m = o.chat.find(x => x.id === d.id);
   m.hidden = true;
-  m.t = 'Message hidden by ' + (d.k === 'circles' ? 'the facilitator' : 'a moderator') + '.';
+  m.t = 'Message hidden by ' + (spaceRole(d.k, o) === 'Facilitator' ? 'the facilitator' : 'a moderator') + '.';
   m.att = null;
   audit('Chat message moderated', o.id, m.id);
   toast('Message hidden. The action is recorded in the audit log.');

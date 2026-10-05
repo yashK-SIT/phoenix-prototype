@@ -1,11 +1,31 @@
 // ---------- OPPORTUNITY CARDS (E05) ----------
+// Audience rules. A card created from a Circle defaults to that Circle's members; the creator can widen it
+// to the whole programme or to named people.
 const cardVisible = c =>
   c.owner === myId() ||
   (c.status !== 'Draft' &&
+    inCtx(c) &&
     (c.vis === 'Programme' ||
-      (c.vis === 'Circle members' && S.circles.some(ci => memberOf(ci) && memberOf(ci, c.owner))) ||
-      (c.vis === 'Named users' && (c.named || []).includes(myId()))) &&
-    inCtx(c));
+      (c.vis === 'Circle members' &&
+        (c.from && byId('circles', c.from)
+          ? memberOf(byId('circles', c.from))
+          : S.circles.some(ci => memberOf(ci) && memberOf(ci, c.owner)))) ||
+      (c.vis === 'Named users' && (c.named || []).includes(myId()))));
+const audienceText = c =>
+  c.vis === 'Circle members'
+    ? c.from && byId('circles', c.from)
+      ? 'Members of ' + cName(c.from)
+      : 'Members of Circles shared with the owner'
+    : c.vis === 'Named users'
+      ? 'Named people: ' + ((c.named || []).map(nm).join(', ') || 'none chosen')
+      : c.vis === 'Programme'
+        ? 'Everyone in ' + h((S.contexts.find(x => x.id === c.ctx) || {}).name || 'the programme')
+        : 'Only the owner (draft)';
+// Steward who reviews Match Briefs for a card: the source Circle's facilitator, else a steward in the context.
+const cardSteward = card => {
+  const ci = card.from && byId('circles', card.from);
+  return (ci && ci.facilitator) || (S.assign.find(x => x.ctx === card.ctx && x.role === 'F' && x.status === 'Active') || {}).pid;
+};
 function expireCards() {
   S.cards.forEach(c => {
     if (c.status === 'Active' && c.expires < today()) {
@@ -27,14 +47,11 @@ route('opportunities', 'opportunities', () => {
   const t = tabs('opps', [
     ['discover', 'Discover'],
     ['mine', 'My cards', S.cards.filter(c => c.owner === myId()).length],
-    ['saved', 'Saved', S.cards.filter(c => (c.saved || []).includes(myId())).length],
   ]);
   const f = (
-    t.cur === 'saved'
-      ? S.cards.filter(c => (c.saved || []).includes(myId()) && cardVisible(c))
-      : t.cur === 'mine'
-        ? S.cards.filter(c => c.owner === myId())
-        : list.filter(c => ['Active', 'Paused'].includes(c.status) || r === 'A' || r === 'F')
+    t.cur === 'mine'
+      ? S.cards.filter(c => c.owner === myId())
+      : list.filter(c => ['Active', 'Paused'].includes(c.status) || r === 'A' || r === 'F')
   ).filter(
     c =>
       (!q.kind || c.kind === q.kind) &&
@@ -73,7 +90,7 @@ route('opportunities', 'opportunities', () => {
         pill(c.kind, 'p-navy'),
         h(c.cat),
         nm(c.owner) + (c.ownerOrg ? ' · ' + h(S.orgs.find(o => o.id === c.ownerOrg).name) : ''),
-        h(c.vis),
+        audienceText(c) + (c.from ? `<div class="cap">From ${L(cName(c.from), 'circle', { id: c.from })}</div>` : ''),
         fmt(c.expires),
         pill(c.status),
         L('Open', 'card', { id: c.id }),
@@ -89,9 +106,14 @@ A.qf = (d, el) => {
 route('newcard', 'opportunities', () => {
   if (!can('opportunities', 'CM')) return deniedView('opportunities');
   const f = 'card';
-  const from = UI.p.from;
   const e = UI.p.edit && byId('cards', UI.p.edit);
+  const from = UI.p.from || (e && e.from) || '';
+  const src = from && byId('circles', from);
+  if (src && !memberOf(src) && !isFac(src.id)) return deniedView('circles');
   if (e && !UI.form.card) UI.form.card = { ...e };
+  if (!e && src && !UI.form.card) UI.form.card = { vis: 'Circle members', project: src.project && byId('projects', src.project)?.owner === myId() ? src.project : '' };
+  const vis = fv('card', 'vis', src ? 'Circle members' : 'Programme');
+  const namedPool = eligiblePeople([myId()], ['P', 'F', 'M', 'C', 'O']);
   return (
     head(
       e ? 'Edit card' : 'New Opportunity Card',
@@ -102,9 +124,10 @@ route('newcard', 'opportunities', () => {
     `<form data-f="card" class="card col" style="gap:16px;max-width:820px" novalidate>${errSum(f)}<input type="hidden" name="id" value="${e ? e.id : ''}"><input type="hidden" name="from" value="${from || ''}">
  <div class="f2">${fi(f, 'kind', 'Card type', { type: 'select', req: true, ph: 'Select', opts: ['Need', 'Asset', 'Offer', 'Opportunity'] })}${fi(f, 'cat', 'Category', { type: 'select', req: true, ph: 'Select', opts: ['Volunteering', 'Expertise', 'Equipment', 'Skills', 'Livelihood', 'Funding', 'Learning', 'Community action'] })}</div>
  ${fi(f, 'title', 'Title', { req: true, max: 100 })}${fi(f, 'desc', 'Description — what is needed or offered, and availability conditions', { type: 'textarea', rows: 4, req: true })}
- <div class="f2">${fi(f, 'vis', 'Who can discover it', { type: 'select', req: true, opts: ['Only me (draft)', 'Circle members', 'Programme', 'Named users'] })}${fi(f, 'expires', 'Expiry date', { type: 'date', req: true })}</div>
+ <div class="f2">${fi(f, 'vis', 'Who can discover it', { type: 'select', req: true, ch: 'reRender', opts: [['Only me (draft)', 'Only me (draft)'], ['Circle members', src ? 'Members of ' + src.name + ' (default)' : 'Members of Circles I share'], ['Programme', 'Everyone in this programme'], ['Named users', 'Named people only']], help: src ? 'Cards from a Circle start with that Circle’s members only. You can widen the audience.' : '' })}${fi(f, 'expires', 'Expiry date', { type: 'date', req: true })}</div>
+ ${vis === 'Named users' ? msel(f, 'named', 'Named people who can discover it', namedPool, (e && e.named) || [], { req: true, help: 'Only these people (and you) see the card.' }) : ''}
  ${fi(f, 'project', 'Link to a project (optional)', { type: 'select', ph: 'None', opts: S.projects.filter(p => p.owner === myId() && inCtx(p)).map(p => [p.id, p.title]) })}
- ${from ? banner('info', '', 'Created from ' + cName(from) + ' — the Circle stays intact and is linked for traceability.') : ''}
+ ${src ? banner('info', 'Created from ' + h(src.name), 'The Circle stays intact and the card links back to it. Match Briefs from this card are reviewed by the Circle’s facilitator, ' + nm(src.facilitator) + '.') : ''}
  <div class="actions">${L('Cancel', 'opportunities', {}, 'btn btn-g')}<div class="row"><button class="btn btn-s" type="submit" name="pub" value="no">Save draft</button><button class="btn btn-p" type="submit" name="pub" value="yes">Publish</button></div></div></form>`
   );
 });
@@ -117,9 +140,11 @@ F.card = d => {
       desc: ['req', ['min', 20]],
       vis: ['req'],
       expires: ['req', 'date'],
+      named: [['fn', { f: (v, x) => x.vis !== 'Named users' || [].concat(x.named || []).length > 0, m: 'Choose at least one person.' }]],
     })
   )
     return render();
+  if (d.from && !byId('circles', d.from)) d.from = '';
   let c = d.id && byId('cards', d.id);
   if (!c) {
     c = { id: uid('oc'), owner: myId(), ownerOrg: me().org || null, ctx: ctxId(), interest: [] };
@@ -134,10 +159,23 @@ F.card = d => {
     expires: d.expires,
     project: d.project || null,
     from: d.from || c.from || null,
+    named: d.vis === 'Named users' ? [].concat(d.named || []) : [],
     status: d.pub === 'yes' && d.vis !== 'Only me (draft)' ? 'Active' : 'Draft',
   });
-  audit('Opportunity Card ' + (c.status === 'Active' ? 'published' : 'saved'), c.id, c.title);
+  audit('Opportunity Card ' + (c.status === 'Active' ? 'published' : 'saved'), c.id, c.title + ' · audience: ' + c.vis);
+  if (c.status === 'Active') {
+    const ci = c.from && byId('circles', c.from);
+    const aud =
+      c.vis === 'Named users'
+        ? c.named
+        : c.vis === 'Circle members' && ci
+          ? ci.members.filter(m => m.status === 'Active').map(m => m.pid)
+          : [];
+    aud.filter(p => p !== myId()).forEach(p => notify(p, 'New ' + c.kind.toLowerCase() + ' for you: ' + c.title, 'card', { id: c.id }));
+    if (ci) sysMsg(ci, me().name + ' published an Opportunity Card from this Circle: ' + c.title);
+  }
   clearF('card');
+  mselReset('card', 'named');
   save();
   go('card', { id: c.id });
   toast(c.status === 'Active' ? 'Published.' : 'Saved as draft.');
@@ -160,10 +198,11 @@ route('card', 'opportunities', () => {
     }[c.status] || [];
   return (
     head(h(c.title), h(c.kind) + ' · ' + h(c.cat), pill(c.status), [['Opportunities', 'opportunities'], [h(c.title)]]) +
-    `<div class="g12">${card('Details', '', dl([['Description', h(c.desc)], ['Owner', nm(c.owner) + (c.ownerOrg ? ' · ' + h(S.orgs.find(o => o.id === c.ownerOrg).name) : '')], ['Audience', h(c.vis)], ['Expires', fmt(c.expires)], ['Linked project', c.project ? cName(c.project) : '—'], ['Created from', c.from ? cName(c.from) : '—'], own && ['Expressions of interest', c.interest.map(nm).join(', ') || 'None yet']]), '', 'c8')}
+    (c.from ? `<div class="row wrap" style="gap:8px;margin:-6px 0 14px"><span class="srole">${ic('users', 13)}From Circle: <b>${cName(c.from)}</b></span><span class="srole">${ic('eye', 13)}${audienceText(c)}</span></div>` : '') +
+    `<div class="g12">${card('Details', '', dl([['Description', h(c.desc)], ['Owner', nm(c.owner) + (c.ownerOrg ? ' · ' + h(S.orgs.find(o => o.id === c.ownerOrg).name) : '')], ['Audience', audienceText(c)], ['Expires', fmt(c.expires)], ['Linked project', c.project ? cName(c.project) : '—'], ['Created from', c.from ? (memberOf(byId('circles', c.from) || {}) || ['A', 'O', 'F'].includes(r) || byId('circles', c.from)?.visibility === 'Programme' ? L(cName(c.from), 'circle', { id: c.from }) : cName(c.from)) + ' <span class="cap">(Circle)</span>' : '—'], c.from && ['Steward for introductions', nm(cardSteward(c))], own && ['Expressions of interest', c.interest.map(nm).join(', ') || 'None yet']]), '', 'c8')}
  <aside class="c4 col" style="gap:12px">${own ? card('Manage', '', `<div class="col" style="gap:8px">${B(ic('edit', 14) + 'Edit', 'go', { r: 'newcard', edit: c.id })}${st.map(s => (s === 'Withdrawn' ? CB('Withdraw', 'cardState', { id: c.id, v: s }, 'Withdraw this card? It leaves discovery and any pending Match Briefs close.') : B(s === 'Active' ? 'Publish / resume' : s, 'cardState', { id: c.id, v: s }))).join('')}</div>`) : ''}
- ${!own ? `<div>${B(ic('flag', 14) + ((c.saved || []).includes(myId()) ? 'Saved — remove' : 'Save for later'), 'cardSave', { id: c.id }, 'btn-s btn-block')}</div>` : ''}${!own && c.status === 'Active' && r !== 'F' ? card('Interested?', '', c.interest.includes(myId()) ? banner('ok', 'You expressed interest', 'A steward reviews any introduction. Your contact details are not shared.') : B('Express interest', 'interest', { id: c.id }, 'btn-p btn-block') + `<p class="cap" style="margin-top:8px">This does not introduce you. A steward reviews a Match Brief and both sides consent first.</p>`) : ''}
- ${r === 'F' && c.status === 'Active' ? card('Steward', '', B('Nominate a match', 'nominate', { id: c.id }, 'btn-p btn-block')) : ''}
+ ${!own && c.status === 'Active' && r !== 'F' ? card('Interested?', '', c.interest.includes(myId()) ? banner('ok', 'You expressed interest', 'A steward reviews any introduction. Your contact details are not shared.') : B('Express interest', 'interest', { id: c.id }, 'btn-p btn-block') + `<p class="cap" style="margin-top:8px">This does not introduce you. A steward reviews a Match Brief and both sides consent first.</p>`) : ''}
+ ${r === 'F' && c.status === 'Active' && (!c.from || cardSteward(c) === myId()) ? card('Steward', c.from ? 'You review introductions for this Circle’s cards.' : '', B('Nominate a match', 'nominate', { id: c.id }, 'btn-p btn-block')) : ''}
  ${(c.proposals || [])
    .filter(pp => pp.to === myId() || pp.from === myId())
    .map(pp =>
@@ -205,7 +244,7 @@ function makeBrief(a, b, card, origin) {
   if (ca.matching !== 'Granted') blockers.push('No matching consent from ' + P(a).name);
   if (cb.matching !== 'Granted') blockers.push('No matching consent from ' + P(b).name);
   if (card.expires < today()) blockers.push('Opportunity card expired');
-  const steward = (S.assign.find(x => x.ctx === card.ctx && x.role === 'F') || {}).pid;
+  const steward = cardSteward(card);
   const cl = S.claims.filter(c => c.pid === a && c.vis !== 'Only me' && c.state === 'Current');
   const m = {
     id: uid('mb'),
