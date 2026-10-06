@@ -544,6 +544,11 @@ function route(name, mod, view) {
 function render() {
   const el = document.getElementById('app');
   let html;
+  // Entrance motion only when the screen or the modal actually changes, never on in-place re-renders.
+  const rk = UI.route + '|' + (UI.p.id || '');
+  const enter = UI._rk !== rk;
+  UI._rk = rk;
+  const menter = UI.modal && UI._sig !== UI.route + '|' + UI.modal.title;
   const pub = ['login', 'register', 'invite', 'verify', 'pending', 'forgot', 'lms', 'mfa'];
   if (!S.session) {
     html = (PUB[UI.route] || PUB.login)();
@@ -574,11 +579,11 @@ function render() {
           inner = banner('err', 'Something went wrong on this screen', h(e.message));
         }
       }
-      html = `<div class="ph"><div class="app">${sidebar()}<div class="main">${topbar()}<main class="content" id="main">${inner}</main>${bottomnav()}</div></div></div>`;
+      html = `<div class="ph"><div class="app">${sidebar()}<div class="main">${topbar()}<main class="content${enter ? ' enter' : ''}" id="main">${inner}</main>${bottomnav()}</div></div></div>`;
     }
   }
   if (UI.modal)
-    html += `<div class="mback" data-a="mback"><div class="modal ${UI.modal.wide ? 'wide' : ''}" role="dialog" aria-modal="true" aria-labelledby="mt"><div class="row" style="justify-content:space-between"><h2 class="h2" id="mt">${UI.modal.title}</h2><button class="iconbtn" type="button" data-a="closeM" aria-label="Close">${ic('x')}</button></div>${typeof UI.modal.body === 'function' ? UI.modal.body() : UI.modal.body}</div></div>`;
+    html += `<div class="mback${menter ? ' enter' : ''}" data-a="mback"><div class="modal ${UI.modal.wide ? 'wide' : ''}" role="dialog" aria-modal="true" aria-labelledby="mt"><div class="row" style="justify-content:space-between"><h2 class="h2" id="mt">${UI.modal.title}</h2><button class="iconbtn" type="button" data-a="closeM" aria-label="Close">${ic('x')}</button></div>${typeof UI.modal.body === 'function' ? UI.modal.body() : UI.modal.body}</div></div>`;
   if (UI.toast)
     html += `<div class="toast" role="${UI.toast.k === 'err' ? 'alert' : 'status'}"><div class="banner b-${UI.toast.k === 'err' ? 'err' : UI.toast.k === 'warn' ? 'warn' : 'ok'}">${ic(UI.toast.k === 'ok' ? 'check' : 'alert')}<div style="flex:1"><p>${h(UI.toast.t)}</p></div><button class="iconbtn" style="width:28px;height:28px;margin:-4px -6px 0 0" type="button" data-a="toastX" aria-label="Dismiss">${ic('x', 16)}</button></div></div>`;
   if (UI.busy)
