@@ -337,7 +337,7 @@ F.submitProj = d => {
     return render();
   const p = byId('projects', d.id);
   if (!p.stewards.length)
-    p.stewards = S.assign.filter(a => a.ctx === p.ctx && a.role === 'F' && a.status === 'Active').map(a => a.pid);
+    p.stewards = S.assign.filter(a => a.ctx === p.ctx && roleBase(a.role) === 'F' && a.status === 'Active').map(a => a.pid);
   const re = p.status === 'Clarification requested';
   p.status = 'Submitted';
   p.submitted = today();
@@ -412,7 +412,7 @@ F.acc = d => {
 };
 A.assignStewards = d => {
   const p = byId('projects', d.id);
-  const fs = S.assign.filter(a => a.ctx === p.ctx && a.role === 'F');
+  const fs = S.assign.filter(a => a.ctx === p.ctx && roleBase(a.role) === 'F');
   modal(
     'Assign Faculty/Stewards',
     `<form data-f="asst" class="col" style="gap:12px"><input type="hidden" name="id" value="${p.id}">${fs.map(a => `<label class="row"><input class="chk" type="checkbox" name="s" value="${a.pid}" ${p.stewards.includes(a.pid) ? 'checked' : ''}>${nm(a.pid)}</label>`).join('')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save</button></div></form>`,

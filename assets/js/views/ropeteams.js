@@ -14,7 +14,7 @@ const ropeJoinable = x => !!x.circle && memberOf(byId('circles', x.circle) || {}
 A.mentorRequest = d => {
   clearF('mrq');
   const pr = byId('projects', d.project);
-  const mentors = S.assign.filter(a => a.ctx === ctxId() && a.role === 'M' && a.status === 'Active');
+  const mentors = S.assign.filter(a => a.ctx === ctxId() && roleBase(a.role) === 'M' && a.status === 'Active');
   modal(
     'Raise a Mentor Request',
     () =>
@@ -26,7 +26,7 @@ F.mrq = d => {
   const m = { id: uid('mr'), from: myId(), to: d.to === OPEN_REQ ? null : d.to, open: d.to === OPEN_REQ, project: d.project, need: d.need, detail: d.detail || '', hours: (d.hours || '').trim(), status: 'Pending', at: today() };
   S.mentorReqs.push(m);
   const pr = byId('projects', d.project);
-  const recips = m.open ? S.assign.filter(a => a.ctx === pr.ctx && a.role === 'M' && a.status === 'Active').map(a => a.pid) : [d.to];
+  const recips = m.open ? S.assign.filter(a => a.ctx === pr.ctx && roleBase(a.role) === 'M' && a.status === 'Active').map(a => a.pid) : [d.to];
   recips.forEach(p => notify(p, (m.open ? 'Open Mentor Request: ' : 'Mentor Request from ' + me().name + ': ') + d.need, 'ropeteams'));
   const c = byId('circles', pr.circle);
   if (c) sysMsg(c, 'Mentor Request raised: ' + d.need);

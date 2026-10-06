@@ -38,8 +38,9 @@ const ROLE = {
   A: 'Programme Administrator',
   T: 'Platform Administrator',
 };
+// Seeded defaults only. At run time roles live in S.roles (managed in Role management) and ROLE mirrors their names.
 const SENSITIVE_ROLES = ['F', 'M', 'C', 'O', 'A'];
-// Role × module matrix (Section 10, Table 30)
+// Default role × module matrix (Section 10, Table 30), used to seed S.roles and to reset a seeded role.
 const MX = {
   home: { P: 'O', F: 'O', M: 'O', C: 'O', O: 'O', S: 'O', A: 'O', T: 'O' },
   identity: { P: 'O', F: 'C', M: '-', C: 'C', O: 'M', S: 'O', A: 'M', T: 'M' },
@@ -77,13 +78,26 @@ const LV = {
 };
 const me = () => S.people.find(p => p.id === S.session?.pid);
 const asg = () => S.assign.find(a => a.id === S.session?.aid);
-const role = () => asg()?.role;
+// Each role record has a base: the predefined role whose workflow rules it follows.
+// role() returns that base, so every workflow rule works for seeded and custom roles alike;
+// roleId() is the role actually assigned, and its own module permissions decide what can be opened.
+const roleRec = id => (S && S.roles ? S.roles.find(r => r.id === id) : null);
+const roleBase = id => (roleRec(id) || {}).base || id;
+const roleId = () => asg()?.role;
+const role = () => roleBase(roleId());
+const roleNeedsApproval = id => (roleRec(id) ? !!roleRec(id).approval : SENSITIVE_ROLES.includes(id));
+function syncRoles() {
+  (S.roles || []).forEach(r => (ROLE[r.id] = r.name));
+}
 const ctxId = () => asg()?.ctx;
 const ctx = () => S.contexts.find(c => c.id === ctxId());
 const pack = () => S.packs.find(p => p.id === ctx()?.pack) || S.packs[0];
 // Execution spaces are called Action Rooms everywhere, in every pack.
 const WL = () => 'Action Room';
-const lvl = m => (MX[m] || {})[role()] || '-';
+const lvl = m => {
+  const r = roleRec(roleId());
+  return (r && r.perms ? r.perms[m] : (MX[m] || {})[roleId()]) || '-';
+};
 const can = (m, need) => {
   const l = lvl(m);
   if (l === '-' || l === 'T') return false;
@@ -385,8 +399,9 @@ function navItems() {
   if (r === 'T') {
     return [
       ['home', 'Platform health', 'grid'],
-      ['platform', 'Contexts & tenants', 'layers'],
-      ['platform:roles', 'Roles & bundles', 'shield'],
+      ['tenants', 'Organizations', 'building'],
+      ['platform', 'Contexts', 'layers'],
+      ['roles', 'Role management', 'shield'],
       ['platform:integrations', 'Integrations', 'link'],
       ['platform:security', 'Security & access', 'lock'],
       ['platform:health', 'Health & alerts', 'chart'],
@@ -462,6 +477,8 @@ const GROUP = {
   incidents: 'Support',
   resources: 'Support',
   platform: 'Platform',
+  tenants: 'Platform',
+  roles: 'Platform',
   notifications: 'Platform',
 };
 function navCount(r) {
@@ -503,7 +520,7 @@ function topbar() {
   const others = S.assign.filter(x => x.pid === myId()).length;
   const unread = S.notifs.filter(n => n.pid === myId() && !n.read).length;
   return `<header class="top"><div class="mbrand" style="align-items:center"><span class="mark" style="width:32px;height:32px;font-size:14px">P</span></div>
- <button class="ctx" type="button" data-a="switcher" aria-label="Switch role or context. Current: ${h(c?.name)}, ${ROLE[a.role]}" title="${h(c?.name)} · ${ROLE[a.role]}"><span class="tile t-soft" style="width:28px;height:28px;border-radius:8px">${ic('users', 16)}</span><span class="ctxt"><b>${h(c?.name)}</b><small>${ROLE[a.role]}${a.bundles.length ? ' · +' + a.bundles.length + ' bundle' + (a.bundles.length > 1 ? 's' : '') : ''}</small></span>${others > 1 ? ic('chev', 16) : ''}</button>
+ <button class="ctx" type="button" data-a="switcher" aria-label="Switch role or context. Current: ${h(c?.name)}, ${ROLE[a.role]}" title="${h(c?.name)} · ${ROLE[a.role]}">${ctxOrgMark()}<span class="ctxt"><b>${h(c?.name)}</b><small>${ROLE[a.role]}${a.bundles.length ? ' · +' + a.bundles.length + ' bundle' + (a.bundles.length > 1 ? 's' : '') : ''}</small></span>${others > 1 ? ic('chev', 16) : ''}</button>
  <div class="grow"></div>
  ${can('ai') ? `<button type="button" class="btn btn-s btn-sm askbtn ${UI.panel === 'ask' ? 'on' : ''}" data-a="askToggle" aria-expanded="${UI.panel === 'ask'}" aria-controls="assist" title="Ask PHOENIX">${ic('sparkle', 16)}<span class="hide-md">Ask PHOENIX</span></button>` : ''}
  <div class="nwrap"><button class="iconbtn ${UI.panel === 'notif' ? 'on' : ''}" type="button" data-a="notifToggle" aria-haspopup="dialog" aria-expanded="${UI.panel === 'notif'}" aria-label="Notifications, ${unread} unread">${ic('bell')}${unread ? `<span class="badge">${unread}</span>` : ''}</button>${UI.panel === 'notif' ? notifMenu() : ''}</div>
@@ -522,7 +539,9 @@ const SHORT = {
   evidence: 'Evidence',
   funding: 'Funding',
   billing: 'Billing',
-  platform: 'Tenants',
+  platform: 'Contexts',
+  tenants: 'Orgs',
+  roles: 'Roles',
   audit: 'Audit',
   org: 'Org',
   admin: 'Admin',
@@ -802,6 +821,7 @@ A.doReset = () => {
     localStorage.removeItem(KEY);
   } catch (e) {}
   S = freshData();
+  migrate();
   UI.form = {};
   UI.err = {};
   UI.tab = {};

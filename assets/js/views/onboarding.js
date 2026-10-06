@@ -97,11 +97,11 @@ function onbTop(cur, steps) {
 function ONB() {
   const a = asg();
   const re = a.onb.agreement && reaccept();
-  const steps = ['Account', 'Agreement', 'Permissions', 'Profile'].concat(a.role === 'P' ? ['Purpose Compass'] : []);
+  const steps = ['Account', 'Agreement', 'Permissions', 'Profile'].concat(roleBase(a.role) === 'P' ? ['Purpose Compass'] : []);
   const cur = !a.onb.agreement || re ? 1 : !a.onb.consents ? 2 : !a.onb.profile ? 3 : 4;
   let body;
   if (cur === 1) {
-    const g = re || S.agreements.find(g => g.ctx === a.ctx && g.status === 'Active' && g.roles.includes(a.role));
+    const g = re || S.agreements.find(g => g.ctx === a.ctx && g.status === 'Active' && g.roles.includes(roleBase(a.role)));
     if (!g) {
       a.onb.agreement = true;
       save();

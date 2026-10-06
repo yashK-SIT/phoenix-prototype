@@ -164,7 +164,7 @@ F.nr = (d) => {
   }
   if (st !== "Active")
     S.assign
-      .filter((a) => a.ctx === ctxId() && ["F", "A"].includes(a.role))
+      .filter((a) => a.ctx === ctxId() && ["F", "A"].includes(roleBase(a.role)))
       .forEach((a) =>
         notify(a.pid, `${WL()} ${st.toLowerCase()}: ${x.name}`, "room", {
           id: x.id,
@@ -734,7 +734,7 @@ A.itemState = (d) => {
   k.state = d.v;
   if (d.k === "risks" && d.v === "Escalated")
     S.assign
-      .filter((a) => a.ctx === x.ctx && a.role === "F")
+      .filter((a) => a.ctx === x.ctx && roleBase(a.role) === "F")
       .forEach((a) =>
         notify(a.pid, "Risk escalated in " + x.name + ": " + k.t, "room", {
           id: x.id,
@@ -824,7 +824,7 @@ F.co = (d) => {
     history: [{ ver: 1, by: myId(), why: "Initial" }],
   });
   S.assign
-    .filter((a) => a.ctx === x.ctx && a.role === "F")
+    .filter((a) => a.ctx === x.ctx && roleBase(a.role) === "F")
     .forEach((a) =>
       notify(a.pid, "Change Object proposed in " + x.name, "room", {
         id: x.id,
@@ -905,7 +905,7 @@ F.rin = (d) => {
   if (!validate("rin", d, { pid: ["req"], kind: ["req"] })) return render();
   const x = byId("rooms", d.r);
   const a = S.assign.find((a) => a.pid === d.pid && a.ctx === x.ctx);
-  if (d.kind === "Sponsor" || a.role === "S") {
+  if (d.kind === "Sponsor" || roleBase(a.role) === "S") {
     x.joinReqs.push({
       id: uid("jr"),
       pid: d.pid,
@@ -949,7 +949,7 @@ F.rin = (d) => {
       note: JOIN_RULES[d.kind],
     });
     S.assign
-      .filter((a) => a.ctx === x.ctx && ["F", "A"].includes(a.role))
+      .filter((a) => a.ctx === x.ctx && ["F", "A"].includes(roleBase(a.role)))
       .forEach((a) =>
         notify(a.pid, "Elevated join request for " + x.name, "room", {
           id: x.id,
@@ -1000,7 +1000,7 @@ A.roomState = (d) => {
       .filter(
         (a) =>
           a.ctx === x.ctx &&
-          ["F", "A"].includes(a.role) &&
+          ["F", "A"].includes(roleBase(a.role)) &&
           !x.members.some((m) => m.pid === a.pid),
       )
       .forEach((a) =>

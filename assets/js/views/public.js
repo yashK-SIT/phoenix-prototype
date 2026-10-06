@@ -44,9 +44,9 @@ function startSession(p, mfaDone) {
       pid: p.id,
       role: r.role,
       ctx: r.ctx,
-      status: SENSITIVE_ROLES.includes(r.role) ? 'Pending role approval' : 'Active',
+      status: roleNeedsApproval(roleBase(r.role)) ? 'Pending role approval' : 'Active',
       bundles: [],
-      onb: { agreement: false, consents: false, profile: true, compass: r.role !== 'P' },
+      onb: { agreement: false, consents: false, profile: true, compass: roleBase(r.role) !== 'P' },
     };
     S.assign.push(na);
     if (r.inv) {
@@ -55,7 +55,7 @@ function startSession(p, mfaDone) {
     }
     if (na.status !== 'Active') {
       S.assign
-        .filter(x => x.role === 'A')
+        .filter(x => roleBase(x.role) === 'A')
         .forEach(x =>
           notify(x.pid, `Role approval requested: ${p.name} — ${ROLE[r.role]}`, 'admin', { tab: 'approvals' }),
         );
@@ -94,7 +94,7 @@ F.login = d => {
     return go('verify');
   }
   clearF('login');
-  if (S.assign.some(a => a.pid === p.id && ['A', 'T'].includes(a.role) && a.status === 'Active')) {
+  if (S.assign.some(a => a.pid === p.id && ['A', 'T'].includes(roleBase(a.role)) && a.status === 'Active')) {
     UI.pre = { ...(UI.pre || {}), mfaPid: p.id };
     return go('mfa');
   }
@@ -265,7 +265,7 @@ PUB.invite = () => {
    ['Email', h(inv.email)],
    ['Valid until', fmt(inv.expires)],
  ])}</div>
- ${SENSITIVE_ROLES.includes(inv.role) ? banner('warn', 'This role needs approval', 'After you register, an authorised approver must approve it before it becomes active.') : ''}
+ ${roleNeedsApproval(roleBase(inv.role)) ? banner('warn', 'This role needs approval', 'After you register, an authorised approver must approve it before it becomes active.') : ''}
  ${exists ? banner('info', 'You already have a PHOENIX account', 'Sign in and this role is added to your existing record.') + B('Sign in to accept', 'acceptInvExisting', { id: inv.id }, 'btn-p btn-block') : B('Accept and create account', 'acceptInv', { id: inv.id }, 'btn-p btn-block')}
  <p class="cap">This link works once.</p>`);
 };
@@ -276,7 +276,7 @@ F.tok = d => {
 F.reinv = d => {
   if (!validate('reinv', d, { email: ['req', 'email'] })) return render();
   S.assign
-    .filter(a => a.role === 'A')
+    .filter(a => roleBase(a.role) === 'A')
     .forEach(a => notify(a.pid, `New invitation requested by ${d.email}`, 'admin', { tab: 'invites' }));
   audit('New invitation requested', d.email, d.msg || '');
   save();
@@ -317,11 +317,11 @@ A.doVerify = () => {
   p.verified = true;
   const a = S.assign.filter(x => x.pid === p.id).find(x => x.status === 'Registered (email unverified)');
   if (a) {
-    a.status = SENSITIVE_ROLES.includes(a.role) ? 'Pending role approval' : 'Active';
+    a.status = roleNeedsApproval(roleBase(a.role)) ? 'Pending role approval' : 'Active';
     if (a.status !== 'Active') {
       a.approval = [{ at: now(), by: 'system', note: 'Sensitive role — approval requested' }];
       S.assign
-        .filter(x => x.role === 'A')
+        .filter(x => roleBase(x.role) === 'A')
         .forEach(x =>
           notify(x.pid, `Role approval requested: ${p.name} — ${ROLE[a.role]}`, 'admin', { tab: 'approvals' }),
         );

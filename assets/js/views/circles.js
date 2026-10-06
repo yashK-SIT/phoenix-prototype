@@ -163,8 +163,8 @@ F.nc = d => {
   const isP = role() === 'P';
   if (pr && isP && (pr.owner !== myId() || pr.status !== 'Accepted' || pr.circle))
     return deny('you can create a Circle only for your own accepted project that does not have one yet');
-  const steward = pr && (pr.stewards.find(s => S.assign.some(a => a.pid === s && a.ctx === pr.ctx && a.role === 'F' && a.status === 'Active')) || pr.stewards[0]);
-  const fac = isP ? steward || (S.assign.find(a => a.ctx === ctxId() && a.role === 'F' && a.status === 'Active') || {}).pid : myId();
+  const steward = pr && (pr.stewards.find(s => S.assign.some(a => a.pid === s && a.ctx === pr.ctx && roleBase(a.role) === 'F' && a.status === 'Active')) || pr.stewards[0]);
+  const fac = isP ? steward || (S.assign.find(a => a.ctx === ctxId() && roleBase(a.role) === 'F' && a.status === 'Active') || {}).pid : myId();
   const owner = pr ? pr.owner : myId();
   const c = {
     id: uid('ci'),

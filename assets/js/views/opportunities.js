@@ -24,7 +24,7 @@ const audienceText = c =>
 // Steward who reviews Match Briefs for a card: the source Circle's facilitator, else a steward in the context.
 const cardSteward = card => {
   const ci = card.from && byId('circles', card.from);
-  return (ci && ci.facilitator) || (S.assign.find(x => x.ctx === card.ctx && x.role === 'F' && x.status === 'Active') || {}).pid;
+  return (ci && ci.facilitator) || (S.assign.find(x => x.ctx === card.ctx && roleBase(x.role) === 'F' && x.status === 'Active') || {}).pid;
 };
 function expireCards() {
   S.cards.forEach(c => {
@@ -288,7 +288,7 @@ A.nominate = d => {
   const c = byId('cards', d.id);
   modal(
     'Nominate a match',
-    `<form data-f="nom" class="col" style="gap:14px"><input type="hidden" name="id" value="${c.id}">${fi('nom', 'pid', 'Person to match with the card owner', { type: 'select', req: true, opts: S.assign.filter(a => a.ctx === c.ctx && a.status === 'Active' && ['P', 'C', 'M'].includes(a.role) && a.pid !== c.owner).map(a => [a.pid, P(a.pid).name]) })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Draft Match Brief</button></div></form>`,
+    `<form data-f="nom" class="col" style="gap:14px"><input type="hidden" name="id" value="${c.id}">${fi('nom', 'pid', 'Person to match with the card owner', { type: 'select', req: true, opts: S.assign.filter(a => a.ctx === c.ctx && a.status === 'Active' && ['P', 'C', 'M'].includes(roleBase(a.role)) && a.pid !== c.owner).map(a => [a.pid, P(a.pid).name]) })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Draft Match Brief</button></div></form>`,
   );
 };
 F.nom = d => {
@@ -490,7 +490,7 @@ A.mbNext = d => {
     if (!canCreateRoom()) {
       toast('Your request was sent to an authorised lead to create the ' + WL() + '.');
       S.assign
-        .filter(a => a.ctx === ctxId() && a.role === 'F')
+        .filter(a => a.ctx === ctxId() && roleBase(a.role) === 'F')
         .forEach(a => notify(a.pid, 'Create a ' + WL() + ' for an introduced match', 'match', { id: m.id }));
       return ok();
     }
@@ -517,7 +517,7 @@ const words = s =>
 function collabCandidates(p, req) {
   const need = new Set(words(req));
   return S.assign
-    .filter(a => a.ctx === p.ctx && a.role === 'C' && a.status === 'Active' && a.pid !== p.owner)
+    .filter(a => a.ctx === p.ctx && roleBase(a.role) === 'C' && a.status === 'Active' && a.pid !== p.owner)
     .map(a => {
       const per = P(a.pid);
       const org = S.orgs.find(o => o.id === per.org) || {};

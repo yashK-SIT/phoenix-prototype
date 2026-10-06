@@ -353,7 +353,7 @@ A.pitchNew = () => {
   modal(
     'Pitch a sponsor',
     () =>
-      `<form data-f="pit" class="col" style="gap:14px" novalidate>${fi('pit', 'project', 'Project', { type: 'select', req: true, ph: 'Select', opts: S.projects.filter(p => p.owner === myId() && p.status === 'Accepted').map(p => [p.id, p.title]) })}${fi('pit', 'to', 'Sponsor', { type: 'select', req: true, ph: 'Select', opts: S.assign.filter(a => a.ctx === ctxId() && a.role === 'S').map(a => [a.pid, P(a.pid).name]) })}${fi('pit', 'amount', 'Funding needed (USD)', { type: 'number', req: true, min: 1 })}${fi('pit', 'text', 'Pitch: problem, proposed solution, expected impact, requirements', { type: 'textarea', rows: 5, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send pitch</button></div></form>`,
+      `<form data-f="pit" class="col" style="gap:14px" novalidate>${fi('pit', 'project', 'Project', { type: 'select', req: true, ph: 'Select', opts: S.projects.filter(p => p.owner === myId() && p.status === 'Accepted').map(p => [p.id, p.title]) })}${fi('pit', 'to', 'Sponsor', { type: 'select', req: true, ph: 'Select', opts: S.assign.filter(a => a.ctx === ctxId() && roleBase(a.role) === 'S').map(a => [a.pid, P(a.pid).name]) })}${fi('pit', 'amount', 'Funding needed (USD)', { type: 'number', req: true, min: 1 })}${fi('pit', 'text', 'Pitch: problem, proposed solution, expected impact, requirements', { type: 'textarea', rows: 5, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send pitch</button></div></form>`,
   );
 };
 F.pit = d => {
@@ -796,7 +796,7 @@ A.poolNew = () => {
   modal(
     'Create seat pool',
     () =>
-      `<form data-f="pool" class="col" style="gap:12px" novalidate>${fi('pool', 'sponsor', 'Sponsor / institution contact', { type: 'select', req: true, opts: S.assign.filter(a => a.ctx === ctxId() && ['S', 'O'].includes(a.role)).map(a => [a.pid, P(a.pid).name]) })}${fi('pool', 'total', 'Seats', { type: 'number', req: true, min: 1 })}${fi('pool', 'until', 'Valid until', { type: 'date', req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Create</button></div></form>`,
+      `<form data-f="pool" class="col" style="gap:12px" novalidate>${fi('pool', 'sponsor', 'Sponsor / institution contact', { type: 'select', req: true, opts: S.assign.filter(a => a.ctx === ctxId() && ['S', 'O'].includes(roleBase(a.role))).map(a => [a.pid, P(a.pid).name]) })}${fi('pool', 'total', 'Seats', { type: 'number', req: true, min: 1 })}${fi('pool', 'until', 'Valid until', { type: 'date', req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Create</button></div></form>`,
   );
 };
 F.pool = d => {
@@ -820,7 +820,7 @@ A.seatAssign = d => {
   const sp = byId('seatPools', d.sp);
   if (sp.assigned.length >= sp.total) return deny('no seats left in this pool');
   const c = S.assign.filter(
-    a => a.ctx === sp.ctx && a.role === 'P' && a.status === 'Active' && !sp.assigned.includes(a.pid),
+    a => a.ctx === sp.ctx && roleBase(a.role) === 'P' && a.status === 'Active' && !sp.assigned.includes(a.pid),
   );
   modal(
     'Assign a seat',

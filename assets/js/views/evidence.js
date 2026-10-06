@@ -253,7 +253,7 @@ F.rel = d => {
     at: today(),
   });
   S.assign
-    .filter(a => a.role === 'A')
+    .filter(a => roleBase(a.role) === 'A')
     .forEach(a => notify(a.pid, 'Disclosure review needed: ' + byId('evidence', d.id).title, 'evidence', { id: d.id }));
   audit('Release authorised by owner', d.id, d.aud);
   UI.modal = null;
@@ -271,7 +271,7 @@ A.relDecide = d => {
   e.history.push({ at: today(), t: 'Release: ' + d.v + ' (' + x.audience + ')' });
   if (d.v.startsWith('Owner authorised'))
     S.assign
-      .filter(a => a.role === 'A')
+      .filter(a => roleBase(a.role) === 'A')
       .forEach(a => notify(a.pid, 'Disclosure review needed: ' + e.title, 'evidence', { id: e.id }));
   notify(e.owner, 'Release decision: ' + d.v, 'evidence', { id: e.id });
   audit('Release decision', x.id, d.v);
@@ -375,7 +375,7 @@ F.ne = (d, form) => {
   };
   S.evidence.push(ev);
   S.assign
-    .filter(a => a.ctx === ctxId() && (a.role === 'F' || a.bundles.includes('Reviewer')) && a.pid !== myId())
+    .filter(a => a.ctx === ctxId() && (roleBase(a.role) === 'F' || a.bundles.includes('Reviewer')) && a.pid !== myId())
     .forEach(a => notify(a.pid, 'Evidence submitted for review: ' + ev.title, 'evidence', { id: ev.id }));
   audit('Evidence submitted', ev.id, ev.type);
   clearF('ne');
@@ -481,7 +481,7 @@ A.repoCorrect = d => {
 A.repoDel = d => {
   const x = byId('records', d.id);
   x.state = 'Deletion requested';
-  S.assign.filter(a => a.role === 'A').forEach(a => notify(a.pid, 'Deletion requested: ' + x.title, 'repository'));
+  S.assign.filter(a => roleBase(a.role) === 'A').forEach(a => notify(a.pid, 'Deletion requested: ' + x.title, 'repository'));
   audit('Deletion requested', x.id, '');
   UI.modal = null;
   ok();
@@ -700,7 +700,7 @@ F.hve = d => {
     x.state = 'Review';
     S.ai.filter(a => a.purpose === 'Harvest draft' && a.status === 'Draft').forEach(a => (a.status = 'In review'));
     S.assign
-      .filter(a => a.ctx === ctxId() && a.role === 'F')
+      .filter(a => a.ctx === ctxId() && roleBase(a.role) === 'F')
       .forEach(a => notify(a.pid, 'Harvest ready for review: ' + x.scopeName, 'harvest', { id: x.id }));
   }
   audit('Harvest ' + act, x.id, 'v' + x.ver);
@@ -727,7 +727,7 @@ A.hvRel = d => {
   x.release = d.v;
   if (d.v === 'Funder release requested')
     S.assign
-      .filter(a => a.role === 'A')
+      .filter(a => roleBase(a.role) === 'A')
       .forEach(a => notify(a.pid, 'Harvest release requested: ' + x.scopeName, 'harvest', { id: x.id }));
   audit('Harvest release', x.id, d.v);
   ok();
@@ -769,7 +769,7 @@ A.rbDecide = d => {
     !['F', 'C', 'O', 'A'].includes((S.assign.find(a => a.pid === pp.from && a.ctx === c.ctx) || {}).role)
   )
     S.assign
-      .filter(a => a.ctx === c.ctx && a.role === 'F')
+      .filter(a => a.ctx === c.ctx && roleBase(a.role) === 'F')
       .forEach(a =>
         notify(a.pid, 'Create or link a ' + WL() + ' for an accepted direct collaboration', 'card', { id: c.id }),
       );

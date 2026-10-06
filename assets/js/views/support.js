@@ -287,6 +287,7 @@ F.prov = (d) => {
 
 // ---------- GAP CLOSURE (Section 6 user-story audit) ----------
 function migrate() {
+  ensurePlatformData();
   S.resources = S.resources || [
     {
       id: "rs1",
@@ -535,7 +536,7 @@ F.res = (d) => {
     S.aiSources.push({ id: uid("src"), title: x.title, status: "Approved" });
   else
     S.assign
-      .filter((a) => a.role === "A")
+      .filter((a) => roleBase(a.role) === "A")
       .forEach((a) =>
         notify(a.pid, "Resource suggested: " + x.title, "resources"),
       );
@@ -578,7 +579,7 @@ F.ini = (d) => {
     status: "Published",
   });
   S.assign
-    .filter((a) => a.ctx === ctxId() && a.role === "S")
+    .filter((a) => a.ctx === ctxId() && roleBase(a.role) === "S")
     .forEach((a) =>
       notify(a.pid, "New initiative for sponsors: " + d.title, "funding", {
         tab: "initiatives",
@@ -662,7 +663,7 @@ F.xo = (d) => {
     at: today(),
   });
   S.assign
-    .filter((a) => a.role === "A")
+    .filter((a) => roleBase(a.role) === "A")
     .forEach((a) =>
       notify(a.pid, "Cross-organization request from " + me().name, "admin", {
         tab: "xorg",
@@ -854,7 +855,7 @@ F.coh = (d) => {
     status: "Pending",
   });
   S.assign
-    .filter((a) => a.role === "T")
+    .filter((a) => roleBase(a.role) === "T")
     .forEach((a) =>
       notify(a.pid, "New cohort requested: " + d.name, "platform"),
     );

@@ -431,7 +431,7 @@ route("privacy", "agreements", () => {
           (g) =>
             g.ctx === a.ctx &&
             g.status === "Active" &&
-            g.roles.includes(a.role),
+            g.roles.includes(roleBase(a.role)),
         );
         return g && !acc.some((x) => x.ag === g.id) ? [a, g] : null;
       })
@@ -633,7 +633,7 @@ F.prq = (d) => {
     status: "Open",
   });
   S.assign
-    .filter((a) => a.role === "A")
+    .filter((a) => roleBase(a.role) === "A")
     .forEach((a) =>
       notify(a.pid, `Privacy request (${d.kind}) from ${me().name}`, "admin", {
         tab: "support",
@@ -730,7 +730,7 @@ route("pathway", "pathways", () => {
     ...new Set(
       S.assign
         .filter(
-          (a) => a.ctx === ctxId() && a.role === "P" && a.status === "Active",
+          (a) => a.ctx === ctxId() && roleBase(a.role) === "P" && a.status === "Active",
         )
         .map((a) => a.pid),
     ),

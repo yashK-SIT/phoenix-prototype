@@ -39,7 +39,7 @@ A.invNew = d => {
   modal(
     'Create invitations',
     () =>
-      `<form data-f="inv" class="col" style="gap:14px" novalidate>${fi('inv', 'emails', 'Email addresses (one per line, or paste a CSV column — up to 1,000)', { type: 'textarea', rows: 5, req: true })}<div class="f2">${fi('inv', 'role', 'Nominated role', { type: 'select', req: true, opts: allowed.map(r => [r, ROLE[r]]) })}${fi('inv', 'days', 'Valid for (days)', { type: 'number', req: true, min: 1, value: S.settings.inviteValidityDays })}</div>${fi('inv', 'ctx', 'Context', { type: 'select', req: true, opts: S.contexts.filter(c => c.kind !== 'Platform' && (role() !== 'O' || c.id === ctxId())).map(c => [c.id, c.name]), value: ctxId() })}${banner('info', '', 'Single-use links are sent by transactional email. Sensitive roles need approval after registration. An existing PHOENIX email gets the role added to their record.')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send invitations</button></div></form>`,
+      `<form data-f="inv" class="col" style="gap:14px" novalidate>${fi('inv', 'emails', 'Email addresses (one per line, or paste a CSV column — up to 1,000)', { type: 'textarea', rows: 5, req: true })}<div class="f2">${fi('inv', 'role', 'Nominated role', { type: 'select', req: true, opts: invitableRoles(allowed).map(r => [r.id, r.name + (r.system ? '' : ' (custom)')]) })}${fi('inv', 'days', 'Valid for (days)', { type: 'number', req: true, min: 1, value: S.settings.inviteValidityDays })}</div>${fi('inv', 'ctx', 'Context', { type: 'select', req: true, opts: S.contexts.filter(c => c.kind !== 'Platform' && (role() !== 'O' || c.id === ctxId())).map(c => [c.id, c.name]), value: ctxId() })}${banner('info', '', 'Single-use links are sent by transactional email. Sensitive roles need approval after registration. An existing PHOENIX email gets the role added to their record.')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send invitations</button></div></form>`,
   );
 };
 F.inv = d => {
@@ -108,7 +108,7 @@ A.userManage = d => {
     ])}
  <div class="row wrap">${a.status === 'Pending role approval' ? B('Approve role', 'roleDecide', { id: a.id, v: 'Active' }, 'btn-p btn-sm') + B('Decline role', 'roleDecide', { id: a.id, v: 'Role not activated' }) : a.status === 'Active' ? CB('Deactivate', 'userStatus', { id: a.id, v: 'Deactivated' }, 'Deactivate this ' + ROLE[a.role] + ' access? The person keeps their account, consent, correction and export rights.') : B('Activate', 'userStatus', { id: a.id, v: 'Active' }, 'btn-p btn-sm')}</div>
  <form data-f="bund" class="col" style="gap:8px"><input type="hidden" name="id" value="${a.id}"><span class="lbl">Specialist permission bundles</span>${S.bundles.map(b => `<label class="row"><input class="chk" type="checkbox" name="b" value="${b.name}" ${a.bundles.includes(b.name) ? 'checked' : ''} ${isO && ['Finance Owner', 'AI Owner', 'Trust/Data Steward', 'Incident/Safety Owner'].includes(b.name) ? 'disabled' : ''}>${b.name}<span class="cap">· ${h(b.approval)}</span></label>`).join('')}<span class="help">Higher-trust bundles need Programme/Organization Administrator approval and are not delegated at workspace level.</span><div class="actions"><span></span><button class="btn btn-s" type="submit">Save bundles</button></div></form>
- ${['O', 'C'].includes(a.role) ? `<form data-f="mand" class="col" style="gap:8px"><input type="hidden" name="id" value="${a.id}"><span class="lbl">Mandate (authority to bind the organization)</span>${fi('mand', 'scope', 'Scope', { value: a.mandate?.scope, req: true })}${fi('mand', 'until', 'Valid until', { type: 'date', req: true, value: a.mandate?.until })}<div class="actions">${a.mandate ? CB('Revoke mandate', 'mandRevoke', { id: a.id }, 'Revoke this mandate? Elevated access is removed; ordinary access continues.') : '<span></span>'}<button class="btn btn-s" type="submit">Grant / update mandate</button></div></form>` : ''}</div>`,
+ ${['O', 'C'].includes(roleBase(a.role)) ? `<form data-f="mand" class="col" style="gap:8px"><input type="hidden" name="id" value="${a.id}"><span class="lbl">Mandate (authority to bind the organization)</span>${fi('mand', 'scope', 'Scope', { value: a.mandate?.scope, req: true })}${fi('mand', 'until', 'Valid until', { type: 'date', req: true, value: a.mandate?.until })}<div class="actions">${a.mandate ? CB('Revoke mandate', 'mandRevoke', { id: a.id }, 'Revoke this mandate? Elevated access is removed; ordinary access continues.') : '<span></span>'}<button class="btn btn-s" type="submit">Grant / update mandate</button></div></form>` : ''}</div>`,
   );
 };
 A.userStatus = d => {
@@ -646,7 +646,7 @@ A.agrPublish = d => {
   const prev = S.agreements.filter(x => x.type === g.type && x.ctx === g.ctx && x.status === 'Active');
   prev.forEach(x => (x.status = 'Superseded'));
   g.status = 'Active';
-  const affected = S.assign.filter(a => a.ctx === g.ctx && g.roles.includes(a.role));
+  const affected = S.assign.filter(a => a.ctx === g.ctx && g.roles.includes(roleBase(a.role)));
   if (g.material || !prev.length) {
     affected.forEach(a => notify(a.pid, `Re-acceptance required: ${g.type} v${g.ver}`, 'privacy', { tab: 'agr' }));
   } else {
@@ -780,8 +780,7 @@ route('platform', 'platform', () => {
   const t = tabs(
     'plat',
     [
-      ['contexts', 'Contexts & tenants'],
-      ['roles', 'Roles & bundles'],
+      ['contexts', 'Contexts'],
       ['integrations', 'Integrations'],
       ['security', 'Security & access'],
       ['health', 'Health & alerts'],
@@ -794,14 +793,14 @@ route('platform', 'platform', () => {
   if (t.cur === 'contexts')
     body =
       card(
-        'Organizations, programmes and cohorts',
-        'Strict tenant/context isolation: one shared schema with a mandatory context ID.',
+        'Contexts',
+        'Programmes, cohorts and organization spaces. Strict isolation: every record carries its context ID. Organizations are managed under Organizations.',
         table(
           ['Context', 'Kind', 'Organization', 'Pack', 'Status', 'Members', ''],
           S.contexts.map(c => [
             `<b>${h(c.name)}</b><div class="cap">${c.id}</div>`,
             h(c.kind),
-            h(S.orgs.find(o => o.id === c.org)?.name || '—'),
+            c.org && orgOf(c.org) ? `<span class="row" style="gap:8px;flex-wrap:nowrap">${orgMark(orgOf(c.org), 24)}${L(h(orgOf(c.org).name), 'tenants', { id: c.org })}</span>` : '—',
             h(S.packs.find(p => p.id === c.pack)?.name || '—'),
             pill(c.status),
             S.assign.filter(a => a.ctx === c.id).length,
@@ -834,51 +833,6 @@ route('platform', 'platform', () => {
         'info',
         'No default content access',
         'Technical administration does not grant access to participant content. Cross-organization visibility only through explicit authorisation or approved aggregation.',
-      );
-  if (t.cur === 'roles')
-    body =
-      card(
-        'Primary roles',
-        '',
-        table(
-          ['Role', 'Joins by'],
-          Object.entries(ROLE).map(([k, v]) => [
-            v,
-            k === 'P' || k === 'S'
-              ? 'Direct registration or invitation'
-              : k === 'A'
-                ? 'Assigned by Platform Administrator'
-                : k === 'T'
-                  ? 'System-provisioned'
-                  : 'Invitation',
-          ]),
-        ),
-      ) +
-      '<div style="height:16px"></div>' +
-      card(
-        'Specialist permission bundles',
-        '',
-        table(
-          ['Bundle', 'Responsibility', 'Approval'],
-          S.bundles.map(b => [`<b>${h(b.name)}</b>`, h(b.desc), h(b.approval)]),
-        ),
-      ) +
-      '<div style="height:16px"></div>' +
-      card(
-        'Role × module matrix',
-        'Default Alpha access; effective permission can narrow it further.',
-        `<div class="tblwrap"><table class="tbl"><thead><tr><th>Module</th>${Object.keys(ROLE)
-          .map(r => `<th>${r}</th>`)
-          .join('')}</tr></thead><tbody>${Object.entries(MX)
-          .map(
-            ([m, v]) =>
-              `<tr><td>${m}</td>${Object.keys(ROLE)
-                .map(r => `<td title="${LV[v[r]] || ''}">${v[r]}</td>`)
-                .join('')}</tr>`,
-          )
-          .join('')}</tbody></table></div><p class="cap" style="margin-top:8px">${Object.entries(LV)
-          .map(([k, v]) => k + ' = ' + v)
-          .join(' · ')}</p>`,
       );
   if (t.cur === 'integrations')
     body =
@@ -1016,20 +970,31 @@ route('platform', 'platform', () => {
     body
   );
 });
-A.ctxNew = () => {
+A.ctxNew = (d = {}) => {
   clearF('cx');
+  UI.form.cx = { org: d.org || '', kind: 'Programme' };
+  const orgs = S.orgs.filter(o => o.status === 'Active');
   modal(
     'Create a context',
     () =>
-      `<form data-f="cx" class="col" style="gap:12px" novalidate>${fi('cx', 'name', 'Name', { req: true })}${fi('cx', 'kind', 'Kind', { type: 'select', opts: ['Programme', 'Cohort', 'Organization'] })}${fi('cx', 'org', 'Organization', { type: 'select', opts: S.orgs.map(o => [o.id, o.name]) })}${fi('cx', 'pack', 'Use-case pack', { type: 'select', opts: S.packs.map(p => [p.id, p.name]) })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Create</button></div></form>`,
+      `<form data-f="cx" class="col" style="gap:14px" novalidate>${fi('cx', 'name', 'Name', { req: true })}${fi('cx', 'kind', 'Kind', { type: 'select', opts: ['Programme', 'Cohort', 'Organization'] })}${fi('cx', 'org', 'Organization', { type: 'select', req: true, ph: orgs.length ? 'Choose an organization' : 'No active organizations yet', opts: orgs.map(o => [o.id, o.name + (o.short ? ' (' + o.short + ')' : '')]), help: 'Active organizations from Organizations. Missing one? ' + L('Create an organization', 'tenants') + ' first.' })}${fi('cx', 'pack', 'Use-case pack', { type: 'select', req: true, opts: S.packs.map(p => [p.id, p.name]) })}<div class="actions">${B('Cancel', 'closeM', {}, 'btn-g')}<button class="btn btn-p" type="submit">Create context</button></div></form>`,
   );
 };
 F.cx = d => {
-  if (!validate('cx', d, { name: ['req'] })) return render();
-  S.contexts.push({ id: uid('c'), name: d.name, org: d.org, pack: d.pack, kind: d.kind, status: 'Active' });
-  audit('Context created', d.name, d.pack);
+  if (
+    !validate('cx', d, {
+      name: ['req', ['fn', { f: v => !S.contexts.some(c => c.name.toLowerCase() === v.trim().toLowerCase()), m: 'A context with this name already exists.' }]],
+      org: [['req', 'Choose the organization that owns this context.'], ['fn', { f: v => orgOf(v)?.status === 'Active', m: 'That organization is not active.' }]],
+      pack: ['req'],
+    })
+  )
+    return render();
+  const c = { id: uid('c'), name: d.name.trim(), org: d.org, pack: d.pack, kind: d.kind, status: 'Active' };
+  S.contexts.push(c);
+  audit('Context created', c.id, c.name + ' · ' + orgOf(d.org).name + ' · ' + d.pack);
   UI.modal = null;
   clearF('cx');
+  toast(c.name + ' created for ' + orgOf(d.org).name + '.');
   ok();
 };
 A.ctxAdmin = d => {

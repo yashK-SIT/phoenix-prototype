@@ -538,7 +538,7 @@ function nextAction() {
 function metric(id) {
   const c = ctxId();
   const act = S.assign.filter((a) => a.ctx === c && a.status === "Active");
-  const parts = act.filter((a) => a.role === "P");
+  const parts = act.filter((a) => roleBase(a.role) === "P");
   switch (id) {
     case "m1":
       return (

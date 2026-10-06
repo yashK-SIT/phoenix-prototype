@@ -3215,3 +3215,178 @@ a.stat:hover {
 .assist .abub p + .ameta {
   margin-top: 8px;
 }
+
+/* ==========================================================================
+   Platform: organizations and role management
+   ========================================================================== */
+.orgmark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border-radius: var(--r);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px rgba(0, 40, 64, 0.12);
+}
+.orgmark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #fff;
+}
+.ctx .orgmark {
+  margin-right: 2px;
+}
+.brandbox {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.brandlogo {
+  width: 88px;
+  height: 88px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--sunk);
+  overflow: hidden;
+  flex: none;
+}
+.brandlogo img {
+  max-width: 76px;
+  max-height: 76px;
+  object-fit: contain;
+}
+.swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r);
+  box-shadow: inset 0 0 0 1px rgba(0, 40, 64, 0.2);
+  flex: none;
+}
+.colorpick {
+  width: 42px;
+  height: 38px;
+  padding: 2px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  background: var(--surface);
+  cursor: pointer;
+  flex: none;
+}
+.tnt-prev {
+  width: 44px;
+  height: 44px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--sunk);
+  flex: none;
+}
+.tnt-prev img {
+  max-width: 40px;
+  max-height: 40px;
+  object-fit: contain;
+}
+.tnt-prev .emsg {
+  font-size: 10px;
+  line-height: 12px;
+  text-align: center;
+}
+.fs {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 0;
+  padding: 14px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.fs:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+.fs > legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+  margin-bottom: 2px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ever-800);
+}
+.fs > legend + * {
+  clear: both;
+}
+/* permission editor */
+.permtbl td {
+  vertical-align: top;
+}
+.permtbl td:first-child {
+  width: 34%;
+}
+.permtbl tr.changed td:first-child {
+  box-shadow: inset 4px 0 0 var(--ochre);
+}
+.permset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.permset .chipchk span {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12.5px;
+}
+.permset .chipchk input:disabled + span {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.pvcell {
+  white-space: nowrap;
+  width: 1%;
+}
+.pv {
+  display: inline-block;
+  min-width: 30px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--ever-50);
+  color: var(--ever-800);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+}
+.pv.none {
+  background: #edf1f3;
+  color: var(--text-3);
+}
+.rmx th,
+.rmx td {
+  text-align: center;
+  padding: 8px 6px !important;
+}
+.rmx th:first-child,
+.rmx td:first-child {
+  text-align: left;
+  padding-left: 20px !important;
+  white-space: nowrap;
+}
+@container (max-width:640px) {
+  .permtbl td:first-child {
+    width: auto;
+  }
+  .pvcell {
+    width: auto;
+  }
+}

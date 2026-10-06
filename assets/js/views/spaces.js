@@ -139,7 +139,7 @@ const eligiblePeople = (exclude = [], roles = ["P", "F", "M", "C", "O"]) =>
       (a) =>
         a.ctx === ctxId() &&
         a.status === "Active" &&
-        roles.includes(a.role) &&
+        roles.includes(roleBase(a.role)) &&
         !exclude.includes(a.pid),
     )
     .filter((a, i, arr) => arr.findIndex((b) => b.pid === a.pid) === i)

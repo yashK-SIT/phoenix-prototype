@@ -272,7 +272,7 @@ const G = {
   invNew: () => ['A', 'O'].includes(role()) || 'only administrators create invitations',
   inv: d =>
     role() === 'A' ||
-    (role() === 'O' && d.ctx === ctxId() && d.role !== 'A' && d.role !== 'S') ||
+    (role() === 'O' && d.ctx === ctxId() && roleBase(d.role) !== 'A' && roleBase(d.role) !== 'S') ||
     'Organization Representatives invite only into their own context',
   invAct: d => {
     const i = byId('invites', d.id);
@@ -521,6 +521,20 @@ Object.assign(G, {
     return (p && p.by === myId() && p.state === 'Draft') || 'only the person who proposed this pathway can revise it';
   },
   pwActivity: d => pwCanView(byId('pathways', d.id)) || 'you cannot view this pathway',
+});
+// ---- organizations and role management: Platform Administrator only
+const platformOnly = what => () => role() === 'T' || 'only the Platform Administrator ' + what;
+Object.assign(G, {
+  tenantNew: platformOnly('manages organizations'),
+  tnt: platformOnly('manages organizations'),
+  tenantState: platformOnly('suspends or reactivates organizations'),
+  roleNew: platformOnly('creates roles'),
+  rnew: platformOnly('creates roles'),
+  roleEdit: platformOnly('edits roles'),
+  redit: platformOnly('edits roles'),
+  rperm: platformOnly('changes role permissions'),
+  roleReset: platformOnly('resets role permissions'),
+  roleState: platformOnly('archives or restores roles'),
 });
 // Wrap handlers. Same key may exist in A (click) and F (form submit); both are guarded.
 Object.keys(G).forEach(k => {
