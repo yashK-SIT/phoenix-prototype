@@ -892,7 +892,7 @@ function homeF() {
       B("Open review inbox", "go", { r: "inbox" }, "btn-p"),
     ) +
     `<div class="g12">
- <section class="card c7"><span class="over">Programme purpose</span><p class="h2" style="margin-top:8px">${h(ctx().name)}: move climate ideas from learning to accountable local action.</p><p class="cap" style="margin-top:8px">${myCircles().length} Circles you facilitate or belong to · ${S.ropes.filter((r) => memberOf(r)).length} Rope Teams</p></section>${nextCard()}
+ <section class="card c7 purpose"><span class="over">Programme purpose</span><p class="h2" style="margin-top:8px">${h(ctx().name)}: move climate ideas from learning to accountable local action.</p><div class="purpose-facts">${[["Circles", myCircles().length, "circles"], ["Rope Teams", S.ropes.filter((r) => inCtx(r) && memberOf(r)).length, "ropeteams"], [WL() + "s", myRooms().length, "rooms"]].map(([l, n, r]) => `<a href="#" data-a="go" data-r="${r}"><b>${n}</b><span>${l}</span></a>`).join("")}</div><p class="cap" style="margin-top:8px">Spaces you facilitate or belong to in this programme.</p></section>${nextCard()}
  <div class="c12 g12">${stat("s-purple", "t-purple", "folder", subs.length, "Project submissions", "Awaiting review or clarification", "projects")}${stat("s-teal", "t-teal", "link", S.matches.filter((m) => m.steward === pid && m.status === "In steward review").length, "Match Briefs", "Awaiting your review", "matches")}${stat("s-slate", "t-navy", "award", S.evidence.filter((e) => e.review === "Submitted").length, "Evidence to review", "Set status and E0–E4", "evidence")}${stat("s-mist", "t-slate", "inbox", inbox.length, "Review inbox", "All items needing you", "inbox")}</div>
  ${myTasksCard()}
  ${card("Project submissions", "", subs.map((p) => lrow("folder", h(p.title), nm(p.owner) + " · " + pill(p.status), L("Review", "project", { id: p.id }))).join("") || empty("check", "No submissions waiting", ""), "", "c7")}
@@ -1333,42 +1333,5 @@ A.remind = (d) => {
   toast("Reminder sent to " + P(d.pid).name);
   ok();
 };
-// ---------- NOTIFICATIONS ----------
-route("notifications", "any", () => {
-  const ns = S.notifs.filter((n) => n.pid === myId());
-  const un = ns.filter((n) => !n.read).length;
-  const t = tabs("notif", [
-    ["all", "All", ns.length],
-    ["unread", "Unread", un],
-  ]);
-  const list = t.cur === "unread" ? ns.filter((n) => !n.read) : ns;
-  return (
-    head(
-      "Notifications",
-      "In-app notifications. Invitations, verification, approvals and payment changes also go by email.",
-      un ? B(ic("check", 16) + "Mark all as read", "readAll") : "",
-    ) +
-    t.html +
-    card(
-      "",
-      "",
-      list
-        .map(
-          (n) =>
-            `<button type="button" class="notif ${n.read ? "" : "unread"}" data-a="read" data-id="${n.id}"><span class="tile ${n.read ? "t-soft" : "t-navy"}">${ic("bell", 18)}</span><span class="col" style="flex:1;min-width:0"><span style="font-weight:${n.read ? 500 : 700}">${h(n.t)}</span><span class="cap">${fmt(n.at)}</span></span>${n.read ? "" : '<span class="ndot" aria-label="Unread"></span>'}</button>`,
-        )
-        .join("") ||
-        empty(
-          "bell",
-          t.cur === "unread"
-            ? "No unread notifications"
-            : "No notifications yet",
-          "Activity in your Circles, reviews, approvals and payments appears here.",
-        ),
-    )
-  );
-});
-A.readAll = () => {
-  S.notifs.filter((n) => n.pid === myId()).forEach((n) => (n.read = true));
-  ok();
-};
+// Notifications are a dropdown from the bell (views/assist.js).
+

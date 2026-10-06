@@ -1185,40 +1185,7 @@ A.pwActivity = (d) => {
   );
 };
 // ---------- ASK PHOENIX (F09, class A) ----------
-route("ask", "ai", () => {
-  const hist = (S.askHist || []).filter((x) => x.pid === myId());
-  const okAI = consent(myId(), "ai") === "Granted";
-  return (
-    head(
-      "Ask PHOENIX",
-      "Approved-source answers with sources shown. Class A: private to you; nothing changes on your record.",
-    ) +
-    (!S.settings.aiAvailable
-      ? banner(
-          "warn",
-          "AI is temporarily unavailable",
-          "Your request cannot be processed right now. Every other part of PHOENIX keeps working.",
-        )
-      : "") +
-    (!okAI
-      ? banner(
-          "info",
-          "AI processing is off for you",
-          `Turn it on in ${L("Privacy & consent", "privacy")} to use Ask PHOENIX. Declining never blocks the rest of the platform.`,
-        )
-      : "") +
-    card(
-      "",
-      "",
-      `<div class="chat" style="max-height:none">${hist.map((x) => `<div class="msg mine"><span class="av">${ini(myId())}</span><div class="bub">${h(x.q)}</div></div><div class="msg"><span class="tile t-navy" style="width:32px;height:32px">${ic("sparkle", 16)}</span><div class="bub">${x.refused ? `<b>Request refused.</b> ` : ""}${h(x.a)}${x.src ? `<div class="cap" style="margin-top:6px">Sources: ${h(x.src)} · Uncertainty: ${h(x.unc)}</div>` : ""}<div style="margin-top:6px">${aiTag("AI · Class A private assist")}</div></div></div>`).join("") || empty("sparkle", "Ask a question", "Try: “What evidence is missing for my milestone?”, “Explain the E0–E4 levels”, or “Summarise unresolved questions in my Circle”.")}</div>
- <form data-f="ask" class="row" style="margin-top:16px" novalidate><input class="input" name="q" aria-label="Your question" placeholder="Ask about your pathway, evidence, Circles…" ${okAI && S.settings.aiAvailable ? "" : "disabled"} value="${h(UI.pre?.askQ || "")}"><button class="btn btn-p" type="submit" ${okAI && S.settings.aiAvailable ? "" : "disabled"}>${ic("send", 16)}Ask</button></form>`,
-    )
-  );
-});
-A.askPreset = (d) => {
-  UI.pre = { askQ: d.q };
-  go("ask");
-};
+// Ask PHOENIX is presented as a docked assistant (views/assist.js); the rules below are unchanged.
 F.ask = (d) => {
   UI.pre = null;
   const q = (d.q || "").trim();

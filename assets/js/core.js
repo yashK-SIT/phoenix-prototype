@@ -125,6 +125,14 @@ function deny(why, obj) {
   return false;
 }
 function go(r, p = {}) {
+  // Notifications and Ask PHOENIX are panels over the current screen, not pages.
+  if (r === 'notifications' || r === 'ask') {
+    UI.modal = null;
+    UI.panel = r === 'ask' ? 'ask' : 'notif';
+    render();
+    return;
+  }
+  if (UI.panel === 'notif') UI.panel = null;
   UI.route = r;
   UI.p = p;
   UI.modal = null;
@@ -229,8 +237,9 @@ const B = (label, a, data, cls = 'btn-s btn-sm', extra = '') =>
 const L = (label, r, p, cls = 'lnk') => `<a href="#" class="${cls}" data-a="go" data-r="${r}"${attr(p)}>${label}</a>`;
 const card = (title, sub, body, right = '', cls = '') =>
   `<section class="card ${cls}">${title || sub || right ? `<div class="card-h"><div>${title ? `<h2 class="h2">${title}</h2>` : ''}${sub ? `<p class="cap">${sub}</p>` : ''}</div><div class="row wrap">${right}</div></div>` : ''}${body}</section>`;
+// Empty state: says what is missing and what to do next, aligned with the content it replaces.
 const empty = (icon, title, text, act = '') =>
-  `<div class="col" style="align-items:center;text-align:center;gap:8px;padding:24px 8px"><span class="tile t-soft" style="width:48px;height:48px">${ic(icon, 22)}</span><b>${title}</b><p class="cap" style="max-width:440px">${text}</p>${act}</div>`;
+  `<div class="empty"><span class="empty-ic" aria-hidden="true">${ic(icon, 18)}</span><div><b>${title}</b>${text ? `<p>${text}</p>` : ''}${act ? `<div class="row wrap" style="gap:8px">${act}</div>` : ''}</div></div>`;
 const banner = (k, title, text, icon) =>
   `<div class="banner b-${k}" ${k === 'err' ? 'role="alert"' : 'role="status"'}>${ic(icon || { err: 'alert', warn: 'alert', ok: 'check', info: 'info', ai: 'sparkle' }[k])}<div>${title ? `<div class="bt">${title}</div>` : ''}${text ? `<p>${text}</p>` : ''}</div></div>`;
 const table = (cols, rows, emptyMsg = 'Nothing to show.') =>
@@ -383,7 +392,6 @@ function navItems() {
       ['platform:health', 'Health & alerts', 'chart'],
       ['platform:storage', 'Storage & backups', 'archive'],
       ['audit', 'Audit & logs', 'file'],
-      ['notifications', 'Notifications', 'bell'],
     ];
   }
   items.push(['home', 'My PHOENIX', 'home']);
@@ -497,8 +505,8 @@ function topbar() {
   return `<header class="top"><div class="mbrand" style="align-items:center"><span class="mark" style="width:32px;height:32px;font-size:14px">P</span></div>
  <button class="ctx" type="button" data-a="switcher" aria-label="Switch role or context. Current: ${h(c?.name)}, ${ROLE[a.role]}" title="${h(c?.name)} · ${ROLE[a.role]}"><span class="tile t-soft" style="width:28px;height:28px;border-radius:8px">${ic('users', 16)}</span><span class="ctxt"><b>${h(c?.name)}</b><small>${ROLE[a.role]}${a.bundles.length ? ' · +' + a.bundles.length + ' bundle' + (a.bundles.length > 1 ? 's' : '') : ''}</small></span>${others > 1 ? ic('chev', 16) : ''}</button>
  <div class="grow"></div>
- ${can('ai') ? `<a href="#" class="btn btn-s btn-sm hide-sm" data-a="go" data-r="ask" aria-label="Ask PHOENIX" title="Ask PHOENIX">${ic('sparkle', 16)}<span class="hide-md">Ask PHOENIX</span></a>` : ''}
- <button class="iconbtn" type="button" data-a="go" data-r="notifications" aria-label="Notifications, ${unread} unread">${ic('bell')}${unread ? `<span class="badge">${unread}</span>` : ''}</button>
+ ${can('ai') ? `<button type="button" class="btn btn-s btn-sm askbtn ${UI.panel === 'ask' ? 'on' : ''}" data-a="askToggle" aria-expanded="${UI.panel === 'ask'}" aria-controls="assist" title="Ask PHOENIX">${ic('sparkle', 16)}<span class="hide-md">Ask PHOENIX</span></button>` : ''}
+ <div class="nwrap"><button class="iconbtn ${UI.panel === 'notif' ? 'on' : ''}" type="button" data-a="notifToggle" aria-haspopup="dialog" aria-expanded="${UI.panel === 'notif'}" aria-label="Notifications, ${unread} unread">${ic('bell')}${unread ? `<span class="badge">${unread}</span>` : ''}</button>${UI.panel === 'notif' ? notifMenu() : ''}</div>
  <button class="who" type="button" data-a="go" data-r="profile" aria-label="Your profile"><span class="av">${ini(myId())}</span><span class="hide-sm">${h(me().display)}</span></button></header>`;
 }
 const SHORT = {
@@ -677,6 +685,7 @@ document.addEventListener('change', e => {
 });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && UI.modal && !(e.target.classList && e.target.classList.contains('msel-q'))) closeM();
+  else if (e.key === 'Escape' && !UI.modal && UI.panel) closePanel();
 });
 A.go = d => {
   const p = { ...d };
@@ -729,6 +738,7 @@ const resetUI = () => {
   UI.p = {};
   UI.modal = null;
   UI.chat = {};
+  UI.panel = null;
 };
 A.logout = () => {
   audit('Signed out', 'session', '');
