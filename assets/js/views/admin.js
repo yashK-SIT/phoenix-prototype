@@ -39,11 +39,15 @@ A.invNew = d => {
   modal(
     'Create invitations',
     () =>
-      `<form data-f="inv" class="col" style="gap:14px" novalidate>${fi('inv', 'emails', 'Email addresses (one per line, or paste a CSV column — up to 1,000)', { type: 'textarea', rows: 5, req: true })}<div class="f2">${fi('inv', 'role', 'Nominated role', { type: 'select', req: true, opts: invitableRoles(allowed).map(r => [r.id, r.name + (r.system ? '' : ' (custom)')]) })}${fi('inv', 'days', 'Valid for (days)', { type: 'number', req: true, min: 1, value: S.settings.inviteValidityDays })}</div>${fi('inv', 'ctx', 'Context', { type: 'select', req: true, opts: S.contexts.filter(c => c.kind !== 'Platform' && (role() !== 'O' || c.id === ctxId())).map(c => [c.id, c.name]), value: ctxId() })}${banner('info', '', 'Single-use links are sent by transactional email. Sensitive roles need approval after registration. An existing PHOENIX email gets the role added to their record.')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send invitations</button></div></form>`,
+      `<form data-f="inv" class="col" style="gap:14px" novalidate>${fi('inv', 'emails', 'Email addresses (one per line, or paste a CSV column — up to 1,000)', { type: 'textarea', rows: 5, req: true })}<div class="f2">${fi('inv', 'role', 'Nominated role', { type: 'select', req: true, opts: invitableRoles(allowed).map(r => [r.id, r.name + (r.system ? '' : ' (custom)')]) })}${fi('inv', 'days', 'Valid for (days)', { type: 'number', req: true, min: 1, value: S.settings.inviteValidityDays })}</div>${fi('inv', 'until', 'Role assignment expires (optional)', { type: 'date', help: 'After this date the role stops working until an administrator renews it. Leave empty for no expiry.' })}${fi('inv', 'ctx', 'Context', { type: 'select', req: true, opts: S.contexts.filter(c => c.kind !== 'Platform' && (role() !== 'O' || c.id === ctxId())).map(c => [c.id, c.name]), value: ctxId() })}${banner('info', '', 'Single-use links are sent by transactional email. Sensitive roles need approval after registration. An existing PHOENIX email gets the role added to their record.')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send invitations</button></div></form>`,
   );
 };
 F.inv = d => {
   if (!validate('inv', d, { emails: ['req'], role: ['req'], days: ['req', 'num'], ctx: ['req'] })) return render();
+  if (d.until && d.until <= today()) {
+    UI.err.inv = { until: 'Choose a date after today, or leave it empty.' };
+    return render();
+  }
   const list = d.emails
     .split(/[\n,;]+/)
     .map(s => s.trim())
@@ -75,6 +79,7 @@ F.inv = d => {
       expires: e.toISOString().slice(0, 10),
       by: myId(),
       sent: today(),
+      ...(d.until ? { until: d.until } : {}),
     });
   });
   audit('Invitations created', d.ctx, list.length - dup + ' × ' + ROLE[d.role]);
@@ -91,7 +96,7 @@ function usersTable(ctxFilter, canEdit) {
       `<div class="row" style="gap:10px"><span class="av">${ini(a.pid)}</span><div><b>${nm(a.pid)}</b><div class="cap">${h(P(a.pid).email)}</div></div></div>`,
       `<b style="font-weight:600">${ROLE[a.role]}</b><div class="cap">${h(S.contexts.find(c => c.id === a.ctx).name)}</div>`,
       pill(a.status),
-      `<div class="row wrap" style="gap:4px">${a.bundles.map(b => pill(b, 'p-grey')).join('')}${a.mandate ? pill(a.mandate.valid ? 'Mandate to ' + fmt(a.mandate.until) : 'Mandate expired', a.mandate.valid ? 'p-teal' : 'p-red') : ''}</div>`,
+      `<div class="row wrap" style="gap:4px">${a.bundles.map(b => pill(b, 'p-grey')).join('')}${a.mandate ? pill(a.mandate.valid ? 'Mandate to ' + fmt(a.mandate.until) : 'Mandate expired', a.mandate.valid ? 'p-teal' : 'p-red') : ''}${a.until ? pill((a.status === 'Expired' ? 'Role expired ' : 'Role expires ') + fmt(a.until), a.status === 'Expired' ? 'p-red' : 'p-grey') : ''}</div>`,
       canEdit && a.pid !== myId() ? B('Manage', 'userManage', { id: a.id }) : '',
     ]),
   );
@@ -105,7 +110,9 @@ A.userManage = d => {
       ['Role', ROLE[a.role]],
       ['Context', h(S.contexts.find(c => c.id === a.ctx).name)],
       ['Status', pill(a.status)],
+      ['Assignment expires', a.until ? fmt(a.until) : 'No expiry set'],
     ])}
+ ${a.pid !== myId() ? `<form data-f="aexp" class="col" style="gap:8px" novalidate><input type="hidden" name="id" value="${a.id}">${fi('aexp', 'until', 'Role assignment expires', { type: 'date', value: a.until || '', help: 'Leave empty for no expiry. On the day after this date the role stops working until it is renewed.' })}<div class="actions"><span></span><button class="btn btn-s" type="submit">Save expiry</button></div></form>` : ''}
  <div class="row wrap">${a.status === 'Pending role approval' ? B('Approve role', 'roleDecide', { id: a.id, v: 'Active' }, 'btn-p btn-sm') + B('Decline role', 'roleDecide', { id: a.id, v: 'Role not activated' }) : a.status === 'Active' ? CB('Deactivate', 'userStatus', { id: a.id, v: 'Deactivated' }, 'Deactivate this ' + ROLE[a.role] + ' access? The person keeps their account, consent, correction and export rights.') : B('Activate', 'userStatus', { id: a.id, v: 'Active' }, 'btn-p btn-sm')}</div>
  <form data-f="bund" class="col" style="gap:8px"><input type="hidden" name="id" value="${a.id}"><span class="lbl">Specialist permission bundles</span>${S.bundles.map(b => `<label class="row"><input class="chk" type="checkbox" name="b" value="${b.name}" ${a.bundles.includes(b.name) ? 'checked' : ''} ${isO && ['Finance Owner', 'AI Owner', 'Trust/Data Steward', 'Incident/Safety Owner'].includes(b.name) ? 'disabled' : ''}>${b.name}<span class="cap">· ${h(b.approval)}</span></label>`).join('')}<span class="help">Higher-trust bundles need Programme/Organization Administrator approval and are not delegated at workspace level.</span><div class="actions"><span></span><button class="btn btn-s" type="submit">Save bundles</button></div></form>
  ${['O', 'C'].includes(roleBase(a.role)) ? `<form data-f="mand" class="col" style="gap:8px"><input type="hidden" name="id" value="${a.id}"><span class="lbl">Mandate (authority to bind the organization)</span>${fi('mand', 'scope', 'Scope', { value: a.mandate?.scope, req: true })}${fi('mand', 'until', 'Valid until', { type: 'date', req: true, value: a.mandate?.until })}<div class="actions">${a.mandate ? CB('Revoke mandate', 'mandRevoke', { id: a.id }, 'Revoke this mandate? Elevated access is removed; ordinary access continues.') : '<span></span>'}<button class="btn btn-s" type="submit">Grant / update mandate</button></div></form>` : ''}</div>`,
@@ -113,10 +120,31 @@ A.userManage = d => {
 };
 A.userStatus = d => {
   const a = byId('assign', d.id);
+  if (d.v === 'Active' && a.until && a.until < today()) {
+    audit('Role assignment expiry cleared on reactivation', a.id, 'was ' + a.until);
+    delete a.until;
+  }
   a.status = d.v;
   notify(a.pid, 'Your ' + ROLE[a.role] + ' access is now ' + d.v, 'home');
   audit('User ' + d.v, a.id, '');
   UI.modal = null;
+  ok();
+};
+F.aexp = d => {
+  const a = byId('assign', d.id);
+  if (d.until && d.until < today()) {
+    UI.err.aexp = { until: 'Choose today or a later date, or leave it empty.' };
+    return render();
+  }
+  const was = a.until || 'none';
+  if (d.until) a.until = d.until;
+  else delete a.until;
+  if (a.status === 'Expired' && (!a.until || a.until >= today())) a.status = 'Active';
+  notify(a.pid, 'Your ' + ROLE[a.role] + ' assignment ' + (a.until ? 'now expires on ' + fmt(a.until) : 'no longer has an expiry date'), 'profile', { tab: 'compass' });
+  audit('Role assignment expiry set', a.id, was + ' → ' + (a.until || 'none'));
+  UI.modal = null;
+  clearF('aexp');
+  toast('Expiry saved.');
   ok();
 };
 F.bund = d => {

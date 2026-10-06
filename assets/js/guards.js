@@ -536,6 +536,30 @@ Object.assign(G, {
   roleReset: platformOnly('resets role permissions'),
   roleState: platformOnly('archives or restores roles'),
 });
+// ---- deliverables → evidence → Learning Harvest → profile evolution; role assignment expiry
+Object.assign(G, {
+  hvGen: d => {
+    const x = byId('rooms', d.r);
+    return (x && x.state === 'Active' && activeMember('rooms', d.r)) || 'only active members of this ' + WL() + ' generate its Learning Harvest';
+  },
+  hv2: d => {
+    const x = byId('harvests', d.id);
+    if (!x || x.tpl !== 2) return 'Learning Harvest not found';
+    if (!['Draft', 'Review'].includes(x.state)) return 'this Learning Harvest can no longer be edited';
+    const o = byId('rooms', x.scope);
+    const comp = canComplete() && ((o && memberOf(o)) || role() === 'F');
+    if (['approve', 'reject'].includes(d.act)) {
+      if (x.subject === myId()) return 'a Learning Harvest is approved or rejected by someone other than the person it is about';
+      return comp || 'only an authorised Faculty/Steward, Reviewer or Project Lead approves or rejects a Learning Harvest';
+    }
+    return x.by === myId() || comp || 'only the person the Harvest is for, or an authorised reviewer, edits it';
+  },
+  evoDecide: d => byId('evolution', d.id)?.pid === myId() || 'only the person whose profile it is can approve or reject a suggested change',
+  aexp: d => {
+    const a = byId('assign', d.id);
+    return (a && a.pid !== myId() && (role() === 'A' || (role() === 'O' && a.ctx === ctxId()))) || 'only an administrator in this context sets a role expiry';
+  },
+});
 // Wrap handlers. Same key may exist in A (click) and F (form submit); both are guarded.
 Object.keys(G).forEach(k => {
   [A, F].forEach(T => {

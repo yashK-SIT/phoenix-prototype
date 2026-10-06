@@ -228,6 +228,13 @@ function returnsCard(o) {
 function tick() {
   if (typeof expireCards === 'function') expireCards();
   const t = today();
+  S.assign.forEach(a => {
+    if (a.status === 'Active' && a.until && a.until < t) {
+      a.status = 'Expired';
+      notify(a.pid, 'Your ' + ROLE[a.role] + ' assignment expired on ' + fmt(a.until), 'home');
+      audit('Role assignment expired', a.id, ROLE[a.role] + ' · until ' + a.until);
+    }
+  });
   S.circles.forEach(c =>
     (c.polls || []).forEach(p => {
       if (p.status === 'Open' && p.closes < t) closePollCore({ c: c.id, p: p.id }, 'due', true);

@@ -21,6 +21,11 @@ route("profile", "any", () => {
         "Change candidates",
         cands.filter((c) => c.status === "Pending").length,
       ],
+      [
+        "evo",
+        "Profile evolution",
+        S.evolution.filter((s) => s.pid === pid && s.status === "Pending").length,
+      ],
       ["versions", "Versions"],
       ["collab", "Collaboration history"],
     ],
@@ -105,11 +110,49 @@ route("profile", "any", () => {
       );
   if (t.cur === "compass") {
     const a = S.compass[pid] || {};
-    body = card(
-      "Purpose Compass v1.0",
-      "PC1–PC6 are the minimum. PC7–PC12 are optional and asked in context. Private by default.",
-      `<form data-f="compass" class="col" style="gap:16px" novalidate>${COMPASS.map(([id, p, q, v], i) => (id === "PC4" ? `<div class="field"><label class="lbl">${id} · ${q} ${i < 6 ? '<span class="req">*</span>' : ""}</label><div class="row wrap"><input name="PC4n" type="number" min="1" class="input" style="width:120px" value="${h((a.PC4 || "").split("|")[0])}"><select name="PC4u" class="input" style="width:200px"><option ${(a.PC4 || "").includes("week") ? "selected" : ""}>hours per week</option><option ${(a.PC4 || "").includes("month") ? "selected" : ""}>hours per month</option></select></div><span class="vis">${ic("lock", 14)}${v}</span></div>` : fi("compass", id, `${id} · ${q}`, { type: "textarea", rows: 2, req: i < 6, value: a[id], vis: v + " · " + p }))).join("")}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save new version</button></div></form>`,
-    );
+    const miss = blMissing(pid);
+    const inBl = blKeys();
+    body =
+      (miss.length
+        ? banner(
+            "warn",
+            "Your baseline is not complete",
+            "Answer the required questions in: " +
+              miss.map((s) => s.n).join(", ") +
+              ". Your " +
+              WL() +
+              "s and Learning Harvests use the baseline as context.",
+          )
+        : "") +
+      `<div class="g12">${card(
+        "Purpose Compass Baseline",
+        "Your starting point. Used as context for your " +
+          WL() +
+          "s and Learning Harvests. Private by default.",
+        blSummary(pid),
+        "",
+        "c12",
+      )}</div><div class="section-gap"></div>` +
+      `<form data-f="compass" class="col" style="gap:24px" novalidate>${errSum("compass")}${BL_SETS.map((s, i) =>
+        card(
+          i ? i + " · " + s.n : s.n,
+          s.d || "",
+          `<div class="col" style="gap:14px">${s.q.map((q) => blField("compass", q, a)).join("")}</div>`,
+        ),
+      ).join("")}${card(
+        "Optional questions",
+        "Asked in context. Private by default.",
+        `<div class="col" style="gap:14px">${COMPASS.filter(([id]) => !inBl.includes(id))
+          .map(([id, p, q, v]) =>
+            fi("compass", id, `${id} · ${q}`, {
+              type: "textarea",
+              rows: 2,
+              value: a[id],
+              vis: v + " · " + p,
+            }),
+          )
+          .join("")}</div>`,
+      )}<div class="actions"><span class="cap">${a._at ? "Baseline set " + fmt(a._at) + ". " : ""}Each save creates a new profile version.</span><button class="btn btn-p" type="submit">Save new version</button></div></form>`;
   }
   if (t.cur === "cand")
     body = card(
@@ -127,6 +170,27 @@ route("profile", "any", () => {
           "Candidates come from AI (only when you ask, or after approved evidence), completed milestones or Learning Harvests.",
         ),
     );
+  if (t.cur === "evo") {
+    const ev = S.evolution.filter((s) => s.pid === pid);
+    const pend = ev.filter((s) => s.status === "Pending");
+    const done = ev.filter((s) => s.status !== "Pending").reverse();
+    body =
+      banner(
+        "info",
+        "Your profile only changes when you approve",
+        "After a Learning Harvest is approved, PHOENIX identifies possible profile changes from it. Each one shows what would change, why, and the finding and records behind it. Approving updates your profile and saves a new version; rejecting leaves it unchanged. Both are recorded.",
+      ) +
+      (pend.length
+        ? `<h2 class="h3" style="margin:18px 0 10px">Awaiting your review (${pend.length})</h2><div class="col" style="gap:16px">${pend.map((s) => evoCard(s, true)).join("")}</div>`
+        : empty(
+            "sparkle",
+            "Nothing to review",
+            "Suggestions appear here after a Learning Harvest about your work is approved.",
+          )) +
+      (done.length
+        ? `<h2 class="h3" style="margin:24px 0 10px">Decided</h2><div class="col" style="gap:16px">${done.map((s) => evoCard(s, false)).join("")}</div>`
+        : "");
+  }
   if (t.cur === "versions")
     body = card(
       "Version history",
@@ -224,7 +288,7 @@ A.addClaim = () => {
   modal(
     "Add a profile claim",
     () =>
-      `<form data-f="claim" class="col" style="gap:14px" novalidate>${fi("claim", "field", "Field", { type: "select", req: true, opts: ["Skills", "Experience", "Capability", "Interests", "Languages", "Availability", "Relationships / resources", "Preferences", "Goals", "Contributions", "Constraints"], ph: "Select" })}${fi("claim", "value", "Value", { req: true })}${fi("claim", "vis", "Visibility", { type: "select", opts: VIS, value: "Only me" })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save claim</button></div></form>`,
+      `<form data-f="claim" class="col" style="gap:14px" novalidate>${fi("claim", "field", "Field", { type: "select", req: true, opts: ["Skills", "Skill proficiency", "Experience", "Knowledge", "Capability", "Interests", "Languages", "Availability", "Relationships / resources", "Preferences", "Goals", "Contributions", "Constraints"], ph: "Select" })}${fi("claim", "value", "Value", { req: true })}${fi("claim", "vis", "Visibility", { type: "select", opts: VIS, value: "Only me" })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save claim</button></div></form>`,
   );
 };
 F.claim = (d) => {
@@ -296,18 +360,15 @@ F.basics = (d) => {
   ok();
 };
 F.compass = (d) => {
-  const r = {};
-  COMPASS.slice(0, 6).forEach(([id]) => {
-    if (id !== "PC4") r[id] = ["req"];
-  });
-  r.PC4n = [["req", "Enter hours."], "num"];
-  if (!validate("compass", d, r)) return render();
-  const a = (S.compass[myId()] = S.compass[myId()] || {});
+  if (!validate("compass", d, blRules(BL_SETS))) return render();
+  blApply(myId(), d, BL_SETS);
+  const a = S.compass[myId()];
+  const inBl = blKeys();
   COMPASS.forEach(([id]) => {
-    if (id === "PC4") a.PC4 = d.PC4n + "|" + d.PC4u;
-    else a[id] = d[id] || "";
+    if (!inBl.includes(id)) a[id] = (d[id] || "").trim();
   });
-  bumpVer("Purpose Compass updated", "User edit", "Self-declared");
+  a._at = a._at || today();
+  bumpVer("Purpose Compass Baseline updated", "User edit", "Self-declared");
   toast("Purpose Compass saved as a new version.");
   ok();
 };
@@ -346,6 +407,222 @@ F.ce = (d) => {
   UI.modal = null;
   A.cand({ id: c.id, v: "Accepted" });
 };
+// ---------- PROFILE EVOLUTION (from an approved Learning Harvest) ----------
+// Learning Harvest → analyse learning → suggested changes → the person reviews each one → approve or reject.
+// Suggestions never write to the profile. Only an approval by the person themself does (evoApply).
+const evoSep = (field) => (field === "Experience" ? "; " : ", ");
+const evoItems = (s, comma = true) =>
+  String(s || "")
+    .split(comma ? /\n|;|,|•/ : /\n|;|•/)
+    .map((x) => x.replace(/^[-–*\s]+/, "").trim())
+    .filter((x) => x && !/^(none|n\/a|na|nothing|-)\.?$/i.test(x));
+const evoHas = (list, v) => list.some((x) => x.toLowerCase() === String(v).toLowerCase());
+const curItems = (pid, field) =>
+  S.claims
+    .filter((c) => c.pid === pid && c.field === field && c.state === "Current")
+    .flatMap((c) => evoItems(c.value, field !== "Experience"));
+const monthYear = (d) =>
+  new Date((d || today()).slice(0, 10) + "T00:00:00").toLocaleDateString("en-GB", { month: "short", year: "numeric" });
+function analyseHarvest(x) {
+  const pid = x.subject;
+  const room = byId("rooms", x.scope);
+  const s = x.sections;
+  const where = room ? room.name : "this work";
+  const mine = room
+    ? room.tasks.filter((k) => k.status === "Done" && (k.owner === pid || (k.partners || []).includes(pid)))
+    : [];
+  const ev = room
+    ? S.evidence.filter(
+        (e) => e.linked.includes(room.id) && e.owner === pid && !["Withdrawn", "Rejected"].includes(e.review),
+      )
+    : [];
+  const refs = [
+    ...mine.map((k) => ({ type: "Deliverable", id: k.id, label: k.t, r: "room", p: { id: room.id, tab: "plan" } })),
+    ...ev.map((e) => ({ type: "Evidence", id: e.id, label: e.title, r: "evidence", p: { id: e.id } })),
+  ];
+  const out = [];
+  const add = (o) => out.push({ id: uid("pe"), pid, hv: x.id, room: room ? room.id : null, status: "Pending", at: now(), refs, ...o });
+  const backing = mine.length
+    ? ` while completing ${mine.length} deliverable${mine.length > 1 ? "s" : ""} in ${where}` +
+      (ev.length ? `, supported by ${ev.length} evidence item${ev.length > 1 ? "s" : ""}` : "")
+    : ` in ${where}`;
+  // Skills: demonstrated or developed, and not already held
+  const curSk = curItems(pid, "Skills");
+  const dem = evoItems(s.skillsDem),
+    dev = evoItems(s.skillsDev);
+  const newSk = [...new Set([...dem, ...dev])].filter((v) => !evoHas(curSk, v));
+  if (newSk.length)
+    add({
+      kind: "claim",
+      field: "Skills",
+      add: newSk,
+      reason: `The Learning Harvest records ${newSk.join(", ")} as ${[dem.some((v) => evoHas(newSk, v)) && "demonstrated", dev.some((v) => evoHas(newSk, v)) && "developed"].filter(Boolean).join(" and ")}${backing}.`,
+      finding: {
+        sec: "B. Learning — skills demonstrated and developed",
+        text: [s.skillsDem && "Demonstrated: " + s.skillsDem, s.skillsDev && "Developed: " + s.skillsDev].filter(Boolean).join("\n"),
+      },
+    });
+  // Skill proficiency: a skill already held that was demonstrated in completed work
+  dem
+    .filter((v) => evoHas(curSk, v))
+    .slice(0, 5)
+    .forEach((v) =>
+      add({
+        kind: "claim",
+        field: "Skill proficiency",
+        skill: v,
+        value: `${v}: applied in practice — ${where} (${monthYear(x.at)})`,
+        reason: `${v} is already one of your skills. The Learning Harvest records it as demonstrated${backing}, which suggests an updated proficiency.`,
+        finding: { sec: "B. Learning — skills demonstrated", text: s.skillsDem },
+      }),
+    );
+  const list = (field, txt, sec, reason) => {
+    const items = [...new Set(evoItems(txt))].filter((v) => !evoHas(curItems(pid, field), v));
+    if (items.length) add({ kind: "claim", field, add: items, reason: reason(items), finding: { sec, text: txt } });
+  };
+  list("Interests", s.interests, "B. Learning — new interests", (it) => `The Learning Harvest records ${it.length > 1 ? "new interests" : "a new interest"} that came out of ${where}.`);
+  list("Knowledge", s.knowledge, "B. Learning — new knowledge", () => `The Learning Harvest records new knowledge gained${backing}.`);
+  list("Capability", s.confidence, "B. Learning — changes in confidence or capability", () => `The Learning Harvest records a change in confidence or capability${backing}.`);
+  // Experience: the person's own completed deliverables
+  const exp = mine
+    .map((k) => `${k.owner === pid ? "Delivered" : "Contributed to"} “${k.t}” in ${where} (${monthYear(k.doneAt)})`)
+    .filter((v) => !evoHas(curItems(pid, "Experience"), v));
+  if (exp.length)
+    add({
+      kind: "claim",
+      field: "Experience",
+      add: exp,
+      reason: `You delivered or contributed to ${mine.length} completed deliverable${mine.length > 1 ? "s" : ""} in ${where}, with evidence submitted and the Learning Harvest approved.`,
+      finding: { sec: "A. What happened", text: s.what },
+    });
+  // Goals: the baseline first milestone may be reached; the Test decision names the next one
+  const cp = S.compass[pid] || {};
+  const nxt = evoItems(s.test, false)[0];
+  if (nxt && cp.PC5 && nxt.toLowerCase() !== cp.PC5.toLowerCase())
+    add({
+      kind: "compass",
+      key: "PC5",
+      field: "Goals — first milestone",
+      value: nxt,
+      reason: `All required deliverables in ${where} are complete and evidence was submitted, so your baseline first milestone (“${cp.PC5}”) may be reached. The Harvest's Test decision names what to try next.`,
+      finding: { sec: "F. Continue / Change / Stop / Test — Test", text: s.test },
+    });
+  return out;
+}
+// Runs once, when the Harvest is approved. Creates Pending suggestions only.
+function evoGenerate(x) {
+  if (x.evoAt || !x.subject) return [];
+  const list = analyseHarvest(x);
+  S.evolution.push(...list);
+  x.evoAt = now();
+  x.evoN = list.length;
+  if (list.length)
+    notify(
+      x.subject,
+      `${list.length} suggested profile change${list.length > 1 ? "s" : ""} from your Learning Harvest ${list.length > 1 ? "are" : "is"} waiting for your review`,
+      "profile",
+      { tab: "evo" },
+    );
+  audit("Profile evolution identified", x.id, list.length + " suggestion(s) for " + P(x.subject).name + " — none applied");
+  return list;
+}
+function evoCurrent(s) {
+  if (s.status !== "Pending") return s.before || "—";
+  if (s.kind === "compass") return (S.compass[s.pid] || {})[s.key] || "—";
+  if (s.field === "Skill proficiency") return (evoProfClaim(s) || {}).value || "Not recorded";
+  return curItems(s.pid, s.field).join(evoSep(s.field)) || "None recorded";
+}
+function evoSuggestedHtml(s) {
+  const mk = (v) => `<mark class="evo-add">${h(v)}</mark>`;
+  if (s.kind === "compass" || s.field === "Skill proficiency") return mk(s.value);
+  const base = s.status === "Pending" ? curItems(s.pid, s.field) : evoItems(s.before, s.field !== "Experience");
+  const add = s.add.filter((v) => !evoHas(base, v));
+  return [...base.map(h), ...add.map(mk)].join(evoSep(s.field)) || "—";
+}
+const evoProfClaim = (s) =>
+  S.claims.find(
+    (c) =>
+      c.pid === s.pid &&
+      c.field === "Skill proficiency" &&
+      c.state === "Current" &&
+      c.value.toLowerCase().startsWith(s.skill.toLowerCase() + ":"),
+  );
+function evoCard(s, act) {
+  const hv = byId("harvests", s.hv);
+  const links = [
+    hv && L(ic("sparkle", 14) + "View Learning Harvest", "harvest", { id: hv.id }, "btn btn-g btn-sm"),
+    ...s.refs.filter((r) => r.type === "Evidence").map((r) => L(ic("award", 14) + "View evidence: " + h(r.label), r.r, r.p, "btn btn-g btn-sm")),
+    ...(() => {
+      const ds = s.refs.filter((r) => r.type === "Deliverable");
+      return ds.length ? [L(ic("check", 14) + (ds.length > 1 ? "View deliverables (" + ds.length + ")" : "View deliverable: " + h(ds[0].label)), ds[0].r, ds[0].p, "btn btn-g btn-sm")] : [];
+    })(),
+  ]
+    .filter(Boolean)
+    .join("");
+  const st = { Pending: "p-amber", Approved: "p-green", Rejected: "p-grey" }[s.status];
+  return `<article class="evo"><header class="evo-h"><span class="over">Suggested profile change</span>${pill(s.status === "Pending" ? "Awaiting your review" : s.status, st)}</header>${dl([
+    ["Profile field", `<b>${h(s.field)}</b>`],
+    [s.status === "Pending" ? "Current" : "Before", h(evoCurrent(s))],
+    ["Suggested", evoSuggestedHtml(s)],
+    ["Why this was suggested", h(s.reason)],
+    ["Supporting Harvest finding", `<span class="cap">${h(s.finding.sec)}</span><blockquote class="evo-q">${h(s.finding.text || "—")}</blockquote>`],
+    ["Supporting evidence and records", `<div class="row wrap" style="gap:6px">${links || '<span class="cap">None linked</span>'}</div>`],
+  ])}${
+    s.status === "Pending"
+      ? act
+        ? `<div class="evo-act"><span class="cap">Nothing changes in your profile unless you approve.</span><div class="row wrap">${B(ic("x", 14) + "Reject", "evoDecide", { id: s.id, v: "Rejected" })}${B(ic("check", 14) + "Approve", "evoDecide", { id: s.id, v: "Approved" }, "btn-p btn-sm")}</div></div>`
+        : `<p class="cap evo-act">Only ${nm(s.pid)} can approve or reject this change.</p>`
+      : `<p class="cap evo-act">${s.status} by ${nm(s.by)} on ${fmt(s.decidedAt)} · ${s.status === "Approved" ? "profile updated" : "profile not changed"}</p>`
+  }</article>`;
+}
+A.evoDecide = (d) => {
+  const s = byId("evolution", d.id);
+  if (s.status !== "Pending") return deny("this suggestion has already been decided");
+  s.before = evoCurrent(s);
+  s.status = d.v;
+  s.by = myId();
+  s.decidedAt = now();
+  if (d.v === "Approved") evoApply(s);
+  audit("Profile evolution " + d.v.toLowerCase(), s.id, s.field + (d.v === "Approved" ? " — profile updated" : " — profile not changed"));
+  toast(d.v === "Approved" ? s.field + " updated in your profile. A new version was saved." : "Rejected. Your profile was not changed.");
+  ok();
+};
+// The only place a Harvest finding reaches the profile, and only from an approval by the person.
+function evoApply(s) {
+  const prov = s.refs.some((r) => r.type === "Evidence") ? "Evidence-supported" : "Activity-derived";
+  const src = "Learning Harvest " + s.hv;
+  if (s.kind === "compass") {
+    const a = (S.compass[s.pid] = S.compass[s.pid] || {});
+    const was = a[s.key];
+    a[s.key] = s.value;
+    return bumpVer(`Profile evolution: ${s.field} “${was || "—"}” → “${s.value}”`, src, prov);
+  }
+  if (s.field === "Skill proficiency") {
+    const c = evoProfClaim(s);
+    if (c) {
+      c.value = s.value;
+      c.ver = (c.ver || 1) + 1;
+      c.prov = prov;
+    } else
+      S.claims.push({ id: uid("cl"), pid: s.pid, field: s.field, value: s.value, prov, vis: "Only me", state: "Current", ver: 1, src: "evolution", from: s.id });
+    return bumpVer(`Profile evolution: ${s.value}`, src, prov);
+  }
+  const items = s.add.filter((v) => !evoHas(curItems(s.pid, s.field), v));
+  if (!items.length) return;
+  S.claims.push({
+    id: uid("cl"),
+    pid: s.pid,
+    field: s.field,
+    value: items.join(evoSep(s.field)),
+    prov,
+    vis: "Only me",
+    state: "Current",
+    ver: 1,
+    src: "evolution",
+    from: s.id,
+  });
+  bumpVer(`Profile evolution: added ${s.field} — ${items.join(evoSep(s.field))}`, src, prov);
+}
 // viewing someone else's profile (F/M: V if shared/required)
 function viewProfile(pid) {
   const viewer = role();
@@ -599,6 +876,7 @@ A.exportMine = () => {
     person: { name: me().name, email: me().email },
     claims: S.claims.filter((c) => c.pid === pid),
     compass: S.compass[pid],
+    profileEvolution: S.evolution.filter((s) => s.pid === pid),
     consents: S.consents[pid],
     evidence: S.evidence
       .filter((e) => e.owner === pid)

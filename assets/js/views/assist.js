@@ -9,7 +9,7 @@ function closePanel() {
   const was = UI.panel;
   UI.panel = null;
   render();
-  const t = document.querySelector(was === 'ask' ? '[data-a="askToggle"]' : '[data-a="notifToggle"]');
+  const t = document.querySelector(was === 'ask' ? '[data-a="askToggle"]' : was === 'user' ? '[data-a="userToggle"]' : '[data-a="notifToggle"]');
   if (t) t.focus();
 }
 A.closePanel = closePanel;
@@ -54,6 +54,39 @@ document.addEventListener('mousedown', e => {
     UI.panel = null;
     render();
   }
+});
+
+// ---- account dropdown (anchored to the avatar): who is signed in, View profile, Log out
+function userMenu() {
+  const a = asg(),
+    c = ctx();
+  return `<div class="umenu" id="user-menu" role="menu" aria-label="Account">
+  <div class="umenu-h"><span class="av">${ini(myId())}</span><div class="col" style="min-width:0"><b>${h(me().name)}</b><span class="cap umenu-mail">${h(me().email)}</span><span class="cap">${h(ROLE[a.role] || a.role)}${c ? ' · ' + h(c.name) : ''}</span></div></div>
+  <div class="umenu-list"><button type="button" role="menuitem" class="umenu-i${UI.route === 'profile' ? ' on' : ''}" data-a="userGo" data-r="profile">${ic('user', 18)}<span>View profile</span></button>${role() !== 'T' ? `<button type="button" role="menuitem" class="umenu-i${UI.route === 'privacy' ? ' on' : ''}" data-a="userGo" data-r="privacy">${ic('shield', 18)}<span>Privacy & consent</span></button>` : ''}<button type="button" role="menuitem" class="umenu-i out" data-a="logout">${ic('logout', 18)}<span>Log out</span></button></div></div>`;
+}
+A.userToggle = () => {
+  UI.panel = UI.panel === 'user' ? null : 'user';
+  render();
+  if (UI.panel === 'user') setTimeout(() => document.querySelector('.umenu .umenu-i')?.focus(), 0);
+};
+A.userGo = d => {
+  UI.panel = null;
+  go(d.r);
+};
+document.addEventListener('mousedown', e => {
+  if (UI.panel === 'user' && !(e.target.closest && e.target.closest('.uwrap'))) {
+    UI.panel = null;
+    render();
+  }
+});
+// arrow keys move between the items
+document.addEventListener('keydown', e => {
+  if (UI.panel !== 'user' || !['ArrowDown', 'ArrowUp'].includes(e.key)) return;
+  const its = [...document.querySelectorAll('.umenu .umenu-i')];
+  if (!its.length) return;
+  e.preventDefault();
+  const i = its.indexOf(document.activeElement);
+  its[(i + (e.key === 'ArrowDown' ? 1 : -1) + its.length) % its.length].focus();
 });
 
 // ---- Ask PHOENIX

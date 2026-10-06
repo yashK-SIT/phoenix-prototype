@@ -128,6 +128,22 @@ function evTable(list, withProject) {
     'No evidence here yet.',
   );
 }
+// How the evidence was provided. Older records are files.
+function evFormatRow(e) {
+  if (e.format === 'Link')
+    return ['Link', `<a class="lnk" href="${h(e.url)}" target="_blank" rel="noopener noreferrer">${ic('link', 14)} ${h(e.url)}</a>`];
+  if (e.format === 'Reflection or written output')
+    return ['Reflection or written output', `<p style="white-space:pre-line">${h(e.text)}</p>`];
+  if (e.format === 'Repository record') {
+    const r = byId('records', e.record);
+    return ['Repository record', r ? L(h(r.title), 'repository', { rec: r.id }) + ` <span class="cap">· ${h(r.kind)}</span>` : '<span class="cap">Record no longer available</span>'];
+  }
+  return ['File', `<span class="att">${ic('file', 14)}${h(e.file)} · ${e.sizeMB} MB</span>`];
+}
+function evDelivRow(e) {
+  const ks = S.rooms.flatMap(x => x.tasks.filter(k => (k.evidence || []).includes(e.id)).map(k => [x, k]));
+  return ks.length && ['Supports deliverable', ks.map(([x, k]) => L(h(k.t), 'room', { id: x.id, tab: 'plan' }) + ` <span class="cap">· ${h(x.name)}</span>`).join('<br>')];
+}
 function evDetail(e) {
   const own = e.owner === myId();
   const rev = (role() === 'F' || hasB('Reviewer')) && !own;
@@ -142,7 +158,8 @@ function evDetail(e) {
       '',
       dl([
         ['Claim', h(e.claim)],
-        ['File', `<span class="att">${ic('file', 14)}${h(e.file)} · ${e.sizeMB} MB</span>`],
+        evFormatRow(e),
+        evDelivRow(e),
         ['Project', evProjects(e).map(p => (can('projects') && (p.owner === myId() || role() !== 'P') ? L(h(p.title), 'project', { id: p.id }) : h(p.title))).join(', ') || '<span class="cap">Not linked to a project</span>'],
         ['Owner', nm(e.owner)],
         ['Source', h(e.source)],
@@ -277,6 +294,38 @@ A.relDecide = d => {
   audit('Release decision', x.id, d.v);
   ok();
 };
+// ---- evidence formats: a file, a link, a written reflection or output, or a reference to a repository record
+const EV_FMTS = ['File upload', 'Link', 'Reflection or written output', 'Repository record'];
+const evRecordsFor = spaces =>
+  S.records.filter(r => r.state === 'Active' && (r.owner === myId() || r.linked.some(l => spaces.some(s => s.id === l))));
+function neFmtFields(f, fmt, spaces) {
+  if (fmt === 'Link')
+    return fi(f, 'url', 'Link', { req: true, type: 'url', ph: 'https://', help: 'A document, dataset, output, published result or video hosted elsewhere.' });
+  if (fmt === 'Reflection or written output')
+    return fi(f, 'text', 'Reflection or written output', { type: 'textarea', rows: 6, req: true, ph: 'What you did, what it produced, and what it shows' });
+  if (fmt === 'Repository record') {
+    const recs = evRecordsFor(spaces);
+    return recs.length
+      ? fi(f, 'rec', 'Record', { type: 'select', req: true, ph: 'Select a record', opts: recs.map(r => [r.id, r.title + ' · ' + r.kind]), help: 'Linked by reference. The record keeps its own permissions.' })
+      : banner('info', 'No records available', 'Only active records you own or that belong to your spaces can be referenced.');
+  }
+  return `<div class="field"><span class="lbl">File <span class="req">*</span></span><label class="dz ${fe(f, 'file') ? 'err' : ''}" style="cursor:pointer;display:block">${ic('upload', 22)}<div><b>Choose a file</b></div><div class="cap">Up to ${S.settings.maxFileMB} MB. Video must be linked externally. Files are scanned; failures are quarantined.</div><input type="file" name="file" class="sr"><span class="fname">No file chosen</span></label>${fe(f, 'file') ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe(f, 'file')}</span>` : ''}</div>`;
+}
+// Which deliverable the evidence supports (optional). Value "roomId|taskId".
+function neTaskField(f, spaces) {
+  const opts = spaces
+    .filter(s => byId('rooms', s.id))
+    .flatMap(x => x.tasks.filter(k => !['Proposed', 'Declined'].includes(k.status)).map(k => [x.id + '|' + k.id, x.name + ' · ' + k.t + ' (' + k.status + ')']));
+  if (!opts.length) return '';
+  const def = UI.p.task && UI.p.link ? UI.p.link + '|' + UI.p.task : '';
+  return fi(f, 'task', 'Supports deliverable', { type: 'select', ph: 'Not tied to one deliverable', opts, value: def, help: 'Optional. The evidence is attached to that deliverable as supporting evidence.' });
+}
+A.neFmt = (d, el) => {
+  snapForms();
+  UI.form.ne = { ...(UI.form.ne || {}), fmt: el.value };
+  if (UI.err.ne) delete UI.err.ne.file;
+  render();
+};
 route('newevidence', 'evidence', () => {
   if (!can('evidence', 'CRM')) return deniedView('evidence');
   const f = 'ne';
@@ -288,8 +337,10 @@ route('newevidence', 'evidence', () => {
       '',
       [['Evidence', 'evidence'], ['Upload']],
     ) +
-    `<form data-f="ne" class="card col" style="gap:16px;max-width:880px" novalidate>${errSum(f)}
- <div class="field"><span class="lbl">File <span class="req">*</span></span><label class="dz ${fe(f, 'file') ? 'err' : ''}" style="cursor:pointer;display:block">${ic('upload', 22)}<div><b>Choose a file</b></div><div class="cap">Up to ${S.settings.maxFileMB} MB. Video must be linked externally. Files are scanned; failures are quarantined.</div><input type="file" name="file" class="sr"><span class="fname">No file chosen</span></label>${fe(f, 'file') ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe(f, 'file')}</span>` : ''}</div>
+    `${UI.p.from && byId('rooms', UI.p.from) ? '<div style="max-width:880px;margin-bottom:16px">' + banner('info', 'Evidence for ' + h(byId('rooms', UI.p.from).name), 'This evidence supports the completed deliverables. After you submit it you return to the ' + WL() + ', where you can generate the Learning Harvest.') + '</div>' : ''}<form data-f="ne" class="card col" style="gap:16px;max-width:880px" novalidate>${errSum(f)}<input type="hidden" name="from" value="${h(UI.p.from || '')}">
+ ${fi(f, 'fmt', 'Evidence format', { type: 'select', req: true, opts: EV_FMTS, value: 'File upload', ch: 'neFmt', help: 'Documents, files, outputs and results can be uploaded or linked. Reflections are written here.' })}
+ ${neFmtFields(f, fv(f, 'fmt', 'File upload'), spaces)}
+ ${neTaskField(f, spaces)}
  ${fi(f, 'title', 'Title', { req: true })}<div class="f2">${fi(f, 'type', 'Evidence type', { type: 'select', req: true, ph: 'Select', opts: EV_TYPES })}${fi(f, 'claim', 'Claim or metric it supports', { req: true })}</div>
  <fieldset style="border:0;padding:0;margin:0"><legend class="lbl" style="margin-bottom:8px">Link to (no duplication) <span class="req">*</span></legend><div class="g2">${spaces.map(s => `<label class="row"><input class="chk" type="checkbox" name="link" value="${s.id}" ${UI.p.link === s.id ? 'checked' : ''}><span>${h(s.name)}${spaceProject(s.id) ? `<span class="cap" style="display:block">Project: ${h(spaceProject(s.id).title)}</span>` : ''}</span></label>`).join('') || '<p class="cap">Join a Circle or ' + WL() + ' to link evidence.</p>'}</div>${fe(f, 'link') ? `<span class="emsg">${ic('alert', 14)}${fe(f, 'link')}</span>` : ''}</fieldset>
  <div class="f2">${fi(f, 'source', 'Source', { req: true, ph: 'e.g. Field survey' })}${fi(f, 'purpose', 'Purpose', { type: 'select', req: true, opts: ['Project evidence', 'Milestone evidence', 'Learning evidence', 'Portfolio'], ph: 'Select' })}</div>
@@ -299,8 +350,11 @@ route('newevidence', 'evidence', () => {
   );
 });
 F.ne = (d, form) => {
-  const file = form.querySelector('input[type=file]').files[0];
+  const fmt = EV_FMTS.includes(d.fmt) ? d.fmt : 'File upload';
+  const file = fmt === 'File upload' ? form.querySelector('input[type=file]')?.files?.[0] : null;
   d.link = [].concat(d.link || []);
+  const [tRoom, tId] = (d.task || '').split('|');
+  if (tRoom && !d.link.includes(tRoom)) d.link.push(tRoom);
   const okv = validate(
     'ne',
     { ...d, fileName: file?.name },
@@ -317,15 +371,20 @@ F.ne = (d, form) => {
     },
   );
   const e = UI.err.ne;
-  if (!file) e.file = 'Choose a file to upload.';
-  else if (file.size > S.settings.maxFileMB * 1048576)
-    e.file = `File is ${(file.size / 1048576).toFixed(1)} MB — over the ${S.settings.maxFileMB} MB limit.`;
-  else if (/\.(mp4|mov|avi|mkv)$/i.test(file.name))
-    e.file = 'Video is linked externally, not uploaded. Add a link in the description instead.';
-  else if (/\.(exe|bat|cmd|sh|js)$/i.test(file.name)) e.file = 'This file type is not supported.';
+  if (fmt === 'File upload') {
+    if (!file) e.file = 'Choose a file to upload.';
+    else if (file.size > S.settings.maxFileMB * 1048576)
+      e.file = `File is ${(file.size / 1048576).toFixed(1)} MB — over the ${S.settings.maxFileMB} MB limit.`;
+    else if (/\.(mp4|mov|avi|mkv)$/i.test(file.name))
+      e.file = 'Video is linked externally, not uploaded. Choose “Link” as the format instead.';
+    else if (/\.(exe|bat|cmd|sh|js)$/i.test(file.name)) e.file = 'This file type is not supported.';
+  }
+  if (fmt === 'Link' && !/^https?:\/\/[^\s.]+\.[^\s]+$/i.test((d.url || '').trim())) e.url = 'Enter a full link starting with http:// or https://.';
+  if (fmt === 'Reflection or written output' && (d.text || '').trim().length < 20) e.text = 'Write at least a couple of sentences (20 characters or more).';
+  if (fmt === 'Repository record' && !byId('records', d.rec)) e.rec = 'Choose the record this evidence refers to.';
   if (!d.link.length) e.link = 'Link the evidence to at least one Circle, Rope Team or ' + WL() + '.';
   if (Object.keys(e).length) return render();
-  if (/eicar|virus/i.test(file.name)) {
+  if (file && /eicar|virus/i.test(file.name)) {
     S.records.push({
       id: uid('rc'),
       title: file.name,
@@ -357,8 +416,12 @@ F.ne = (d, form) => {
     claim: d.claim,
     linked: d.link,
     project: (d.link.map(spaceProject).find(Boolean) || {}).id || null,
-    file: file.name,
-    sizeMB: +(file.size / 1048576).toFixed(2),
+    format: fmt,
+    file: file ? file.name : null,
+    sizeMB: file ? +(file.size / 1048576).toFixed(2) : 0,
+    ...(fmt === 'Link' ? { url: d.url.trim() } : {}),
+    ...(fmt === 'Reflection or written output' ? { text: d.text.trim() } : {}),
+    ...(fmt === 'Repository record' ? { record: d.rec } : {}),
     source: d.source,
     purpose: d.purpose,
     consent: d.consent,
@@ -377,15 +440,32 @@ F.ne = (d, form) => {
   S.assign
     .filter(a => a.ctx === ctxId() && (roleBase(a.role) === 'F' || a.bundles.includes('Reviewer')) && a.pid !== myId())
     .forEach(a => notify(a.pid, 'Evidence submitted for review: ' + ev.title, 'evidence', { id: ev.id }));
-  audit('Evidence submitted', ev.id, ev.type);
+  const tx = tRoom && byId('rooms', tRoom);
+  const tk = tx && tx.tasks.find(k => k.id === tId);
+  if (tk) {
+    (tk.evidence = tk.evidence || []).push(ev.id);
+    (tk.log = tk.log || []).push({ at: now(), by: myId(), t: 'Supporting evidence added: ' + ev.title });
+    ev.history.push({ at: today(), t: 'Attached to deliverable: ' + tk.t });
+  }
+  audit('Evidence submitted', ev.id, ev.type + ' · ' + fmt + (tk ? ' · supports ' + tk.t : ''));
   clearF('ne');
   save();
+  const back = d.from && byId('rooms', d.from);
+  if (back && memberOf(back)) {
+    go('room', { id: back.id });
+    return toast('Evidence submitted for review. Next step: generate the Learning Harvest.');
+  }
   go('evidence', { id: ev.id });
   toast('Submitted for review.');
 };
 // ---------- REPOSITORY (E08) ----------
 route('repository', 'repository', () => {
   const r = role();
+  // arriving from a link to one record (e.g. from a Learning Harvest) filters to it
+  if (UI.p.rec && byId('records', UI.p.rec)) {
+    UI.q.repo = byId('records', UI.p.rec).title;
+    delete UI.p.rec;
+  }
   const q = UI.q.repo || '';
   const vis = S.records.filter(
     x =>
@@ -658,6 +738,7 @@ route('harvest', 'harvest', () => {
   if (['S', 'O'].includes(r) && x.release !== 'Released') return deniedView('harvest');
   const comp = canComplete() && (mem || r === 'F');
   const edit = ['Draft', 'Review'].includes(x.state) && (x.by === myId() || comp);
+  if (x.tpl === 2) return hv2View(x, mem, comp, edit);
   return (
     head(
       h(x.scopeName),
@@ -803,5 +884,240 @@ A.hvRedraft = d => {
   x.state = 'Draft';
   audit('Harvest reopened as draft after rejection', x.id, 'v' + x.ver);
   toast('Reopened as a new draft. The rejected version is kept.');
+  ok();
+};
+
+// ---------- LEARNING HARVEST for an Action Room ----------
+// Deliverables completed → evidence submitted → Harvest (A–G) → human review → approval → profile evolution suggestions.
+// Facts are compiled from the source records; learning, negative findings and the four decisions are written by people.
+const HV2 = [
+  ['what', 'A. What happened', 'What was completed, the outcomes achieved, the evidence that supports completion, and relevant records.'],
+  ['learning', 'B. Learning', 'What was learned: new knowledge, skills demonstrated and developed, new interests, and changes in understanding, confidence or capability.'],
+  ['negative', 'C. Negative findings', 'Required. What did not work, failed approaches, incorrect assumptions, blockers, unexpected results and approaches that should not be repeated — even when the overall outcome was a success.'],
+  ['resources', 'D. Resource contributions', 'The resources used, which of them contributed to the outcome, and how.'],
+  ['partners', 'E. Partner contributions', 'The people, organizations and partners who contributed, what they contributed, and how it affected the outcome.'],
+];
+const HV2_LEARN = [
+  ['knowledge', 'New knowledge'],
+  ['skillsDem', 'Skills demonstrated'],
+  ['skillsDev', 'Skills developed'],
+  ['interests', 'New interests'],
+  ['understanding', 'Changes in understanding'],
+  ['confidence', 'Changes in confidence or capability'],
+];
+const HV2_DEC = [
+  ['continue', 'Continue', 'What should continue?'],
+  ['change', 'Change', 'What should change?'],
+  ['stop', 'Stop', 'What should stop?'],
+  ['test', 'Test', 'What should be tested next?'],
+];
+const HV2_KEYS = [...HV2.map(s => s[0]), ...HV2_LEARN.map(s => s[0]), ...HV2_DEC.map(s => s[0])];
+const HV2_REQ = ['what', 'learning', 'negative', 'resources', 'partners', 'continue', 'change', 'stop', 'test'];
+const HV2_LABEL = Object.fromEntries([...HV2.map(s => [s[0], s[1]]), ['learning', 'B. Learning — what was learned'], ...HV2_DEC.map(s => [s[0], 'F. ' + s[1]])]);
+const LINK_IC = { Deliverable: 'check', Evidence: 'award', Milestone: 'flag', Resource: 'layers', Partner: 'users', Contribution: 'upload', Record: 'file', Baseline: 'target' };
+const dOnly = s => (s ? String(s).slice(0, 10) : '');
+const bullets = a => a.map(s => '• ' + s).join('\n');
+// Draft the Harvest from the room's records. Nothing private from the Purpose Compass is copied into shared sections.
+function hvCompile(x, pid) {
+  const live = (x.tasks || []).filter(k => !['Proposed', 'Declined'].includes(k.status));
+  const done = live.filter(k => k.status === 'Done');
+  const ev = roomEvidence(x);
+  const evOf = k => (k.evidence || []).map(id => byId('evidence', id)).filter(Boolean);
+  const ms = (x.milestones || []).filter(m => m.status === 'Achieved');
+  const wins = (x.wins || []).filter(w => w.status === 'Approved');
+  const recs = S.records.filter(r => r.state === 'Active' && r.linked.includes(x.id) && !/missing/i.test(r.consent));
+  const linkedRecs = (x.links || []).filter(l => l.type === 'Repository record');
+  const lib = (x.links || []).filter(l => ['Learning resource', 'Learning pathway'].includes(l.type));
+  const what = [
+    `Completed deliverables (${done.length}):`,
+    bullets(done.map(k => `${k.t} — ${P(k.owner).name}${k.doneAt ? ', completed ' + fmt(dOnly(k.doneAt)) : ''}${evOf(k).length ? ' · evidence: ' + evOf(k).map(e => e.title).join('; ') : ''}${k.doneNote ? ' · ' + k.doneNote : ''}`)),
+    (x.outcome ? 'Intended outcome: ' + x.outcome : 'Charter: ' + x.charter),
+    ms.length ? 'Milestones achieved: ' + ms.map(m => m.t).join('; ') : '',
+    wins.length ? 'Approved visible wins: ' + wins.map(w => w.t).join('; ') : '',
+    `Evidence submitted (${ev.length}): ` + ev.map(e => `${e.title} (${e.review}, ${e.level})`).join('; '),
+    recs.length + linkedRecs.length ? 'Records: ' + [...recs.map(r => r.title), ...linkedRecs.map(l => l.label)].join('; ') : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+  const neg = [
+    ...(x.risks || []).filter(k => ['Open', 'Escalated', 'Accepted'].includes(k.state)).map(k => `Risk still ${k.state.toLowerCase()} at completion: ${k.t}`),
+    ...(x.deps || []).filter(k => k.state === 'Blocked').map(k => `Blocked dependency: ${k.t} (on ${k.on})`),
+    ...done.filter(k => k.due && k.doneAt && dOnly(k.doneAt) > k.due).map(k => `Completed late: ${k.t} (due ${fmt(k.due)}, done ${fmt(dOnly(k.doneAt))})`),
+    ...(x.tasks || []).filter(k => k.status === 'Declined').map(k => `Proposed but not pursued: ${k.t}`),
+    ...(x.contribs || []).filter(c => (c.history || []).some(e => /Changes requested|More evidence requested/.test(e.t))).map(c => `Contribution needed rework before acceptance: ${c.t}`),
+    ...S.evidence.filter(e => e.linked.includes(x.id) && ['Rejected', 'Insufficient', 'Needs Revision'].includes(e.review)).map(e => `Evidence ${e.review.toLowerCase()}: ${e.title}`),
+    ...(x.returns || []).map(r => `Work returned to ${r.to}: ${r.why}`),
+  ];
+  const resources = [
+    ...(x.resources || []).map(r => {
+      const used = live.filter(k => (k.res || []).includes(r.id));
+      return `${r.t}${r.from ? ' — ' + r.from : ''} (${r.status})${used.length ? ' · used in: ' + used.map(k => k.t).join('; ') : ' · not linked to a deliverable'} · how it contributed: `;
+    }),
+    ...lib.map(l => `${l.label} (${l.type.toLowerCase()}) · how it contributed: `),
+  ];
+  const ppl = new Map();
+  const add = (p, t) => p && p !== pid && ppl.set(p, [...(ppl.get(p) || []), t]);
+  done.forEach(k => add(k.owner, `delivered “${k.t}”`));
+  live.forEach(k => (k.partners || []).forEach(p => add(p, `contributed to “${k.t}”`)));
+  (x.contribs || []).filter(c => c.status === 'Accepted').forEach(c => add(c.by, `contribution accepted: “${c.t}”${c.used ? ' — used in ' + c.used : ''}`));
+  x.members.filter(m => m.status === 'Active' && m.label && !ppl.has(m.pid) && m.pid !== pid).forEach(m => add(m.pid, 'partner in this ' + WL()));
+  const partners = [...ppl].map(([p, a]) => {
+    const m = x.members.find(y => y.pid === p);
+    return `${P(p).name}${m && m.label ? ' (' + m.label + ')' : ''}: ${a.join('; ')} · effect on the outcome: `;
+  });
+  const L2 = (type, id, label, r, p) => ({ type, id, label, r, p });
+  const links = [
+    ...done.map(k => L2('Deliverable', k.id, k.t, 'room', { id: x.id, tab: 'plan' })),
+    ...ev.map(e => L2('Evidence', e.id, e.title, 'evidence', { id: e.id })),
+    ...ms.map(m => L2('Milestone', m.id, m.t, 'room', { id: x.id, tab: 'plan' })),
+    ...(x.resources || []).map(r => L2('Resource', r.id, r.t, 'room', { id: x.id, tab: 'res' })),
+    ...lib.map(l => L2('Resource', l.id, l.label, l.type === 'Learning resource' ? 'resources' : 'room', l.type === 'Learning resource' ? {} : { id: x.id, tab: 'about' })),
+    ...[...ppl.keys()].map(p => L2('Partner', p, P(p).name, 'room', { id: x.id, tab: 'members' })),
+    ...(x.contribs || []).filter(c => c.status === 'Accepted').map(c => L2('Contribution', c.id, c.t, 'room', { id: x.id, tab: 'contribs' })),
+    ...recs.map(r => L2('Record', r.id, r.title, 'repository', { rec: r.id })),
+    ...linkedRecs.filter(l => !recs.some(r => r.id === l.id)).map(l => L2('Record', l.id, l.label, 'repository', { rec: l.id })),
+    L2('Baseline', pid, 'Purpose Compass Baseline', 'profile', { tab: 'compass' }),
+  ];
+  const sec = Object.fromEntries(HV2_KEYS.map(k => [k, '']));
+  return {
+    sections: { ...sec, what, negative: bullets(neg), resources: bullets(resources), partners: bullets(partners) },
+    links,
+    detected: neg.length,
+  };
+}
+A.hvGen = d => {
+  const x = byId('rooms', d.r);
+  const ex = S.harvests.find(v => v.tpl === 2 && v.scope === x.id && v.subject === myId());
+  if (ex) return go('harvest', { id: ex.id });
+  const st = roomFlowState(x);
+  if (!st.allDone) return deny('every required deliverable must be done before the Learning Harvest');
+  if (!st.ev.length) return deny('upload evidence that supports the completed work before the Learning Harvest');
+  const c = hvCompile(x, myId());
+  const v = {
+    id: uid('hv'),
+    tpl: 2,
+    scope: x.id,
+    subject: myId(),
+    personal: null,
+    scopeName: x.name + ' — ' + me().name,
+    trigger: 'Deliverables completed',
+    state: 'Draft',
+    ai: false,
+    ver: 1,
+    by: myId(),
+    at: today(),
+    sections: c.sections,
+    detected: c.detected,
+    links: c.links,
+    contrib: [],
+    release: 'Not released',
+    versions: [],
+  };
+  S.harvests.push(v);
+  x.members
+    .filter(m => m.status === 'Active' && m.pid !== myId())
+    .forEach(m => notify(m.pid, 'Contribute to a Learning Harvest: ' + v.scopeName, 'harvest', { id: v.id }));
+  audit('Learning Harvest generated', v.id, x.name + ' · ' + c.links.length + ' linked records');
+  save();
+  go('harvest', { id: v.id });
+  toast('Harvest drafted from your records. Write the learning, confirm the negative findings and record the four decisions.');
+};
+function hv2View(x, mem, comp, edit) {
+  const f = 'hv2';
+  const s = x.sections;
+  const subj = x.subject === myId();
+  const o = byId('rooms', x.scope);
+  const sec = (k, title, help, body) =>
+    `<section class="hv2-sec" id="hv2-${k}"><header class="hv2-sh"><h2 class="h3">${title}</h2>${help ? `<p class="cap">${help}</p>` : ''}</header>${body}</section>`;
+  const ta = (k, label, o2 = {}) =>
+    edit
+      ? fi(f, k, label, { type: 'textarea', rows: o2.rows || 3, value: s[k], req: o2.req, help: o2.help, ph: o2.ph })
+      : `<div class="hv2-ro">${label ? `<span class="lbl">${label}</span>` : ''}<p style="white-space:pre-line">${h(s[k] || '—')}</p></div>`;
+  const chip = l => L(ic(LINK_IC[l.type] || 'link', 13) + `<span>${h(l.label)}</span>`, l.r, l.p, 'hv2-chip');
+  const links = (x.links || []).filter(l => l.type !== 'Baseline' || subj);
+  const refs = types => {
+    const ls = links.filter(l => types.includes(l.type));
+    return ls.length ? `<div class="hv2-refs"><span class="cap">Source records</span>${ls.map(chip).join('')}</div>` : '';
+  };
+  const groups = [...new Set(links.map(l => l.type))];
+  const pend = S.evolution.filter(e => e.hv === x.id && e.status === 'Pending');
+  const mineEvo = S.evolution.filter(e => e.hv === x.id && e.pid === myId());
+  const allEvo = S.evolution.filter(e => e.hv === x.id);
+  const cp = S.compass[x.subject] || {};
+  const main = `<form data-f="hv2" class="card c8 col hv2" style="gap:22px" novalidate>${errSum(f)}<input type="hidden" name="id" value="${x.id}">
+  ${sec('what', HV2[0][1], HV2[0][2], ta('what', '', { rows: 8, req: true, help: edit ? 'Compiled from the completed deliverables, evidence, milestones, wins and records. Edit freely.' : '' }) + refs(['Deliverable', 'Evidence', 'Milestone', 'Record']))}
+  ${sec('learning', HV2[1][1], HV2[1][2], ta('learning', 'What was learned', { rows: 3, req: true }) + `<div class="g2 hv2-learn">${HV2_LEARN.map(([k, l]) => ta(k, l, { rows: 2, help: edit && ['skillsDem', 'skillsDev', 'interests'].includes(k) ? 'Comma-separated. Used to suggest profile changes, which the person reviews.' : '' })).join('')}</div>`)}
+  ${sec('negative', HV2[2][1] + ' <span class="req">*</span>', HV2[2][2], ta('negative', '', { rows: 6, req: true, help: edit ? (x.detected ? `Pre-filled with ${x.detected} item${x.detected > 1 ? 's' : ''} found in the records (open risks, blocked dependencies, late or declined deliverables, reworked contributions, evidence not approved). Confirm, edit and add what did not work.` : 'Nothing was flagged in the records. Record what did not work as expected, or explain why there was nothing.') : '' }))}
+  ${sec('resources', HV2[3][1], HV2[3][2], ta('resources', '', { rows: 5, req: true, help: edit ? 'Add how each resource contributed, or remove ones that did not.' : '' }) + refs(['Resource']))}
+  ${sec('partners', HV2[4][1], HV2[4][2], ta('partners', '', { rows: 5, req: true, help: edit ? 'Add how each contribution affected the outcome.' : '' }) + refs(['Partner', 'Contribution']))}
+  ${sec('decisions', 'F. Continue / Change / Stop / Test', 'The Harvest concludes with four decisions. All four are required.', `<div class="hv2-dec">${HV2_DEC.map(([k, l, q]) => `<div class="hv2-d hv2-d-${k}${fe(f, k) ? ' err' : ''}"><label class="hv2-dl" for="hv2_${k}"><b>${l}</b><span class="cap">${q}</span></label>${edit ? `<textarea id="hv2_${k}" name="${k}" class="input${fe(f, k) ? ' err' : ''}" rows="4" aria-invalid="${!!fe(f, k)}">${h(fv(f, k, s[k] || ''))}</textarea>${fe(f, k) ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe(f, k)}</span>` : ''}` : `<p style="white-space:pre-line">${h(s[k] || '—')}</p>`}</div>`).join('')}</div>`)}
+  ${sec('links', 'G. Links to records', 'Every source record this Harvest draws on. Each link opens the underlying record, which keeps its own permissions.', groups.length ? `<div class="hv2-links">${groups.map(g => `<div class="hv2-lg"><span class="lbl">${g === 'Baseline' ? 'Purpose Compass Baseline (only you)' : g + 's'}</span><div class="hv2-refs">${links.filter(l => l.type === g).map(chip).join('')}</div></div>`).join('')}</div>` : '<p class="cap">No linked records.</p>')}
+  ${edit ? `<div class="actions"><span class="cap">Every save keeps the previous version.</span><div class="row wrap"><button class="btn btn-s" type="submit" name="act" value="save">Save edits</button>${x.state === 'Draft' ? '<button class="btn btn-s" type="submit" name="act" value="review">Send for review</button>' : ''}${comp && !subj ? '<button class="btn btn-s" type="submit" name="act" value="reject">Reject</button><button class="btn btn-p" type="submit" name="act" value="approve">Approve</button>' : ''}</div></div>` : ''}</form>`;
+  const side = `<aside class="c4 col" style="gap:12px">${card(
+    'Status',
+    '',
+    dl([
+      ['State', pill(x.state)],
+      ['For', nm(x.subject)],
+      [WL(), o ? L(h(o.name), 'room', { id: o.id }) : '—'],
+      ['Version', 'v' + x.ver],
+      x.approvedBy && ['Approved by', nm(x.approvedBy)],
+    ]) + (x.state === 'Draft' ? `<p class="cap" style="margin-top:10px">Not complete until it is sent for review and approved by a Faculty/Steward, Reviewer or Project Lead.</p>` : x.state === 'Review' ? '<p class="cap" style="margin-top:10px">Waiting for review and approval.</p>' : ''),
+  )}
+ ${subj ? card('Your baseline', 'Context from your Purpose Compass. Only you see this panel; nothing here is copied into the Harvest unless you write it in.', dl([['Purpose', h(cp.PC1 || '—')], ['Outcome', h(cp.PC2 || '—')], ['Success looks like', h(cp.PC6 || '—')], ['You bring', h(cp.PC7 || '—')], ['Blockers you expected', h(cp.PC3 || '—')], ['How you learn', h(cp.learnHow || '—')], ['First milestone', h(cp.PC5 || '—')]]) + '<p class="cap" style="margin-top:10px">Did an expected blocker happen? Add it to Negative findings if you want to share it.</p>', L('Open baseline', 'profile', { tab: 'compass' })) : ''}
+ ${card('Profile evolution', 'Suggested from the approved Harvest. Never applied automatically.', !hvDone(x) ? '<p class="cap">Identified when the Harvest is approved. The person reviews each suggestion and approves or rejects it.</p>' : subj ? (mineEvo.length ? `<p>${pend.length ? `<b>${pend.length}</b> waiting for your review` : 'All reviewed'} · ${mineEvo.filter(e => e.status === 'Approved').length} approved · ${mineEvo.filter(e => e.status === 'Rejected').length} rejected</p>` : '<p class="cap">No profile changes were identified.</p>') : `<p class="cap">${allEvo.length} suggestion${allEvo.length === 1 ? '' : 's'} offered to ${nm(x.subject)} · ${pend.length} awaiting their decision. Only they can approve.</p>`, subj && mineEvo.length ? L(pend.length ? 'Review profile changes' : 'See decisions', 'profile', { tab: 'evo' }, 'btn btn-p btn-sm') : '')}
+ ${card('Contributions', 'Reflections, lessons, dissent and questions.', x.contrib.map(c => lrow('message', h(c.t), nm(c.by))).join('') || '<p class="cap">None yet.</p>', mem && ['Draft', 'Review'].includes(x.state) ? B(ic('plus', 14) + 'Contribute', 'hvContrib', { id: x.id }) : '')}
+ ${card('Release', 'Separate approval for public or funder release.', `<p>${h(x.release)}</p>${x.state === 'Approved' && comp && x.release === 'Not released' ? B('Request funder release', 'hvRel', { id: x.id, v: 'Funder release requested' }) : ''}${role() === 'A' && x.release === 'Funder release requested' ? B('Approve release', 'hvRel', { id: x.id, v: 'Released' }, 'btn-p btn-sm') : ''}`)}
+ ${x.state === 'Rejected' && (x.by === myId() || comp) ? card('Rejected', 'Revise and redraft. The rejected version is kept.', B(ic('refresh', 14) + 'Revise and redraft', 'hvRedraft', { id: x.id }, 'btn-p btn-sm')) : ''}
+ ${x.versions.length ? card('Previous versions', '', x.versions.map(v => `<p class="cap">v${v.ver} · ${fmt(v.at)} · ${h(v.state)}</p>`).join('')) : ''}</aside>`;
+  const evoMine = hvDone(x) && subj && pend.length ? `<div class="c12">${banner('warn', pend.length + ' suggested profile change' + (pend.length > 1 ? 's are' : ' is') + ' waiting for your review', 'Identified from this approved Harvest. Nothing has been applied: review each one and approve or reject it.<span class="row wrap" style="display:flex;gap:8px;margin-top:10px">' + L('Review profile changes', 'profile', { tab: 'evo' }, 'btn btn-p btn-sm') + '</span>')}</div>` : '';
+  return (
+    head(h(x.scopeName), 'Learning Harvest · ' + WL() + ' template · version ' + x.ver, pill(x.state), [['Learning Harvests', 'harvests'], ['Harvest']]) +
+    (o ? `<nav class="hv2-flow" aria-label="Progress">${['Deliverables completed', 'Evidence submitted', 'Learning Harvest', 'Profile evolution'].map((t, i) => `<span class="${i < 2 || (i === 2 && hvDone(x)) || (i === 3 && hvDone(x) && !pend.length) ? 'done' : (i === 2 && !hvDone(x)) || (i === 3 && hvDone(x)) ? 'cur' : ''}">${i < 2 || (i === 2 && hvDone(x)) || (i === 3 && hvDone(x) && !pend.length) ? ic('check', 13) : i + 1} ${t}</span>`).join('')}</nav>` : '') +
+    `<div class="g12">${evoMine}${main}${side}</div>`
+  );
+}
+F.hv2 = d => {
+  const x = byId('harvests', d.id);
+  const act = d.act || 'save';
+  const next = {};
+  HV2_KEYS.forEach(k => (next[k] = String(d[k] ?? x.sections[k] ?? '').trim()));
+  if (act === 'review' || act === 'approve') {
+    const miss = HV2_REQ.filter(k => !next[k]);
+    if (miss.length) {
+      UI.form.hv2 = { ...d };
+      UI.err.hv2 = Object.fromEntries(miss.map(k => [k, k === 'negative' ? 'Negative findings are required. Record what did not work, even if the overall outcome was a success.' : 'Complete this section.']));
+      toast('Complete the required sections first: ' + miss.map(k => HV2_LABEL[k] || k).join(', '), 'err');
+      return render();
+    }
+  }
+  x.versions.push({ ver: x.ver, at: today(), state: x.state, sections: { ...x.sections } });
+  x.ver++;
+  x.sections = { ...x.sections, ...next };
+  if (act === 'review') {
+    x.state = 'Review';
+    const o = byId('rooms', x.scope);
+    [...new Set([...S.assign.filter(a => a.ctx === ctxId() && roleBase(a.role) === 'F').map(a => a.pid), ...(o ? o.members.filter(m => m.status === 'Active' && ['Project owner', 'Facilitator'].includes(spaceRole('rooms', o, m.pid))).map(m => m.pid) : [])])]
+      .filter(p => p !== myId())
+      .forEach(p => notify(p, 'Learning Harvest ready for review: ' + x.scopeName, 'harvest', { id: x.id }));
+  }
+  let found = [];
+  if (act === 'approve') {
+    x.state = 'Approved';
+    x.approvedBy = myId();
+    found = evoGenerate(x);
+  }
+  if (act === 'reject') x.state = 'Rejected';
+  audit('Harvest ' + act, x.id, 'v' + x.ver);
+  clearF('hv2');
+  toast(
+    act === 'approve'
+      ? 'Harvest approved. ' + (found.length ? found.length + ' suggested profile change' + (found.length > 1 ? 's were' : ' was') + ' sent to ' + P(x.subject).name + ' for review — nothing was applied.' : 'No profile changes were identified.')
+      : act === 'review'
+        ? 'Sent for review.'
+        : act === 'reject'
+          ? 'Harvest rejected. The version is kept.'
+          : 'Saved. The previous version is kept.',
+  );
   ok();
 };

@@ -36,14 +36,14 @@ const COMPASS = [
   ],
   [
     'PC2',
-    'North Star / goal',
-    'What would you like to accomplish, contribute to or become more capable of over the next 3–6 months?',
+    'North Star / outcome',
+    'What outcome do you want to achieve in the next 3–12 months?',
     'Private · share with chosen support roles',
   ],
   [
     'PC3',
-    'Constraint without diagnosis',
-    'What is the main hurdle currently making that difficult?',
+    'Blockers, without diagnosis',
+    'What could prevent or slow you down?',
     'High-restriction · explicit sharing only',
   ],
   [
@@ -52,17 +52,12 @@ const COMPASS = [
     'How much time can you realistically commit?',
     'Private · matching/pathway roles only if shared',
   ],
-  [
-    'PC5',
-    'First actionable step',
-    'What is one meaningful milestone you could realistically reach in the next 2–4 weeks?',
-    'Contextual',
-  ],
-  ['PC6', 'Participant-defined evidence', 'What would help you know you are making meaningful progress?', 'Private'],
+  ['PC5', 'First milestone', 'What is your first meaningful milestone?', 'Contextual'],
+  ['PC6', 'Participant-defined success', 'What would success look like?', 'Private'],
   [
     'PC7',
-    'Offer / capability',
-    'What strengths, skills, knowledge or experience would you like to contribute?',
+    'What you bring',
+    'What skills, knowledge, experience, relationships, resources or strengths do you bring?',
     'Private',
   ],
   ['PC8', 'Learning interest', 'What would you most like to learn or become better at?', 'Private'],
@@ -91,6 +86,155 @@ const COMPASS = [
     'Private',
   ],
 ];
+// ---- Purpose Compass Baseline: Purpose plus six question sets, the starting point of the journey.
+// Answers live in S.compass[pid] beside PC1–PC12; PC keys keep their meaning, the other keys hold the extra sub-questions.
+// [key, question, required, help]
+const BL_SETS = [
+  { id: 'purpose', n: 'Purpose', d: 'Where your journey starts.', q: [['PC1', 'What matters most to you right now in this programme, community or stage of your life?', 1]] },
+  {
+    id: 'B1',
+    n: 'Outcome — 3–12 months',
+    q: [
+      ['PC2', 'What outcome do you want to achieve in the next 3–12 months?', 1],
+      ['PC6', 'What would success look like?', 1],
+    ],
+  },
+  {
+    id: 'B2',
+    n: 'What you bring',
+    q: [
+      ['PC7', 'What skills, knowledge, experience, relationships, resources or strengths do you bring?', 1],
+      ['skills', 'What existing skills should be captured?', 0, 'Comma-separated, e.g. survey design, Spanish-language outreach. Saved to your profile as self-declared skills, visible only to you until you change it.'],
+    ],
+  },
+  {
+    id: 'B3',
+    n: 'Blockers',
+    q: [
+      ['PC3', 'What could prevent or slow you down?', 1],
+      ['risks', 'What risks, dependencies or support gaps do you have?', 0],
+    ],
+  },
+  {
+    id: 'B4',
+    n: 'How you learn',
+    q: [
+      ['learnHow', 'How do you learn best?', 1],
+      ['learnSupport', 'What kind of guidance, practice, feedback, mentoring or resources help you learn?', 0],
+    ],
+  },
+  {
+    id: 'B5',
+    n: 'Constraints',
+    d: 'What should be considered when planning your journey. Fill in only what is relevant to you.',
+    q: [
+      ['PC4', 'Availability — how much time can you realistically commit?', 1],
+      ['cLoc', 'Location', 0],
+      ['cTech', 'Technology / access', 0],
+      ['cFin', 'Financial constraints', 0],
+      ['cCare', 'Care responsibilities', 0],
+      ['cAcc', 'Accessibility requirements', 0],
+      ['cOther', 'Other personal or practical constraints', 0],
+    ],
+  },
+  {
+    id: 'B6',
+    n: 'First milestone & who to involve',
+    q: [
+      ['PC5', 'What is your first meaningful milestone?', 1],
+      ['involve', 'Who needs to be involved, consulted, supported or invited?', 0],
+    ],
+  },
+];
+const BL_VIS = {
+  skills: 'Only me until I change it in Profile',
+  risks: 'High-restriction · explicit sharing only',
+  cFin: 'High-restriction · explicit sharing only',
+  cCare: 'High-restriction · explicit sharing only',
+  cAcc: 'High-restriction · explicit sharing only',
+  involve: 'Contextual',
+};
+const blVis = k => (COMPASS.find(c => c[0] === k) || [])[3] || BL_VIS[k] || 'Private';
+const blKeys = () => BL_SETS.flatMap(s => s.q.map(q => q[0]));
+const blMissing = pid => {
+  const a = S.compass[pid] || {};
+  return BL_SETS.filter(s => s.q.some(([k, , req]) => req && !String(a[k] || '').replace('|', '').trim()));
+};
+const hoursText = v => (v ? String(v).replace('|', ' ') : '');
+const blAnswer = (a, k) => (k === 'PC4' ? hoursText(a.PC4) : a[k] || '');
+// One field of a set. PC4 (availability) is a number plus a unit, as before.
+function blField(f, [k, q, req, help], a) {
+  if (k === 'PC4') {
+    const [n, u] = String(fv(f, 'PC4n', '') || a.PC4 || '').split('|');
+    return `<div class="field"><label class="lbl" for="${f}_PC4n">${q}${req ? ' <span class="req">*</span>' : ''}</label><div class="row wrap"><input id="${f}_PC4n" name="PC4n" type="number" min="1" class="input ${fe(f, 'PC4n') ? 'err' : ''}" style="width:140px" value="${h(n || '')}"><select name="PC4u" class="input" style="width:200px" aria-label="Unit"><option ${!u || String(u).includes('week') ? 'selected' : ''}>hours per week</option><option ${String(u || '').includes('month') ? 'selected' : ''}>hours per month</option></select></div>${fe(f, 'PC4n') ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe(f, 'PC4n')}</span>` : ''}<span class="vis">${ic('lock', 14)}${blVis(k)}</span></div>`;
+  }
+  const short = /^c[A-Z]/.test(k);
+  return fi(f, k, q, { type: short ? 'text' : 'textarea', rows: 2, req: !!req, value: a[k] || '', help, vis: blVis(k), ph: short ? 'If relevant' : 'Write in your own words' });
+}
+function blRules(sets) {
+  const r = {};
+  sets.forEach(s =>
+    s.q.forEach(([k, , req]) => {
+      if (!req) return;
+      if (k === 'PC4') r.PC4n = [['req', 'Enter a number of hours.'], 'num'];
+      else r[k] = [['req', 'Please answer this question. A short answer is fine.']];
+    }),
+  );
+  return r;
+}
+function blApply(pid, d, sets) {
+  const a = (S.compass[pid] = S.compass[pid] || {});
+  sets.forEach(s =>
+    s.q.forEach(([k]) => {
+      if (k === 'PC4') {
+        if (d.PC4n) a.PC4 = d.PC4n + '|' + (d.PC4u || 'hours per week');
+      } else a[k] = (d[k] || '').trim();
+    }),
+  );
+  if (sets.some(s => s.id === 'B2')) blSyncSkills(pid, a.skills);
+}
+// The skills the person types are their own statement: kept as one self-declared Skills claim, private by default.
+function blSyncSkills(pid, v) {
+  const c = S.claims.find(x => x.pid === pid && x.src === 'baseline' && x.state === 'Current');
+  if (!v) return;
+  if (c) {
+    if (c.value !== v) {
+      c.value = v;
+      c.ver = (c.ver || 1) + 1;
+    }
+  } else S.claims.push({ id: uid('cl'), pid, field: 'Skills', value: v, prov: 'Self-declared', vis: 'Only me', state: 'Current', ver: 1, src: 'baseline' });
+}
+const claimVals = (pid, field) =>
+  S.claims
+    .filter(c => c.pid === pid && c.field === field && c.state === 'Current')
+    .map(c => c.value)
+    .join(', ');
+// Role assignments with their expiry, as shown in the baseline.
+function blRoles(pid) {
+  const list = S.assign.filter(a => a.pid === pid);
+  return list
+    .map(a => {
+      const c = S.contexts.find(x => x.id === a.ctx);
+      const exp = a.until ? (a.status === 'Expired' ? pill('Expired ' + fmt(a.until), 'p-red') : pill('Expires ' + fmt(a.until), a.until <= addDays(today(), 30) ? 'p-amber' : 'p-grey')) : '<span class="cap">No expiry set</span>';
+      return `<div class="row wrap" style="gap:8px;justify-content:space-between"><span><b style="font-weight:600">${h(ROLE[a.role] || a.role)}</b> <span class="cap">· ${h(c ? c.name : a.ctx)}</span></span><span class="row wrap" style="gap:6px">${a.status !== 'Active' && a.status !== 'Expired' ? pill(a.status) : ''}${exp}</span></div>`;
+    })
+    .join('');
+}
+function blSummary(pid) {
+  const a = S.compass[pid] || {};
+  return dl([
+    ['Purpose', h(a.PC1 || '—')],
+    ['Skills', h(claimVals(pid, 'Skills') || a.skills || '—')],
+    ['Interests', h(claimVals(pid, 'Interests') || '—')],
+    ['Goals', a.PC2 ? h(a.PC2) + (a.PC5 ? `<div class="cap">First milestone: ${h(a.PC5)}</div>` : '') : '—'],
+    ['Role assignments', `<div class="col" style="gap:6px">${blRoles(pid) || '—'}</div>`],
+  ]);
+}
+function addDays(d, n) {
+  const x = new Date(d + 'T00:00:00');
+  x.setDate(x.getDate() + n);
+  return x.toISOString().slice(0, 10);
+}
 function onbTop(cur, steps) {
   return `<header class="onb-top"><div class="row" style="gap:10px"><span class="mark">P</span><span class="wm hide-sm"><b>PHOENIX</b><span>Foundation Alpha</span></span></div><nav class="steps" aria-label="Onboarding progress">${steps.map((l, i) => `${i ? '<span class="sline"></span>' : ''}<div class="step ${i < cur ? 'done' : i === cur ? 'cur' : ''}"><span class="n">${i < cur ? ic('check', 14) : i + 1}</span><span class="st">${l}</span></div>`).join('')}</nav><div class="row">${S.assign.filter(x => x.pid === myId()).length > 1 ? B('Switch context', 'switcher', {}, 'btn-g btn-sm') : ''}${B('Save and exit', 'logout', {}, 'btn-g btn-sm hide-sm')}</div></header>`;
 }
@@ -138,23 +282,20 @@ function ONB() {
   } else {
     const f = 'pc';
     const ans = S.compass[myId()] || {};
+    const n = BL_SETS.length;
     if (UI.tab.pcStep == null) {
-      const first = COMPASS.slice(0, 6).findIndex(([id]) => !ans[id]);
-      UI.tab.pcStep = first < 0 ? 5 : first;
+      const miss = blMissing(myId());
+      UI.tab.pcStep = miss.length ? BL_SETS.indexOf(miss[0]) : n - 1;
     }
-    const st = UI.tab.pcStep || 0;
-    const q = COMPASS[st];
-    const val = fv(f, q[0], ans[q[0]] || '');
-    body = `<div class="col" style="gap:4px"><p class="over">Step 5 of 5 · Purpose Compass</p><h1 class="h1">Set your North Star</h1><p class="sub">Six short reflective questions. Nothing here is scored, and nothing is used to infer sensitive traits.</p></div>
-  <div class="col" style="gap:8px"><div class="row" style="justify-content:space-between"><span class="lbl">Question ${st + 1} of 6</span><span class="cap">${Math.round((st / 6) * 100)}% complete</span></div><div class="progress"><span style="width:${(st / 6) * 100}%"></span></div></div>
-  <form data-f="pc" class="card col" style="gap:14px" novalidate><input type="hidden" name="q" value="${q[0]}"><div class="row wrap" style="justify-content:space-between">${pill(q[0] + ' · ' + q[1], 'p-navy')}<span class="vis">${ic('lock', 14)}${q[3]}</span></div>
-  ${
-    q[0] === 'PC4'
-      ? `<div class="field"><label class="lbl" for="pc4n">${q[2]} <span class="req">*</span></label><div class="row wrap"><input id="pc4n" name="n" type="number" min="1" class="input ${fe(f, 'n') ? 'err' : ''}" style="width:140px" value="${h((val || '').split('|')[0])}"><select name="u" class="input" style="width:200px"><option ${String(val).includes('week') || !val ? 'selected' : ''}>hours per week</option><option ${String(val).includes('month') ? 'selected' : ''}>hours per month</option></select></div>${fe(f, 'n') ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe(f, 'n')}</span>` : ''}</div>`
-      : fi(f, 'v', q[2], { type: 'textarea', req: true, rows: 4, value: val, ph: 'Write in your own words' })
-  }
-  ${st === 5 ? banner('ok', '', 'Your North Star appears on My PHOENIX as your self-declared direction. Questions PC7–PC12 are optional and asked later, in context.') : ''}
-  <div class="actions">${st ? B(ic('chevl', 16) + 'Previous', 'pcPrev', {}, 'btn-g') : B(ic('chevl', 16) + 'Back', 'onbBack', { s: 'profile' }, 'btn-g')}<div class="row wrap">${B('Save and finish later', 'logout', {}, 'btn-s')}<button class="btn btn-p" type="submit">${st === 5 ? 'Finish and go to My PHOENIX' : 'Next'}</button></div></div></form>`;
+    const st = Math.min(UI.tab.pcStep || 0, n - 1);
+    const set = BL_SETS[st];
+    body = `<div class="col" style="gap:4px"><p class="over">Step 5 of 5 · Purpose Compass Baseline</p><h1 class="h1">Set your starting point</h1><p class="sub">Your purpose and six short question sets. Nothing here is scored, and nothing is used to infer sensitive traits. Your answers become the context for your ${WL()}s and Learning Harvests.</p></div>
+  <div class="col" style="gap:8px"><div class="row" style="justify-content:space-between"><span class="lbl">${st ? 'Set ' + st + ' of ' + (n - 1) : 'Purpose'}</span><span class="cap">${Math.round((st / n) * 100)}% complete</span></div><div class="progress"><span style="width:${(st / n) * 100}%"></span></div></div>
+  ${errSum(f)}<form data-f="pc" class="card col" style="gap:16px" novalidate><input type="hidden" name="set" value="${st}"><div class="col" style="gap:4px"><span class="over">${st ? 'Question set ' + st : 'Starting point'}</span><h2 class="h3" style="font-size:20px">${set.n}</h2>${set.d ? `<p class="cap">${set.d}</p>` : ''}</div>
+  ${set.q.map(q => blField(f, q, ans)).join('')}
+  ${st === 0 ? `<div class="col" style="gap:10px"><span class="lbl">Already in your profile</span>${dl([['Interests', h(claimVals(myId(), 'Interests') || '—')], ['Role assignments', `<div class="col" style="gap:6px">${blRoles(myId())}</div>`]])}<span class="help">Role assignments and their expiry are set by your administrator. Skills are asked in set 2; goals in sets 1 and 6.</span></div>` : ''}
+  ${st === n - 1 ? banner('ok', '', 'Your North Star appears on My PHOENIX as your self-declared direction. You can review and change the whole baseline any time in Profile → Purpose Compass. Questions PC8–PC12 are optional and asked later, in context.') : ''}
+  <div class="actions">${st ? B(ic('chevl', 16) + 'Previous', 'pcPrev', {}, 'btn-g') : B(ic('chevl', 16) + 'Back', 'onbBack', { s: 'profile' }, 'btn-g')}<div class="row wrap">${B('Save and finish later', 'logout', {}, 'btn-s')}<button class="btn btn-p" type="submit">${st === n - 1 ? 'Finish and go to My PHOENIX' : 'Next'}</button></div></div></form>`;
   }
   return `<div class="onb">${onbTop(cur, steps)}<main class="onb-body">${body}</main></div>`;
 }
@@ -269,29 +410,27 @@ A.pcPrev = () => {
   render();
 };
 F.pc = d => {
-  const q = d.q;
-  let v;
-  if (q === 'PC4') {
-    if (!validate('pc', d, { n: [['req', 'Enter a number of hours.'], 'num'] })) return render();
-    v = d.n + '|' + d.u;
-  } else {
-    if (!validate('pc', d, { v: [['req', 'Please answer this question to continue. A short answer is fine.']] }))
-      return render();
-    v = d.v.trim();
-  }
-  S.compass[myId()] = S.compass[myId()] || {};
-  S.compass[myId()][q] = v;
+  const st = +d.set || 0;
+  const set = BL_SETS[st];
+  if (!validate('pc', d, blRules([set]))) return render();
+  blApply(myId(), d, [set]);
   clearF('pc');
-  const st = UI.tab.pcStep || 0;
-  if (st < 5) {
+  if (st < BL_SETS.length - 1) {
     UI.tab.pcStep = st + 1;
     save();
     return render();
   }
+  const miss = blMissing(myId());
+  if (miss.length) {
+    UI.tab.pcStep = BL_SETS.indexOf(miss[0]);
+    toast('Answer the required questions in “' + miss[0].n + '” to finish.', 'warn');
+    return render();
+  }
   asg().onb.compass = true;
+  S.compass[myId()]._at = today();
   UI.tab.pcStep = null;
-  audit('Minimum Purpose Compass completed', myId(), 'PC1–PC6');
-  toast('Welcome to PHOENIX. Your North Star is set.');
+  audit('Purpose Compass Baseline completed', myId(), 'Purpose and six question sets');
+  toast('Welcome to PHOENIX. Your baseline and North Star are set.');
   save();
   go('home');
 };

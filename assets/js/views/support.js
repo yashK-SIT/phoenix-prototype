@@ -288,6 +288,19 @@ F.prov = (d) => {
 // ---------- GAP CLOSURE (Section 6 user-story audit) ----------
 function migrate() {
   ensurePlatformData();
+  // deliverables → evidence → Learning Harvest → profile evolution
+  S.evolution = S.evolution || [];
+  S.rooms.forEach((x) =>
+    (x.resources || []).forEach((r) => {
+      if (!r.id) r.id = uid("res");
+    }),
+  );
+  const sd = seed();
+  if (!byId("rooms", "ar2")) S.rooms.push(sd.rooms.find((r) => r.id === "ar2"));
+  if (S.compass.p1)
+    Object.entries(sd.compass.p1).forEach(([k, v]) => {
+      if (S.compass.p1[k] == null) S.compass.p1[k] = v;
+    });
   S.resources = S.resources || [
     {
       id: "rs1",

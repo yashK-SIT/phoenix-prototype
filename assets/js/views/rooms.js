@@ -252,7 +252,7 @@ route("room", "rooms", () => {
       `<div class="row wrap chatbar"><span class="cap">Group chat for members of this ${WL()}. ${isM ? L("Open in Messages", "messages", { c: x.id, k: "rooms" }) : ""}</span></div>` +
       chatThread("rooms", x, { embedded: true });
   if (t.cur === "plan")
-    body = `<div class="g12"><div class="c12">${taskBoard(x, lead, ro)}</div>
+    body = `<div class="g12">${roomFlowBanner(x)}<div class="c12">${taskBoard(x, lead, ro)}</div>
  ${card(
    "Milestones",
    "Evidence-linked completion is validated by a Reviewer.",
@@ -391,8 +391,16 @@ route("room", "rooms", () => {
       "Resources and commitments",
       "",
       table(
-        ["Resource", "From", "Status"],
-        x.resources.map((k) => [h(k.t), h(k.from), pill(k.status)]),
+        ["Resource", "From", "Status", "Used in deliverables"],
+        x.resources.map((k) => [
+          h(k.t),
+          h(k.from),
+          pill(k.status),
+          x.tasks
+            .filter((t) => (t.res || []).includes(k.id))
+            .map((t) => h(t.t))
+            .join(", ") || '<span class="cap">—</span>',
+        ]),
       ),
       !ro && canPropose
         ? B(
@@ -644,6 +652,7 @@ A.roomInvite = (d) => {
 A.roomItem = (d) => {
   const k = d.k;
   clearF("ri");
+  mselReset("ri", "partners");
   const x = byId("rooms", d.r);
   const mem = x.members
     .filter((m) => m.status === "Active")
@@ -659,7 +668,7 @@ A.roomItem = (d) => {
       wins: "Record a visible win",
     }[k],
     () =>
-      `<form data-f="ri" class="col" style="gap:14px" novalidate><input type="hidden" name="r" value="${x.id}"><input type="hidden" name="k" value="${k}"><input type="hidden" name="st" value="${d.st || ""}">${fi("ri", "t", k === "deps" ? "Dependent activity / resource" : "Title", { req: true })}${["tasks", "decisions", "risks"].includes(k) ? fi("ri", "owner", k === "tasks" ? "Assignee" : "Owner", { type: "select", req: true, opts: mem, value: d.owner || myId(), help: k === "tasks" ? "Any active member of this " + WL() + "." : "" }) : ""}${["tasks", "milestones"].includes(k) ? fi("ri", "due", "Due date", { type: "date", req: true }) : ""}${k === "tasks" ? fi("ri", "prio", "Priority", { type: "select", opts: TASK_PRIOS, value: "Medium" }) + fi("ri", "desc", "Description", { type: "textarea", rows: 3 }) : ""}${k === "deps" ? fi("ri", "on", "Depends on (party)", { req: true }) : ""}${k === "resources" ? fi("ri", "from", "Provided by", { req: true }) : ""}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save</button></div></form>`,
+      `<form data-f="ri" class="col" style="gap:14px" novalidate><input type="hidden" name="r" value="${x.id}"><input type="hidden" name="k" value="${k}"><input type="hidden" name="st" value="${d.st || ""}">${fi("ri", "t", k === "deps" ? "Dependent activity / resource" : "Title", { req: true })}${["tasks", "decisions", "risks"].includes(k) ? fi("ri", "owner", k === "tasks" ? "Assignee" : "Owner", { type: "select", req: true, opts: mem, value: d.owner || myId(), help: k === "tasks" ? "Any active member of this " + WL() + "." : "" }) : ""}${["tasks", "milestones"].includes(k) ? fi("ri", "due", "Due date", { type: "date", req: true }) : ""}${k === "tasks" ? fi("ri", "prio", "Priority", { type: "select", opts: TASK_PRIOS, value: "Medium" }) + fi("ri", "desc", "Description", { type: "textarea", rows: 3 }) + `<div class="field"><span class="lbl">Resources</span>${chkGroup("res", (x.resources || []).map((r) => [r.id, h(r.t) + (r.from ? ` <span class="cap">· ${h(r.from)}</span>` : "")]), [])}</div>` + msel("ri", "partners", "Partners / contributors", roomActive(x).map((m) => ({ pid: m.pid, sub: spaceRole("rooms", x, m.pid) || "" })), [], { help: "People who contribute to this deliverable besides the assignee." }) + fi("ri", "req", "Required deliverable — must be done before evidence upload and the Learning Harvest", { type: "checkbox", value: "yes" }) : ""}${k === "deps" ? fi("ri", "on", "Depends on (party)", { req: true }) : ""}${k === "resources" ? fi("ri", "from", "Provided by", { req: true }) : ""}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save</button></div></form>`,
   );
 };
 F.ri = (d) => {
@@ -681,6 +690,10 @@ F.ri = (d) => {
       key: nextTaskKey(x),
       prio: d.prio || "Medium",
       desc: d.desc || "",
+      res: [].concat(d.res || []),
+      partners: [].concat(d.partners || []).filter((p) => p !== d.owner),
+      evidence: [],
+      ...(d.req === "yes" ? {} : { opt: true }),
       log: [{ at: now(), by: myId(), t: lead ? "Created" : "Proposed" }],
     });
   if (d.k === "tasks" && !lead)
@@ -1049,6 +1062,99 @@ A.roomClose = (d) => {
   audit(WL() + " closed", x.id, "");
   ok();
 };
+// ---- Deliverables completed → upload evidence → Learning Harvest → profile evolution
+// Marking tasks done never completes the Harvest: it needs evidence, then a reviewed and approved Harvest.
+function roomFlowState(x) {
+  const req = x.tasks.filter((k) => !["Proposed", "Declined"].includes(k.status) && !k.opt);
+  const done = req.filter((k) => k.status === "Done");
+  return {
+    req,
+    done,
+    allDone: req.length > 0 && done.length === req.length,
+    ev: roomEvidence(x),
+    hv: S.harvests.find((v) => v.tpl === 2 && v.scope === x.id && v.subject === myId()),
+  };
+}
+const hvDone = (v) => !!v && ["Approved", "Released"].includes(v.state);
+function roomFlow(x) {
+  const st = roomFlowState(x);
+  const act = memberOf(x) && x.state === "Active";
+  const hv = st.hv;
+  const pend = hv ? S.evolution.filter((s) => s.hv === hv.id && s.status === "Pending").length : 0;
+  const opt = x.tasks.filter((k) => k.opt && !["Proposed", "Declined"].includes(k.status)).length;
+  const others = S.harvests.filter((v) => v.tpl === 2 && v.scope === x.id && v !== hv);
+  const step = (n, title, sub, state, btns) =>
+    `<li class="rf-step is-${state}"><span class="rf-n">${state === "done" ? ic("check", 14) : n}</span><div class="rf-b"><b>${title}</b><span class="cap">${sub}</span>${btns ? `<div class="row wrap" style="gap:8px;margin-top:8px">${btns}</div>` : ""}</div></li>`;
+  const s1 = st.allDone ? "done" : "cur";
+  const s2 = !st.allDone ? "todo" : st.ev.length ? "done" : "cur";
+  const s3 = !st.allDone || !st.ev.length ? "todo" : hvDone(hv) ? "done" : "cur";
+  const s4 = !hvDone(hv) ? "todo" : pend ? "cur" : "done";
+  return card(
+    "From deliverables to learning",
+    "Deliverables completed → upload evidence → Learning Harvest → profile evolution. Marking tasks done does not complete the Learning Harvest.",
+    `<ol class="rf">${step(
+      1,
+      "Deliverables completed",
+      st.req.length
+        ? `${st.done.length} of ${st.req.length} required deliverable${st.req.length > 1 ? "s" : ""} done${opt ? ` · ${opt} optional` : ""}`
+        : "No required deliverables yet. Add tasks on the Tasks & milestones tab.",
+      s1,
+      !st.allDone ? L("Open the task board", "room", { id: x.id, tab: "plan" }, "btn btn-s btn-sm") : "",
+    )}${step(
+      2,
+      "Upload evidence",
+      !st.allDone
+        ? "Available when every required deliverable is done."
+        : st.ev.length
+          ? `${st.ev.length} evidence item${st.ev.length > 1 ? "s" : ""} submitted for this ${WL()}. Add more if other work needs support.`
+          : "All required deliverables are complete. Upload evidence that supports the work: documents, files, links, outputs, records or reflections.",
+      s2,
+      st.allDone && act
+        ? B(ic("upload", 14) + "Upload evidence", "go", { r: "newevidence", link: x.id, from: x.id }, st.ev.length ? "btn-s btn-sm" : "btn-p btn-sm")
+        : "",
+    )}${step(
+      3,
+      "Generate Learning Harvest",
+      hv
+        ? `${pill(hv.state)} ${hvDone(hv) ? "Approved." : "Not complete until it is reviewed and approved."}`
+        : st.allDone && st.ev.length
+          ? "Built from your Purpose Compass Baseline, the completed deliverables, the evidence, resources, partner contributions and linked records."
+          : "Available after evidence is submitted.",
+      s3,
+      hv
+        ? L(ic("sparkle", 14) + "Open Learning Harvest", "harvest", { id: hv.id }, "btn btn-s btn-sm")
+        : st.allDone && st.ev.length && act
+          ? B(ic("sparkle", 14) + "Generate Learning Harvest", "hvGen", { r: x.id }, "btn-p btn-sm")
+          : "",
+    )}${step(
+      4,
+      "Profile evolution",
+      !hvDone(hv)
+        ? "When the Harvest is approved, possible profile changes are offered to you for review. Nothing is applied automatically."
+        : pend
+          ? `${pend} suggested change${pend > 1 ? "s" : ""} waiting for your review.`
+          : `${hv.evoN || 0} suggestion${hv.evoN === 1 ? "" : "s"} identified · all reviewed.`,
+      s4,
+      pend ? L("Review profile changes", "profile", { tab: "evo" }, "btn btn-p btn-sm") : "",
+    )}</ol>${others.length ? `<p class="cap" style="margin-top:12px">Other members' Learning Harvests for this ${WL()}: ${others.map((v) => L(nm(v.subject), "harvest", { id: v.id }) + " " + pill(v.state)).join(" · ")}</p>` : ""}`,
+    "",
+    "c12",
+  );
+}
+function roomFlowBanner(x) {
+  const st = roomFlowState(x);
+  if (!st.allDone || st.hv) return "";
+  return `<div class="c12">${banner(
+    "ok",
+    "All required deliverables are done",
+    (st.ev.length
+      ? "Evidence has been submitted. Next step: generate the Learning Harvest."
+      : "Next step: upload evidence that supports the completed work.") +
+      (memberOf(x) && x.state === "Active"
+        ? `<span class="row wrap" style="display:flex;gap:8px;margin-top:10px">${st.ev.length ? B(ic("sparkle", 14) + "Generate Learning Harvest", "hvGen", { r: x.id }, "btn-p btn-sm") : B(ic("upload", 14) + "Upload evidence", "go", { r: "newevidence", link: x.id, from: x.id }, "btn-p btn-sm")}</span>`
+        : ""),
+  )}</div>`;
+}
 // ---- Overview: progress, timeline, next action, wins, reports (Section 7.7 minimum execution features)
 function roomOverview(x, pr, lead, ro) {
   const tasks = x.tasks.filter(
@@ -1071,7 +1177,7 @@ function roomOverview(x, pr, lead, ro) {
   const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
   const kpi = (label, val, sub, w) =>
     `<div class="kpi"><span class="cap">${label}</span><b>${val}</b>${w != null ? `<div class="progress"><span style="width:${w}%"></span></div>` : ""}<span class="cap">${sub}</span></div>`;
-  return `<div class="g12"><section class="card c12"><div class="kpis">${kpi("Tasks done", done + " of " + tasks.length, pct(done, tasks.length) + "% complete", pct(done, tasks.length))}${kpi("Milestones achieved", msDone + " of " + ms.length, "Validated against approved evidence", pct(msDone, ms.length))}${kpi("Open risks", openRisks, openRisks ? "Each has an owner" : "Nothing open")}${kpi("Next due", next ? fmt(next.due) : "—", next ? h(next.kind + ": " + next.t) + dueTag(next.due, false) : "Nothing scheduled")}</div></section>
+  return `<div class="g12"><section class="card c12"><div class="kpis">${kpi("Tasks done", done + " of " + tasks.length, pct(done, tasks.length) + "% complete", pct(done, tasks.length))}${kpi("Milestones achieved", msDone + " of " + ms.length, "Validated against approved evidence", pct(msDone, ms.length))}${kpi("Open risks", openRisks, openRisks ? "Each has an owner" : "Nothing open")}${kpi("Next due", next ? fmt(next.due) : "—", next ? h(next.kind + ": " + next.t) + dueTag(next.due, false) : "Nothing scheduled")}</div></section>${roomFlow(x)}
   <div class="c7 col" style="gap:24px">${card(
     "Milestone timeline",
     "Key dates and progress. Evidence-linked completion is validated by a Reviewer.",

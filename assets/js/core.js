@@ -146,7 +146,7 @@ function go(r, p = {}) {
     render();
     return;
   }
-  if (UI.panel === 'notif') UI.panel = null;
+  if (UI.panel === 'notif' || UI.panel === 'user') UI.panel = null;
   UI.route = r;
   UI.p = p;
   UI.modal = null;
@@ -512,7 +512,7 @@ function sidebar() {
       return `${sec}<a href="#" class="nav${on}" data-a="go" data-r="${rt}"${tb ? ` data-tab="${tb}"` : ''} title="${h(l)}"${on ? ' aria-current="page"' : ''}>${ic(i)}<span class="t">${h(l)}</span>${n ? `<span class="ncount">${n}</span>` : ''}</a>`;
     })
     .join('');
-  return `<aside class="side" aria-label="Main navigation"><a href="#" class="brand" data-a="go" data-r="home"><span class="mark">P</span><span class="wm"><b>PHOENIX</b><span>Foundation Alpha</span></span></a><nav class="col" style="gap:2px">${items}<div class="sep"></div>${role() !== 'T' ? `<div class="navsec">Account</div><a href="#" class="nav${UI.route === 'privacy' ? ' on' : ''}" data-a="go" data-r="privacy" title="Privacy & consent">${ic('shield')}<span class="t">Privacy & consent</span></a>` : ''}<a href="#" class="nav${UI.route === 'profile' ? ' on' : ''}" data-a="go" data-r="profile" title="Profile">${ic('user')}<span class="t">Profile</span></a><a href="#" class="nav out" data-a="logout" title="Log out">${ic('logout')}<span class="t">Log out</span></a></nav></aside>`;
+  return `<aside class="side" aria-label="Main navigation"><a href="#" class="brand" data-a="go" data-r="home"><span class="mark">P</span><span class="wm"><b>PHOENIX</b><span>Foundation Alpha</span></span></a><nav class="col" style="gap:2px">${items}</nav></aside>`;
 }
 function topbar() {
   const a = asg(),
@@ -524,7 +524,7 @@ function topbar() {
  <div class="grow"></div>
  ${can('ai') ? `<button type="button" class="btn btn-s btn-sm askbtn ${UI.panel === 'ask' ? 'on' : ''}" data-a="askToggle" aria-expanded="${UI.panel === 'ask'}" aria-controls="assist" title="Ask PHOENIX">${ic('sparkle', 16)}<span class="hide-md">Ask PHOENIX</span></button>` : ''}
  <div class="nwrap"><button class="iconbtn ${UI.panel === 'notif' ? 'on' : ''}" type="button" data-a="notifToggle" aria-haspopup="dialog" aria-expanded="${UI.panel === 'notif'}" aria-label="Notifications, ${unread} unread">${ic('bell')}${unread ? `<span class="badge">${unread}</span>` : ''}</button>${UI.panel === 'notif' ? notifMenu() : ''}</div>
- <button class="who" type="button" data-a="go" data-r="profile" aria-label="Your profile"><span class="av">${ini(myId())}</span><span class="hide-sm">${h(me().display)}</span></button></header>`;
+ <div class="uwrap"><button class="who ${UI.panel === 'user' ? 'on' : ''}" type="button" data-a="userToggle" aria-haspopup="menu" aria-expanded="${UI.panel === 'user'}" aria-controls="user-menu" aria-label="Account menu for ${h(me().name)}"><span class="av">${ini(myId())}</span><span class="hide-sm">${h(me().display)}</span><span class="who-chev">${ic('chev', 14)}</span></button>${UI.panel === 'user' ? userMenu() : ''}</div></header>`;
 }
 const SHORT = {
   home: 'Home',

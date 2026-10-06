@@ -48,6 +48,7 @@ function startSession(p, mfaDone) {
       bundles: [],
       onb: { agreement: false, consents: false, profile: true, compass: roleBase(r.role) !== 'P' },
     };
+    if (r.inv && byId('invites', r.inv)?.until) na.until = byId('invites', r.inv).until;
     S.assign.push(na);
     if (r.inv) {
       const iv = byId('invites', r.inv);
@@ -203,6 +204,7 @@ F.reg = d => {
     status: 'Registered (email unverified)',
     bundles: [],
     onb: { agreement: false, consents: false, profile: false, compass: role !== 'P' },
+    ...(inv && inv.until ? { until: inv.until } : {}),
   };
   S.assign.push(a);
   S.consents[p.id] = {
@@ -340,6 +342,10 @@ PUB.pending = () => {
     UI.pre = { verifyPid: a.pid };
     return PUB.verify();
   }
+  if (a.status === 'Expired')
+    return authWrap(
+      `<h1 class="h1">Role assignment expired</h1>${banner('warn', 'Your ' + ROLE[a.role] + ' assignment in ' + h(ctx().name) + ' expired on ' + fmt(a.until), 'Ask your programme administrator to renew it. Your account, consent, correction and export rights continue, and your other roles are unaffected.')}${S.assign.filter(x => x.pid === myId()).length > 1 ? B('Switch to another role', 'switcher', {}, 'btn-s btn-block') : ''}${B('Sign out', 'logout', {}, 'btn-s btn-block')}`,
+    );
   if (a.status === 'Deactivated')
     return authWrap(
       `<h1 class="h1">Access deactivated</h1>${banner('err', 'Your ' + ROLE[a.role] + ' access in ' + h(ctx().name) + ' is deactivated', 'Contact your programme administrator. Your consent, correction and export rights continue.')}${S.assign.filter(x => x.pid === myId()).length > 1 ? B('Switch to another role', 'switcher', {}, 'btn-s btn-block') : ''}${B('Sign out', 'logout', {}, 'btn-s btn-block')}`,

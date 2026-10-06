@@ -3390,3 +3390,401 @@ a.stat:hover {
     width: auto;
   }
 }
+
+/* ---------- Deliverables → evidence → Learning Harvest → profile evolution ---------- */
+.chkgrp {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--sunk);
+  max-height: 200px;
+  overflow: auto;
+}
+.chkgrp .row {
+  align-items: flex-start;
+  gap: 10px;
+}
+.tk-deliv {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+/* step tracker in the Action Room */
+.rf {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.rf-step {
+  display: flex;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--line-2);
+  border-radius: var(--r);
+  background: var(--surface);
+  min-width: 0;
+}
+.rf-b {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.rf-n {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 13px;
+  background: var(--sunk);
+  color: var(--text-3);
+  border: 1px solid var(--line-2);
+}
+.rf-step.is-done {
+  border-top-color: var(--ok);
+}
+.rf-step.is-done .rf-n {
+  background: var(--ok);
+  border-color: var(--ok);
+  color: #fff;
+}
+.rf-step.is-cur {
+  border-top-color: var(--ochre);
+  background: var(--ochre-50);
+}
+.rf-step.is-cur .rf-n {
+  background: var(--ever-800);
+  border-color: var(--ever-800);
+  color: #fff;
+}
+.rf-step.is-todo b {
+  color: var(--text-3);
+}
+/* progress line on the Harvest page */
+.hv2-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 18px;
+}
+.hv2-flow span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  font-size: 13px;
+  color: var(--text-3);
+  background: var(--surface);
+}
+.hv2-flow span.done {
+  color: var(--ok);
+  border-color: #b9d9c6;
+  background: var(--ok-50);
+}
+.hv2-flow span.cur {
+  color: var(--ever-800);
+  border-color: var(--ever-800);
+  font-weight: 600;
+}
+/* Harvest sections */
+.hv2-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.hv2 > .hv2-sec:first-of-type {
+  padding-top: 0;
+  border-top: 0;
+}
+.hv2-sh {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.hv2-ro p {
+  margin-top: 4px;
+}
+.hv2-learn {
+  gap: 12px 16px;
+}
+.hv2-refs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.hv2-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 9px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r);
+  background: var(--sunk);
+  color: var(--ever-800);
+  font-size: 13px;
+  text-decoration: none;
+}
+.hv2-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hv2-chip:hover {
+  border-color: var(--ever-800);
+  background: var(--ever-50);
+}
+.hv2-dec {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.hv2-d {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--line-2);
+  border-radius: var(--r);
+  background: var(--surface);
+  min-width: 0;
+}
+.hv2-dl {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.hv2-d .input {
+  min-height: 96px;
+}
+.hv2-d-continue {
+  border-top-color: var(--ok);
+}
+.hv2-d-change {
+  border-top-color: var(--info);
+}
+.hv2-d-stop {
+  border-top-color: var(--bad);
+}
+.hv2-d-test {
+  border-top-color: var(--ochre);
+}
+.hv2-d.err {
+  border-color: var(--bad);
+}
+.hv2-links {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.hv2-lg {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+/* suggested profile change */
+.evo {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--ochre);
+  border-radius: var(--r);
+  background: var(--surface);
+  padding: 16px 18px;
+}
+.evo-h {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+mark.evo-add {
+  background: var(--ochre-50);
+  color: var(--ochre-strong);
+  font-weight: 600;
+  padding: 0 3px;
+  border-radius: 2px;
+}
+.evo-q {
+  margin: 4px 0 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--ever-100);
+  background: var(--sunk);
+  white-space: pre-line;
+  color: var(--text-2);
+}
+.evo-act {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+@media (max-width: 1100px) {
+  .rf,
+  .hv2-dec {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 599px) {
+  .rf,
+  .hv2-dec {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .evo {
+    padding: 14px;
+  }
+}
+
+/* ---------- Account dropdown (anchored to the avatar) ---------- */
+.uwrap {
+  position: relative;
+}
+.who.on {
+  background: var(--ever-50);
+}
+.who-chev {
+  display: inline-flex;
+  color: var(--text-3);
+  transition: transform 0.15s var(--ease);
+}
+.who.on .who-chev {
+  transform: rotate(180deg);
+}
+.umenu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 300px;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-lg);
+  box-shadow: var(--pop);
+  z-index: 40;
+  text-align: left;
+}
+.umenu::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  right: 22px;
+  width: 10px;
+  height: 10px;
+  background: var(--sunk);
+  border-left: 1px solid var(--line-2);
+  border-top: 1px solid var(--line-2);
+  transform: rotate(45deg);
+}
+.umenu-h {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--sunk);
+  border-bottom: 1px solid var(--line);
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+}
+.umenu-h .av {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  font-size: 15px;
+}
+.umenu-h b {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.umenu-mail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.umenu-list {
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+}
+.umenu-i {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--r);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+.umenu-i svg {
+  color: var(--text-3);
+}
+.umenu-i:hover,
+.umenu-i:focus-visible {
+  background: var(--ever-50);
+  color: var(--ever-800);
+}
+.umenu-i.on {
+  color: var(--ever-800);
+  font-weight: 600;
+}
+.umenu-i.out {
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 var(--r) var(--r);
+  padding-top: 10px;
+}
+.umenu-i.out:hover,
+.umenu-i.out:focus-visible {
+  background: var(--bad-50);
+  color: var(--bad);
+}
+.umenu-i.out:hover svg,
+.umenu-i.out:focus-visible svg {
+  color: var(--bad);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .umenu {
+    animation: ph-pop 0.14s var(--ease) both;
+  }
+}
+@media (max-width: 599px) {
+  .uwrap {
+    position: static;
+  }
+  .umenu {
+    left: 8px;
+    right: 8px;
+    width: auto;
+  }
+  .umenu::before {
+    display: none;
+  }
+}
