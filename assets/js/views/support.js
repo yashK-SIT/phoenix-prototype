@@ -13,35 +13,33 @@ route("incidents", "governance", () => {
   const list = S.incidents.filter((i) => own || i.by === myId());
   const sel = UI.p.id && byId("incidents", UI.p.id);
   if (sel && (own || sel.by === myId())) return incDetail(sel, own);
-  const nOpen = list.filter((i) => i.state !== "Closed").length;
   return (
     head(
       own ? "Incidents & concerns" : "Report a concern",
       "Reports are confidential. No automated sanctions.",
       B(ic("plus", 16) + "Report an incident", "incNew", {}, "btn-p"),
     ) +
-    `<section class="card flush inc-list"><div class="card-h"><div><h2 class="h2">${own ? "Cases" : "Your reports"}</h2><p class="cap">${list.length} total · ${nOpen} open</p></div></div>${table(
+    table(
       ["Incident", "Where", "Reported", "State", ""],
       list.map((i) => [
-        `<div class="inc-n"><b>${h(i.kind)}</b><div class="cap">${h(i.desc.slice(0, 80))}</div><span class="inc-id">${h(i.id)}</span></div>`,
+        h(i.kind) + `<div class="cap">${h(i.desc.slice(0, 80))}</div>`,
         h(i.where),
         fmt(i.timeline[0]?.at),
-        `<span class="inc-st">${pill(i.state) +
-          (i.paused ? " " + pill("Emergency pause", "p-red") : "")}</span>`,
-        L("Open", "incidents", { id: i.id }, "btn btn-s btn-sm"),
+        pill(i.state) +
+          (i.paused ? " " + pill("Emergency pause", "p-red") : ""),
+        L("Open", "incidents", { id: i.id }),
       ]),
       own ? "No incidents." : "You have not reported anything.",
-    )}</section>`
+    )
   );
 });
 function incDetail(i, own) {
-  const acts = own
-    ? `${i.state === "Reported" ? B("Triage", "incAct", { id: i.id, v: "Triaged" }) : ""}${["Reported", "Triaged"].includes(i.state) && !i.paused ? CB(ic("pause", 14) + "Apply emergency pause", "incPause", { id: i.id }, "Apply an emergency pause? The linked Circle becomes read-only for members until a decision is recorded.", "btn-d btn-sm", "Apply emergency pause") : ""}${["Triaged", "Reopened", "Appealed"].includes(i.state) ? B("Assign to me & review", "incAct", { id: i.id, v: "Under review" }) : ""}${i.state === "Under review" ? B("Record decision / remedy", "incDecide", { id: i.id }, "btn-p btn-sm") : ""}${["Decision recorded"].includes(i.state) ? B("Close case", "incAct", { id: i.id, v: "Closed" }) : ""}${i.state === "Closed" ? B("Reopen", "incAct", { id: i.id, v: "Reopened" }) : ""}`
-    : "";
   return (
-    crumbsHtml([["Incidents", "incidents"], ["Case"]]) +
-    `<div class="shead-main inc-head"><span class="tile" aria-hidden="true">${ic("shield", 20)}</span><div class="shead-t"><div class="shead-kind">Incident case · <span class="mono">${h(i.id)}</span></div><div class="row wrap inc-title"><h1 class="h1">${h(i.kind)}</h1>${pill(i.state)}${i.paused ? pill("Emergency pause", "p-red") : ""}</div><div class="shead-meta"><span>${h(i.where)}</span><span>${h(i.conf)}</span><span>Reported ${fmt(i.timeline[0]?.at)}</span></div></div></div>` +
-    `<div class="g12 inc-body"><div class="c8 col inc-main">${card(
+    head(h(i.kind), h(i.where) + " · " + h(i.conf), pill(i.state), [
+      ["Incidents", "incidents"],
+      ["Case"],
+    ]) +
+    `<div class="g12">${card(
       "Case",
       "",
       dl([
@@ -51,10 +49,12 @@ function incDetail(i, own) {
         ["Emergency pause", i.paused ? "Applied" : "No"],
         ["Decision / remedy", h(i.decision || "—")],
       ]),
-    )}</div>
- <div class="c4 col inc-side">${own ? card("Actions", "A human decides every outcome.", `<div class="inc-acts">${acts || '<span class="cap">No action is due in this state.</span>'}</div>`, "", "accent") : ""}
- ${!own && i.state === "Decision recorded" ? card("Appeal", "You can appeal or ask for reconsideration.", B("Appeal decision", "incAct", { id: i.id, v: "Appealed" }, "btn-p btn-sm"), "", "accent") : ""}
- ${card("Timeline", "", `<ol class="timeline inc-tl">${i.timeline.map((x) => `<li class="tl"><b>${h(x.t)}</b><span class="cap">${fmt(x.at)}</span></li>`).join("")}</ol>`)}</div></div>`
+      "",
+      "c7",
+    )}
+ ${card("Timeline", "", i.timeline.map((x) => `<p class="cap" style="margin-bottom:6px">${fmt(x.at)} · ${h(x.t)}</p>`).join(""), "", "c5")}
+ ${own ? card("Actions", "A human decides every outcome.", `<div class="row wrap">${i.state === "Reported" ? B("Triage", "incAct", { id: i.id, v: "Triaged" }) : ""}${["Reported", "Triaged"].includes(i.state) && !i.paused ? CB(ic("pause", 14) + "Apply emergency pause", "incPause", { id: i.id }, "Apply an emergency pause? The linked Circle becomes read-only for members until a decision is recorded.", "btn-d btn-sm", "Apply emergency pause") : ""}${["Triaged", "Reopened", "Appealed"].includes(i.state) ? B("Assign to me & review", "incAct", { id: i.id, v: "Under review" }) : ""}${i.state === "Under review" ? B("Record decision / remedy", "incDecide", { id: i.id }, "btn-p btn-sm") : ""}${["Decision recorded"].includes(i.state) ? B("Close case", "incAct", { id: i.id, v: "Closed" }) : ""}${i.state === "Closed" ? B("Reopen", "incAct", { id: i.id, v: "Reopened" }) : ""}</div>`, "", "c12") : ""}
+ ${!own && i.state === "Decision recorded" ? card("Appeal", "You can appeal or ask for reconsideration.", B("Appeal decision", "incAct", { id: i.id, v: "Appealed" }, "btn-p btn-sm"), "", "c12") : ""}</div>`
   );
 }
 A.incNew = () => {

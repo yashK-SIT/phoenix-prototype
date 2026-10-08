@@ -32,11 +32,10 @@ route("rooms", "rooms", () => {
             )
           : "",
     ) +
-    `<section class="card ws-listcard">` +
     table(
-      [WL(), "Lead", "Your role", "Origin", "Members", "Progress", "State", ""],
+      [WL(), "Lead", "Your role", "Origin", "Members", "State", ""],
       list.map((x) => [
-        `<div class="ws-name"><span class="tile t-navy" aria-hidden="true">${ic("room", 16)}</span><div class="ws-name-t"><b>${h(x.name)}</b>${unreadIn(x) && memberOf(x) ? ` <span class="mbadge">${unreadIn(x)}</span>` : ""}${x.purpose ? `<span class="cap">${h(x.purpose)}</span>` : ""}</div></div>`,
+        `<b>${h(x.name)}</b>${unreadIn(x) && memberOf(x) ? ` <span class="mbadge">${unreadIn(x)}</span>` : ""}`,
         nm(x.lead),
         spaceRole("rooms", x)
           ? h(spaceRole("rooms", x))
@@ -44,8 +43,7 @@ route("rooms", "rooms", () => {
             ? pill("Invited")
             : '<span class="cap">Oversight</span>',
         h(x.origin.type) + " · " + cName(x.origin.id),
-        `<span class="ws-mem"><span class="avstack">${x.members.filter((m) => m.status === "Active").slice(0, 4).map((m) => `<span class="av sm" title="${nm(m.pid)}">${ini(m.pid)}</span>`).join("")}</span><span>${x.members.length}</span></span>`,
-        ((req) => `<span class="ws-prog"><span class="progress" aria-hidden="true"><span class="bar" style="width:${req.length ? Math.round((req.filter((k) => k.status === "Done").length / req.length) * 100) : 0}%"></span></span><span class="cap">${req.length ? req.filter((k) => k.status === "Done").length + " of " + req.length + " done" : "No deliverables yet"}</span></span>`)((x.tasks || []).filter((k) => !["Proposed", "Declined"].includes(k.status) && !k.opt)),
+        x.members.length,
         pill(x.state),
         (memberRec(x) || {}).status === "Invited"
           ? B(
@@ -57,8 +55,7 @@ route("rooms", "rooms", () => {
           : L("Open", "room", { id: x.id }),
       ]),
       "No " + WL() + "s yet.",
-    ) +
-    `</section>`
+    )
   );
 });
 A.newRoom = (d) => {
@@ -202,7 +199,7 @@ route("room", "rooms", () => {
         "",
         `<p>${h(x.charter)}</p>${
           myM.req
-            ? `<div class="ws-gap">${dl([
+            ? `<div style="margin-top:12px">${dl([
                 [
                   "Project",
                   cName(
@@ -214,7 +211,7 @@ route("room", "rooms", () => {
                 ["Lead", nm(x.lead)],
               ])}</div>${banner("info", "", "You can accept or decline without obligation. If you accept, you join with this defined responsibility and submit contributions for Faculty/Steward review.")}`
             : ""
-        }<div class="row ws-acts">${B("Decline", "roomInvite", { id: x.id, v: "Removed" })}${B("Accept", "roomInvite", { id: x.id, v: "Active" }, "btn-p btn-sm")}</div>`,
+        }<div class="row" style="margin-top:14px">${B("Decline", "roomInvite", { id: x.id, v: "Removed" })}${B("Accept", "roomInvite", { id: x.id, v: "Active" }, "btn-p btn-sm")}</div>`,
       )
     );
   const ro = x.state !== "Active";
@@ -250,9 +247,8 @@ route("room", "rooms", () => {
   if (t.cur === "contribs") body = roomContribs(x, lead, ro);
   if (t.cur === "chat")
     body =
-      `<div class="ws-split ws-chat"><div class="ws-main"><div class="row wrap chatbar"><span class="cap">Group chat for members of this ${WL()}. ${isM ? L("Open in Messages", "messages", { c: x.id, k: "rooms" }) : ""}</span></div>` +
-      chatThread("rooms", x, { embedded: true }) +
-      `</div><aside class="ws-rail hide-md" aria-label="Members">${wsTeamCard("rooms", x)}</aside></div>`;
+      `<div class="row wrap chatbar"><span class="cap">Group chat for members of this ${WL()}. ${isM ? L("Open in Messages", "messages", { c: x.id, k: "rooms" }) : ""}</span></div>` +
+      chatThread("rooms", x, { embedded: true });
   if (t.cur === "plan")
     body = `<div class="g12">${roomFlowBanner(x)}<div class="c12">${taskBoard(x, lead, ro)}</div>
  ${card(
@@ -395,7 +391,7 @@ route("room", "rooms", () => {
       x.changes
         .map(
           (c) =>
-            `<article class="co-item"><header class="co-h"><span class="tile t-soft" aria-hidden="true">${ic("layers", 16)}</span><b>${h(c.title)}</b>${pill(c.state)}</header>${dl(
+            `<div class="card" style="margin-bottom:12px;padding:18px"><div class="row wrap" style="justify-content:space-between"><b>${h(c.title)}</b>${pill(c.state)}</div>${dl(
               [
                 ["Context", h(c.context)],
                 ["Intended change", h(c.intended)],
@@ -414,7 +410,7 @@ route("room", "rooms", () => {
                       .join(" · "),
                 ],
               ],
-            )}<div class="row wrap co-acts">${!ro ? { Proposed: canReview && B("Mark reviewed", "coState", { r: x.id, id: c.id, v: "Reviewed" }), Reviewed: (r === "F" || r === "A") && B("Approve", "coState", { r: x.id, id: c.id, v: "Approved" }, "btn-p btn-sm"), Approved: lead && B("Start implementation", "coState", { r: x.id, id: c.id, v: "In Implementation" }), "In Implementation": lead && B("Mark completed", "coState", { r: x.id, id: c.id, v: "Completed" }), Completed: lead && B("Close", "coState", { r: x.id, id: c.id, v: "Closed" }) }[c.state] || "" : ""}${!ro && canPropose && !["Completed", "Closed"].includes(c.state) ? B("Revise (new version)", "coRevise", { r: x.id, id: c.id }) : ""}</div></article>`,
+            )}<div class="row wrap" style="margin-top:10px">${!ro ? { Proposed: canReview && B("Mark reviewed", "coState", { r: x.id, id: c.id, v: "Reviewed" }), Reviewed: (r === "F" || r === "A") && B("Approve", "coState", { r: x.id, id: c.id, v: "Approved" }, "btn-p btn-sm"), Approved: lead && B("Start implementation", "coState", { r: x.id, id: c.id, v: "In Implementation" }), "In Implementation": lead && B("Mark completed", "coState", { r: x.id, id: c.id, v: "Completed" }), Completed: lead && B("Close", "coState", { r: x.id, id: c.id, v: "Closed" }) }[c.state] || "" : ""}${!ro && canPropose && !["Completed", "Closed"].includes(c.state) ? B("Revise (new version)", "coRevise", { r: x.id, id: c.id }) : ""}</div></div>`,
         )
         .join("") ||
         empty(
@@ -503,7 +499,7 @@ route("room", "rooms", () => {
           ];
         }),
       ) +
-        `<h3 class="h3 ws-subh">Join requests</h3>` +
+        `<h3 class="h3" style="margin:18px 0 8px">Join requests</h3>` +
         table(
           ["Person", "Join case", "Status", "Note", ""],
           x.joinReqs.map((j) => [
@@ -574,7 +570,7 @@ route("room", "rooms", () => {
             x.flags.map(h).join(", ") +
             ". " +
             (r === "F" || r === "A"
-              ? 'You can approve or decline activation.<span class="row wrap ws-banact">' +
+              ? 'You can approve or decline activation.<span class="row wrap" style="display:flex;gap:8px;margin-top:10px">' +
                 B(
                   "Approve activation",
                   "roomState",
@@ -595,7 +591,7 @@ route("room", "rooms", () => {
                 (x.flags.length
                   ? " (it then needs Faculty/Steward or Programme Administrator approval)"
                   : "") +
-                ', or decline it back to Draft.<span class="row wrap ws-banact">' +
+                ', or decline it back to Draft.<span class="row wrap" style="display:flex;gap:8px;margin-top:10px">' +
                 B(
                   "Activate",
                   "roomState",
@@ -1058,7 +1054,7 @@ function roomFlow(x) {
   const opt = x.tasks.filter((k) => k.opt && !["Proposed", "Declined"].includes(k.status)).length;
   const others = S.harvests.filter((v) => v.tpl === 2 && v.scope === x.id && v !== hv);
   const step = (n, title, sub, state, btns) =>
-    `<li class="rf-step is-${state}"><span class="rf-n">${state === "done" ? ic("check", 14) : n}</span><div class="rf-b"><b>${title}</b><span class="cap">${sub}</span>${btns ? `<div class="row wrap rf-act">${btns}</div>` : ""}</div></li>`;
+    `<li class="rf-step is-${state}"><span class="rf-n">${state === "done" ? ic("check", 14) : n}</span><div class="rf-b"><b>${title}</b><span class="cap">${sub}</span>${btns ? `<div class="row wrap" style="gap:8px;margin-top:8px">${btns}</div>` : ""}</div></li>`;
   const s1 = st.allDone ? "done" : "cur";
   const s2 = !st.allDone ? "todo" : st.ev.length ? "done" : "cur";
   const s3 = !st.allDone || !st.ev.length ? "todo" : hvDone(hv) ? "done" : "cur";
@@ -1110,7 +1106,7 @@ function roomFlow(x) {
           : `${hv.evoN || 0} suggestion${hv.evoN === 1 ? "" : "s"} identified · all reviewed.`,
       s4,
       pend ? L("Review profile changes", "profile", { tab: "evo" }, "btn btn-p btn-sm") : "",
-    )}</ol>${others.length ? `<p class="cap rf-others">Other members' Learning Harvests for this ${WL()}: ${others.map((v) => L(nm(v.subject), "harvest", { id: v.id }) + " " + pill(v.state)).join(" · ")}</p>` : ""}`,
+    )}</ol>${others.length ? `<p class="cap" style="margin-top:12px">Other members' Learning Harvests for this ${WL()}: ${others.map((v) => L(nm(v.subject), "harvest", { id: v.id }) + " " + pill(v.state)).join(" · ")}</p>` : ""}`,
     "",
     "c12",
   );
@@ -1125,7 +1121,7 @@ function roomFlowBanner(x) {
       ? "Evidence has been submitted. Next step: generate the Learning Harvest."
       : "Next step: upload evidence that supports the completed work.") +
       (memberOf(x) && x.state === "Active"
-        ? `<span class="row wrap ws-banact">${st.ev.length ? B(ic("sparkle", 14) + "Generate Learning Harvest", "hvGen", { r: x.id }, "btn-p btn-sm") : B(ic("upload", 14) + "Upload evidence", "go", { r: "newevidence", link: x.id, from: x.id }, "btn-p btn-sm")}</span>`
+        ? `<span class="row wrap" style="display:flex;gap:8px;margin-top:10px">${st.ev.length ? B(ic("sparkle", 14) + "Generate Learning Harvest", "hvGen", { r: x.id }, "btn-p btn-sm") : B(ic("upload", 14) + "Upload evidence", "go", { r: "newevidence", link: x.id, from: x.id }, "btn-p btn-sm")}</span>`
         : ""),
   )}</div>`;
 }
@@ -1150,13 +1146,13 @@ function roomOverview(x, pr, lead, ro) {
   ].sort((a, b) => (a.due || "9").localeCompare(b.due || "9"))[0];
   const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
   const kpi = (label, val, sub, w) =>
-    `<div class="kpi"><span class="lt">${label}</span><span class="kpi-v">${val}</span>${w != null ? `<div class="progress" aria-hidden="true"><span class="bar" style="width:${w}%"></span></div>` : ""}<span class="cap">${sub}</span></div>`;
-  return `<div class="ws-ov"><div class="ws-ov-main"><section class="kpis ws-kpis" aria-label="Progress">${kpi("Tasks done", done + " of " + tasks.length, pct(done, tasks.length) + "% complete", pct(done, tasks.length))}${kpi("Milestones achieved", msDone + " of " + ms.length, "Validated against approved evidence", pct(msDone, ms.length))}${kpi("Open risks", openRisks, openRisks ? "Each has an owner" : "Nothing open")}${kpi("Next due", next ? fmt(next.due) : "—", next ? h(next.kind + ": " + next.t) + dueTag(next.due, false) : "Nothing scheduled")}</section>${roomFlow(x)}
-  ${card(
+    `<div class="kpi"><span class="cap">${label}</span><b>${val}</b>${w != null ? `<div class="progress"><span style="width:${w}%"></span></div>` : ""}<span class="cap">${sub}</span></div>`;
+  return `<div class="g12"><section class="card c12"><div class="kpis">${kpi("Tasks done", done + " of " + tasks.length, pct(done, tasks.length) + "% complete", pct(done, tasks.length))}${kpi("Milestones achieved", msDone + " of " + ms.length, "Validated against approved evidence", pct(msDone, ms.length))}${kpi("Open risks", openRisks, openRisks ? "Each has an owner" : "Nothing open")}${kpi("Next due", next ? fmt(next.due) : "—", next ? h(next.kind + ": " + next.t) + dueTag(next.due, false) : "Nothing scheduled")}</div></section>${roomFlow(x)}
+  <div class="c7 col" style="gap:24px">${card(
     "Milestone timeline",
     "Key dates and progress. Evidence-linked completion is validated by a Reviewer.",
     ms.length
-      ? `<ol class="mtl ws-tl">${ms
+      ? `<ol class="mtl">${ms
           .slice()
           .sort((a, b) => a.due.localeCompare(b.due))
           .map(
@@ -1173,7 +1169,7 @@ function roomOverview(x, pr, lead, ro) {
         ),
     L("Tasks & milestones", "room", { id: x.id, tab: "plan" }),
   )}${pr ? reportsCard(pr, "rooms", x) : ""}</div>
-  <aside class="ws-ov-rail" aria-label="Moving forward">${pr ? stageGate(pr, "rooms", x) : ""}${returnsCard(x)}${wsTeamCard("rooms", x)}</aside></div>`;
+  <div class="c5 col" style="gap:24px">${pr ? stageGate(pr, "rooms", x) : ""}${returnsCard(x)}</div></div>`;
 }
 A.taskDecide = (d) => {
   const x = byId("rooms", d.r);
@@ -1220,7 +1216,7 @@ function roomContribs(x, lead, ro) {
       .reverse()
       .map(
         (c) =>
-          `<article class="rvitem"><div class="rv-h"><span class="av" aria-hidden="true">${ini(c.by)}</span><div class="rv-t"><b>${h(c.t)}</b><span class="cap">${nm(c.by)} · responsibility: ${h(c.resp)} · ${fmt(c.at)}</span></div>${pill(c.status, CB_STATES[c.status])}</div>${c.desc ? `<p class="muted rv-desc">${h(c.desc)}</p>` : ""}${c.att ? `<div class="rv-att">${attCard(c.att)}</div>` : ""}${c.used ? `<div class="rvresp"><span class="cap"><b>How it was used</b></span><p>${h(c.used)}</p></div>` : ""}${c.history && c.history.length > 1 ? `<details class="rv-hist"><summary class="cap">History (${c.history.length})</summary>${c.history.map((hh) => `<p class="cap">${fmt(hh.at)} · ${h(hh.t)}</p>`).join("")}</details>` : ""}<div class="row wrap rv-acts">${rev && !ro && c.status === "Submitted" ? B("Review contribution", "cbReview", { r: x.id, id: c.id }, "btn-p btn-sm") : ""}${c.by === myId() && !ro && ["Changes requested", "More evidence requested"].includes(c.status) ? B("Revise and resubmit", "cbNew", { r: x.id, re: c.id }) : ""}</div></article>`,
+          `<div class="rvitem"><div class="row wrap" style="justify-content:space-between;gap:8px"><div class="col" style="min-width:0"><b>${h(c.t)}</b><span class="cap">${nm(c.by)} · responsibility: ${h(c.resp)} · ${fmt(c.at)}</span></div>${pill(c.status, CB_STATES[c.status])}</div>${c.desc ? `<p class="muted" style="margin-top:6px">${h(c.desc)}</p>` : ""}${c.att ? `<div style="margin-top:8px">${attCard(c.att)}</div>` : ""}${c.used ? `<div class="rvresp"><span class="cap"><b>How it was used</b></span><p>${h(c.used)}</p></div>` : ""}${c.history && c.history.length > 1 ? `<details style="margin-top:8px"><summary class="cap" style="cursor:pointer">History (${c.history.length})</summary>${c.history.map((hh) => `<p class="cap">${fmt(hh.at)} · ${h(hh.t)}</p>`).join("")}</details>` : ""}<div class="row wrap" style="margin-top:10px">${rev && !ro && c.status === "Submitted" ? B("Review contribution", "cbReview", { r: x.id, id: c.id }, "btn-p btn-sm") : ""}${c.by === myId() && !ro && ["Changes requested", "More evidence requested"].includes(c.status) ? B("Revise and resubmit", "cbNew", { r: x.id, re: c.id }) : ""}</div></div>`,
       )
       .join("") ||
       empty(

@@ -39,9 +39,6 @@ function expireCards() {
     }
   });
 }
-// Card type as a typed badge: needs and offers read differently at a glance (icon + words, never colour alone).
-const OPP_KIND = { Need: ['target', 'need'], Offer: ['send', 'offer'], Asset: ['layers', 'asset'], Opportunity: ['megaphone', 'opp'] };
-const oppKind = k => `<span class="opp-k opp-k-${(OPP_KIND[k] || [])[1] || 'opp'}">${ic((OPP_KIND[k] || [])[0] || 'card', 13)}${h(k)}</span>`;
 route('opportunities', 'opportunities', () => {
   expireCards();
   const q = UI.q;
@@ -72,7 +69,7 @@ route('opportunities', 'opportunities', () => {
       ['P', 'C', 'O'].includes(r) ? B(ic('plus', 16) + 'New card', 'go', { r: 'newcard' }, 'btn-p') : '',
     ) +
     t.html +
-    `<section class="card flush rec-list opp-list"><div class="rec-toolbar opp-bar"><div class="rec-tf"><span class="rec-search">${ic('search', 16)}<input class="input" placeholder="Search" value="${h(q.s || '')}" data-ch="qf" data-k="s" aria-label="Search cards"></span>${[
+    `<div class="row wrap" style="margin-bottom:16px"><input class="input" style="max-width:280px" placeholder="Search" value="${h(q.s || '')}" data-ch="qf" data-k="s" aria-label="Search cards">${[
       'kind:Type:Need,Asset,Offer,Opportunity',
       'status:Status:Draft,Active,Paused,Fulfilled/Closed,Withdrawn,Expired',
       'cat:Category:' + [...new Set(S.cards.map(c => c.cat))].join(','),
@@ -80,17 +77,17 @@ route('opportunities', 'opportunities', () => {
     ]
       .map(x => {
         const [k, l, o] = x.split(':');
-        return `<select class="input" data-ch="qf" data-k="${k}" aria-label="${l}"><option value="">${l}: all</option>${o
+        return `<select class="input" style="width:auto" data-ch="qf" data-k="${k}" aria-label="${l}"><option value="">${l}: all</option>${o
           .split(',')
           .map(v => `<option ${q[k] === v ? 'selected' : ''}>${v}</option>`)
           .join('')}</select>`;
       })
-      .join('')}</div><span class="rec-count"><b>${f.length}</b> card${f.length === 1 ? '' : 's'}</span></div>` +
+      .join('')}</div>` +
     table(
       ['Card', 'Type', 'Category', 'Owner', 'Audience', 'Expires', 'Status', ''],
       f.map(c => [
-        `<span class="opp-name"><b>${h(c.title)}</b><span class="cap opp-desc">${h(c.desc)}</span></span>`,
-        oppKind(c.kind),
+        `<b>${h(c.title)}</b><div class="cap">${h(c.desc)}</div>`,
+        pill(c.kind, 'p-navy'),
         h(c.cat),
         nm(c.owner) + (c.ownerOrg ? ' · ' + h(S.orgs.find(o => o.id === c.ownerOrg).name) : ''),
         audienceText(c) + (c.from ? `<div class="cap">From ${L(cName(c.from), 'circle', { id: c.from })}</div>` : ''),
@@ -99,8 +96,7 @@ route('opportunities', 'opportunities', () => {
         L('Open', 'card', { id: c.id }),
       ]),
       'No cards match these filters.',
-    ) +
-    `</section>`
+    )
   );
 });
 A.qf = (d, el) => {
@@ -139,11 +135,9 @@ route('newcard', 'opportunities', () => {
       '',
       [['Opportunities', 'opportunities'], [e ? 'Edit' : 'New']],
     ) +
-    `<form data-f="card" class="card col opp-form" novalidate>${errSum(f)}<input type="hidden" name="id" value="${e ? e.id : ''}"><input type="hidden" name="from" value="${from || ''}">
- <div class="np-sh"><span class="np-n" aria-hidden="true">1</span><h2 class="h3">What it is</h2></div>
+    `<form data-f="card" class="card col" style="gap:16px;max-width:820px" novalidate>${errSum(f)}<input type="hidden" name="id" value="${e ? e.id : ''}"><input type="hidden" name="from" value="${from || ''}">
  <div class="f2">${fi(f, 'kind', 'Card type', { type: 'select', req: true, ph: 'Select', opts: ['Need', 'Asset', 'Offer', 'Opportunity'] })}${fi(f, 'cat', 'Category', { type: 'select', req: true, ph: 'Select', opts: ['Volunteering', 'Expertise', 'Equipment', 'Skills', 'Livelihood', 'Funding', 'Learning', 'Community action'] })}</div>
  ${fi(f, 'title', 'Title', { req: true, max: 100 })}${fi(f, 'desc', 'Description — what is needed or offered, and availability conditions', { type: 'textarea', rows: 4, req: true })}
- <div class="np-sh"><span class="np-n" aria-hidden="true">2</span><h2 class="h3">Timing and project</h2></div>
  <div class="f2">${fi(f, 'expires', 'Expiry date', { type: 'date', req: true })}${myP.length ? fi(f, 'project', 'Link to a project', { type: 'select', req: true, opts: myP.map(p => [p.id, p.title]) }) : ''}</div>
  ${myP.length ? '' : banner('warn', 'No project to link', 'A card is linked to one of your projects. You can create one once you own, steward or belong to a project.')}
  ${src ? banner('info', 'Created from ' + h(src.name), 'The Circle stays intact and the card links back to it. Match Briefs from this card are reviewed by the Circle’s facilitator, ' + nm(src.facilitator) + '.') : ''}
@@ -216,11 +210,11 @@ route('card', 'opportunities', () => {
       Expired: [],
     }[c.status] || [];
   return (
-    crumbsHtml([['Opportunities', 'opportunities'], [h(c.title)]]) +
-    `<div class="shead-main opp-head"><span class="tile opp-tile-${(OPP_KIND[c.kind] || [])[1] || 'opp'}" aria-hidden="true">${ic((OPP_KIND[c.kind] || [])[0] || 'megaphone', 20)}</span><div class="shead-t"><div class="shead-kind">${h(c.kind)} · ${h(c.cat)}</div><div class="row wrap opp-ttl"><h1 class="h1">${h(c.title)}</h1>${pill(c.status)}</div><div class="shead-meta"><span>${oppKind(c.kind)}</span><span>${nm(c.owner)}</span><span>Expires ${fmt(c.expires)}</span></div>${c.from ? `<div class="row wrap opp-src"><span class="srole opp-srole">${ic('users', 13)}From Circle: <b>${cName(c.from)}</b></span><span class="srole opp-srole">${ic('eye', 13)}${audienceText(c)}</span></div>` : ''}</div></div>` +
+    head(h(c.title), h(c.kind) + ' · ' + h(c.cat), pill(c.status), [['Opportunities', 'opportunities'], [h(c.title)]]) +
+    (c.from ? `<div class="row wrap" style="gap:8px;margin:-6px 0 14px"><span class="srole">${ic('users', 13)}From Circle: <b>${cName(c.from)}</b></span><span class="srole">${ic('eye', 13)}${audienceText(c)}</span></div>` : '') +
     `<div class="g12">${card('Details', '', dl([['Description', h(c.desc)], ['Owner', nm(c.owner) + (c.ownerOrg ? ' · ' + h(S.orgs.find(o => o.id === c.ownerOrg).name) : '')], ['Audience', audienceText(c)], ['Expires', fmt(c.expires)], ['Linked project', c.project ? cName(c.project) : '—'], ['Created from', c.from ? (memberOf(byId('circles', c.from) || {}) || ['A', 'O', 'F'].includes(r) || byId('circles', c.from)?.visibility === 'Programme' ? L(cName(c.from), 'circle', { id: c.from }) : cName(c.from)) + ' <span class="cap">(Circle)</span>' : '—'], c.from && ['Steward for introductions', nm(cardSteward(c))], own && ['Expressions of interest', c.interest.map(nm).join(', ') || 'None yet']]), '', 'c8')}
- <aside class="c4 col opp-side">${own ? card('Manage', '', `<div class="col opp-stack">${B(ic('edit', 14) + 'Edit', 'go', { r: 'newcard', edit: c.id })}${st.map(s => (s === 'Withdrawn' ? CB('Withdraw', 'cardState', { id: c.id, v: s }, 'Withdraw this card? It leaves discovery and any pending Match Briefs close.') : B(s === 'Active' ? 'Publish / resume' : s, 'cardState', { id: c.id, v: s }))).join('')}</div>`) : ''}
- ${!own && c.status === 'Active' && r !== 'F' ? card('Interested?', '', c.interest.includes(myId()) ? banner('ok', 'You expressed interest', 'A steward reviews any introduction. Your contact details are not shared.') : B('Express interest', 'interest', { id: c.id }, 'btn-p btn-block') + `<p class="cap opp-note">This does not introduce you. A steward reviews a Match Brief and both sides consent first.</p>`) : ''}
+ <aside class="c4 col" style="gap:12px">${own ? card('Manage', '', `<div class="col" style="gap:8px">${B(ic('edit', 14) + 'Edit', 'go', { r: 'newcard', edit: c.id })}${st.map(s => (s === 'Withdrawn' ? CB('Withdraw', 'cardState', { id: c.id, v: s }, 'Withdraw this card? It leaves discovery and any pending Match Briefs close.') : B(s === 'Active' ? 'Publish / resume' : s, 'cardState', { id: c.id, v: s }))).join('')}</div>`) : ''}
+ ${!own && c.status === 'Active' && r !== 'F' ? card('Interested?', '', c.interest.includes(myId()) ? banner('ok', 'You expressed interest', 'A steward reviews any introduction. Your contact details are not shared.') : B('Express interest', 'interest', { id: c.id }, 'btn-p btn-block') + `<p class="cap" style="margin-top:8px">This does not introduce you. A steward reviews a Match Brief and both sides consent first.</p>`) : ''}
  ${r === 'F' && c.status === 'Active' && (!c.from || cardSteward(c) === myId()) ? card('Steward', c.from ? 'You review introductions for this Circle’s cards.' : '', B('Nominate a match', 'nominate', { id: c.id }, 'btn-p btn-block')) : ''}
  ${(c.proposals || [])
    .filter(pp => pp.to === myId() || pp.from === myId())
@@ -230,10 +224,10 @@ route('card', 'opportunities', () => {
        'From ' + nm(pp.from) + ' to ' + nm(pp.to) + ' · ' + h(pp.rel),
        pill(pp.status) +
          (pp.to === myId() && pp.status === 'Awaiting consent'
-           ? `<div class="row opp-dr">${B('Decline', 'rbDecide', { c: c.id, id: pp.id, v: 'Declined' })}${B('Accept', 'rbDecide', { c: c.id, id: pp.id, v: 'Accepted' }, 'btn-p btn-sm')}</div>`
+           ? `<div class="row" style="margin-top:10px">${B('Decline', 'rbDecide', { c: c.id, id: pp.id, v: 'Declined' })}${B('Accept', 'rbDecide', { c: c.id, id: pp.id, v: 'Accepted' }, 'btn-p btn-sm')}</div>`
            : '') +
          (pp.status === 'Accepted' && canCreateRoom()
-           ? `<div class="opp-dr">${B('Create or link ' + WL(), 'newRoom', { origin: 'Direct invitation between authorised collaborators', oid: c.id }, 'btn-p btn-sm')}</div>`
+           ? `<div style="margin-top:10px">${B('Create or link ' + WL(), 'newRoom', { origin: 'Direct invitation between authorised collaborators', oid: c.id }, 'btn-p btn-sm')}</div>`
            : ''),
      ),
    )
@@ -307,7 +301,7 @@ A.nominate = d => {
   const c = byId('cards', d.id);
   modal(
     'Nominate a match',
-    `<form data-f="nom" class="col prj-dlg"><input type="hidden" name="id" value="${c.id}">${fi('nom', 'pid', 'Person to match with the card owner', { type: 'select', req: true, opts: S.assign.filter(a => a.ctx === c.ctx && a.status === 'Active' && ['P', 'C', 'M'].includes(roleBase(a.role)) && a.pid !== c.owner).map(a => [a.pid, P(a.pid).name]) })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Draft Match Brief</button></div></form>`,
+    `<form data-f="nom" class="col" style="gap:14px"><input type="hidden" name="id" value="${c.id}">${fi('nom', 'pid', 'Person to match with the card owner', { type: 'select', req: true, opts: S.assign.filter(a => a.ctx === c.ctx && a.status === 'Active' && ['P', 'C', 'M'].includes(roleBase(a.role)) && a.pid !== c.owner).map(a => [a.pid, P(a.pid).name]) })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Draft Match Brief</button></div></form>`,
   );
 };
 F.nom = d => {
@@ -324,7 +318,7 @@ A.routeB = d => {
   modal(
     'Direct authorised collaboration (Route B)',
     () =>
-      `<form data-f="rb" class="col prj-dlg" novalidate><input type="hidden" name="id" value="${c.id}">${fi('rb', 'pid', 'Known collaborator', { type: 'select', req: true, ph: 'Select', opts: S.assign.filter(a => a.ctx === c.ctx && a.status === 'Active' && a.pid !== myId()).map(a => [a.pid, P(a.pid).name]) })}${fi('rb', 'rel', 'Existing relationship', { type: 'select', req: true, opts: ['Same Circle', 'Same Rope Team', 'Same ' + WL(), 'Same organisation'], ph: 'Select' })}${banner('info', 'Checks', 'Valid membership/context + role/mandate + permission to invite/link + consent of the other party + no restriction conflict.')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Run checks</button></div></form>`,
+      `<form data-f="rb" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${c.id}">${fi('rb', 'pid', 'Known collaborator', { type: 'select', req: true, ph: 'Select', opts: S.assign.filter(a => a.ctx === c.ctx && a.status === 'Active' && a.pid !== myId()).map(a => [a.pid, P(a.pid).name]) })}${fi('rb', 'rel', 'Existing relationship', { type: 'select', req: true, opts: ['Same Circle', 'Same Rope Team', 'Same ' + WL(), 'Same organisation'], ph: 'Select' })}${banner('info', 'Checks', 'Valid membership/context + role/mandate + permission to invite/link + consent of the other party + no restriction conflict.')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Run checks</button></div></form>`,
   );
 };
 F.rb = d => {
@@ -379,19 +373,17 @@ route('matches', 'matching', () => {
       'Match Briefs',
       'Potential match → Match Brief → steward approval → mutual consent → introduction. No hidden ranking.',
     ) +
-    `<section class="card flush rec-list mb-list"><div class="rec-bar"><span class="rec-count"><b>${list.length}</b> Match Brief${list.length === 1 ? '' : 's'}</span><span class="cap hide-sm">Contact details are released only after both parties consent</span></div>` +
     table(
       ['Parties', 'Origin', 'Status', 'Blockers', ''],
       list.map(m => [
-        `<span class="mb-parties"><span class="avstack" aria-hidden="true"><span class="av sm">${ini(m.a)}</span><span class="av sm">${ini(m.b)}</span></span><b>${nm(m.a) + ' ↔ ' + nm(m.b)}</b></span>`,
+        nm(m.a) + ' ↔ ' + nm(m.b),
         h(m.origin),
         pill(m.status),
         m.blockers.length ? pill(m.blockers.length + ' do-not-introduce', 'p-red') : '—',
         L('Open', 'match', { id: m.id }),
       ]),
       'No Match Briefs.',
-    ) +
-    `</section>`
+    )
   );
 });
 route('match', 'matching', () => {
@@ -411,20 +403,11 @@ route('match', 'matching', () => {
       )
     );
   const myC = m.a === myId() ? 'consentA' : 'consentB';
-  // Consent-based flow, shown read-only: brief → steward approval → mutual consent → introduction.
-  const declined = [m.consentA, m.consentB].includes('Declined');
-  const at = { Draft: 0, 'In steward review': 1, 'Clarification requested': 1, 'Awaiting consent': 2, Introduced: 4, Rejected: 1, Closed: declined ? 2 : 1 }[m.status] ?? 1;
-  const stop = ['Rejected', 'Closed'].includes(m.status);
-  const flow = `<ol class="mb-flow" aria-label="Match Brief progress">${['Match Brief', 'Steward approval', 'Mutual consent', 'Introduction']
-    .map((t, i) => `<li class="${i < at ? 'done' : i === at ? (stop ? 'err' : 'cur') : 'todo'}"${i === at && !stop ? ' aria-current="step"' : ''}><span class="td">${i < at ? ic('check', 13) : i === at && stop ? ic('x', 13) : i + 1}</span><span>${t}</span></li>`)
-    .join('')}</ol>`;
   return (
-    crumbsHtml([
+    head(nm(m.a) + ' ↔ ' + nm(m.b), 'Match Brief · ' + h(m.origin), pill(m.status), [
       ['Match Briefs', 'matches'],
       ['Brief'],
     ]) +
-    `<div class="shead-main mb-head"><span class="avstack mb-av" aria-hidden="true"><span class="av">${ini(m.a)}</span><span class="av">${ini(m.b)}</span></span><div class="shead-t"><div class="shead-kind">Match Brief · ${h(m.origin)}</div><div class="row wrap mb-ttl"><h1 class="h1">${nm(m.a) + ' ↔ ' + nm(m.b)}</h1>${pill(m.status)}</div><div class="shead-meta">${m.card && byId('cards', m.card) ? `<span>${oppKind(byId('cards', m.card).kind)} ${h(byId('cards', m.card).title)}</span>` : ''}${m.steward ? `<span>Steward · ${nm(m.steward)}</span>` : ''}</div></div></div>` +
-    flow +
     (m.blockers.length
       ? banner(
           'err',
@@ -440,16 +423,16 @@ route('match', 'matching', () => {
    table(
      ['Dimension', 'Rationale'],
      Object.entries(m.fit).map(([k, v]) => [`<b>${h(k)}</b>`, h(v)]),
-   ) + (m.ai ? `<div class="mb-ai">${aiTag('Rationale drafted by AI — steward must review')}</div>` : ''),
+   ) + (m.ai ? `<div style="margin-top:10px">${aiTag('Rationale drafted by AI — steward must review')}</div>` : ''),
    '',
    'c8',
  )}
- <aside class="c4 col mb-side">${card('Readiness', '', dl([['Gaps', m.gaps.map(h).join('<br>') || 'None'], ['Uncertainty', h(m.uncertainty)], ['Suggested questions', m.questions.map(h).join('<br>') || '—'], ['Next human action', h(m.next)], ['Consent', `${nm(m.a)}: ${pill(m.consentA || 'Pending')}<br>${nm(m.b)}: ${pill(m.consentB || 'Pending')}`], m.outcome && ['Outcome', h(m.outcome)]]))}
- ${stw && ['In steward review', 'Clarification requested'].includes(m.status) ? card('Steward decision', '', `<div class="col opp-stack">${B(ic('edit', 14) + 'Edit brief', 'mbEdit', { id: m.id })}${B('Request clarification', 'mbState', { id: m.id, v: 'Clarification requested' })}${B('Reject', 'mbState', { id: m.id, v: 'Rejected' })}${m.blockers.length ? `<button class="btn btn-p btn-sm" disabled>Approve</button>` : B('Approve and request consent', 'mbState', { id: m.id, v: 'Awaiting consent' }, 'btn-p btn-sm')}</div>`) : ''}
- ${party && m.status === 'Awaiting consent' && !m[myC] ? card('Your consent', 'Contact details are released only after both parties consent.', `<div class="row wrap">${B('Decline', 'mbConsent', { id: m.id, v: 'Declined' })}${B('Consent to introduction', 'mbConsent', { id: m.id, v: 'Consented' }, 'btn-p btn-sm')}</div>`) : ''}
+ <aside class="c4 col" style="gap:12px">${card('Readiness', '', dl([['Gaps', m.gaps.map(h).join('<br>') || 'None'], ['Uncertainty', h(m.uncertainty)], ['Suggested questions', m.questions.map(h).join('<br>') || '—'], ['Next human action', h(m.next)], ['Consent', `${nm(m.a)}: ${pill(m.consentA || 'Pending')}<br>${nm(m.b)}: ${pill(m.consentB || 'Pending')}`], m.outcome && ['Outcome', h(m.outcome)]]))}
+ ${stw && ['In steward review', 'Clarification requested'].includes(m.status) ? card('Steward decision', '', `<div class="col" style="gap:8px">${B(ic('edit', 14) + 'Edit brief', 'mbEdit', { id: m.id })}${B('Request clarification', 'mbState', { id: m.id, v: 'Clarification requested' })}${B('Reject', 'mbState', { id: m.id, v: 'Rejected' })}${m.blockers.length ? `<button class="btn btn-p btn-sm" disabled>Approve</button>` : B('Approve and request consent', 'mbState', { id: m.id, v: 'Awaiting consent' }, 'btn-p btn-sm')}</div>`) : ''}
+ ${party && m.status === 'Awaiting consent' && !m[myC] ? card('Your consent', 'Contact details are released only after both parties consent.', `<div class="row">${B('Decline', 'mbConsent', { id: m.id, v: 'Declined' })}${B('Consent to introduction', 'mbConsent', { id: m.id, v: 'Consented' }, 'btn-p btn-sm')}</div>`) : ''}
  ${party && m.status === 'Introduced' && m.project ? card('Collaborator invitation', '', `<p class="muted">${m.b === myId() ? 'Your invitation to the project ' + WL() + ' explains the requirement and expected contribution. Accept or decline it without obligation.' : nm(m.b) + ' has been invited with a defined responsibility: ' + h(m.requirement) + '.'}</p>${byId('projects', m.project)?.room ? L('Open ' + WL(), 'room', { id: byId('projects', m.project).room }, 'btn btn-s btn-sm') : '<p class="cap">The invitation is sent when the ' + WL() + ' is created.</p>'}`) : ''}
- ${party && m.status === 'Introduced' && !m.next2 && !m.project ? card('What next?', '', `<div class="col opp-stack">${['Close', 'Continue conversation', 'Link existing ' + WL(), 'Create new ' + WL()].map(o => B(o, 'mbNext', { id: m.id, v: o })).join('')}</div>`) : ''}
- ${m.status === 'Introduced' ? card('Introduction', '', `<p>${nm(m.a)} · ${h(P(m.a).email)}</p><p>${nm(m.b)} · ${h(P(m.b).email)}</p><p class="cap opp-note">Released after mutual consent.</p>`) : ''}</aside></div>`
+ ${party && m.status === 'Introduced' && !m.next2 && !m.project ? card('What next?', '', `<div class="col" style="gap:8px">${['Close', 'Continue conversation', 'Link existing ' + WL(), 'Create new ' + WL()].map(o => B(o, 'mbNext', { id: m.id, v: o })).join('')}</div>`) : ''}
+ ${m.status === 'Introduced' ? card('Introduction', '', `<p>${nm(m.a)} · ${h(P(m.a).email)}</p><p>${nm(m.b)} · ${h(P(m.b).email)}</p><p class="cap" style="margin-top:6px">Released after mutual consent.</p>`) : ''}</aside></div>`
   );
 });
 A.mbState = d => {
@@ -476,7 +459,7 @@ A.mbEdit = d => {
   modal(
     'Edit Match Brief',
     () =>
-      `<form data-f="mbe" class="col prj-dlg" novalidate><input type="hidden" name="id" value="${m.id}">${fi('mbe', 'gaps', 'Readiness gaps (one per line)', { type: 'textarea', rows: 3 })}${fi('mbe', 'questions', 'Suggested questions (one per line)', { type: 'textarea', rows: 3 })}${fi('mbe', 'next', 'Recommended next human action', { req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save</button></div></form>`,
+      `<form data-f="mbe" class="col" style="gap:12px" novalidate><input type="hidden" name="id" value="${m.id}">${fi('mbe', 'gaps', 'Readiness gaps (one per line)', { type: 'textarea', rows: 3 })}${fi('mbe', 'questions', 'Suggested questions (one per line)', { type: 'textarea', rows: 3 })}${fi('mbe', 'next', 'Recommended next human action', { req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save</button></div></form>`,
   );
 };
 F.mbe = d => {
@@ -575,10 +558,10 @@ A.collabFind = d => {
   modal(
     'Find a collaborator for a requirement',
     () =>
-      `<form data-f="colf" class="col prj-dlg" novalidate><input type="hidden" name="project" value="${p.id}">${dl([['Project', h(p.title)], ['Stage', pill(stageLabel(p.stage || 'Circle'))]])}${fi('colf', 'req', 'Required skill or expertise', { req: true, ph: 'e.g. GIS mapping, manufacturing experience', help: 'Taken from the project requirements. Press “Find matches” to apply the matching rules.' })}${fi('colf', 'contrib', 'Expected contribution', { type: 'textarea', rows: 2, req: true, ph: 'e.g. Produce the canopy GIS layer for 25 streets over 4 weeks' })}<div class="row">${B(ic('search', 14) + 'Find matches', 'colfFind', { project: p.id })}</div>${
+      `<form data-f="colf" class="col" style="gap:14px" novalidate><input type="hidden" name="project" value="${p.id}">${dl([['Project', h(p.title)], ['Stage', pill(stageLabel(p.stage || 'Circle'))]])}${fi('colf', 'req', 'Required skill or expertise', { req: true, ph: 'e.g. GIS mapping, manufacturing experience', help: 'Taken from the project requirements. Press “Find matches” to apply the matching rules.' })}${fi('colf', 'contrib', 'Expected contribution', { type: 'textarea', rows: 2, req: true, ph: 'e.g. Produce the canopy GIS layer for 25 streets over 4 weeks' })}<div class="row">${B(ic('search', 14) + 'Find matches', 'colfFind', { project: p.id })}</div>${
         req.trim()
           ? cands.length
-            ? `<fieldset class="np-fs col"><legend class="lbl">Potential collaborators — rule-identified, not ranked by a score</legend><div class="col opp-cands">${cands.map(c => `<label class="choice np-choice opp-cand ${fv('colf', 'pid') === c.a.pid ? 'sel' : ''}"><input type="radio" name="pid" value="${c.a.pid}" ${fv('colf', 'pid') === c.a.pid ? 'checked' : ''} data-ch="colfPick"><span class="rad" aria-hidden="true"></span><span class="col np-ct"><b>${nm(c.a.pid)} · ${h(c.org.name || 'No organization')}</b><span class="cap">${c.hits.length ? 'Why suggested: ' + c.hits.map(([k]) => h(k)).join(', ') : 'No direct match in records held in PHOENIX — include only if you know this partner can help.'}</span>${c.blockers.length ? `<span class="cap opp-block">Do not introduce yet: ${c.blockers.map(h).join('; ')}</span>` : ''}</span></label>`).join('')}</div></fieldset>`
+            ? `<fieldset style="border:0;padding:0;margin:0" class="col"><legend class="lbl" style="margin-bottom:8px">Potential collaborators — rule-identified, not ranked by a score</legend><div class="col" style="gap:8px">${cands.map(c => `<label class="choice ${fv('colf', 'pid') === c.a.pid ? 'sel' : ''}"><input type="radio" name="pid" value="${c.a.pid}" ${fv('colf', 'pid') === c.a.pid ? 'checked' : ''} style="position:absolute;opacity:0" data-ch="colfPick"><span class="rad"></span><span class="col" style="gap:4px;min-width:0"><b>${nm(c.a.pid)} · ${h(c.org.name || 'No organization')}</b><span class="cap">${c.hits.length ? 'Why suggested: ' + c.hits.map(([k]) => h(k)).join(', ') : 'No direct match in records held in PHOENIX — include only if you know this partner can help.'}</span>${c.blockers.length ? `<span class="cap" style="color:#8F1A12">Do not introduce yet: ${c.blockers.map(h).join('; ')}</span>` : ''}</span></label>`).join('')}</div></fieldset>`
             : banner('info', 'No collaborators in this programme yet', 'Ask the Programme Administrator or Organization Representative to invite a partner (D-05).')
           : ''
       }<div class="actions"><span></span><button class="btn btn-p" type="submit" ${cands.length ? '' : 'disabled'}>Draft Match Brief</button></div></form>`,
