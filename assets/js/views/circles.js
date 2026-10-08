@@ -59,16 +59,18 @@ route('circles', 'circles', () => {
       table(
         ['Circle', 'Purpose', 'Facilitator', 'Members', 'Your role', 'State', ''],
         mine.map(c => [
-          `<b>${h(c.name)}</b>${unreadIn(c) && memberOf(c) ? ` <span class="mbadge">${unreadIn(c)}</span>` : ''}`,
+          `<div class="ws-name"><span class="tile t-purple" aria-hidden="true">${ic('users', 16)}</span><div class="ws-name-t"><b>${h(c.name)}</b>${unreadIn(c) && memberOf(c) ? ` <span class="mbadge">${unreadIn(c)}</span>` : ''}</div></div>`,
           h(c.purpose),
           nm(c.facilitator),
-          c.members.filter(m => m.status === 'Active').length,
+          ((act) => `<span class="ws-mem"><span class="avstack">${act.slice(0, 4).map(m => `<span class="av sm" title="${nm(m.pid)}">${ini(m.pid)}</span>`).join('')}</span><span>${act.length}</span></span>`)(c.members.filter(m => m.status === 'Active')),
           spaceRole('circles', c) ? h(spaceRole('circles', c)) : joinState(c) === 'pending' ? pill('Pending') : joinState(c) === 'invited' ? pill('Invited') : '<span class="cap">Oversight</span>',
           pill(c.state),
           joinState(c) === 'invited' ? B('Respond to invite', 'go', { r: 'circle', id: c.id }, 'btn-p btn-sm') : joinState(c) === 'pending' ? B('Withdraw request', 'joinWithdraw', { id: c.id, kind: 'circles' }) : L('Open', 'circle', { id: c.id }),
         ]),
         'You are not in a Circle yet. Ask to join one below, or wait for an invitation.',
       ),
+      '',
+      'ws-listcard',
     ) +
     (others.length && !['A', 'O'].includes(r)
       ? '<div class="section-gap"></div>' +
@@ -78,7 +80,7 @@ route('circles', 'circles', () => {
           table(
             ['Circle', 'Purpose', 'Facilitator', 'Visibility', 'State', ''],
             others.map(c => [
-              `<b>${h(c.name)}</b>`,
+              `<div class="ws-name"><span class="tile t-purple" aria-hidden="true">${ic('users', 16)}</span><div class="ws-name-t"><b>${h(c.name)}</b></div></div>`,
               h(c.purpose),
               nm(c.facilitator),
               h(c.visibility),
@@ -231,7 +233,7 @@ route('circle', 'circles', () => {
         'Your request to join is pending',
         nm(c.facilitator) + ' (facilitator)' + (c.owner && c.owner !== c.facilitator ? ' or ' + nm(c.owner) + ' (project owner)' : '') + ' will approve or decline it. You will be notified either way.',
       ) +
-      card('', '', dl([['Purpose', h(c.purpose)], ['Facilitator', nm(c.facilitator)], ['Requested', fmt(myM.at || '')]]) + `<div class="row" style="margin-top:12px">${B('Withdraw request', 'joinWithdraw', { id: c.id, kind: 'circles' })}</div>`)
+      card('', '', dl([['Purpose', h(c.purpose)], ['Facilitator', nm(c.facilitator)], ['Requested', fmt(myM.at || '')]]) + `<div class="row ws-acts">${B('Withdraw request', 'joinWithdraw', { id: c.id, kind: 'circles' })}</div>`)
     );
   if (!(myM && myM.status === 'Invited') && !isMem && !mgr && c.visibility !== 'Programme')
     return (
@@ -240,7 +242,7 @@ route('circle', 'circles', () => {
         'Members only',
         'Only members see this Circle’s chat, sessions and records.',
         dl([['Purpose', h(c.purpose)], ['Expected outcome', h(c.outcome || '—')], ['Facilitator', nm(c.facilitator)], ['Project owner', nm(c.owner)], ['Members', c.members.filter(m => m.status === 'Active').length]]) +
-          (c.state === 'Active' ? `<div class="row" style="margin-top:14px">${joinBtn(c)}</div>` : ''),
+          (c.state === 'Active' ? `<div class="row ws-acts">${joinBtn(c)}</div>` : ''),
       )
     );
   if (myM && myM.status === 'Invited')
@@ -253,7 +255,7 @@ route('circle', 'circles', () => {
           ['Facilitator', nm(c.facilitator)],
           ['Agreement', h(c.agreement)],
           ['Visibility', h(c.visibility)],
-        ])}<div class="row" style="margin-top:14px">${B('Decline', 'circleInvite', { id: c.id, v: 'Declined' })}${B('Accept and join', 'circleInvite', { id: c.id, v: 'Active' }, 'btn-p btn-sm')}</div>`,
+        ])}<div class="row ws-acts">${B('Decline', 'circleInvite', { id: c.id, v: 'Declined' })}${B('Accept and join', 'circleInvite', { id: c.id, v: 'Active' }, 'btn-p btn-sm')}</div>`,
       )
     );
   const paused = c.state === 'Paused/Repair';
@@ -275,8 +277,9 @@ route('circle', 'circles', () => {
   let body = '';
   if (t.cur === 'chat')
     body =
-      `<div class="row wrap chatbar"><span class="cap">Real-time chat for members of this Circle. ${isMem ? L('Open in Messages', 'messages', { c: c.id, k: 'circles' }) : ''}</span>${mgr && !ro ? B(ic('sparkle', 14) + 'Draft Circle summary with AI', 'circleSummary', { id: c.id }) : ''}</div>` +
-      chatThread('circles', c, { embedded: true });
+      `<div class="ws-split ws-chat"><div class="ws-main"><div class="row wrap chatbar"><span class="cap">Real-time chat for members of this Circle. ${isMem ? L('Open in Messages', 'messages', { c: c.id, k: 'circles' }) : ''}</span>${mgr && !ro ? B(ic('sparkle', 14) + 'Draft Circle summary with AI', 'circleSummary', { id: c.id }) : ''}</div>` +
+      chatThread('circles', c, { embedded: true }) +
+      `</div><aside class="ws-rail hide-md" aria-label="Members">${wsTeamCard('circles', c)}</aside></div>`;
   if (t.cur === 'sessions')
     body = card(
       'Sessions',
@@ -284,7 +287,7 @@ route('circle', 'circles', () => {
       c.sessions
         .slice()
         .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
-        .map(s => `<article class="sess"><header class="row wrap" style="justify-content:space-between;gap:8px"><div class="col" style="min-width:0"><b>${h(s.title)}</b><span class="cap">${fmt(s.date)}${s.by ? ' · recorded by ' + nm(s.by) : ''}${s.edited ? ' · edited ' + fmt(s.edited.at.slice(0, 16)) + ' by ' + nm(s.edited.by) : ''}</span></div><span class="row" style="gap:8px">${pill(s.status)}${mgr && !ro ? B(ic('edit', 14) + 'Edit', 'editSession', { c: c.id, id: s.id }) : ''}</span></header>${s.agenda ? `<div class="sess-f"><span class="lbl">Agenda</span><p style="white-space:pre-line">${h(s.agenda)}</p></div>` : ''}<div class="sess-f"><span class="lbl">Transcription & MOM</span><p style="white-space:pre-line">${h(s.checkins || '—')}</p></div></article>`)
+        .map(s => `<article class="sess"><header class="sess-h"><span class="sess-date" aria-hidden="true"><b>${s.date ? new Date(s.date + 'T00:00:00').getDate() : '–'}</b><span>${s.date ? new Date(s.date + 'T00:00:00').toLocaleDateString('en-GB', { month: 'short' }) : ''}</span></span><div class="sess-t"><b>${h(s.title)}</b><span class="cap">${fmt(s.date)}${s.by ? ' · recorded by ' + nm(s.by) : ''}${s.edited ? ' · edited ' + fmt(s.edited.at.slice(0, 16)) + ' by ' + nm(s.edited.by) : ''}</span></div><span class="row sess-a">${pill(s.status)}${mgr && !ro ? B(ic('edit', 14) + 'Edit', 'editSession', { c: c.id, id: s.id }) : ''}</span></header>${s.agenda ? `<div class="sess-f"><span class="lbl">Agenda</span><p class="ws-pre">${h(s.agenda)}</p></div>` : ''}<div class="sess-f"><span class="lbl">Transcription & MOM</span><p class="ws-pre">${h(s.checkins || '—')}</p></div></article>`)
         .join('') || empty('calendar', 'No sessions yet', 'Recorded sessions appear here for everyone in the Circle.'),
       mgr && !ro ? B(ic('plus', 14) + 'Record session', 'newSession', { id: c.id }, 'btn-p btn-sm') : '',
     );
@@ -313,9 +316,9 @@ route('circle', 'circles', () => {
           const tl = tally(c, p);
           const mv = p.votes[myId()];
           const canV = eligibleVoter(c, myId()) && p.status === 'Open' && !ro;
-          return `<div class="card" style="margin-bottom:12px;padding:18px"><div class="row wrap" style="justify-content:space-between"><b>${h(p.q)}</b>${pill(p.status, { 'Closed — Decided': 'p-green', 'Closed — No decision': 'p-amber' }[p.status])}</div>${p.desc ? `<p class="muted" style="margin-top:6px;white-space:pre-line">${h(p.desc)}</p>` : ''}<p class="cap">${p.created ? 'Created ' + fmt(p.created.slice(0, 16)) + (p.by ? ' by ' + nm(p.by) : '') + ' · ' : ''}${p.status === 'Open' ? 'Closes ' : 'Closed '}${fmt(p.closedAt ? p.closedAt.slice(0, 16) : p.closes)} · ${tl.voted} of ${tl.eligible} eligible voters · total eligible weight ${tl.tot}</p>
-  <div class="col" style="gap:8px;margin-top:12px">${p.options.map((o, i) => `<div class="row wrap" style="gap:10px"><div style="flex:1;min-width:200px"><div class="row" style="justify-content:space-between"><span>${h(o)}</span><span class="cap">${tl.per[i]} weight · ${tl.tot ? Math.round((tl.per[i] / tl.tot) * 100) : 0}%</span></div><div class="bar"><span style="width:${tl.tot ? (tl.per[i] / tl.tot) * 100 : 0}%"></span></div></div>${canV ? B(mv === i ? 'Your vote' : 'Vote', 'vote', { c: c.id, p: p.id, i }, mv === i ? 'btn-p btn-sm' : 'btn-s btn-sm') : ''}</div>`).join('')}</div>
-  ${p.result ? `<p class="cap" style="margin-top:8px">Result: ${h(p.result)}</p>` : ''}${p.status === 'Open' && pollMgr ? `<div class="row" style="margin-top:12px">${B('Close poll and record result', 'closePoll', { c: c.id, p: p.id }, 'btn-p btn-sm')}</div>` : ''}${['Closed — Not approved', 'Closed — No decision'].includes(p.status) && pollMgr ? `<div class="row" style="margin-top:12px">${B('Modify and re-poll', 'repoll', { c: c.id, p: p.id })}</div>` : ''}${p.status !== 'Open' ? pollReview(c, p) : ''}</div>`;
+          return `<article class="poll-item"><header class="poll-h"><span class="tile t-purple" aria-hidden="true">${ic('vote', 16)}</span><b>${h(p.q)}</b>${pill(p.status, { 'Closed — Decided': 'p-green', 'Closed — No decision': 'p-amber' }[p.status])}</header>${p.desc ? `<p class="muted ws-pre poll-desc">${h(p.desc)}</p>` : ''}<p class="cap poll-meta">${p.created ? 'Created ' + fmt(p.created.slice(0, 16)) + (p.by ? ' by ' + nm(p.by) : '') + ' · ' : ''}${p.status === 'Open' ? 'Closes ' : 'Closed '}${fmt(p.closedAt ? p.closedAt.slice(0, 16) : p.closes)} · ${tl.voted} of ${tl.eligible} eligible voters · total eligible weight ${tl.tot}</p>
+  <div class="poll-opts">${p.options.map((o, i) => `<div class="poll-opt${mv === i ? ' is-mine' : ''}${p.status !== 'Open' && i === tl.best && tl.per[i] > 0 ? ' is-lead' : ''}"><div class="poll-ob"><div class="poll-ol"><span>${h(o)}</span><span class="cap">${tl.per[i]} weight · ${tl.tot ? Math.round((tl.per[i] / tl.tot) * 100) : 0}%</span></div><div class="progress poll-bar" aria-hidden="true"><span class="bar" style="width:${tl.tot ? (tl.per[i] / tl.tot) * 100 : 0}%"></span></div></div>${canV ? B(mv === i ? 'Your vote' : 'Vote', 'vote', { c: c.id, p: p.id, i }, mv === i ? 'btn-p btn-sm' : 'btn-s btn-sm') : ''}</div>`).join('')}</div>
+  ${p.result ? `<p class="cap poll-res">Result: ${h(p.result)}</p>` : ''}${p.status === 'Open' && pollMgr ? `<div class="row ws-acts">${B('Close poll and record result', 'closePoll', { c: c.id, p: p.id }, 'btn-p btn-sm')}</div>` : ''}${['Closed — Not approved', 'Closed — No decision'].includes(p.status) && pollMgr ? `<div class="row ws-acts">${B('Modify and re-poll', 'repoll', { c: c.id, p: p.id })}</div>` : ''}${p.status !== 'Open' ? pollReview(c, p) : ''}</article>`;
         })
         .join('') ||
         empty(
@@ -373,7 +376,7 @@ route('circle', 'circles', () => {
     const hvDone = S.harvests.some(x => x.scope === c.id && ['Approved', 'Released'].includes(x.state));
     body = `<div class="g12">${c.aiSummary && c.aiSummary.status === 'Draft' && mgr ? `<div class="c12">${card('AI-drafted Circle summary', 'Class B workflow draft — review before it is shared with members.', `<p class="muted">${h(c.aiSummary.text)}</p><div style="margin:10px 0">${aiTag('AI draft · sources: chat, sessions, decisions')}</div><div class="row">${B('Reject', 'summaryDecide', { id: c.id, v: 'Rejected' })}${B('Approve and share', 'summaryDecide', { id: c.id, v: 'Approved' }, 'btn-p btn-sm')}</div>`)}</div>` : ''}${card('About', '', dl([['Purpose', h(c.purpose)], ['Expected outcome', h(c.outcome)], ['Owner', nm(c.owner)], ['Facilitator', nm(c.facilitator)], ['Agreement', h(c.agreement)], ['Project', pr ? L(h(pr.title), 'project', { id: pr.id }) : '—'], ['State', pill(c.state)], paused && ['Pause reason', h(c.pause.reason) + ' · restart when: ' + h(c.pause.restart)]]), '', 'c7')}
   ${card('Lifecycle', 'Pending Review → Active → Paused/Repair', `<div class="col" style="gap:8px">${mgr ? [c.state === 'Pending Review' && B('Approve Circle', 'circleState', { id: c.id, v: 'Active' }, 'btn-p btn-sm'), c.state === 'Active' && B(ic('pause', 14) + 'Pause and repair', 'pauseCircle', { id: c.id }), paused && B('Resume Circle', 'circleState', { id: c.id, v: 'Active' }, 'btn-p btn-sm')].filter(Boolean).join('') || '<p class="cap">Nothing to change right now.</p>' : '<p class="cap">Managed by the project owner and facilitator.</p>'}</div>`, '', 'c5')}
-  ${pr ? `<div class="c7 col" style="gap:24px">${stageGate(pr, 'circles', c)}${reportsCard(pr, 'circles', c)}</div>` : ''}
+  ${pr ? `<div class="c7 col ws-stack">${stageGate(pr, 'circles', c)}${reportsCard(pr, 'circles', c)}</div>` : ''}
   ${card('Move toward action', 'Create or link — the Circle always stays intact.', `<div class="col" style="gap:8px">${!ro && sCan('circles', c, 'card') && can('opportunities', 'CM') ? B(ic('megaphone', 14) + 'Create Opportunity Card from this Circle', 'go', { r: 'newcard', from: c.id }) : ''}${mgr && !ro && !pr ? B(ic('room', 14) + 'Create or link ' + WL(), 'newRoom', { origin: 'Circle decision', oid: c.id }) : ''}${!ro && (sCan('circles', c, 'harvest') || mgr) ? B(ic('sparkle', 14) + 'Start a Learning Harvest', 'newHarvest', { scope: c.id }) : ''}</div>`, '', pr ? 'c5' : 'c12')}
   ${card('Opportunity Cards from this Circle', 'Cards created here link back to this Circle. Audience is set by each card’s creator.', fromCards.map(k => lrow('megaphone', h(k.title), h(k.kind) + ' · ' + h(k.vis === 'Circle members' ? 'This Circle’s members' : k.vis) + ' · ' + nm(k.owner), pill(k.status) + ' ' + L('Open', 'card', { id: k.id }))).join('') || '<p class="cap">None yet.</p>', '', 'c12')}
   ${returnsCard(c) ? `<div class="c12">${returnsCard(c)}</div>` : ''}</div>`;
@@ -387,7 +390,7 @@ route('circle', 'circles', () => {
         (c.docs || []).map(x => [`<span class="att">${ic('file', 14)}${h(x.n)}</span>`, x.mb != null ? x.mb + ' MB' : '—', nm(x.by), fmt(x.at)]),
         'No documents yet.',
       ),
-      !ro && (isMem || mgr) ? `<form data-f="cdoc" class="row wrap" style="gap:8px" novalidate><input type="hidden" name="c" value="${c.id}"><input type="file" name="f" class="input" style="padding:6px;max-width:320px" multiple aria-label="Choose documents"><button class="btn btn-p btn-sm" type="submit">${ic('upload', 14)}Upload</button></form>` : '',
+      !ro && (isMem || mgr) ? `<form data-f="cdoc" class="row wrap ws-upform" novalidate><input type="hidden" name="c" value="${c.id}"><input type="file" name="f" class="input ws-file" multiple aria-label="Choose documents"><button class="btn btn-p btn-sm" type="submit">${ic('upload', 14)}Upload</button></form>` : '',
     );
   const prj = byId('projects', c.project);
   return (
@@ -671,7 +674,7 @@ const canFinalReview = c => {
 function pollReview(c, p) {
   const rv = p.reviews || [];
   const can_ = canFinalReview(c) && c.state === 'Active';
-  return `<section class="pfr"><div class="row wrap" style="justify-content:space-between;gap:8px"><b>Final review</b><span class="cap">By the project owner, Faculty/Steward or facilitator</span></div>${rv.map(x => `<div class="pfr-i"><p style="white-space:pre-line">${h(x.t)}</p><span class="cap">${nm(x.by)} · ${fmt(x.at.slice(0, 16))}</span></div>`).join('') || (can_ ? '' : '<p class="cap">No final review yet.</p>')}${can_ ? `<form data-f="pfr" class="col" style="gap:8px" novalidate><input type="hidden" name="c" value="${c.id}"><input type="hidden" name="p" value="${p.id}">${fi('pfr', 't_' + p.id, rv.length ? 'Add to the review' : 'Review of the outcome', { type: 'textarea', rows: 3, ph: 'What was decided, how it will be acted on, anything to watch' })}<div><button class="btn btn-s btn-sm" type="submit">Save final review</button></div></form>` : ''}</section>`;
+  return `<section class="pfr"><div class="pfr-h"><b>Final review</b><span class="cap">By the project owner, Faculty/Steward or facilitator</span></div>${rv.map(x => `<div class="pfr-i"><p class="ws-pre">${h(x.t)}</p><span class="cap">${nm(x.by)} · ${fmt(x.at.slice(0, 16))}</span></div>`).join('') || (can_ ? '' : '<p class="cap">No final review yet.</p>')}${can_ ? `<form data-f="pfr" class="col" style="gap:8px" novalidate><input type="hidden" name="c" value="${c.id}"><input type="hidden" name="p" value="${p.id}">${fi('pfr', 't_' + p.id, rv.length ? 'Add to the review' : 'Review of the outcome', { type: 'textarea', rows: 3, ph: 'What was decided, how it will be acted on, anything to watch' })}<div><button class="btn btn-s btn-sm" type="submit">Save final review</button></div></form>` : ''}</section>`;
 }
 F.pfr = d => {
   const c = byId('circles', d.c);

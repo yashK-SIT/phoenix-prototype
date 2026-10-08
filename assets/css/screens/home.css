@@ -1,0 +1,561 @@
+/* PHOENIX screens: home. Built on the tokens and components in ../phoenix.css.
+   Owns: My PHOENIX (every role), Profile, Privacy & agreements, Pathway, onboarding, policy gate,
+   public/auth pages and the role switcher rows (.demo-acc). Tokens only; no hex colours. */
+
+/* ==========================================================================
+   1. My PHOENIX — frame
+   ========================================================================== */
+.hm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+}
+.hm-top {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: var(--grid-gap);
+  align-items: stretch;
+}
+.hm-top.solo {
+  grid-template-columns: minmax(0, 1fr);
+}
+.hm-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 372px);
+  gap: var(--grid-gap);
+  align-items: start;
+}
+.hm-main,
+.hm-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--grid-gap);
+  min-width: 0;
+}
+.hm-cols > .hm-main:only-child {
+  grid-column: 1 / -1;
+}
+
+/* North Star / programme purpose */
+.hm-ns {
+  display: flex;
+  flex-direction: column;
+}
+.hm-ns-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  min-height: var(--h-sm);
+}
+.hm-ns-tools {
+  gap: var(--s-2);
+}
+.hm-ns-q {
+  margin: var(--s-3) 0 var(--s-4);
+  padding-left: var(--s-4);
+  border-left: 3px solid var(--primary);
+  font-family: var(--font-head);
+  font-feature-settings: normal;
+  font-size: 21px;
+  line-height: 29px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  text-wrap: pretty;
+}
+.hm-ns-q.is-unset {
+  color: var(--text-3);
+  border-left-color: var(--line-strong);
+  font-weight: 500;
+}
+.hm-ns-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-4);
+  margin: 0;
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--line-soft);
+}
+.hm-ns-facts dt {
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-weight: 700;
+  color: var(--text-3);
+}
+.hm-ns-facts dd {
+  margin: 2px 0 0;
+  font-weight: 600;
+}
+.hm-ns-n {
+  margin-top: auto;
+  padding-top: var(--s-4);
+}
+.hm-spaces {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s-2);
+}
+.hm-spaces a {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: var(--s-3);
+  align-items: center;
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  color: inherit;
+  text-decoration: none;
+  transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+}
+.hm-spaces a:hover {
+  background: var(--surface-2);
+  border-color: var(--line-strong);
+}
+.hm-spaces .tile {
+  grid-row: span 2;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-plume-sm);
+}
+.hm-spaces b {
+  font-family: var(--font-head);
+  font-feature-settings: normal;
+  font-size: 20px;
+  line-height: 24px;
+}
+.hm-spaces span:last-child {
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Next action — the one panel that needs attention (ember top edge) */
+.hm-next {
+  display: flex;
+  flex-direction: column;
+}
+.hm-next .h2 {
+  margin-top: var(--s-3);
+  text-wrap: balance;
+}
+.hm-next .muted {
+  margin-top: var(--s-2);
+}
+.hm-next-a {
+  margin-top: var(--s-4);
+}
+.hm-next-n {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin-top: auto;
+  padding-top: var(--s-4);
+}
+.hm-next-n svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--text-3);
+}
+.hm-next.is-clear .h2 {
+  color: var(--primary-text);
+}
+.hm-top.solo .hm-next {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--s-6);
+  align-items: center;
+}
+.hm-top.solo .hm-next-a {
+  margin-top: 0;
+}
+.hm-top.solo .hm-next-n {
+  grid-column: 1 / -1;
+  margin-top: var(--s-4);
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--line-soft);
+}
+
+/* Summary strip: one hairline-divided band, not tiles */
+.hm-strip {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--line-soft);
+}
+.hm-strip .kpi {
+  border-right: 0;
+  background: var(--surface);
+  padding: var(--s-3) var(--s-4) var(--s-4);
+  gap: 2px;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+a.hm-kpi {
+  position: relative;
+  transition: background var(--t-fast) var(--ease);
+}
+a.hm-kpi:hover {
+  background: var(--surface-2);
+}
+a.hm-kpi:hover .hm-kpi-l {
+  color: var(--text);
+}
+.hm-kpi-l {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  font-weight: 700;
+  color: var(--text-2);
+  min-width: 0;
+}
+.hm-kpi-ic {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: var(--r-plume-sm);
+  background: var(--neutral-bg);
+  color: var(--text-3);
+}
+.hm-kpi-n {
+  margin-top: var(--s-1);
+  font-family: var(--font-head);
+  font-feature-settings: normal;
+  font-variant-numeric: proportional-nums;
+  font-size: 26px;
+  line-height: 32px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hm-kpi .cap {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* Lists inside panels */
+.hm-row {
+  align-items: center;
+  gap: var(--s-3);
+  padding: 10px 0;
+}
+.hm-row .tile {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-plume-sm);
+}
+.hm-row .lt {
+  flex: 1;
+  min-width: 0;
+  font-weight: 400;
+}
+.hm-row .lt b {
+  display: block;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.hm-row .lt .cap {
+  margin-top: 1px;
+  overflow-wrap: anywhere;
+}
+.hm-row-r {
+  flex: none;
+  max-width: 62%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+.hm-list > .card-h + .lrow,
+.hm-list > .card-h + .hm-row {
+  padding-top: 0;
+}
+.hm-list .card-h .cnt {
+  margin-top: 1px;
+}
+.hm .mbadge {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: var(--r-full);
+  background: var(--signal-soft);
+  color: var(--signal-text);
+  font-size: 11.5px;
+  font-weight: 800;
+}
+.hm-acts {
+  margin-top: var(--s-4);
+  gap: var(--s-2);
+}
+.hm-pills {
+  gap: 6px;
+}
+.hm-kvs .kv2 {
+  grid-template-columns: minmax(0, 40%) minmax(0, 1fr);
+}
+.hm-kvs .kv2 dd {
+  overflow-wrap: anywhere;
+}
+
+/* Pathway steps */
+.hm-prog {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  margin-bottom: var(--s-4);
+}
+.hm-prog .progress {
+  flex: 1;
+}
+.hm-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.hm-steps li {
+  position: relative;
+  display: flex;
+  gap: var(--s-3);
+  padding: 0 0 var(--s-4);
+}
+.hm-steps li:last-child {
+  padding-bottom: 0;
+}
+.hm-steps li:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: 11px;
+  top: 28px;
+  bottom: 4px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--line);
+}
+.hm-steps li.done:not(:last-child)::after {
+  background: var(--primary-soft-2);
+}
+.hm-step-m {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1.5px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  font-weight: 800;
+}
+.hm-steps .done .hm-step-m {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary);
+}
+.hm-steps .cur .hm-step-m {
+  border: 2px solid var(--signal);
+  color: var(--signal-text);
+}
+.hm-step-t {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding-top: 2px;
+}
+.hm-step-t b {
+  font-weight: 600;
+}
+.hm-steps .done .hm-step-t b {
+  color: var(--text-2);
+}
+
+/* Seats */
+.hm-seat {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--s-3) 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.hm-seat:first-of-type {
+  padding-top: 0;
+}
+.hm-seat:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.hm-seat-h {
+  justify-content: space-between;
+}
+
+/* Ask PHOENIX prompt */
+.hm-ask {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  background: var(--surface-2);
+  border-style: dashed;
+  border-color: var(--line-strong);
+}
+.hm-ask-h {
+  display: flex;
+  gap: var(--s-3);
+  align-items: flex-start;
+}
+.hm-ask .tile {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-plume-sm);
+}
+.hm-ask .btn {
+  white-space: normal;
+  height: auto;
+  min-height: var(--h-sm);
+  padding-top: 6px;
+  padding-bottom: 6px;
+  text-align: left;
+  justify-content: flex-start;
+}
+
+/* Visibility hint (shared by forms) in the areas this sheet owns */
+.hm .vis,
+.app[data-route='profile'] .vis,
+.onb .vis,
+.auth .vis {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-weight: 600;
+  color: var(--text-3);
+}
+.hm .vis svg,
+.app[data-route='profile'] .vis svg,
+.onb .vis svg,
+.auth .vis svg {
+  width: 12px;
+  height: 12px;
+}
+
+@media (max-width: 1279px) {
+  .hm-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (min-width: 640px) and (max-width: 1279px) {
+  .hm-rail {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+  .hm-rail > .banner,
+  .hm-rail > .hm-ask {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 1023px) {
+  .hm-top {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 639px) {
+  .hm {
+    gap: var(--s-4);
+  }
+  .hm-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .hm-kpi-n {
+    font-size: 22px;
+    line-height: 28px;
+  }
+  .hm-ns-q {
+    font-size: 18px;
+    line-height: 26px;
+  }
+  .hm-ns-facts {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s-3);
+  }
+  .hm-spaces {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .hm-top.solo .hm-next {
+    display: flex;
+  }
+  .hm-top.solo .hm-next-a {
+    margin-top: var(--s-4);
+  }
+  .hm-row {
+    flex-wrap: wrap;
+  }
+  .hm-row-r {
+    flex-basis: 100%;
+    max-width: none;
+    justify-content: flex-start;
+    padding-left: 44px;
+  }
+}
+
+/* fill of progress bars written as <span class="bar"> */
+.hm .progress .bar,
+.app[data-route='profile'] .progress .bar,
+.app[data-route='pathway'] .progress .bar,
+.onb .progress .bar {
+  display: block;
+}
+/* rail rows: status and action stack on the right so names keep their width */
+.hm-rail .hm-row-r {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  max-width: 50%;
+}
+.hm .kb-prio {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  vertical-align: middle;
+}
+@media (max-width: 639px) {
+  .hm-rail .hm-row-r {
+    flex-direction: row;
+    align-items: center;
+    max-width: none;
+    gap: var(--s-2);
+  }
+}
+/* phones: record-card tables — keep badges and the action cell at their natural size
+   (works around .tbl .act { width: 1% } outranking the phone rule; reported as a shared fix) */
+@media (max-width: 639px) {
+  .hm .tbl td,
+  .app[data-route='profile'] .tbl td,
+  .app[data-route='privacy'] .tbl td,
+  .app[data-route='pathway'] .tbl td {
+    justify-items: start;
+  }
+  .hm .tbl .act,
+  .app[data-route='profile'] .tbl .act,
+  .app[data-route='privacy'] .tbl .act,
+  .app[data-route='pathway'] .tbl .act {
+    width: 100%;
+  }
+}

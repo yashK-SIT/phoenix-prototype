@@ -138,10 +138,11 @@ route('ropeteams', 'ropeteams', () => {
       'Rope Teams',
       '',
       table(
-        ['Rope Team', 'Mentor', 'Linked to', 'Your role', 'State', ''],
+        ['Rope Team', 'Mentor', 'Members', 'Linked to', 'Your role', 'State', ''],
         list.map(x => [
-          `<b>${h(x.name)}</b>${unreadIn(x) && memberOf(x) ? ` <span class="mbadge">${unreadIn(x)}</span>` : ''}`,
+          `<div class="ws-name"><span class="tile t-teal" aria-hidden="true">${ic('route', 16)}</span><div class="ws-name-t"><b>${h(x.name)}</b>${unreadIn(x) && memberOf(x) ? ` <span class="mbadge">${unreadIn(x)}</span>` : ''}${x.charter ? `<span class="cap">${h(x.charter)}</span>` : ''}</div></div>`,
           x.mentor ? nm(x.mentor) : '—',
+          ((act) => `<span class="ws-mem"><span class="avstack">${act.slice(0, 4).map(m => `<span class="av sm" title="${nm(m.pid)}">${ini(m.pid)}</span>`).join('')}</span><span>${act.length}</span></span>`)(x.members.filter(m => !m.status || m.status === 'Active')),
           cName(x.circle) + ' · ' + cName(x.project),
           spaceRole('ropes', x) ? h(spaceRole('ropes', x)) : joinState(x) === 'pending' ? pill('Pending') : joinState(x) === 'invited' ? pill('Invited') : '<span class="cap">Oversight</span>',
           pill(x.state),
@@ -149,6 +150,8 @@ route('ropeteams', 'ropeteams', () => {
         ]),
         'No Rope Teams. One is formed when a mentor accepts a Mentor Request.',
       ),
+      '',
+      'ws-listcard',
     ) +
     (joinable.length
       ? '<div class="section-gap"></div>' +
@@ -157,7 +160,7 @@ route('ropeteams', 'ropeteams', () => {
           'You can ask to join. The project owner or the Faculty/Steward approves or declines.',
           table(
             ['Rope Team', 'Circle', 'Mentor', 'State', ''],
-            joinable.map(x => [`<b>${h(x.name)}</b>`, cName(x.circle), x.mentor ? nm(x.mentor) : '—', pill(x.state), joinBtn(x, 'ropes')]),
+            joinable.map(x => [`<div class="ws-name"><span class="tile t-teal" aria-hidden="true">${ic('route', 16)}</span><div class="ws-name-t"><b>${h(x.name)}</b></div></div>`, cName(x.circle), x.mentor ? nm(x.mentor) : '—', pill(x.state), joinBtn(x, 'ropes')]),
           ),
         )
       : '')
@@ -177,18 +180,18 @@ route('rope', 'ropeteams', () => {
     return (
       head(h(x.name), 'Rope Team', pill('Pending'), crumbs) +
       banner('info', 'Your request to join is pending', 'The project owner or the Faculty/Steward will approve or decline it. You will be notified either way.') +
-      card('', '', dl([['Charter', h(x.charter)], ['Mentor', x.mentor ? nm(x.mentor) : '—'], ['Requested', fmt(myM.at || '')]]) + `<div class="row" style="margin-top:12px">${B('Withdraw request', 'joinWithdraw', { id: x.id, kind: 'ropes' })}</div>`)
+      card('', '', dl([['Charter', h(x.charter)], ['Mentor', x.mentor ? nm(x.mentor) : '—'], ['Requested', fmt(myM.at || '')]]) + `<div class="row ws-acts">${B('Withdraw request', 'joinWithdraw', { id: x.id, kind: 'ropes' })}</div>`)
     );
   if (myM && myM.status === 'Invited')
     return (
       head(h(x.name), 'You have been invited to this Rope Team', '', crumbs) +
-      card('', '', `<p>${h(x.charter)}</p>${dl([['Mentor', x.mentor ? nm(x.mentor) : '—'], ['Your role', h(normRole(myM.role))], ['Circle', cName(x.circle)]])}<div class="row" style="margin-top:14px">${B('Decline', 'ropeInvite', { id: x.id, v: 'Declined' })}${B('Accept and join', 'ropeInvite', { id: x.id, v: 'Active' }, 'btn-p btn-sm')}</div>`)
+      card('', '', `<p>${h(x.charter)}</p>${dl([['Mentor', x.mentor ? nm(x.mentor) : '—'], ['Your role', h(normRole(myM.role))], ['Circle', cName(x.circle)]])}<div class="row ws-acts">${B('Decline', 'ropeInvite', { id: x.id, v: 'Declined' })}${B('Accept and join', 'ropeInvite', { id: x.id, v: 'Active' }, 'btn-p btn-sm')}</div>`)
     );
   if (!isMem && !['A', 'O'].includes(r) && !inviter) {
     if (ropeJoinable(x) || (x.circle && memberOf(byId('circles', x.circle) || {})))
       return (
         head(h(x.name), 'Rope Team', pill(x.state), crumbs) +
-        card('Members only', 'Only Rope Team members see its chat, reviews and support.', dl([['Charter', h(x.charter)], ['Mentor', x.mentor ? nm(x.mentor) : '—'], ['Circle', cName(x.circle)]]) + (x.state === 'Active' ? `<div class="row" style="margin-top:14px">${joinBtn(x, 'ropes')}</div>` : ''))
+        card('Members only', 'Only Rope Team members see its chat, reviews and support.', dl([['Charter', h(x.charter)], ['Mentor', x.mentor ? nm(x.mentor) : '—'], ['Circle', cName(x.circle)]]) + (x.state === 'Active' ? `<div class="row ws-acts">${joinBtn(x, 'ropes')}</div>` : ''))
       );
     return deniedView('ropeteams');
   }
@@ -215,8 +218,9 @@ route('rope', 'ropeteams', () => {
   let body = '';
   if (t.cur === 'chat')
     body =
-      `<div class="row wrap chatbar"><span class="cap">Rope Team chat — members only. ${isMem ? L('Open in Messages', 'messages', { c: x.id, k: 'ropes' }) : ''}</span></div>` +
-      chatThread('ropes', x, { embedded: true });
+      `<div class="ws-split ws-chat"><div class="ws-main"><div class="row wrap chatbar"><span class="cap">Rope Team chat — members only. ${isMem ? L('Open in Messages', 'messages', { c: x.id, k: 'ropes' }) : ''}</span></div>` +
+      chatThread('ropes', x, { embedded: true }) +
+      `</div><aside class="ws-rail hide-md" aria-label="Members">${wsTeamCard('ropes', x)}</aside></div>`;
   if (t.cur === 'reviews')
     body = card(
       'Work for mentor review',
@@ -226,7 +230,7 @@ route('rope', 'ropeteams', () => {
         .reverse()
         .map(
           v =>
-            `<div class="rvitem"><div class="row wrap" style="justify-content:space-between;gap:8px"><div class="col" style="min-width:0"><b>${h(v.title)}</b><span class="cap">${nm(v.by)} · ${fmt(v.at)}</span></div>${pill(v.status, { 'Looks good': 'p-green', 'Changes recommended': 'p-amber', 'Awaiting review': 'p-navy' }[v.status])}</div>${v.desc ? `<p class="muted" style="margin-top:6px">${h(v.desc)}</p>` : ''}${v.att ? `<div style="margin-top:8px">${attCard(v.att)}</div>` : ''}${v.response ? `<div class="rvresp"><span class="cap"><b>${nm(v.reviewer)}</b> · mentor review</span><p>${h(v.response)}</p></div>` : ''}<div class="row wrap" style="margin-top:10px">${isMentor && !ro && v.status === 'Awaiting review' ? B('Review', 'revRespond', { r: x.id, id: v.id }, 'btn-p btn-sm') : ''}${v.by === myId() && !ro && v.status === 'Changes recommended' ? B('Resubmit after changes', 'revNew', { id: x.id, re: v.id }) : ''}</div></div>`,
+            `<article class="rvitem"><div class="rv-h"><span class="av" aria-hidden="true">${ini(v.by)}</span><div class="rv-t"><b>${h(v.title)}</b><span class="cap">${nm(v.by)} · ${fmt(v.at)}</span></div>${pill(v.status, { 'Looks good': 'p-green', 'Changes recommended': 'p-amber', 'Awaiting review': 'p-navy' }[v.status])}</div>${v.desc ? `<p class="muted rv-desc">${h(v.desc)}</p>` : ''}${v.att ? `<div class="rv-att">${attCard(v.att)}</div>` : ''}${v.response ? `<div class="rvresp"><span class="cap"><b>${nm(v.reviewer)}</b> · mentor review</span><p>${h(v.response)}</p></div>` : ''}<div class="row wrap rv-acts">${isMentor && !ro && v.status === 'Awaiting review' ? B('Review', 'revRespond', { r: x.id, id: v.id }, 'btn-p btn-sm') : ''}${v.by === myId() && !ro && v.status === 'Changes recommended' ? B('Resubmit after changes', 'revNew', { id: x.id, re: v.id }) : ''}</div></article>`,
         )
         .join('') || empty('file', 'Nothing shared for review yet', 'Participants share work here when they want the mentor’s view.'),
       !ro && canShare ? B(ic('upload', 14) + 'Share work for review', 'revNew', { id: x.id }, 'btn-p btn-sm') : '',
@@ -355,12 +359,12 @@ route('rope', 'ropeteams', () => {
       ]),
       L('Members', 'rope', { id: x.id, tab: 'members' }),
       'c7',
-    )}${pr ? `<div class="c5 col" style="gap:24px">${stageGate(pr, 'ropes', x)}</div>` : ''}
- ${secs ? card('Authorised project context', 'Only what the Rope Team needs to guide effectively. Purpose Compass, hurdles and private records are never shown here.', dl([[SECTIONS[0], h(secs[0].text)], [SECTIONS[1], `<span style="white-space:pre-line">${h(secs[1].text)}</span>`], [SECTIONS[2], `<span style="white-space:pre-line">${h(secs[2].text)}</span>`], [SECTIONS[3], `<span style="white-space:pre-line">${h(secs[3].text)}</span>`]]), '', 'c7') : ''}
- <div class="${secs ? 'c5' : 'c12'} col" style="gap:24px">${pr ? reportsCard(pr, 'ropes', x) : ''}${card(
+    )}${pr ? `<div class="c5 col ws-stack">${stageGate(pr, 'ropes', x)}</div>` : ''}
+ ${secs ? card('Authorised project context', 'Only what the Rope Team needs to guide effectively. Purpose Compass, hurdles and private records are never shown here.', dl([[SECTIONS[0], h(secs[0].text)], [SECTIONS[1], `<span class="ws-pre">${h(secs[1].text)}</span>`], [SECTIONS[2], `<span class="ws-pre">${h(secs[2].text)}</span>`], [SECTIONS[3], `<span class="ws-pre">${h(secs[3].text)}</span>`]]), '', 'c7') : ''}
+ <div class="${secs ? 'c5' : 'c12'} col ws-stack">${pr ? reportsCard(pr, 'ropes', x) : ''}${card(
    'Mentor engagement',
    'When the need is addressed, the mentor and Faculty/Steward decide whether the engagement continues or ends.',
-   `${eng ? dl([['Decision', pill(eng.status)], ['Need addressed', h(eng.addressed)], ['Note', h(eng.note || '—')], ['Proposed by', nm(eng.by) + ' · ' + fmt(eng.at)]]) : '<p class="cap">Engagement is active.</p>'}<div class="row wrap" style="margin-top:12px">${isMentor && !ro && (!eng || eng.status === 'Continuing') ? B('Review engagement', 'engage', { id: x.id }, 'btn-s btn-sm') : ''}${isFac && eng && eng.status === 'Exit proposed' && !ro ? B('Continue instead', 'engageDecide', { id: x.id, v: 'Continuing' }) + B('Confirm mentor exit', 'engageDecide', { id: x.id, v: 'Exited' }, 'btn-p btn-sm') : ''}${!ro && (isMentor || isFac) ? B(ic('alert', 14) + 'Escalate a concern', 'escalateRope', { id: x.id }) : ''}${(isFac || isMentor) && x.state === 'Active' ? B('Close Rope Team', 'ropeClose', { id: x.id }) : ''}</div>`,
+   `${eng ? dl([['Decision', pill(eng.status)], ['Need addressed', h(eng.addressed)], ['Note', h(eng.note || '—')], ['Proposed by', nm(eng.by) + ' · ' + fmt(eng.at)]]) : '<p class="cap">Engagement is active.</p>'}<div class="row wrap ws-acts">${isMentor && !ro && (!eng || eng.status === 'Continuing') ? B('Review engagement', 'engage', { id: x.id }, 'btn-s btn-sm') : ''}${isFac && eng && eng.status === 'Exit proposed' && !ro ? B('Continue instead', 'engageDecide', { id: x.id, v: 'Continuing' }) + B('Confirm mentor exit', 'engageDecide', { id: x.id, v: 'Exited' }, 'btn-p btn-sm') : ''}${!ro && (isMentor || isFac) ? B(ic('alert', 14) + 'Escalate a concern', 'escalateRope', { id: x.id }) : ''}${(isFac || isMentor) && x.state === 'Active' ? B('Close Rope Team', 'ropeClose', { id: x.id }) : ''}</div>`,
  )}</div>
  ${returnsCard(x) ? `<div class="c12">${returnsCard(x)}</div>` : ''}</div>`;
   }

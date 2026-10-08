@@ -7,11 +7,11 @@ function inviteTable(scopeCtx) {
   return table(
     ['Email', 'Role', 'Context', 'Status', 'Valid until', 'Invited by', ''],
     inv.map(i => [
-      h(i.email),
+      `<span class="adm-who"><span class="av sm" aria-hidden="true">${ic('mail', 12)}</span><b class="adm-em">${h(i.email)}</b></span>`,
       ROLE[i.role],
-      h(S.contexts.find(c => c.id === i.ctx).name),
+      `<span class="adm-sub">${h(S.contexts.find(c => c.id === i.ctx).name)}</span>`,
       pill(i.status),
-      fmt(i.expires),
+      `<span class="adm-date">${fmt(i.expires)}</span>`,
       nm(i.by),
       ['Pending', 'Resent', 'Expired'].includes(i.status)
         ? B('Resend', 'invAct', { id: i.id, v: 'Resent' }) +
@@ -39,7 +39,7 @@ A.invNew = d => {
   modal(
     'Create invitations',
     () =>
-      `<form data-f="inv" class="col" style="gap:14px" novalidate>${fi('inv', 'emails', 'Email addresses (one per line, or paste a CSV column — up to 1,000)', { type: 'textarea', rows: 5, req: true })}<div class="f2">${fi('inv', 'role', 'Nominated role', { type: 'select', req: true, opts: invitableRoles(allowed).map(r => [r.id, r.name + (r.system ? '' : ' (custom)')]) })}${fi('inv', 'days', 'Valid for (days)', { type: 'number', req: true, min: 1, value: S.settings.inviteValidityDays })}</div>${fi('inv', 'until', 'Role assignment expires (optional)', { type: 'date', help: 'After this date the role stops working until an administrator renews it. Leave empty for no expiry.' })}${fi('inv', 'ctx', 'Context', { type: 'select', req: true, opts: S.contexts.filter(c => c.kind !== 'Platform' && (role() !== 'O' || c.id === ctxId())).map(c => [c.id, c.name]), value: ctxId() })}${banner('info', '', 'Single-use links are sent by transactional email. Sensitive roles need approval after registration. An existing PHOENIX email gets the role added to their record.')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send invitations</button></div></form>`,
+      `<form data-f="inv" class="col adm-form" novalidate>${fi('inv', 'emails', 'Email addresses (one per line, or paste a CSV column — up to 1,000)', { type: 'textarea', rows: 5, req: true })}<div class="f2">${fi('inv', 'role', 'Nominated role', { type: 'select', req: true, opts: invitableRoles(allowed).map(r => [r.id, r.name + (r.system ? '' : ' (custom)')]) })}${fi('inv', 'days', 'Valid for (days)', { type: 'number', req: true, min: 1, value: S.settings.inviteValidityDays })}</div>${fi('inv', 'until', 'Role assignment expires (optional)', { type: 'date', help: 'After this date the role stops working until an administrator renews it. Leave empty for no expiry.' })}${fi('inv', 'ctx', 'Context', { type: 'select', req: true, opts: S.contexts.filter(c => c.kind !== 'Platform' && (role() !== 'O' || c.id === ctxId())).map(c => [c.id, c.name]), value: ctxId() })}${banner('info', '', 'Single-use links are sent by transactional email. Sensitive roles need approval after registration. An existing PHOENIX email gets the role added to their record.')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send invitations</button></div></form>`,
   );
 };
 F.inv = d => {
@@ -93,10 +93,10 @@ function usersTable(ctxFilter, canEdit) {
   return table(
     ['Person', 'Role and context', 'Status', 'Bundles and mandate', ''],
     as.map(a => [
-      `<div class="row" style="gap:10px"><span class="av">${ini(a.pid)}</span><div><b>${nm(a.pid)}</b><div class="cap">${h(P(a.pid).email)}</div></div></div>`,
-      `<b style="font-weight:600">${ROLE[a.role]}</b><div class="cap">${h(S.contexts.find(c => c.id === a.ctx).name)}</div>`,
+      `<div class="adm-who"><span class="av">${ini(a.pid)}</span><div class="adm-who-t"><b>${nm(a.pid)}</b><div class="cap">${h(P(a.pid).email)}</div></div></div>`,
+      `<span class="adm-role">${ROLE[a.role]}</span><div class="cap">${h(S.contexts.find(c => c.id === a.ctx).name)}</div>`,
       pill(a.status),
-      `<div class="row wrap" style="gap:4px">${a.bundles.map(b => pill(b, 'p-grey')).join('')}${a.mandate ? pill(a.mandate.valid ? 'Mandate to ' + fmt(a.mandate.until) : 'Mandate expired', a.mandate.valid ? 'p-teal' : 'p-red') : ''}${a.until ? pill((a.status === 'Expired' ? 'Role expired ' : 'Role expires ') + fmt(a.until), a.status === 'Expired' ? 'p-red' : 'p-grey') : ''}</div>`,
+      `<div class="adm-tags">${a.bundles.map(b => pill(b, 'p-grey')).join('')}${a.mandate ? pill(a.mandate.valid ? 'Mandate to ' + fmt(a.mandate.until) : 'Mandate expired', a.mandate.valid ? 'p-teal' : 'p-red') : ''}${a.until ? pill((a.status === 'Expired' ? 'Role expired ' : 'Role expires ') + fmt(a.until), a.status === 'Expired' ? 'p-red' : 'p-grey') : ''}</div>`,
       canEdit && a.pid !== myId() ? B('Manage', 'userManage', { id: a.id }) : '',
     ]),
   );
@@ -106,16 +106,16 @@ A.userManage = d => {
   const isO = role() === 'O';
   modal(
     'Manage ' + nm(a.pid),
-    () => `<div class="col" style="gap:14px">${dl([
+    () => `<div class="adm-dlg"><div class="adm-dlg-who"><span class="av lg">${ini(a.pid)}</span><div class="adm-who-t"><b>${nm(a.pid)}</b><div class="cap">${h(P(a.pid).email)}</div></div></div>${dl([
       ['Role', ROLE[a.role]],
       ['Context', h(S.contexts.find(c => c.id === a.ctx).name)],
       ['Status', pill(a.status)],
       ['Assignment expires', a.until ? fmt(a.until) : 'No expiry set'],
     ])}
- ${a.pid !== myId() ? `<form data-f="aexp" class="col" style="gap:8px" novalidate><input type="hidden" name="id" value="${a.id}">${fi('aexp', 'until', 'Role assignment expires', { type: 'date', value: a.until || '', help: 'Leave empty for no expiry. On the day after this date the role stops working until it is renewed.' })}<div class="actions"><span></span><button class="btn btn-s" type="submit">Save expiry</button></div></form>` : ''}
- <div class="row wrap">${a.status === 'Pending role approval' ? B('Approve role', 'roleDecide', { id: a.id, v: 'Active' }, 'btn-p btn-sm') + B('Decline role', 'roleDecide', { id: a.id, v: 'Role not activated' }) : a.status === 'Active' ? CB('Deactivate', 'userStatus', { id: a.id, v: 'Deactivated' }, 'Deactivate this ' + ROLE[a.role] + ' access? The person keeps their account, consent, correction and export rights.') : B('Activate', 'userStatus', { id: a.id, v: 'Active' }, 'btn-p btn-sm')}</div>
- <form data-f="bund" class="col" style="gap:8px"><input type="hidden" name="id" value="${a.id}"><span class="lbl">Specialist permission bundles</span>${S.bundles.map(b => `<label class="row"><input class="chk" type="checkbox" name="b" value="${b.name}" ${a.bundles.includes(b.name) ? 'checked' : ''} ${isO && ['Finance Owner', 'AI Owner', 'Trust/Data Steward', 'Incident/Safety Owner'].includes(b.name) ? 'disabled' : ''}>${b.name}<span class="cap">· ${h(b.approval)}</span></label>`).join('')}<span class="help">Higher-trust bundles need Programme/Organization Administrator approval and are not delegated at workspace level.</span><div class="actions"><span></span><button class="btn btn-s" type="submit">Save bundles</button></div></form>
- ${['O', 'C'].includes(roleBase(a.role)) ? `<form data-f="mand" class="col" style="gap:8px"><input type="hidden" name="id" value="${a.id}"><span class="lbl">Mandate (authority to bind the organization)</span>${fi('mand', 'scope', 'Scope', { value: a.mandate?.scope, req: true })}${fi('mand', 'until', 'Valid until', { type: 'date', req: true, value: a.mandate?.until })}<div class="actions">${a.mandate ? CB('Revoke mandate', 'mandRevoke', { id: a.id }, 'Revoke this mandate? Elevated access is removed; ordinary access continues.') : '<span></span>'}<button class="btn btn-s" type="submit">Grant / update mandate</button></div></form>` : ''}</div>`,
+ <section class="adm-sec"><h3 class="adm-sec-t">Access</h3><div class="row wrap adm-sec-a">${a.status === 'Pending role approval' ? B('Approve role', 'roleDecide', { id: a.id, v: 'Active' }, 'btn-p btn-sm') + B('Decline role', 'roleDecide', { id: a.id, v: 'Role not activated' }) : a.status === 'Active' ? CB('Deactivate', 'userStatus', { id: a.id, v: 'Deactivated' }, 'Deactivate this ' + ROLE[a.role] + ' access? The person keeps their account, consent, correction and export rights.', 'btn-d btn-sm') : B('Activate', 'userStatus', { id: a.id, v: 'Active' }, 'btn-p btn-sm')}</div></section>
+ ${a.pid !== myId() ? `<form data-f="aexp" class="adm-sec" novalidate><input type="hidden" name="id" value="${a.id}">${fi('aexp', 'until', 'Role assignment expires', { type: 'date', value: a.until || '', help: 'Leave empty for no expiry. On the day after this date the role stops working until it is renewed.' })}<div class="actions"><span></span><button class="btn btn-s btn-sm" type="submit">Save expiry</button></div></form>` : ''}
+ <form data-f="bund" class="adm-sec"><input type="hidden" name="id" value="${a.id}"><span class="lbl adm-sec-t">Specialist permission bundles</span><div class="adm-chks">${S.bundles.map(b => `<label class="adm-chk"><input class="chk" type="checkbox" name="b" value="${b.name}" ${a.bundles.includes(b.name) ? 'checked' : ''} ${isO && ['Finance Owner', 'AI Owner', 'Trust/Data Steward', 'Incident/Safety Owner'].includes(b.name) ? 'disabled' : ''}><span class="adm-chk-t">${b.name}</span><span class="cap">· ${h(b.approval)}</span></label>`).join('')}</div><span class="help">Higher-trust bundles need Programme/Organization Administrator approval and are not delegated at workspace level.</span><div class="actions"><span></span><button class="btn btn-s btn-sm" type="submit">Save bundles</button></div></form>
+ ${['O', 'C'].includes(roleBase(a.role)) ? `<form data-f="mand" class="adm-sec"><input type="hidden" name="id" value="${a.id}"><span class="lbl adm-sec-t">Mandate (authority to bind the organization)</span><div class="f2">${fi('mand', 'scope', 'Scope', { value: a.mandate?.scope, req: true })}${fi('mand', 'until', 'Valid until', { type: 'date', req: true, value: a.mandate?.until })}</div><div class="actions">${a.mandate ? CB('Revoke mandate', 'mandRevoke', { id: a.id }, 'Revoke this mandate? Elevated access is removed; ordinary access continues.', 'btn-d btn-sm') : '<span></span>'}<button class="btn btn-s btn-sm" type="submit">Grant / update mandate</button></div></form>` : ''}</div>`,
   );
 };
 A.userStatus = d => {
@@ -198,40 +198,40 @@ route('org', 'admin', () => {
   let body = '';
   if (t.cur === 'invites')
     body = card(
-      'Invitation lifecycle',
+      `Invitation lifecycle <span class="adm-n">${S.invites.filter(i => i.ctx === c).length}</span>`,
       'Pending · Accepted · Expired · Revoked · Resent',
       inviteTable(c),
       B(ic('plus', 14) + 'Invite users', 'invNew', {}, 'btn-p btn-sm'),
+      'adm-panel',
     );
   if (t.cur === 'users')
     body = card(
-      'Users in your organisation’s context',
+      `Users in your organisation’s context <span class="adm-n">${S.assign.filter(a => a.ctx === c).length}</span>`,
       'Assign roles, grant or revoke mandates within your organisation.',
       usersTable(c, true),
+      '',
+      'adm-panel',
     );
   if (t.cur === 'config')
     body =
-      cfgForm(true) +
-      '<div class="section-gap"></div>' +
-      tplForm() +
-      '<div class="section-gap"></div>' +
-      card(
+      `<div class="adm-stack">${cfgForm(true)}${tplForm()}${card(
         'Grow your programme',
         'Launch a new cohort, initiative or use-case pack.',
-        B(ic('plus', 14) + 'Request a new cohort', 'cohortNew', {}, 'btn-p btn-sm') +
-          table(
-            ['Request', 'Pack', 'Start', 'Status'],
-            S.cohortReqs
-              .filter(r => r.by === myId())
-              .map(r => [
-                h(r.name),
-                h(S.packs.find(p => p.id === r.pack)?.name),
-                fmt(r.start),
-                pill(r.status === 'Created' ? 'Completed' : r.status),
-              ]),
-            'No requests yet.',
-          ),
-      );
+        table(
+          ['Request', 'Pack', 'Start', 'Status'],
+          S.cohortReqs
+            .filter(r => r.by === myId())
+            .map(r => [
+              `<b>${h(r.name)}</b>`,
+              h(S.packs.find(p => p.id === r.pack)?.name),
+              `<span class="adm-date">${fmt(r.start)}</span>`,
+              pill(r.status === 'Created' ? 'Completed' : r.status),
+            ]),
+          'No requests yet.',
+        ),
+        B(ic('plus', 14) + 'Request a new cohort', 'cohortNew', {}, 'btn-p btn-sm'),
+        'adm-panel',
+      )}</div>`;
   if (t.cur === 'projects')
     body = card(
       'Projects and spaces',
@@ -241,7 +241,7 @@ route('org', 'admin', () => {
         S.projects
           .filter(p => p.ctx === c && p.status !== 'Draft')
           .map(p => [
-            h(p.title),
+            `<b>${h(p.title)}</b>`,
             nm(p.owner),
             p.stage ? pill(p.stage === 'Room' ? WL() : p.stage, SC[p.stage]) : '—',
             pill(p.status),
@@ -253,12 +253,11 @@ route('org', 'admin', () => {
         { origin: 'Institutional project' },
         'btn-p btn-sm',
       ),
+      'adm-panel',
     );
   if (t.cur === 'reports')
     body =
-      reportsView(true) +
-      '<div class="section-gap"></div>' +
-      card(
+      `<div class="adm-stack">${reportsView(true)}${card(
         'Cross-organization sharing',
         'Needs Programme Administrator approval.',
         table(
@@ -267,12 +266,11 @@ route('org', 'admin', () => {
           'No requests.',
         ),
         B('Request sharing', 'xoNew', {}, 'btn-s btn-sm'),
-      );
+        'adm-panel',
+      )}</div>`;
+  const org = S.orgs.find(o => o.id === me().org);
   return (
-    head(
-      'Organization workspace',
-      h(S.orgs.find(o => o.id === me().org)?.name || '') + ' · ' + h(ctx().name) + ' · pack: ' + h(pk.name),
-    ) +
+    `<header class="shead adm-ws"><div class="shead-main">${org ? orgMark(org, 48) : `<span class="tile">${ic('building', 22)}</span>`}<div class="shead-t"><div class="shead-kind">Organization workspace</div><h1 class="h1">${h(org?.name || '') || 'Organization workspace'}</h1><div class="shead-meta"><span>${h(ctx().name)}</span><span>pack: ${h(pk.name)}</span></div></div></div></header>` +
     t.html +
     body
   );
@@ -282,8 +280,8 @@ function cfgForm(isOrg) {
   return card(
     isOrg ? 'Configure within the pack envelope' : 'Use-case pack: ' + h(pk.name),
     'Platform-controlled items cannot be changed by a tenant.',
-    `<form data-f="cfg" class="col" style="gap:14px" novalidate><div class="g3">${fi('cfg', 'workspace', 'Label for workspaces', { value: 'Action Room', ro: true, help: 'Fixed across PHOENIX so every role sees the same name.' })}${fi('cfg', 'circle', 'Label for Circles', { value: pk.labels.circle, req: true })}${fi('cfg', 'rope', 'Label for Rope Teams', { value: pk.labels.rope, req: true })}</div>${fi('cfg', 'compassOpt', 'Ask optional Purpose Compass questions PC7–PC12 in context', { type: 'checkbox', value: pk.compassOptional ? 'yes' : '' })}${fi('cfg', 'propose', 'Participants may propose a ' + pk.labels.workspace, { type: 'checkbox', value: S.settings.participantCanProposeWorkspace ? 'yes' : '' })}
- <div class="card" style="background:#F7F8FB;padding:14px"><b>Platform-controlled (locked)</b><p class="cap" style="margin-top:4px">${ic('lock', 12)} Consent framework · trust controls · security rules · audit model · core data semantics · Evidence Support Level definitions</p></div>${assumed('OI-09 — final split of configurable vs locked items')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save configuration</button></div></form>`,
+    `<form data-f="cfg" class="col adm-form" novalidate><div class="g3">${fi('cfg', 'workspace', 'Label for workspaces', { value: 'Action Room', ro: true, help: 'Fixed across PHOENIX so every role sees the same name.' })}${fi('cfg', 'circle', 'Label for Circles', { value: pk.labels.circle, req: true })}${fi('cfg', 'rope', 'Label for Rope Teams', { value: pk.labels.rope, req: true })}</div>${fi('cfg', 'compassOpt', 'Ask optional Purpose Compass questions PC7–PC12 in context', { type: 'checkbox', value: pk.compassOptional ? 'yes' : '' })}${fi('cfg', 'propose', 'Participants may propose a ' + pk.labels.workspace, { type: 'checkbox', value: S.settings.participantCanProposeWorkspace ? 'yes' : '' })}
+ <div class="adm-locked"><span class="adm-locked-ic" aria-hidden="true">${ic('lock', 16)}</span><div><b>Platform-controlled (locked)</b><p class="cap">Consent framework · trust controls · security rules · audit model · core data semantics · Evidence Support Level definitions</p></div></div>${assumed('OI-09 — final split of configurable vs locked items')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save configuration</button></div></form>`,
   );
 }
 F.cfg = d => {
@@ -299,19 +297,19 @@ F.cfg = d => {
 };
 function reportsView(isOrg) {
   const c = ctxId();
-  return `<div class="g12">${card(
+  const rows = S.metrics.filter(m => m.status === 'Active');
+  const xs = ['Participation summary (aggregate)', 'Evidence summary (approved)', 'Learning Harvests (released)', ...(isOrg ? [] : ['Audit log', 'Payments & entitlements', 'Full configuration'])];
+  return `<div class="adm-report"><dl class="adm-rmeta"><div><dt>Context</dt><dd>${h(ctx().name)}</dd></div><div><dt>Period</dt><dd>Programme to date · as of ${fmt(today())}</dd></div><div><dt>Metrics shown</dt><dd>${rows.length}</dd></div><div><dt>Exports</dt><dd>${xs.length} authorised</dd></div></dl><div class="g12">${card(
     'Starter metrics',
     'Aggregate only. Metrics never determine trustworthiness, deservingness or fundability.',
     table(
-      ['Metric', 'Category', 'Value', 'Gate'],
-      S.metrics
-        .filter(m => m.status === 'Active')
-        .map(m => [h(m.name), h(m.cat), '<b>' + metric(m.id) + '</b>', h(m.gate)]),
+      ['Metric', 'Category', 'Gate', 'Value'],
+      rows.map(m => [`<b>${h(m.name)}</b>${m.def ? `<div class="cap adm-def">${h(m.def)}</div>` : ''}`, h(m.cat), m.gate === 'None' ? '<span class="cap">None</span>' : h(m.gate), '<b class="adm-val">' + metric(m.id) + '</b>']),
     ),
-    '',
-    'c12',
+    `<span class="adm-n">${rows.length}</span>`,
+    'c8 adm-panel adm-metrics',
   )}
- ${card('Authorised exports', 'Machine-readable; relationships and governance metadata kept. Small groups are suppressed.', `<div class="row wrap">${['Participation summary (aggregate)', 'Evidence summary (approved)', 'Learning Harvests (released)', ...(isOrg ? [] : ['Audit log', 'Payments & entitlements', 'Full configuration'])].map(x => B(ic('download', 14) + x, 'doExport', { n: x })).join('')}</div>`, '', 'c12')}</div>`;
+ ${card('Authorised exports', 'Machine-readable; relationships and governance metadata kept. Small groups are suppressed.', `<div class="adm-xlist">${xs.map(x => B(`<span class="adm-x-ic" aria-hidden="true">${ic('file', 16)}</span><span class="adm-x-t">${x}</span><span class="adm-x-f">JSON</span>${ic('download', 16)}`, 'doExport', { n: x }, 'adm-x')).join('')}</div>`, '', 'c4 adm-panel adm-exports')}</div></div>`;
 }
 A.doExport = d => {
   const data = {
@@ -361,127 +359,129 @@ route('admin', 'admin', () => {
     UI.p.tab,
   );
   let body = '';
+  const n = k => `<span class="adm-n">${k}</span>`;
   if (t.cur === 'requests')
     body =
-      card(
-        'Projects waiting for a reviewer',
+      `<div class="adm-stack">${card(
+        'Projects waiting for a reviewer ' + n(rqProj.length),
         'Assign a Steward, Faculty member or Facilitator. They review the project and accept it or ask for clarification.',
         table(
           ['Project', 'Owner', 'Areas', 'Submitted', ''],
-          rqProj.map(p => [L(h(p.title), 'project', { id: p.id }), nm(p.owner), (p.tags || []).map(h).join(', ') || '—', fmt(p.submitted || ''), B('Assign reviewer', 'assignStewards', { id: p.id }, 'btn-p btn-sm')]),
+          rqProj.map(p => [`<b>${L(h(p.title), 'project', { id: p.id })}</b>`, nm(p.owner), (p.tags || []).map(h).join(', ') || '—', `<span class="adm-date">${fmt(p.submitted || '')}</span>`, B('Assign reviewer', 'assignStewards', { id: p.id }, 'btn-p btn-sm')]),
           'No projects are waiting for a reviewer.',
         ),
-      ) +
-      '<div class="section-gap"></div>' +
-      card(
-        'Pathways waiting for a reviewer',
+        '',
+        'adm-panel',
+      )}${card(
+        'Pathways waiting for a reviewer ' + n(rqPw.length),
         'Assign a Steward or Faculty member. They approve the pathway, reject it or ask the participant for changes.',
         table(
           ['Pathway', 'Participant', 'Steps', 'Submitted', ''],
-          rqPw.map(p => [h(p.name), nm(p.pid), p.steps.map(x => h(x.t)).join(' → '), fmt(p.submitted || ''), B('Assign reviewer', 'pwAssign', { id: p.id }, 'btn-p btn-sm')]),
+          rqPw.map(p => [`<b>${h(p.name)}</b>`, nm(p.pid), `<span class="adm-steps">${p.steps.map(x => h(x.t)).join(' → ')}</span>`, `<span class="adm-date">${fmt(p.submitted || '')}</span>`, B('Assign reviewer', 'pwAssign', { id: p.id }, 'btn-p btn-sm')]),
           'No pathways are waiting for a reviewer.',
         ),
-      );
+        '',
+        'adm-panel',
+      )}</div>`;
   if (t.cur === 'users')
     body = card(
-      'Users and roles',
+      'Users and roles ' + n(S.assign.length),
       'Activate, deactivate, manage memberships and bundles. No direct database work.',
       usersTable(null, true),
+      '',
+      'adm-panel',
     );
   if (t.cur === 'invites')
     body = card(
-      'Invitations',
+      'Invitations ' + n(S.invites.length),
       '',
       inviteTable(null),
       B(ic('plus', 14) + 'Create / bulk upload', 'invNew', {}, 'btn-p btn-sm'),
+      'adm-panel',
     );
   if (t.cur === 'approvals')
     body = card(
-      'Sensitive role approvals',
+      'Sensitive role approvals ' + n(pend.length),
       'Unapproved roles cannot activate. Approval status and history are kept.',
       table(
         ['Person', 'Role', 'Context', 'Requested', 'History', ''],
         pend.map(a => [
-          nm(a.pid),
-          ROLE[a.role],
+          `<div class="adm-who"><span class="av">${ini(a.pid)}</span><b>${nm(a.pid)}</b></div>`,
+          `<span class="adm-role">${ROLE[a.role]}</span>`,
           h(S.contexts.find(c => c.id === a.ctx).name),
-          fmt(a.approval?.[0]?.at),
-          (a.approval || []).map(x => h(x.note)).join('; '),
+          `<span class="adm-date">${fmt(a.approval?.[0]?.at)}</span>`,
+          `<span class="cap">${(a.approval || []).map(x => h(x.note)).join('; ')}</span>`,
           B('Decline', 'roleDecide', { id: a.id, v: 'Role not activated' }) +
             B('Approve', 'roleDecide', { id: a.id, v: 'Active' }, 'btn-p btn-sm'),
         ]),
         'No roles awaiting approval.',
       ),
+      '',
+      'adm-panel',
     );
   if (t.cur === 'library')
     body = card(
-      'Approved pathway templates',
+      'Approved pathway templates ' + n(S.templates.length),
       'Mode 1 pathways come from this library.',
       table(
         ['Template', 'Steps', 'Status', ''],
         S.templates.map(x => [
-          h(x.name),
-          x.steps.map(h).join(' → '),
+          `<b>${h(x.name)}</b>`,
+          `<span class="adm-steps">${x.steps.map(h).join(' → ')}</span>`,
           pill(x.status),
           B(x.status === 'Approved' ? 'Retire' : 'Approve', 'tplState', { id: x.id }),
         ]),
       ),
       B(ic('plus', 14) + 'Add template', 'tplNew', {}, 'btn-p btn-sm'),
+      'adm-panel',
     );
   if (t.cur === 'packs')
     body =
-      card(
-        'Use-case packs',
+      `<div class="adm-stack">${card(
+        'Use-case packs ' + n(S.packs.length),
         'One platform; packs are configuration, not code branches.',
         table(
           ['Pack', 'Workspace label', 'Enabled flows', 'Evidence types', 'Metrics', 'Status', ''],
           S.packs.map(p => [
             `<b>${h(p.name)}</b>`,
             h(p.labels.workspace),
-            p.flows.join(' '),
-            h(p.evidenceTypes),
+            `<span class="adm-flows">${p.flows.join(' ')}</span>`,
+            `<span class="cap">${h(p.evidenceTypes)}</span>`,
             p.metrics,
             pill(p.status),
             p.status === 'Draft' ? B('Activate', 'packAct', { id: p.id }, 'btn-p btn-sm') : '',
           ]),
         ),
-      ) +
-      '<div style="height:16px"></div>' +
-      cfgForm(false) +
-      '<div style="height:16px"></div>' +
-      tplForm() +
-      '<div style="height:16px"></div>' +
-      card(
+        '',
+        'adm-panel',
+      )}${cfgForm(false)}${tplForm()}${card(
         'Voting rule (D-03)',
         'Configurable until OI-01 is settled.',
-        `<form data-f="vote" class="col" style="gap:12px" novalidate><div class="g3">${fi('vote', 'owner', 'Owner weight', { type: 'number', min: 1, value: S.settings.voting.ownerWeight, req: true })}${fi('vote', 'member', 'Member weight', { type: 'number', min: 1, value: S.settings.voting.memberWeight, req: true })}${fi('vote', 'th', 'Approval threshold (%)', { type: 'number', min: 1, value: S.settings.voting.threshold, req: true })}</div>${assumed('OI-01 relative weights')}<div class="actions"><span></span><button class="btn btn-s" type="submit">Save rule</button></div></form>`,
-      ) +
-      '<div style="height:16px"></div>' +
-      card(
-        'Configuration versions',
+        `<form data-f="vote" class="col adm-form" novalidate><div class="g3">${fi('vote', 'owner', 'Owner weight', { type: 'number', min: 1, value: S.settings.voting.ownerWeight, req: true })}${fi('vote', 'member', 'Member weight', { type: 'number', min: 1, value: S.settings.voting.memberWeight, req: true })}${fi('vote', 'th', 'Approval threshold (%)', { type: 'number', min: 1, value: S.settings.voting.threshold, req: true })}</div>${assumed('OI-01 relative weights')}<div class="actions"><span></span><button class="btn btn-s" type="submit">Save rule</button></div></form>`,
+      )}${card(
+        'Configuration versions ' + n(S.configVersions.length),
         'Export and restore without code changes or database work.',
         table(
           ['Version', 'Date', 'By', 'Note', ''],
           S.configVersions.map(v => [
-            h(v.id),
-            fmt(v.at),
+            `<code class="adm-id">${h(v.id)}</code>`,
+            `<span class="adm-date">${fmt(v.at)}</span>`,
             nm(v.by),
             h(v.note),
             B('Restore', 'cfgRestore', { id: v.id }),
           ]),
         ),
-        B('Save current as version', 'cfgSave', {}, 'btn-p btn-sm') +
-          B(ic('download', 14) + 'Export configuration', 'doExport', { n: 'Full configuration' }),
-      ) +
-      '<div style="height:16px"></div>' +
-      card(
-        'Metrics registry',
+        B(ic('download', 14) + 'Export configuration', 'doExport', { n: 'Full configuration' }) +
+          B('Save current as version', 'cfgSave', {}, 'btn-p btn-sm'),
+        'adm-panel',
+      )}${card(
+        'Metrics registry ' + n(S.metrics.length),
         'About 8–12 visible pilot signals.',
         table(
           ['Metric', 'Definition', 'Category', 'Owner', 'Gate', 'Status', ''],
           S.metrics.map(m => [
-            h(m.name),
-            h(m.def),
+            `<b>${h(m.name)}</b>`,
+            `<span class="cap adm-def">${h(m.def)}</span>`,
             h(m.cat),
             h(m.owner),
             h(m.gate),
@@ -489,24 +489,26 @@ route('admin', 'admin', () => {
             B(m.status === 'Active' ? 'Hide' : 'Show', 'metToggle', { id: m.id }),
           ]),
         ),
-      );
+        '',
+        'adm-panel',
+      )}</div>`;
   if (t.cur === 'ai')
     body =
-      card(
-        'Approved AI sources',
+      `<div class="adm-stack">${card(
+        'Approved AI sources ' + n(S.aiSources.length),
         'Ask PHOENIX answers only from approved sources.',
         table(
           ['Source', 'Status', ''],
           S.aiSources.map(s => [
-            h(s.title),
+            `<b>${h(s.title)}</b>`,
             pill(s.status === 'Approved' ? 'Approved' : 'Not approved'),
             hasB('AI Owner') ? B(s.status === 'Approved' ? 'Withdraw' : 'Approve', 'srcToggle', { id: s.id }) : '',
           ]),
         ),
-      ) +
-      '<div style="height:16px"></div>' +
-      card(
-        'AI job log',
+        '',
+        'adm-panel',
+      )}${card(
+        'AI job log ' + n(S.ai.length),
         'User, purpose, class, sources, consent, model and review state for every job.',
         table(
           ['Job', 'By', 'Class', 'Purpose', 'Sources', 'Consent', 'Status'],
@@ -514,16 +516,18 @@ route('admin', 'admin', () => {
             .slice()
             .reverse()
             .map(j => [
-              h(j.id),
+              `<code class="adm-id">${h(j.id)}</code>`,
               nm(j.by),
               pill(j.cls, 'p-ai'),
               h(j.purpose),
-              h(j.sources),
-              h(j.consent),
+              `<span class="cap">${h(j.sources)}</span>`,
+              `<span class="cap">${h(j.consent)}</span>`,
               pill(j.status),
             ]),
         ),
-      );
+        '',
+        'adm-panel',
+      )}</div>`;
   if (t.cur === 'ai' && hasB('AI Owner'))
     body +=
       '<div class="section-gap"></div>' +
@@ -534,16 +538,18 @@ route('admin', 'admin', () => {
           ['Job', 'Purpose', 'Requested by', 'Sources', ''],
           S.ai
             .filter(j => j.status === 'In review' && j.cls === 'C')
-            .map(j => [h(j.id), h(j.purpose), nm(j.by), h(j.sources), B('Reject', 'aiRev', { id: j.id, v: 'Rejected' }) + B('Approve release', 'aiRev', { id: j.id, v: 'Released' }, 'btn-p btn-sm')]),
+            .map(j => [`<code class="adm-id">${h(j.id)}</code>`, h(j.purpose), nm(j.by), `<span class="cap">${h(j.sources)}</span>`, B('Reject', 'aiRev', { id: j.id, v: 'Rejected' }) + B('Approve release', 'aiRev', { id: j.id, v: 'Released' }, 'btn-p btn-sm')]),
           'Nothing waiting for review.',
         ),
+        '',
+        'adm-panel',
       );
   if (t.cur === 'notify')
     body =
-      card(
+      `<div class="g12">${card(
         'Send an announcement',
         'In-app notification to everyone in this context; transactional email follows the template.',
-        `<form data-f="ann" class="col" style="gap:12px" novalidate>${fi('ann', 'to', 'Audience', {
+        `<form data-f="ann" class="col adm-form" novalidate>${fi('ann', 'to', 'Audience', {
           type: 'select',
           opts: [
             ['all', 'Everyone in this context'],
@@ -551,10 +557,10 @@ route('admin', 'admin', () => {
               .filter(([k]) => k !== 'T')
               .map(([k, v]) => [k, v + 's']),
           ],
-        })}${fi('ann', 't', 'Message', { type: 'textarea', rows: 3, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send</button></div></form>`,
-      ) +
-      '<div style="height:16px"></div>' +
-      card(
+        })}${fi('ann', 't', 'Message', { type: 'textarea', rows: 3, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">${ic('send', 14)}Send</button></div></form>`,
+        '',
+        'c5',
+      )}${card(
         'Notification events',
         'Configured triggers',
         table(
@@ -568,43 +574,47 @@ route('admin', 'admin', () => {
             ['AI review', 'In-app'],
             ['Funding tranches, progress summaries', 'Email + in-app'],
             ['Payment / entitlement changes', 'Email'],
-          ],
+          ].map(([e, ch]) => [e, `<span class="adm-chan">${ch}</span>`]),
         ),
-      );
+        '',
+        'c7 adm-panel',
+      )}</div>`;
   if (t.cur === 'support')
     body =
-      card(
-        'Support queries',
+      `<div class="adm-stack">${card(
+        'Support queries ' + n(S.supportQueries.length),
         '',
         table(
           ['From', 'Question', 'Status', ''],
           S.supportQueries.map(q => [
-            nm(q.by),
+            `<b>${nm(q.by)}</b>`,
             h(q.t),
             pill(q.status),
             q.status === 'Open' ? B('Mark resolved', 'sqDone', { id: q.id }) : '',
           ]),
         ),
-      ) +
-      '<div style="height:16px"></div>' +
-      card(
-        'Privacy requests',
+        '',
+        'adm-panel',
+      )}${card(
+        'Privacy requests ' + n((S.requests || []).length),
         'Correction, export and deletion requests.',
         table(
           ['From', 'Type', 'Details', 'Status', ''],
           (S.requests || []).map(r => [
-            nm(r.pid),
+            `<b>${nm(r.pid)}</b>`,
             h(r.kind),
-            h(r.detail),
+            `<span class="cap">${h(r.detail)}</span>`,
             pill(r.status),
             r.status === 'Open' ? B('Complete', 'rqDone', { id: r.id }) : '',
           ]),
         ),
-      );
+        '',
+        'adm-panel',
+      )}</div>`;
   if (t.cur === 'xorg') body = xorgView();
   if (t.cur === 'initiatives')
     body = card(
-      'Initiative summaries for sponsors',
+      'Initiative summaries for sponsors ' + n(S.initiatives.length),
       'Sponsors see these on their Projects & funding page.',
       S.initiatives
         .map(i =>
@@ -617,6 +627,7 @@ route('admin', 'admin', () => {
         )
         .join('') || '<p class="cap">None yet.</p>',
       B(ic('plus', 14) + 'Publish initiative', 'initNew', {}, 'btn-p btn-sm'),
+      'adm-lrows',
     );
   if (t.cur === 'reports') body = reportsView(false);
   return head('Programme administration', h(ctx().name)) + t.html + body;
@@ -652,7 +663,7 @@ A.tplNew = () => {
   modal(
     'Add pathway template',
     () =>
-      `<form data-f="tpl" class="col" style="gap:12px" novalidate>${fi('tpl', 'name', 'Name', { req: true })}${fi('tpl', 'steps', 'Steps (3–5, one per line)', { type: 'textarea', rows: 5, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Add as approved</button></div></form>`,
+      `<form data-f="tpl" class="col adm-form" novalidate>${fi('tpl', 'name', 'Name', { req: true })}${fi('tpl', 'steps', 'Steps (3–5, one per line)', { type: 'textarea', rows: 5, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Add as approved</button></div></form>`,
   );
 };
 F.tpl = d => {
@@ -753,42 +764,46 @@ route('platform', 'platform', () => {
     UI.p.tab,
   );
   let body = '';
+  const n = k => `<span class="adm-n">${k}</span>`;
   if (t.cur === 'contexts')
     body =
       card(
-        'Contexts',
+        'Contexts ' + n(S.contexts.length),
         'Programmes, cohorts and organization spaces. Strict isolation: every record carries its context ID. Organizations are managed under Organizations.',
         table(
           ['Context', 'Kind', 'Organization', 'Pack', 'Status', 'Members', ''],
           S.contexts.map(c => [
-            `<b>${h(c.name)}</b><div class="cap">${c.id}</div>`,
+            `<b>${h(c.name)}</b><div class="adm-id">${c.id}</div>`,
             h(c.kind),
-            c.org && orgOf(c.org) ? `<span class="row" style="gap:8px;flex-wrap:nowrap">${orgMark(orgOf(c.org), 24)}${L(h(orgOf(c.org).name), 'tenants', { id: c.org })}</span>` : '—',
+            c.org && orgOf(c.org) ? `<span class="ops-org">${orgMark(orgOf(c.org), 24)}${L(h(orgOf(c.org).name), 'tenants', { id: c.org })}</span>` : '—',
             h(S.packs.find(p => p.id === c.pack)?.name || '—'),
             pill(c.status),
-            S.assign.filter(a => a.ctx === c.id).length,
+            `<span class="ops-num">${S.assign.filter(a => a.ctx === c.id).length}</span>`,
             c.kind !== 'Platform' ? B('Assign administrator', 'ctxAdmin', { id: c.id }) : '',
           ]),
         ),
         '',
+        'adm-panel ops-ctx',
       ) +
       (S.cohortReqs.filter(r => r.status === 'Pending').length
         ? '<div class="section-gap"></div>' +
           card(
-            'Cohort requests',
+            'Cohort requests ' + n(S.cohortReqs.filter(r => r.status === 'Pending').length),
             'From Organization Representatives',
             table(
               ['Cohort', 'Organization', 'Pack', 'Start', ''],
               S.cohortReqs
                 .filter(r => r.status === 'Pending')
                 .map(r => [
-                  h(r.name),
+                  `<b>${h(r.name)}</b>`,
                   h(S.orgs.find(o => o.id === r.org)?.name),
                   h(S.packs.find(p => p.id === r.pack)?.name),
-                  fmt(r.start),
+                  `<span class="adm-date">${fmt(r.start)}</span>`,
                   '',
                 ]),
             ),
+            '',
+            'adm-panel',
           )
         : '') +
       '<div class="section-gap"></div>' +
@@ -799,117 +814,103 @@ route('platform', 'platform', () => {
       );
   if (t.cur === 'integrations')
     body =
-      card(
-        'External integrations',
+      `<div class="adm-stack">${card(
+        'External integrations ' + n(S.integrations.length),
         'Shared WSS-controlled accounts with tenant separation in configuration and audit.',
-        S.integrations
-          .map((i, n) =>
-            lrow(
-              'link',
-              h(i.name),
-              '',
-              pill(i.status) +
-                (n === 1
+        `<ul class="ops-list">${S.integrations
+          .map(
+            (i, n) =>
+              `<li class="ops-item"><span class="tile t-soft" aria-hidden="true">${ic('link', 16)}</span><div class="ops-item-t"><b>${h(i.name)}</b></div><div class="ops-item-s">${pill(i.status)}</div><div class="ops-item-a">${
+                n === 1
                   ? B(S.settings.aiAvailable ? 'Simulate provider outage' : 'Restore provider', 'aiToggle', {})
-                  : ''),
-            ),
+                  : ''
+              }</div></li>`,
           )
-          .join('') + dl([['AI quota today', S.settings.aiUsed + ' / ' + S.settings.aiQuota]]),
-      ) +
-      '<div class="section-gap"></div>' +
-      card(
+          .join('')}</ul><div class="ops-quota">${dl([['AI quota today', S.settings.aiUsed + ' / ' + S.settings.aiQuota]])}<div class="progress" aria-hidden="true"><div class="bar" style="width:${Math.min(100, Math.round((100 * S.settings.aiUsed) / (S.settings.aiQuota || 1)))}%"></div></div></div>`,
+        '',
+        'adm-panel',
+      )}${card(
         'Provider settings',
         'Credentials are stored in the platform secret store, never in this console.',
-        `<form data-f="prov" class="col" style="gap:12px" novalidate><div class="g3">${fi('prov', 'ai', 'AI provider', { value: S.providers.ai.name, req: true })}${fi('prov', 'aimode', 'AI mode', { type: 'select', opts: ['Production', 'Sandbox'], value: S.providers.ai.mode })}${fi('prov', 'quota', 'Daily AI request quota', { type: 'number', min: 1, value: S.settings.aiQuota, req: true })}</div><div class="g3">${fi('prov', 'pay', 'Payment provider', { value: S.providers.pay.name, req: true })}${fi('prov', 'paymode', 'Payment mode', { type: 'select', opts: ['Sandbox', 'Live'], value: S.providers.pay.mode })}${fi('prov', 'email', 'Email service', { value: S.providers.email.name, req: true })}</div><div class="actions"><span></span><button class="btn btn-p" type="submit">Save provider settings</button></div></form>`,
-      );
+        `<form data-f="prov" class="col adm-form" novalidate><div class="g3">${fi('prov', 'ai', 'AI provider', { value: S.providers.ai.name, req: true })}${fi('prov', 'aimode', 'AI mode', { type: 'select', opts: ['Production', 'Sandbox'], value: S.providers.ai.mode })}${fi('prov', 'quota', 'Daily AI request quota', { type: 'number', min: 1, value: S.settings.aiQuota, req: true })}</div><div class="g3">${fi('prov', 'pay', 'Payment provider', { value: S.providers.pay.name, req: true })}${fi('prov', 'paymode', 'Payment mode', { type: 'select', opts: ['Sandbox', 'Live'], value: S.providers.pay.mode })}${fi('prov', 'email', 'Email service', { value: S.providers.email.name, req: true })}</div><div class="actions"><span></span><button class="btn btn-p" type="submit">Save provider settings</button></div></form>`,
+      )}</div>`;
   if (t.cur === 'health')
-    body = `<div class="g12">${card(
-      'Availability',
-      '',
-      dl([
-        ['Uptime', h(S.health.uptime)],
-        ['p95 response time', h(S.health.p95)],
-        ['Status', pill('Healthy')],
-      ]),
-      '',
-      'c5',
-    )}${card(
-      'Error log',
+    body = `<div class="g12">${card('Availability', '', `<div class="kpis"><div class="kpi"><span class="lt">Uptime</span><span class="statnum">${h(S.health.uptime)}</span></div><div class="kpi"><span class="lt">p95 response time</span><span class="statnum">${h(S.health.p95)}</span></div><div class="kpi"><span class="lt">Status</span><span class="ops-stat">${pill('Healthy')}</span></div></div>`, '', 'c12 ops-avail')}${card(
+      'Error log ' + n(S.health.errors.length),
       'Latest application errors and warnings',
       table(
         ['When', 'Level', 'Message'],
-        S.health.errors.map(e => [fmt(e.at), pill(e.lvl, e.lvl === 'Error' ? 'p-red' : 'p-amber'), h(e.t)]),
+        S.health.errors.map(e => [`<span class="adm-date">${fmt(e.at)}</span>`, pill(e.lvl, e.lvl === 'Error' ? 'p-red' : 'p-amber'), h(e.t)]),
       ),
       '',
-      'c7',
+      'c7 adm-panel',
     )}${card(
       'Alert rules',
       '',
       table(
         ['Rule', 'Notify', 'Enabled'],
         S.health.alerts.map((a, i) => [
-          h(a.rule),
+          `<b>${h(a.rule)}</b>`,
           h(a.to),
-          `<button type="button" class="toggle ${a.on ? 'on' : ''}" role="switch" aria-checked="${a.on}" aria-label="${h(a.rule)}" data-a="alertToggle" data-i="${i}"></button>`,
+          `<button type="button" class="toggle ops-switch ${a.on ? 'on' : ''}" role="switch" aria-checked="${a.on}" aria-label="${h(a.rule)}" data-a="alertToggle" data-i="${i}"></button>`,
         ]),
       ),
       '',
-      'c12',
+      'c5 adm-panel',
     )}</div>`;
   if (t.cur === 'security')
-    body =
-      card(
-        'Security events and access logs',
-        '',
-        table(
-          ['When', 'Event'],
-          S.security.map(s => [fmt(s.at), h(s.t)]),
-        ),
-      ) +
-      '<div style="height:16px"></div>' +
-      card(
-        'Authentication',
-        '',
-        dl([
-          ['MFA', 'Required for Programme and Platform Administrators'],
-          ['Password policy', assumed('min 10 characters incl. a number')],
-          ['Session timeout', '30 minutes idle'],
-          ['Encryption', 'In transit and at rest'],
-        ]) + `<div style="margin-top:12px">${CB('Revoke all sessions', 'revokeSessions', {}, 'Sign every user out of every device now?', 'btn-d btn-sm')}</div>`,
-      );
+    body = `<div class="g12">${card(
+      'Security events and access logs ' + n(S.security.length),
+      '',
+      table(
+        ['When', 'Event'],
+        S.security.map(s => [`<span class="adm-date">${fmt(s.at)}</span>`, h(s.t)]),
+      ),
+      '',
+      'c7 adm-panel',
+    )}<div class="c5 adm-stack">${card(
+      'Authentication',
+      '',
+      dl([
+        ['MFA', 'Required for Programme and Platform Administrators'],
+        ['Password policy', assumed('min 10 characters incl. a number')],
+        ['Session timeout', '30 minutes idle'],
+        ['Encryption', 'In transit and at rest'],
+      ]),
+    )}<section class="card ops-danger"><div class="ops-danger-t"><b>Sessions</b><p class="cap">Sign every user out of every device.</p></div>${CB('Revoke all sessions', 'revokeSessions', {}, 'Sign every user out of every device now?', 'btn-d btn-sm')}</section></div></div>`;
   if (t.cur === 'storage')
-    body =
-      card(
-        'Backups and restore tests',
-        '',
-        table(
-          ['When', 'Status', 'Size'],
-          S.backups.map(b => [fmt(b.at), pill(b.status.includes('passed') ? 'Completed' : b.status), h(b.size)]),
-        ),
-        B('Run backup now', 'backup', {}, 'btn-p btn-sm') + B('Run restore test', 'restoreTest'),
-      ) +
-      '<div style="height:16px"></div>' +
-      card(
-        'Storage',
-        '',
-        dl([
-          [
-            'Used',
-            S.records.reduce((a, x) => a + x.sizeMB, 0).toFixed(1) +
-              ' MB + evidence ' +
-              S.evidence.reduce((a, x) => a + x.sizeMB, 0).toFixed(1) +
-              ' MB',
-          ],
-          ['Default file limit', S.settings.maxFileMB + ' MB'],
-          ['Quarantined files', S.records.filter(r => r.state === 'Quarantined').length],
-          ['Signed URLs', 'Enabled'],
-        ]),
-      );
+    body = `<div class="g12">${card(
+      'Backups and restore tests ' + n(S.backups.length),
+      '',
+      table(
+        ['When', 'Status', 'Size'],
+        S.backups.map(b => [`<span class="adm-date">${fmt(b.at)}</span>`, pill(b.status.includes('passed') ? 'Completed' : b.status), `<span class="ops-num">${h(b.size)}</span>`]),
+      ),
+      B('Run restore test', 'restoreTest') + B('Run backup now', 'backup', {}, 'btn-p btn-sm'),
+      'c7 adm-panel',
+    )}${card(
+      'Storage',
+      '',
+      dl([
+        [
+          'Used',
+          S.records.reduce((a, x) => a + x.sizeMB, 0).toFixed(1) +
+            ' MB + evidence ' +
+            S.evidence.reduce((a, x) => a + x.sizeMB, 0).toFixed(1) +
+            ' MB',
+        ],
+        ['Default file limit', S.settings.maxFileMB + ' MB'],
+        ['Quarantined files', S.records.filter(r => r.state === 'Quarantined').length],
+        ['Signed URLs', 'Enabled'],
+      ]),
+      '',
+      'c5',
+    )}</div>`;
   if (t.cur === 'lms')
     body = card(
       'LMS deep-link layer',
       'Secure links in and out. No LTI 1.3, SSO, roster or grade sync. The LMS is not authoritative for PHOENIX permissions.',
-      `<form data-f="lms" class="col" style="gap:12px" novalidate>${fi('lms', 'returnUrl', 'Return URL', { value: S.settings.lms.returnUrl, req: true })}${fi(
+      `<form data-f="lms" class="col adm-form" novalidate><div class="f2">${fi('lms', 'returnUrl', 'Return URL', { value: S.settings.lms.returnUrl, req: true })}${fi(
         'lms',
         'dest',
         'Default destination',
@@ -922,7 +923,7 @@ route('platform', 'platform', () => {
           ],
           value: S.settings.lms.dest,
         },
-      )}<div class="actions">${B('Test incoming deep link', 'lmsTest')}<button class="btn btn-p" type="submit">Save</button></div></form>`,
+      )}</div><div class="actions">${B('Test incoming deep link', 'lmsTest')}<button class="btn btn-p" type="submit">Save</button></div></form>`,
     );
   return (
     head(
@@ -936,7 +937,7 @@ route('platform', 'platform', () => {
 A.ctxAdmin = d => {
   modal(
     'Assign an administrator to ' + h(S.contexts.find(c => c.id === d.id).name),
-    `<form data-f="cxa" class="col" style="gap:12px"><input type="hidden" name="ctx" value="${d.id}">${fi('cxa', 'role', 'Administrator role', { type: 'select', opts: [['O', 'Organization Representative / Administrator'], ['A', 'Programme Administrator']] })}${fi('cxa', 'pid', 'Person', { type: 'select', opts: S.people.map(p => [p.id, p.name + ' · ' + p.email]) })}${banner('info', '', 'Technical administration assigns the role; it gives you no access to the context’s participant content. ' + assumed('OI-14 who assigns organization administrators'))}<div class="actions"><span></span><button class="btn btn-p" type="submit">Assign</button></div></form>`,
+    `<form data-f="cxa" class="col adm-form"><input type="hidden" name="ctx" value="${d.id}">${fi('cxa', 'role', 'Administrator role', { type: 'select', opts: [['O', 'Organization Representative / Administrator'], ['A', 'Programme Administrator']] })}${fi('cxa', 'pid', 'Person', { type: 'select', opts: S.people.map(p => [p.id, p.name + ' · ' + p.email]) })}${banner('info', '', 'Technical administration assigns the role; it gives you no access to the context’s participant content. ' + assumed('OI-14 who assigns organization administrators'))}<div class="actions"><span></span><button class="btn btn-p" type="submit">Assign</button></div></form>`,
   );
 };
 F.cxa = d => {

@@ -26,7 +26,7 @@ function notifMenu() {
       const g = notifDay(n.at);
       const head = g !== lastGroup ? `<div class="ngroup">${g}</div>` : '';
       lastGroup = g;
-      return `${head}<button type="button" class="nitem ${n.read ? '' : 'unread'}" data-a="read" data-id="${n.id}"><span class="ndot2" aria-hidden="true"></span><span class="col" style="min-width:0;flex:1"><span class="nt">${h(n.t)}</span><span class="cap">${fmt(n.at)}</span></span>${n.read ? '' : '<span class="sr">Unread</span>'}</button>`;
+      return `${head}<button type="button" class="nitem ${n.read ? '' : 'unread'}" data-a="read" data-id="${n.id}"><span class="ndot2" aria-hidden="true"></span><span class="nitem-b"><span class="nt">${h(n.t)}</span><span class="cap">${fmt(n.at)}</span></span>${n.read ? '' : '<span class="sr">Unread</span>'}</button>`;
     })
     .join('');
   const f = (v, l, c) => `<button type="button" class="${UI.notifF === v ? 'on' : ''}" data-a="notifFilter" data-v="${v}" aria-pressed="${UI.notifF === v}">${l}<span class="cnt">${c}</span></button>`;
@@ -61,7 +61,8 @@ function userMenu() {
   const a = asg(),
     c = ctx();
   return `<div class="umenu" id="user-menu" role="menu" aria-label="Account">
-  <div class="umenu-h"><span class="av">${ini(myId())}</span><div class="col" style="min-width:0"><b>${h(me().name)}</b><span class="cap umenu-mail">${h(me().email)}</span><span class="cap">${h(ROLE[a.role] || a.role)}${c ? ' · ' + h(c.name) : ''}</span></div></div>
+  <div class="umenu-h"><span class="av">${ini(myId())}</span><div class="umenu-id"><b>${h(me().name)}</b><span class="cap umenu-mail">${h(me().email)}</span><span class="cap">${h(ROLE[a.role] || a.role)}${c ? ' · ' + h(c.name) : ''}</span></div></div>
+  <div class="umenu-theme"><span class="cap">Theme</span><div class="seg" role="group" aria-label="Theme">${['light', 'dark', 'system'].map(t => `<button type="button" data-a="setTheme" data-v="${t}" aria-pressed="${(UI.theme || 'light') === t}">${t[0].toUpperCase() + t.slice(1)}</button>`).join('')}</div></div>
   <div class="umenu-list"><button type="button" role="menuitem" class="umenu-i${UI.route === 'profile' ? ' on' : ''}" data-a="userGo" data-r="profile">${ic('user', 18)}<span>View profile</span></button>${role() !== 'T' ? `<button type="button" role="menuitem" class="umenu-i${UI.route === 'privacy' ? ' on' : ''}" data-a="userGo" data-r="privacy">${ic('shield', 18)}<span>Privacy & agreements</span></button>` : ''}<button type="button" role="menuitem" class="umenu-i out" data-a="logout">${ic('logout', 18)}<span>Log out</span></button></div></div>`;
 }
 A.userToggle = () => {
@@ -134,7 +135,7 @@ function askDrawer() {
   const bubbles = hist
     .map(
       x =>
-        `<div class="amsg me"><div class="abub">${h(x.q)}</div></div><div class="amsg ai"><span class="aav" aria-hidden="true">${ic('sparkle', 14)}</span><div class="abub ${x.refused ? 'refused' : ''}">${x.refused ? `<div class="arefuse">${ic('lock', 13)}Request refused</div>` : ''}<p>${h(x.a)}</p>${x.src ? `<div class="ameta"><span class="cap">Sources</span>${x.src.split(/;\s*/).map(s => `<span class="asrc">${ic('file', 12)}${h(s)}</span>`).join('')}</div><div class="ameta">${uncTag(x.unc)}</div>` : ''}</div></div>`,
+        `<div class="amsg me"><div class="abub">${h(x.q)}</div></div><div class="amsg ai"><span class="aav" aria-hidden="true">${ic('sparkle', 14)}</span><div class="abub ${x.refused ? 'refused' : ''}">${x.refused ? `<div class="arefuse">${ic('lock', 13)}Request refused</div>` : `<div class="abub-tag">${aiTag()}</div>`}<p>${h(x.a)}</p>${x.src ? `<div class="ameta"><span class="cap">Sources</span>${x.src.split(/;\s*/).map(s => `<span class="asrc">${ic('file', 12)}${h(s)}</span>`).join('')}</div><div class="ameta">${uncTag(x.unc)}</div>` : ''}</div></div>`,
     )
     .join('');
   const pending = UI.askPending
@@ -149,7 +150,7 @@ function askDrawer() {
       ? banner('info', 'AI processing is off for you', `Turn it on in ${L('Privacy & consent', 'privacy')} to use Ask PHOENIX. Declining never blocks anything else.`)
       : '';
   return `<aside class="assist" id="assist" role="complementary" aria-label="Ask PHOENIX">
-  <header class="assist-h"><span class="aav big" aria-hidden="true">${ic('sparkle', 16)}</span><div class="col" style="min-width:0;flex:1"><b>Ask PHOENIX</b><span class="cap">Private to you · nothing changes on your record</span></div><button type="button" class="iconbtn" data-a="closePanel" aria-label="Close Ask PHOENIX">${ic('x')}</button></header>
+  <header class="assist-h"><span class="aav big" aria-hidden="true">${ic('sparkle', 16)}</span><div class="assist-ht"><b>Ask PHOENIX</b><span class="cap">Private to you · nothing changes on your record</span></div><button type="button" class="iconbtn" data-a="closePanel" aria-label="Close Ask PHOENIX">${ic('x')}</button></header>
   <div class="assist-body" role="log" aria-live="polite">${intro}${bubbles}${pending}</div>
   ${notice ? `<div class="assist-note">${notice}</div>` : ''}
   <form data-f="ask" class="assist-comp" novalidate><div class="acomp"><textarea name="q" rows="1" class="ask-ta" placeholder="${live ? 'Ask about your pathway, evidence, Circles…' : 'Ask PHOENIX is unavailable'}" aria-label="Your question" ${live && !UI.askPending ? '' : 'disabled'}>${h(UI.pre?.askQ || '')}</textarea><button class="btn btn-p asend" type="submit" aria-label="Send question" ${live && !UI.askPending ? '' : 'disabled'}>${ic('send', 16)}</button></div><div class="ahelp">Enter to send · Shift+Enter for a new line · ${aiTag('AI · Class A private assist')}</div></form></aside>`;

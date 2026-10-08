@@ -149,6 +149,7 @@ function go(r, p = {}) {
     return;
   }
   if (UI.panel === 'notif' || UI.panel === 'user') UI.panel = null;
+  if (UI.drawer) UI.drawer = false;
   UI.route = r;
   UI.p = p;
   UI.modal = null;
@@ -290,7 +291,7 @@ const head = (t, sub, right = '', crumbs) => {
     badges.push(m);
     return '';
   });
-  return `${crumbs ? `<nav class="row cap" aria-label="Breadcrumb" style="gap:6px;margin-bottom:10px">${crumbs.map(([l, r, p], i) => (r ? L(l, r, p, 'cap') + ic('chevr', 14) : `<span>${l}</span>`)).join('')}</nav>` : ''}<div class="phead"><div class="phead-t"><div class="row wrap" style="gap:10px"><h1 class="h1">${t}</h1>${badges.join('')}</div>${sub ? `<p class="sub">${sub}</p>` : ''}</div>${right.trim() ? `<div class="phead-a">${right}</div>` : ''}</div>`;
+  return `${crumbs ? crumbsHtml(crumbs) : ''}<div class="phead"><div class="phead-t"><div class="row wrap" style="gap:10px"><h1 class="h1">${t}</h1>${badges.join('')}</div>${sub ? `<p class="sub">${sub}</p>` : ''}</div>${right.trim() ? `<div class="phead-a">${right}</div>` : ''}</div>`;
 };
 const aiTag = t => `<span class="ai-tag">${ic('sparkle', 12)}${t || 'AI draft'}</span>`;
 const assumed = t => `<span class="flag">${ic('flag', 12)}Assumed rule · ${t}</span>`;
@@ -506,21 +507,28 @@ function sidebar() {
       const g = role() === 'T' ? '' : rt === 'metrics' && !['A', 'O'].includes(role()) ? 'Insights' : GROUP[rt] || '';
       let sec = '';
       if (g !== last && g) {
-        sec = `<div class="navsec">${g}</div>`;
+        sec = `<div class="navsec"><span>${g}</span></div>`;
       }
       last = g;
       const n = navCount(rt);
-      return `${sec}<a href="#" class="nav${on}" data-a="go" data-r="${rt}"${tb ? ` data-tab="${tb}"` : ''} title="${h(l)}"${on ? ' aria-current="page"' : ''}>${ic(i)}<span class="t">${h(l)}</span>${n ? `<span class="ncount">${n}</span>` : ''}</a>`;
+      return `${sec}<a href="#" class="nav${on}" data-a="go" data-r="${rt}"${tb ? ` data-tab="${tb}"` : ''} data-tip="${h(l)}"${on ? ' aria-current="page"' : ''}>${ic(i)}<span class="t">${h(l)}</span><span class="ts" aria-hidden="true">${h(SHORT[rt] || l.split(' ')[0])}</span>${n ? `<span class="ncount" aria-label="${n} new">${n}</span>` : ''}</a>`;
     })
     .join('');
-  return `<aside class="side" aria-label="Main navigation"><a href="#" class="brand" data-a="go" data-r="home"><span class="mark">P</span><span class="wm"><b>PHOENIX</b><span>Foundation Alpha</span></span></a><nav class="col" style="gap:2px">${items}</nav></aside>`;
+  const c = ctx();
+  return `<aside class="side" id="side-nav" aria-label="Main navigation"${UI.drawer ? ' role="dialog" aria-modal="true"' : ''}><div class="side-plate"><a href="#" class="brand" data-a="go" data-r="home" aria-label="PHOENIX home"><span class="mark">${MARK()}</span><span class="wm"><b>PHOENIX</b><span>Foundation Alpha</span></span></a>${c && c.kind !== 'Platform' ? `<div class="side-ctx"><small>${h(c.kind || 'Programme')}</small><span title="${h(c.name)}">${h(c.name)}</span></div>` : `<div class="side-ctx"><small>Workspace</small><span>Platform operations</span></div>`}</div><nav class="side-nav" aria-label="Sections">${items}</nav><div class="side-foot"><button type="button" class="nav side-collapse" data-a="sideCompact" data-tip="${UI.compact ? 'Expand sidebar' : 'Collapse sidebar'}" aria-pressed="${!!UI.compact}">${ic(UI.compact ? 'chevr' : 'chevl')}<span class="t">Collapse sidebar</span><span class="ts" aria-hidden="true">Expand</span></button><button type="button" class="nav side-close" data-a="drawerClose">${ic('x')}<span class="t">Close menu</span></button></div></aside>`;
 }
+// The PHOENIX mark: an ember plume rising from a baseline.
+const MARK = (s = 20) =>
+  `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12.6 2.8c2.9 3 4.6 6 4.6 8.8a5.2 5.2 0 0 1-10.4.2c0-2 .9-3.8 2.3-5.2.1 1.9 1 3.2 2.4 3.7-.7-2.6-.3-5.1 1.1-7.5z" fill="currentColor"/><path d="M5 20.5h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".55"/></svg>`;
+// Breadcrumb trail: [[label, route, params], …]; the last item is the current page and is not a link.
+const crumbsHtml = list =>
+  `<ol class="crumbs" aria-label="Breadcrumb">${list.map(([l, r, p], i) => (i < list.length - 1 && r ? `<li>${L(l, r, p, '')}</li>` : `<li><span aria-current="page">${l}</span></li>`)).join('')}</ol>`;
 function topbar() {
   const a = asg(),
     c = ctx();
   const others = roleChoices().length;
   const unread = S.notifs.filter(n => n.pid === myId() && !n.read).length;
-  return `<header class="top"><div class="mbrand" style="align-items:center"><span class="mark" style="width:32px;height:32px;font-size:14px">P</span></div>
+  return `<header class="top"><button class="iconbtn menubtn" type="button" data-a="drawerToggle" aria-label="Open navigation" aria-controls="side-nav" aria-expanded="${!!UI.drawer}">${ic('menu', 20)}</button><a href="#" class="mbrand" data-a="go" data-r="home" aria-label="PHOENIX home"><span class="mark">${MARK(16)}</span></a>
  <button class="ctx" type="button" data-a="switcher" aria-label="${h(me().name)}, ${h(ROLE[a.role])}${others > 1 ? '. Switch role' : ''}" title="${h(me().name)} · ${h(ROLE[a.role])}"><span class="ctxt"><b>${h(me().name)}</b><small>${h(ROLE[a.role])}${a.bundles.length ? ' · +' + a.bundles.length + ' bundle' + (a.bundles.length > 1 ? 's' : '') : ''}</small></span>${others > 1 ? ic('chev', 16) : ''}</button>
  <div class="grow"></div>
  ${can('ai') ? `<button type="button" class="btn btn-s btn-sm askbtn ${UI.panel === 'ask' ? 'on' : ''}" data-a="askToggle" aria-expanded="${UI.panel === 'ask'}" aria-controls="assist" title="Ask PHOENIX">${ic('sparkle', 16)}<span class="hide-md">Ask PHOENIX</span></button>` : ''}
@@ -606,7 +614,7 @@ function render() {
         }
       }
       const pg = reaccept();
-      html = `<div class="ph"${pg ? ' inert' : ''}><div class="app">${sidebar()}<div class="main">${topbar()}<main class="content${enter ? ' enter' : ''}" id="main">${inner}</main>${bottomnav()}</div></div></div>${pg ? policyGate(pg) : ''}`;
+      html = `<div class="ph"${pg ? ' inert' : ''}><a href="#main" class="skip" data-a="skipMain">Skip to content</a><div class="app${UI.compact ? ' is-compact' : ''}${UI.drawer ? ' is-drawer' : ''}" data-route="${h(UI.route)}">${sidebar()}${UI.drawer ? '<div class="scrim" data-a="drawerClose" aria-hidden="true"></div>' : ''}<div class="main">${topbar()}<main class="content${enter ? ' enter' : ''}" id="main" tabindex="-1">${inner}</main>${bottomnav()}</div></div></div>${pg ? policyGate(pg) : ''}`;
     }
   }
   if (UI.modal)
@@ -704,8 +712,61 @@ document.addEventListener('change', e => {
 });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && UI.modal && !(e.target.classList && e.target.classList.contains('msel-q'))) closeM();
+  else if (e.key === 'Escape' && !UI.modal && UI.drawer) A.drawerClose();
   else if (e.key === 'Escape' && !UI.modal && UI.panel) closePanel();
+  else if (e.key === 'Tab' && UI.drawer && !UI.modal) {
+    const f = [...document.querySelectorAll('#side-nav a, #side-nav button')].filter(x => x.offsetParent !== null);
+    if (!f.length) return;
+    const i = f.indexOf(document.activeElement);
+    if (e.shiftKey && i <= 0) {
+      e.preventDefault();
+      f[f.length - 1].focus();
+    } else if (!e.shiftKey && (i === -1 || i === f.length - 1)) {
+      e.preventDefault();
+      f[0].focus();
+    }
+  }
 });
+// ---- shell: drawer (phones and tablets), compact sidebar (desktop, remembered), theme (remembered per viewer)
+A.drawerToggle = () => (UI.drawer ? A.drawerClose() : A.drawerOpen());
+A.drawerOpen = () => {
+  UI.drawer = true;
+  render();
+  setTimeout(() => (document.querySelector('#side-nav .nav.on') || document.querySelector('#side-nav .nav'))?.focus(), 0);
+};
+A.drawerClose = () => {
+  UI.drawer = false;
+  render();
+  setTimeout(() => document.querySelector('.menubtn')?.focus(), 0);
+};
+A.sideCompact = () => {
+  UI.compact = !UI.compact;
+  try {
+    localStorage.setItem('phx-compact', UI.compact ? '1' : '');
+  } catch (e) {}
+  render();
+};
+A.skipMain = () => document.getElementById('main')?.focus();
+const applyTheme = () => {
+  const t = UI.theme || 'light';
+  if (t === 'system') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', t);
+};
+A.setTheme = d => {
+  UI.theme = d.v;
+  try {
+    localStorage.setItem('phx-theme', d.v);
+  } catch (e) {}
+  applyTheme();
+  render();
+};
+try {
+  UI.compact = localStorage.getItem('phx-compact') === '1';
+  UI.theme = localStorage.getItem('phx-theme') || 'light';
+} catch (e) {
+  UI.theme = 'light';
+}
+applyTheme();
 A.go = d => {
   const p = { ...d };
   delete p.a;
