@@ -80,6 +80,8 @@ route('funding', 'funding', () => {
                   ? pill('Saved', 'p-teal')
                   : B('Save', 'fundSave', { id: p.id }) +
                       B('Express interest', 'fundInterest', { id: p.id }, 'btn-p btn-sm'),
+                ) +
+                B(ic('message', 14) + 'Message project owner', 'dmOpen', { pid: p.owner, project: p.id }, 'btn-s btn-sm'
               ),
             )
             .join('<div style="height:16px"></div>') ||
@@ -96,6 +98,7 @@ route('funding', 'funding', () => {
               'From ' + nm(pi.from) + ' · ' + fmt(pi.at) + ' · requested ' + money('USD', pi.amount),
               `<p>${h(pi.text)}</p><div style="margin-top:12px">${sponsorBrief(p)}</div>`,
               pill(pi.status) +
+                B(ic('message', 14) + 'Message', 'dmOpen', { pid: pi.from, project: p.id }) +
                 (pi.status === 'Sent'
                   ? B('Decline', 'pitchDecide', { id: pi.id, v: 'Declined' }) +
                     B('Save', 'pitchDecide', { id: pi.id, v: 'Saved' }) +

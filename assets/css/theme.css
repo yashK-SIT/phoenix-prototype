@@ -3788,3 +3788,205 @@ mark.evo-add {
     display: none;
   }
 }
+
+/* ---------- policy comparison and the policy update dialog ---------- */
+.poldiff {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.poldiff-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.poldiff-s {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--ochre);
+  border-radius: var(--r);
+  padding: 12px 14px;
+  background: var(--surface);
+}
+.poldiff-t {
+  margin-top: 6px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+.poldiff del,
+.poldiff-key del {
+  background: var(--bad-50);
+  color: var(--bad);
+  text-decoration: line-through;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+.poldiff ins,
+.poldiff-key ins {
+  background: var(--ok-50);
+  color: var(--ok);
+  text-decoration: none;
+  font-weight: 600;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+.pgate {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(0, 30, 48, 0.55);
+}
+.pgate-m {
+  width: min(760px, 100%);
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-radius: var(--r-lg);
+  box-shadow: var(--pop);
+  overflow: hidden;
+}
+.pgate-h {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid var(--line);
+  border-top: 4px solid var(--ochre);
+}
+.pgate-b {
+  padding: 16px 22px;
+  overflow: auto;
+  flex: 1 1 auto;
+}
+.pgate-full {
+  margin-top: 14px;
+}
+.pgate-full summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--ever-800);
+}
+.pgate-f {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 22px 18px;
+  border-top: 1px solid var(--line);
+  background: var(--sunk);
+}
+.btn.is-off {
+  opacity: 0.4;
+  pointer-events: none;
+}
+@media (max-width: 599px) {
+  .pgate {
+    padding: 0;
+    place-items: stretch;
+  }
+  .pgate-m {
+    max-height: 100vh;
+    border-radius: 0;
+  }
+  .pgate-h,
+  .pgate-b,
+  .pgate-f {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+
+/* ---------- Circle sessions, documents, poll options and final review; task Review column ---------- */
+.kb-dot.st-review {
+  background: var(--ochre);
+}
+.sess {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+.sess:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.sess-f {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.poll-n {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--sunk);
+  border: 1px solid var(--line-2);
+  font-size: var(--fs-12);
+  font-weight: 700;
+  color: var(--text-3);
+}
+.pfr {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--line-2);
+}
+.pfr-i {
+  padding: 10px 12px;
+  border-left: 3px solid var(--ever-100);
+  background: var(--sunk);
+  border-radius: var(--r);
+}
+.pw-note {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--ochre);
+  background: var(--ochre-50);
+  border-radius: var(--r);
+  white-space: pre-line;
+}
+
+/* ---------- chat: the conversation name opens the members list; direct conversations ---------- */
+.mname-btn {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 700;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mname-btn:hover,
+.mname-btn:focus-visible {
+  color: var(--ever-800);
+  text-decoration: underline;
+}
+.mav.d {
+  background: var(--ochre-50);
+  color: var(--ochre-strong);
+}
+.poldiff-ba {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+}
+.poldiff-ba del,
+.poldiff-ba ins {
+  display: block;
+  padding: 6px 8px;
+}

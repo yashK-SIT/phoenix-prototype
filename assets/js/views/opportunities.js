@@ -103,6 +103,18 @@ A.qf = (d, el) => {
   UI.q[d.k] = el.value;
   render();
 };
+// Projects a person can link a card to: their own, ones they steward, and ones whose spaces they belong to.
+const userProjects = () =>
+  S.projects.filter(
+    p =>
+      inCtx(p) &&
+      (p.owner === myId() ||
+        (p.stewards || []).includes(myId()) ||
+        [p.circle, p.rope, p.room].some(id => {
+          const o = id && (byId('circles', id) || byId('ropes', id) || byId('rooms', id));
+          return o && memberOf(o);
+        })),
+  );
 route('newcard', 'opportunities', () => {
   if (!can('opportunities', 'CM')) return deniedView('opportunities');
   const f = 'card';
@@ -113,7 +125,9 @@ route('newcard', 'opportunities', () => {
   if (e && !UI.form.card) UI.form.card = { ...e };
   if (!e && src && !UI.form.card) UI.form.card = { vis: 'Circle members', project: src.project && byId('projects', src.project)?.owner === myId() ? src.project : '' };
   const vis = fv('card', 'vis', src ? 'Circle members' : 'Programme');
-  const namedPool = eligiblePeople([myId()], ['P', 'F', 'M', 'C', 'O']);
+  const myP = userProjects();
+  if (!UI.form.card) UI.form.card = {};
+  if (!UI.form.card.project && myP.length) UI.form.card.project = (src && src.project && myP.some(p => p.id === src.project) ? src.project : myP[0].id);
   return (
     head(
       e ? 'Edit card' : 'New Opportunity Card',
@@ -124,11 +138,10 @@ route('newcard', 'opportunities', () => {
     `<form data-f="card" class="card col" style="gap:16px;max-width:820px" novalidate>${errSum(f)}<input type="hidden" name="id" value="${e ? e.id : ''}"><input type="hidden" name="from" value="${from || ''}">
  <div class="f2">${fi(f, 'kind', 'Card type', { type: 'select', req: true, ph: 'Select', opts: ['Need', 'Asset', 'Offer', 'Opportunity'] })}${fi(f, 'cat', 'Category', { type: 'select', req: true, ph: 'Select', opts: ['Volunteering', 'Expertise', 'Equipment', 'Skills', 'Livelihood', 'Funding', 'Learning', 'Community action'] })}</div>
  ${fi(f, 'title', 'Title', { req: true, max: 100 })}${fi(f, 'desc', 'Description — what is needed or offered, and availability conditions', { type: 'textarea', rows: 4, req: true })}
- <div class="f2">${fi(f, 'vis', 'Who can discover it', { type: 'select', req: true, ch: 'reRender', opts: [['Only me (draft)', 'Only me (draft)'], ['Circle members', src ? 'Members of ' + src.name + ' (default)' : 'Members of Circles I share'], ['Programme', 'Everyone in this programme'], ['Named users', 'Named people only']], help: src ? 'Cards from a Circle start with that Circle’s members only. You can widen the audience.' : '' })}${fi(f, 'expires', 'Expiry date', { type: 'date', req: true })}</div>
- ${vis === 'Named users' ? msel(f, 'named', 'Named people who can discover it', namedPool, (e && e.named) || [], { req: true, help: 'Only these people (and you) see the card.' }) : ''}
- ${fi(f, 'project', 'Link to a project (optional)', { type: 'select', ph: 'None', opts: S.projects.filter(p => p.owner === myId() && inCtx(p)).map(p => [p.id, p.title]) })}
+ <div class="f2">${fi(f, 'expires', 'Expiry date', { type: 'date', req: true })}${myP.length ? fi(f, 'project', 'Link to a project', { type: 'select', req: true, opts: myP.map(p => [p.id, p.title]) }) : ''}</div>
+ ${myP.length ? '' : banner('warn', 'No project to link', 'A card is linked to one of your projects. You can create one once you own, steward or belong to a project.')}
  ${src ? banner('info', 'Created from ' + h(src.name), 'The Circle stays intact and the card links back to it. Match Briefs from this card are reviewed by the Circle’s facilitator, ' + nm(src.facilitator) + '.') : ''}
- <div class="actions">${L('Cancel', 'opportunities', {}, 'btn btn-g')}<div class="row"><button class="btn btn-s" type="submit" name="pub" value="no">Save draft</button><button class="btn btn-p" type="submit" name="pub" value="yes">Publish</button></div></div></form>`
+ <div class="actions">${L('Cancel', 'opportunities', {}, 'btn btn-g')}<div class="row"><button class="btn btn-s" type="submit" name="pub" value="no" ${myP.length ? '' : 'disabled'}>Save draft</button><button class="btn btn-p" type="submit" name="pub" value="yes" ${myP.length ? '' : 'disabled'}>Publish</button></div></div></form>`
   );
 });
 F.card = d => {
@@ -138,9 +151,8 @@ F.card = d => {
       cat: ['req'],
       title: ['req'],
       desc: ['req', ['min', 20]],
-      vis: ['req'],
       expires: ['req', 'date'],
-      named: [['fn', { f: (v, x) => x.vis !== 'Named users' || [].concat(x.named || []).length > 0, m: 'Choose at least one person.' }]],
+      project: [['req', 'Choose the project this card is for.'], ['fn', { f: v => userProjects().some(p => p.id === v), m: 'Choose one of your projects.' }]],
     })
   )
     return render();
@@ -155,12 +167,13 @@ F.card = d => {
     cat: d.cat,
     title: d.title,
     desc: d.desc,
-    vis: d.vis === 'Only me (draft)' ? 'Only me' : d.vis,
+    // the audience is no longer chosen: a card from a Circle reaches that Circle's members, otherwise the programme
+    vis: c.vis || (d.from || c.from ? 'Circle members' : 'Programme'),
     expires: d.expires,
-    project: d.project || null,
+    project: d.project,
     from: d.from || c.from || null,
-    named: d.vis === 'Named users' ? [].concat(d.named || []) : [],
-    status: d.pub === 'yes' && d.vis !== 'Only me (draft)' ? 'Active' : 'Draft',
+    named: c.named || [],
+    status: d.pub === 'yes' ? 'Active' : 'Draft',
   });
   audit('Opportunity Card ' + (c.status === 'Active' ? 'published' : 'saved'), c.id, c.title + ' · audience: ' + c.vis);
   if (c.status === 'Active') {

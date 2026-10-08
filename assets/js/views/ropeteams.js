@@ -37,6 +37,12 @@ F.mrq = d => {
   ok();
 };
 const mentorReqVisible = m => m.to === myId() || m.from === myId() || (m.open && role() === 'M' && inCtx(byId('projects', m.project) || {}));
+// The Rope Team facilitator is the steward who raised the request; if the project owner raised it, the project's steward
+// (or the Circle facilitator) joins as facilitator instead.
+const ropeFacilitator = (pr, m, circle) => {
+  const f = m.from !== pr.owner ? m.from : pr.stewards[0] || (circle && circle.facilitator);
+  return f && f !== pr.owner ? [{ pid: f, role: 'Facilitator', status: 'Active' }] : [];
+};
 A.mentorReq = d => {
   const m = byId('mentorReqs', d.id);
   if (d.v === 'Declined' && m.open) {
@@ -68,7 +74,7 @@ A.mentorReq = d => {
           { pid: pr.owner, role: 'Project owner', status: 'Active' },
           ...(circle ? circle.members.filter(x => x.status === 'Active' && x.pid !== pr.owner && normRole(x.role) === 'Member').map(x => ({ pid: x.pid, role: 'Member', status: 'Active' })) : []),
           { pid: myId(), role: 'Mentor', status: 'Active' },
-          { pid: m.from, role: 'Facilitator', status: 'Active' },
+          ...ropeFacilitator(pr, m, circle),
         ],
         chat: [],
         checkins: [],
@@ -321,7 +327,7 @@ route('rope', 'ropeteams', () => {
               const sr = m.pid === x.owner ? 'Project owner' : normRole(m.role);
               return [
                 nm(m.pid) + ` <span class="cap">${h(ROLE[ctxRole(m.pid, x.ctx)] || '')}</span>`,
-                inviter && x.state === 'Active' && !fixed && (!m.status || m.status === 'Active') ? roleSelect('memRole', { kind: 'ropes', c: x.id, i }, sr, 'Role of ' + P(m.pid).name) : h(sr),
+                inviter && x.state === 'Active' && !fixed && (!m.status || m.status === 'Active') ? roleSelect('memRole', { kind: 'ropes', c: x.id, i }, sr, 'Role of ' + P(m.pid).name) : h(roleLabel(sr)),
                 pill(m.status || 'Active'),
                 inviter && x.state === 'Active' && !fixed && ['Active', 'Invited', undefined].includes(m.status)
                   ? CB('Remove', 'memSet', { kind: 'ropes', c: x.id, i, v: 'Removed' }, 'Remove ' + P(m.pid).name + ' from this Rope Team? Their recorded contributions stay in the project record.')
@@ -345,7 +351,7 @@ route('rope', 'ropeteams', () => {
         ['Circle', x.circle ? L(cName(x.circle), 'circle', { id: x.circle }) : '—'],
         ['Project', pr ? L(h(pr.title), 'project', { id: pr.id }) : '—'],
         ['State', pill(x.state)],
-        ['Members', x.members.filter(m => !m.status || m.status === 'Active').map(m => nm(m.pid) + ' <span class="cap">(' + h(spaceRole('ropes', x, m.pid) || normRole(m.role)) + ')</span>').join(', ')],
+        ['Members', x.members.filter(m => !m.status || m.status === 'Active').map(m => nm(m.pid) + ' <span class="cap">(' + h(roleLabel(spaceRole('ropes', x, m.pid) || normRole(m.role))) + ')</span>').join(', ')],
       ]),
       L('Members', 'rope', { id: x.id, tab: 'members' }),
       'c7',

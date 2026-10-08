@@ -67,7 +67,6 @@ route("profile", "any", () => {
             h(me().email) +
               ' · <span class="cap">Private; released only for an approved introduction</span>',
           ],
-          ["Language", h(pr.lang || "—")],
           ["Biography", h(pr.bio || "—")],
           ["Active role", ROLE[role()] + " · " + h(ctx().name)],
         ]) +
@@ -111,7 +110,6 @@ route("profile", "any", () => {
   if (t.cur === "compass") {
     const a = S.compass[pid] || {};
     const miss = blMissing(pid);
-    const inBl = blKeys();
     body =
       (miss.length
         ? banner(
@@ -133,26 +131,13 @@ route("profile", "any", () => {
         "",
         "c12",
       )}</div><div class="section-gap"></div>` +
-      `<form data-f="compass" class="col" style="gap:24px" novalidate>${errSum("compass")}${BL_SETS.map((s, i) =>
+      `<form data-f="compass" class="col" style="gap:24px" novalidate>${errSum("compass")}${blSets(false).map((s, i) =>
         card(
-          i ? i + " · " + s.n : s.n,
-          s.d || "",
+          h(s.n),
+          h(s.d || ""),
           `<div class="col" style="gap:14px">${s.q.map((q) => blField("compass", q, a)).join("")}</div>`,
         ),
-      ).join("")}${card(
-        "Optional questions",
-        "Asked in context. Private by default.",
-        `<div class="col" style="gap:14px">${COMPASS.filter(([id]) => !inBl.includes(id))
-          .map(([id, p, q, v]) =>
-            fi("compass", id, `${id} · ${q}`, {
-              type: "textarea",
-              rows: 2,
-              value: a[id],
-              vis: v + " · " + p,
-            }),
-          )
-          .join("")}</div>`,
-      )}<div class="actions"><span class="cap">${a._at ? "Baseline set " + fmt(a._at) + ". " : ""}Each save creates a new profile version.</span><button class="btn btn-p" type="submit">Save new version</button></div></form>`;
+      ).join("")}<div class="actions"><span class="cap">${a._at ? "Baseline set " + fmt(a._at) + ". " : ""}Each save creates a new profile version.</span><button class="btn btn-p" type="submit">Save new version</button></div></form>`;
   }
   if (t.cur === "cand")
     body = card(
@@ -342,11 +327,11 @@ A.editBasics = () => {
   modal(
     "Edit basics",
     () =>
-      `<form data-f="basics" class="col" style="gap:14px" novalidate>${fi("basics", "display", "Display name", { req: true })}${fi("basics", "lang", "Preferred language", { type: "select", opts: ["English", "Spanish", "Hindi", "Polish", "French", "Arabic"], req: true })}${fi("basics", "bio", "Short biography", { type: "textarea", rows: 3, max: 400 })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save new version</button></div></form>`,
+      `<form data-f="basics" class="col" style="gap:14px" novalidate>${fi("basics", "display", "Display name", { req: true })}${fi("basics", "bio", "Short biography", { type: "textarea", rows: 3, max: 400 })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save new version</button></div></form>`,
   );
 };
 F.basics = (d) => {
-  if (!validate("basics", d, { display: ["req"], lang: ["req"] }))
+  if (!validate("basics", d, { display: ["req"] }))
     return render();
   me().display = d.display;
   const pr = (S.profiles[myId()] = S.profiles[myId()] || {
@@ -354,19 +339,16 @@ F.basics = (d) => {
     history: [],
   });
   pr.bio = d.bio;
-  pr.lang = d.lang;
+  pr.lang = "English";
   bumpVer("Basics updated", "User edit", "Self-declared");
   UI.modal = null;
   ok();
 };
 F.compass = (d) => {
-  if (!validate("compass", d, blRules(BL_SETS))) return render();
-  blApply(myId(), d, BL_SETS);
+  const sets = blSets(false);
+  if (!validate("compass", d, blRules(sets))) return render();
+  blApply(myId(), d, sets);
   const a = S.compass[myId()];
-  const inBl = blKeys();
-  COMPASS.forEach(([id]) => {
-    if (!inBl.includes(id)) a[id] = (d[id] || "").trim();
-  });
   a._at = a._at || today();
   bumpVer("Purpose Compass Baseline updated", "User edit", "Self-declared");
   toast("Purpose Compass saved as a new version.");
@@ -669,7 +651,6 @@ route("privacy", "agreements", () => {
   const t = tabs(
     "priv",
     [
-      ["consent", "Permissions"],
       ["agr", "Agreements & receipts"],
       ["data", "Data held about me"],
       ["req", "Requests"],
@@ -677,28 +658,6 @@ route("privacy", "agreements", () => {
     UI.p.tab,
   );
   let body = "";
-  if (t.cur === "consent")
-    body =
-      card(
-        "Optional purposes",
-        "Withdrawing stops new use immediately, cancels queued AI work and restricts derivatives pending re-review. Declining never blocks the collaboration core.",
-        PURPOSES.map(
-          ([k, tt, dsc]) =>
-            `<div class="lrow" style="align-items:flex-start"><span class="tile t-soft">${ic("shield")}</span><div class="lt"><b>${tt}</b><p class="cap">${dsc}</p><div style="margin-top:6px">${pill(c[k])}</div></div><button type="button" class="toggle ${c[k] === "Granted" ? "on" : ""}" role="switch" aria-checked="${c[k] === "Granted"}" aria-label="${tt}" data-a="consentChange" data-k="${k}"></button></div>`,
-        ).join(""),
-      ) +
-      `<div style="height:16px"></div>` +
-      card(
-        "Consent history",
-        "",
-        table(
-          ["When", "Change"],
-          c.history
-            .slice()
-            .reverse()
-            .map((x) => [fmt(x.at), h(x.t)]),
-        ),
-      );
   if (t.cur === "agr") {
     const acc = S.accepts.filter((x) => x.pid === pid);
     const re = S.assign
@@ -823,8 +782,8 @@ route("privacy", "agreements", () => {
   }
   return (
     head(
-      "Privacy & consent",
-      "You decide what is shared, with whom, and for what purpose.",
+      "Privacy & agreements",
+      "Your agreements and receipts, the data held about you, and your requests.",
     ) +
     t.html +
     body
@@ -934,8 +893,9 @@ route("pathway", "pathways", () => {
       head(
         "My pathway",
         "A pathway never becomes current without your acceptance.",
-        B("Draft my own pathway", "draftPathway", { pid }, "btn-s"),
+        B(ic("plus", 16) + "Create a pathway", "pwNew", {}, "btn-p"),
       ) +
+      pwMineCard(list) +
       prop
         .map((p) =>
           card(
@@ -1023,6 +983,7 @@ route("pathway", "pathways", () => {
         ? B("Template library", "go", { r: "admin", tab: "library" }, "btn-s")
         : "",
     ) +
+    pwToReviewCard() +
     table(
       ["Participant", "Current pathway", "Other pathways", "Actions"],
       parts.map((p) => {
@@ -1057,7 +1018,7 @@ route("pathway", "pathways", () => {
           "Awaiting your approval (mode 3)",
           "",
           S.pathways
-            .filter((p) => p.state === "In review" && inCtx(p))
+            .filter((p) => p.state === "In review" && !p.reviewer && inCtx(p))
             .map(
               (p) =>
                 `<div class="lrow"><div class="lt"><b>${h(p.name)}</b><p class="cap">For ${nm(p.pid)} · drafted by ${nm(p.by)} · ${p.steps.map((s) => h(s.t)).join(" → ")}</p></div><div class="row">${B("View activity", "pwActivity", { id: p.id })}${B("Return", "pwReview", { id: p.id, v: "Draft" })}${B("Approve", "pwReview", { id: p.id, v: "Proposed to participant" }, "btn-p btn-sm")}</div></div>`,
@@ -1197,6 +1158,181 @@ A.draftPathway = (d) => {
     () =>
       `<form data-f="pp" class="col" style="gap:14px" novalidate><input type="hidden" name="pid" value="${d.pid}"><input type="hidden" name="mode" value="3">${fi("pp", "name", "Pathway name", { req: true })}${fi("pp", "steps", "Steps (one per line, 3–5)", { type: "textarea", rows: 5, req: true })}${banner("info", "", "Custom pathways are reviewed by an authorised Reviewer before they are proposed back to you.")}<div class="actions"><span></span><button class="btn btn-p" type="submit">Submit for review</button></div></form>`,
   );
+};
+// ---- A participant creates and submits a pathway; the Programme Administrator assigns a reviewer (Steward or
+// Faculty), who approves it, rejects it or asks for changes; the participant updates and resubmits.
+const PW_OPEN = ["Awaiting reviewer", "In review", "Changes requested", "Rejected"];
+const stepsRule = [
+  "req",
+  [
+    "fn",
+    {
+      f: (v) => {
+        const n = v.split("\n").filter((x) => x.trim()).length;
+        return n >= 3 && n <= 5;
+      },
+      m: "Enter 3 to 5 steps, one per line.",
+    },
+  ],
+];
+function pwMineCard(list) {
+  const mine = list.filter((p) => p.by === myId() && PW_OPEN.includes(p.state));
+  if (!mine.length) return "";
+  return (
+    card(
+      "Pathways you submitted",
+      "Reviewed by a Steward or Faculty member assigned by the Programme Administrator.",
+      mine
+        .map(
+          (p) =>
+            `<div class="lrow" style="align-items:flex-start"><span class="tile t-soft">${ic("route", 18)}</span><div class="lt"><b>${h(p.name)}</b><p class="cap">${p.steps.map((s) => h(s.t)).join(" → ")}</p><p class="cap" style="margin-top:4px">${p.state === "Awaiting reviewer" ? "Waiting for a reviewer to be assigned" : p.state === "In review" ? "With " + nm(p.reviewer) + " for review" : p.state === "Changes requested" ? "Changes requested by " + nm(p.reviewer) : "Rejected by " + nm(p.reviewer)}</p>${p.reviewNote && ["Changes requested", "Rejected"].includes(p.state) ? `<p class="pw-note">${h(p.reviewNote)}</p>` : ""}</div><div class="row wrap" style="gap:6px">${pill(p.state, { "Changes requested": "p-amber", Rejected: "p-red" }[p.state])}${B("View activity", "pwActivity", { id: p.id })}${p.state === "Changes requested" ? B("Update and resubmit", "pwUpd", { id: p.id }, "btn-p btn-sm") : ""}</div></div>`,
+        )
+        .join(""),
+    ) + '<div style="height:16px"></div>'
+  );
+}
+function pwToReviewCard() {
+  const mine = S.pathways.filter((p) => p.reviewer === myId() && p.state === "In review" && inCtx(p));
+  if (!mine.length && role() !== "F") return "";
+  return (
+    card(
+      "Pathways assigned to you for review",
+      "Approve to make the pathway current for the participant, ask for changes, or reject it.",
+      mine
+        .map(
+          (p) =>
+            `<div class="lrow" style="align-items:flex-start"><span class="tile t-soft">${ic("route", 18)}</span><div class="lt"><b>${h(p.name)}</b><p class="cap">For ${nm(p.pid)} · ${h(p.mode)}${p.resubmitted ? " · resubmitted " + fmt(p.resubmitted) : ""}</p><ol class="req-list" style="margin-top:6px">${p.steps.map((s) => `<li>${h(s.t)}</li>`).join("")}</ol>${p.note ? `<p class="cap">Participant’s note: ${h(p.note)}</p>` : ""}</div><div class="row wrap" style="gap:6px">${B("View activity", "pwActivity", { id: p.id })}${B("Reject", "pwDec", { id: p.id, v: "Rejected" })}${B("Request changes", "pwDec", { id: p.id, v: "Changes requested" })}${B("Approve", "pwDec", { id: p.id, v: "Current" }, "btn-p btn-sm")}</div></div>`,
+        )
+        .join("") || empty("check", "Nothing to review", "Pathways the Programme Administrator assigns to you appear here."),
+    ) + '<div style="height:16px"></div>'
+  );
+}
+function pwForm(p) {
+  const tpls = S.templates.filter((t) => t.status === "Approved");
+  const src = fv("pwn", "src", p ? p.tpl || "custom" : "custom");
+  const tpl = byId("templates", src);
+  return `<form data-f="pwn" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${p ? p.id : ""}">${p && p.reviewNote ? banner("warn", "Changes requested by " + nm(p.reviewer), h(p.reviewNote)) : ""}${p ? "" : fi("pwn", "src", "Start from", { type: "select", opts: [["custom", "My own steps"], ...tpls.map((t) => [t.id, "Template: " + t.name])], ch: "pwnSrc" })}${fi("pwn", "name", "Pathway name", { req: true, value: p ? p.name : tpl ? tpl.name : "" })}${fi("pwn", "steps", "Steps (one per line, 3–5)", { type: "textarea", rows: 5, req: true, value: p ? p.steps.map((s) => s.t).join("\n") : tpl ? tpl.steps.join("\n") : "" })}${fi("pwn", "note", p ? "What you changed" : "Note for the reviewer (optional)", { type: "textarea", rows: 2, req: !!p })}${banner("info", "", "The Programme Administrator assigns a Steward or Faculty member to review your pathway. It becomes current when they approve it.")}<div class="actions"><span></span><button class="btn btn-p" type="submit">${p ? "Resubmit for review" : "Submit for review"}</button></div></form>`;
+}
+A.pwNew = () => {
+  clearF("pwn");
+  modal("Create a pathway", () => pwForm(null));
+};
+A.pwnSrc = (d, el) => {
+  const form = el.closest("form");
+  const x = {};
+  new FormData(form).forEach((v, k) => (x[k] = v));
+  const tpl = byId("templates", el.value);
+  if (tpl) Object.assign(x, { name: tpl.name, steps: tpl.steps.join("\n") });
+  UI.form.pwn = x;
+  render();
+};
+A.pwUpd = (d) => {
+  clearF("pwn");
+  const p = byId("pathways", d.id);
+  modal("Update and resubmit", () => pwForm(p));
+};
+F.pwn = (d) => {
+  const p0 = d.id && byId("pathways", d.id);
+  if (!validate("pwn", d, { name: ["req"], steps: stepsRule, ...(p0 ? { note: ["req"] } : {}) })) return render();
+  const steps = d.steps
+    .split("\n")
+    .filter((x) => x.trim())
+    .map((t) => ({ t: t.trim(), done: false }));
+  if (p0) {
+    Object.assign(p0, { name: d.name.trim(), steps, state: "In review", resubmitted: today(), note: d.note.trim() });
+    pwLog(p0, "Updated and resubmitted: " + d.note.trim());
+    notify(p0.reviewer, "Pathway resubmitted for your review: " + p0.name + " (" + me().name + ")", "pathway");
+    audit("Pathway resubmitted", p0.id, d.note);
+    toast("Resubmitted to " + P(p0.reviewer).name + ".");
+  } else {
+    const tpl = byId("templates", d.src);
+    const p = {
+      id: uid("pw"),
+      pid: myId(),
+      ctx: ctxId(),
+      name: d.name.trim(),
+      tpl: tpl ? tpl.id : null,
+      mode: tpl ? "Based on template “" + tpl.name + "”" : "Custom pathway",
+      state: "Awaiting reviewer",
+      by: myId(),
+      reviewer: null,
+      submitted: today(),
+      note: (d.note || "").trim(),
+      steps,
+      activity: [],
+    };
+    pwLog(p, "Created and submitted for review" + (tpl ? " (from the template “" + tpl.name + "”)" : ""));
+    S.pathways.push(p);
+    S.assign
+      .filter((a) => a.ctx === ctxId() && roleBase(a.role) === "A" && a.status === "Active")
+      .forEach((a) => notify(a.pid, "Assign a reviewer to the pathway “" + p.name + "” from " + me().name, "admin", { tab: "requests" }));
+    audit("Pathway submitted", p.id, p.mode);
+    toast("Submitted. The Programme Administrator will assign a reviewer.");
+  }
+  UI.modal = null;
+  clearF("pwn");
+  ok();
+};
+A.pwAssign = (d) => {
+  clearF("pwas");
+  const p = byId("pathways", d.id);
+  const rv = S.assign.filter((a) => a.ctx === p.ctx && roleBase(a.role) === "F" && a.status === "Active");
+  modal(
+    "Assign a reviewer",
+    () =>
+      `<form data-f="pwas" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${p.id}">${dl([["Pathway", h(p.name)], ["Participant", nm(p.pid)], ["Steps", p.steps.map((s) => h(s.t)).join(" → ")]])}${fi("pwas", "rv", "Steward or Faculty member", { type: "select", req: true, ph: "Choose a reviewer", opts: rv.map((a) => [a.pid, P(a.pid).name + " · " + ROLE[a.role]]) })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Assign</button></div></form>`,
+  );
+};
+F.pwas = (d) => {
+  if (!validate("pwas", d, { rv: [["req", "Choose a reviewer."]] })) return render();
+  const p = byId("pathways", d.id);
+  p.reviewer = d.rv;
+  p.state = "In review";
+  pwLog(p, "Reviewer assigned by " + me().name + ": " + P(d.rv).name);
+  notify(d.rv, "Pathway assigned to you for review: " + p.name + " (" + P(p.pid).name + ")", "pathway");
+  notify(p.pid, "A reviewer was assigned to your pathway “" + p.name + "”: " + P(d.rv).name, "pathway");
+  audit("Pathway reviewer assigned", p.id, d.rv);
+  UI.modal = null;
+  clearF("pwas");
+  toast("Reviewer assigned.");
+  ok();
+};
+A.pwDec = (d) => {
+  const p = byId("pathways", d.id);
+  if (d.v === "Current") {
+    S.pathways
+      .filter((x) => x.pid === p.pid && x.ctx === p.ctx && x.state === "Current" && x !== p)
+      .forEach((x) => {
+        x.state = "Superseded";
+        pwLog(x, "Superseded when “" + p.name + "” was approved");
+      });
+    p.state = "Current";
+    p.reviewNote = "";
+    pwLog(p, "Approved by " + me().name + " — it became the current pathway");
+    notify(p.pid, "Your pathway “" + p.name + "” was approved and is now current", "pathway");
+    audit("Pathway approved", p.id, "");
+    toast("Approved. It is now the participant’s current pathway.");
+    return ok();
+  }
+  clearF("pwd");
+  modal(
+    d.v === "Rejected" ? "Reject pathway" : "Request changes",
+    () =>
+      `<form data-f="pwd" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${p.id}"><input type="hidden" name="v" value="${d.v}">${dl([["Pathway", h(p.name)], ["Participant", nm(p.pid)]])}${fi("pwd", "note", d.v === "Rejected" ? "Why it is rejected" : "What needs to change", { type: "textarea", rows: 3, req: true })}<div class="actions"><span></span><button class="btn ${d.v === "Rejected" ? "btn-d" : "btn-p"}" type="submit">${d.v === "Rejected" ? "Reject" : "Send back for changes"}</button></div></form>`,
+  );
+};
+F.pwd = (d) => {
+  if (!validate("pwd", d, { note: ["req", ["min", 5]] })) return render();
+  const p = byId("pathways", d.id);
+  p.state = d.v === "Rejected" ? "Rejected" : "Changes requested";
+  p.reviewNote = d.note.trim();
+  pwLog(p, (d.v === "Rejected" ? "Rejected by " : "Changes requested by ") + me().name + ": " + p.reviewNote);
+  notify(p.pid, (d.v === "Rejected" ? "Your pathway was rejected: " : "Changes requested on your pathway: ") + p.name, "pathway");
+  audit("Pathway " + p.state.toLowerCase(), p.id, p.reviewNote);
+  UI.modal = null;
+  clearF("pwd");
+  toast(d.v === "Rejected" ? "Rejected. The participant has been told why." : "Sent back to the participant for changes.");
+  ok();
 };
 A.pwReview = (d) => {
   const p = byId("pathways", d.id);

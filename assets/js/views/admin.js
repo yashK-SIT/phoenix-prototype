@@ -335,13 +335,15 @@ route('admin', 'admin', () => {
   if (role() !== 'A') return deniedView('admin');
   const c = ctxId();
   const pend = S.assign.filter(a => a.status === 'Pending role approval');
+  const rqProj = S.projects.filter(p => inCtx(p) && p.status === 'Submitted' && !p.stewards.length);
+  const rqPw = S.pathways.filter(p => inCtx(p) && p.state === 'Awaiting reviewer');
   const t = tabs(
     'adm',
     [
+      ['requests', 'Review requests', rqProj.length + rqPw.length],
       ['users', 'Users'],
       ['invites', 'Invitations'],
       ['approvals', 'Role approvals', pend.length],
-      ['agreements', 'Agreements & consent'],
       ['library', 'Pathway library'],
       ['packs', 'Packs & configuration'],
       ['ai', 'AI sources & queue'],
@@ -359,6 +361,27 @@ route('admin', 'admin', () => {
     UI.p.tab,
   );
   let body = '';
+  if (t.cur === 'requests')
+    body =
+      card(
+        'Projects waiting for a reviewer',
+        'Assign a Steward, Faculty member or Facilitator. They review the project and accept it or ask for clarification.',
+        table(
+          ['Project', 'Owner', 'Areas', 'Submitted', ''],
+          rqProj.map(p => [L(h(p.title), 'project', { id: p.id }), nm(p.owner), (p.tags || []).map(h).join(', ') || '—', fmt(p.submitted || ''), B('Assign reviewer', 'assignStewards', { id: p.id }, 'btn-p btn-sm')]),
+          'No projects are waiting for a reviewer.',
+        ),
+      ) +
+      '<div class="section-gap"></div>' +
+      card(
+        'Pathways waiting for a reviewer',
+        'Assign a Steward or Faculty member. They approve the pathway, reject it or ask the participant for changes.',
+        table(
+          ['Pathway', 'Participant', 'Steps', 'Submitted', ''],
+          rqPw.map(p => [h(p.name), nm(p.pid), p.steps.map(x => h(x.t)).join(' → '), fmt(p.submitted || ''), B('Assign reviewer', 'pwAssign', { id: p.id }, 'btn-p btn-sm')]),
+          'No pathways are waiting for a reviewer.',
+        ),
+      );
   if (t.cur === 'users')
     body = card(
       'Users and roles',
@@ -390,44 +413,6 @@ route('admin', 'admin', () => {
         'No roles awaiting approval.',
       ),
     );
-  if (t.cur === 'agreements')
-    body =
-      card(
-        'Agreement versions',
-        'Draft → Active → Superseded/Retired. Publishing a material change requires re-acceptance.',
-        table(
-          ['Agreement', 'Version', 'Context', 'Roles', 'Effective', 'Status', ''],
-          S.agreements.map(g => [
-            h(g.type),
-            'v' + g.ver,
-            h(S.contexts.find(c => c.id === g.ctx).name),
-            g.roles.map(r => ROLE[r]).join(', '),
-            fmt(g.effective),
-            pill(g.status) + (g.material ? ' ' + pill('Material change', 'p-amber') : ''),
-            g.status === 'Draft'
-              ? B('Publish', 'agrPublish', { id: g.id }, 'btn-p btn-sm')
-              : g.status === 'Active'
-                ? CB('Retire', 'agrRetire', { id: g.id }, 'Retire ' + g.type + ' v' + g.ver + '? It can no longer be accepted.')
-                : '',
-          ]),
-        ),
-        B(ic('upload', 14) + 'Upload approved version', 'agrNew', {}, 'btn-p btn-sm'),
-      ) +
-      '<div style="height:16px"></div>' +
-      card(
-        'Consent purposes',
-        'Defined by the WSS Trust/Data Steward with Product Owner approval.',
-        table(
-          ['Purpose', 'Description', 'Granted in this context'],
-          PURPOSES.map(([k, tt, dd]) => [
-            `<b>${tt}</b>`,
-            h(dd),
-            S.assign.filter(a => a.ctx === c).filter(a => consent(a.pid, k) === 'Granted').length +
-              ' of ' +
-              S.assign.filter(a => a.ctx === c).length,
-          ]),
-        ),
-      );
   if (t.cur === 'library')
     body = card(
       'Approved pathway templates',
@@ -539,6 +524,20 @@ route('admin', 'admin', () => {
             ]),
         ),
       );
+  if (t.cur === 'ai' && hasB('AI Owner'))
+    body +=
+      '<div class="section-gap"></div>' +
+      card(
+        'AI outputs awaiting review (Class C)',
+        'Draft → Review → Edit → Approve/Reject → Release. Nothing is released without a person approving it.',
+        table(
+          ['Job', 'Purpose', 'Requested by', 'Sources', ''],
+          S.ai
+            .filter(j => j.status === 'In review' && j.cls === 'C')
+            .map(j => [h(j.id), h(j.purpose), nm(j.by), h(j.sources), B('Reject', 'aiRev', { id: j.id, v: 'Rejected' }) + B('Approve release', 'aiRev', { id: j.id, v: 'Released' }, 'btn-p btn-sm')]),
+          'Nothing waiting for review.',
+        ),
+      );
   if (t.cur === 'notify')
     body =
       card(
@@ -640,70 +639,6 @@ A.roleDecide = d => {
     'home',
   );
   audit('Role approval', a.id, d.v);
-  ok();
-};
-A.agrNew = () => {
-  clearF('agn');
-  modal(
-    'Upload approved agreement version',
-    () =>
-      `<form data-f="agn" class="col" style="gap:12px" novalidate>${fi('agn', 'type', 'Agreement type', { type: 'select', req: true, opts: [...new Set(S.agreements.map(g => g.type))] })}${fi('agn', 'ctx', 'Context', { type: 'select', req: true, opts: S.contexts.map(c => [c.id, c.name]), value: ctxId() })}${fi('agn', 'effective', 'Effective date', { type: 'date', req: true })}${fi('agn', 'summary', 'What changed', { type: 'textarea', rows: 2, req: true })}${fi('agn', 'material', 'This is a material change (purpose, data, recipients, AI/research/public use, retention, rights or authority) — re-acceptance required', { type: 'checkbox' })}<div class="field"><label class="lbl">Approved document</label><input type="file" name="f" class="input" style="padding:8px"></div><div class="actions"><span></span><button class="btn btn-p" type="submit">Save as draft</button></div></form>`,
-  );
-};
-F.agn = d => {
-  if (!validate('agn', d, { type: ['req'], ctx: ['req'], effective: ['req'], summary: ['req'] })) return render();
-  const prev = S.agreements.filter(g => g.type === d.type && g.ctx === d.ctx).sort((a, b) => b.ver - a.ver)[0];
-  S.agreements.push({
-    id: uid('g'),
-    type: d.type,
-    ctx: d.ctx,
-    ver: (prev ? prev.ver : 0) + 1,
-    status: 'Draft',
-    effective: d.effective,
-    roles: prev ? prev.roles : ['P'],
-    summary: d.summary,
-    material: d.material === 'yes',
-  });
-  audit('Agreement version uploaded', d.type, '');
-  UI.modal = null;
-  clearF('agn');
-  ok();
-};
-A.agrPublish = d => {
-  const g = byId('agreements', d.id);
-  const prev = S.agreements.filter(x => x.type === g.type && x.ctx === g.ctx && x.status === 'Active');
-  prev.forEach(x => (x.status = 'Superseded'));
-  g.status = 'Active';
-  const affected = S.assign.filter(a => a.ctx === g.ctx && g.roles.includes(roleBase(a.role)));
-  if (g.material || !prev.length) {
-    affected.forEach(a => notify(a.pid, `Re-acceptance required: ${g.type} v${g.ver}`, 'privacy', { tab: 'agr' }));
-  } else {
-    affected.forEach(a => {
-      if (S.accepts.some(x => x.pid === a.pid && prev.some(p => p.id === x.ag)))
-        S.accepts.push({
-          pid: a.pid,
-          ag: g.id,
-          at: now(),
-          receipt: 'RCPT-AUTO-' + uid(''),
-          auto: 'Non-material change',
-        });
-    });
-  }
-  audit(
-    'Agreement published',
-    g.id,
-    (g.material ? 'Material' : 'Non-material') + ' · ' + affected.length + ' affected',
-  );
-  toast(
-    g.material
-      ? affected.length + ' people must re-accept; affected functions pause until they do.'
-      : 'Published. Non-material change — existing acceptances carried forward.',
-  );
-  ok();
-};
-A.agrRetire = d => {
-  byId('agreements', d.id).status = 'Retired';
-  audit('Agreement retired', d.id, '');
   ok();
 };
 A.tplState = d => {
@@ -835,7 +770,7 @@ route('platform', 'platform', () => {
             c.kind !== 'Platform' ? B('Assign administrator', 'ctxAdmin', { id: c.id }) : '',
           ]),
         ),
-        B(ic('plus', 14) + 'Create context', 'ctxNew', {}, 'btn-p btn-sm'),
+        '',
       ) +
       (S.cohortReqs.filter(r => r.status === 'Pending').length
         ? '<div class="section-gap"></div>' +
@@ -851,7 +786,7 @@ route('platform', 'platform', () => {
                   h(S.orgs.find(o => o.id === r.org)?.name),
                   h(S.packs.find(p => p.id === r.pack)?.name),
                   fmt(r.start),
-                  B('Create context', 'cohortCreate', { id: r.id }, 'btn-p btn-sm'),
+                  '',
                 ]),
             ),
           )
@@ -998,33 +933,6 @@ route('platform', 'platform', () => {
     body
   );
 });
-A.ctxNew = (d = {}) => {
-  clearF('cx');
-  UI.form.cx = { org: d.org || '', kind: 'Programme' };
-  const orgs = S.orgs.filter(o => o.status === 'Active');
-  modal(
-    'Create a context',
-    () =>
-      `<form data-f="cx" class="col" style="gap:14px" novalidate>${fi('cx', 'name', 'Name', { req: true })}${fi('cx', 'kind', 'Kind', { type: 'select', opts: ['Programme', 'Cohort', 'Organization'] })}${fi('cx', 'org', 'Organization', { type: 'select', req: true, ph: orgs.length ? 'Choose an organization' : 'No active organizations yet', opts: orgs.map(o => [o.id, o.name + (o.short ? ' (' + o.short + ')' : '')]), help: 'Active organizations from Organizations. Missing one? ' + L('Create an organization', 'tenants') + ' first.' })}${fi('cx', 'pack', 'Use-case pack', { type: 'select', req: true, opts: S.packs.map(p => [p.id, p.name]) })}<div class="actions">${B('Cancel', 'closeM', {}, 'btn-g')}<button class="btn btn-p" type="submit">Create context</button></div></form>`,
-  );
-};
-F.cx = d => {
-  if (
-    !validate('cx', d, {
-      name: ['req', ['fn', { f: v => !S.contexts.some(c => c.name.toLowerCase() === v.trim().toLowerCase()), m: 'A context with this name already exists.' }]],
-      org: [['req', 'Choose the organization that owns this context.'], ['fn', { f: v => orgOf(v)?.status === 'Active', m: 'That organization is not active.' }]],
-      pack: ['req'],
-    })
-  )
-    return render();
-  const c = { id: uid('c'), name: d.name.trim(), org: d.org, pack: d.pack, kind: d.kind, status: 'Active' };
-  S.contexts.push(c);
-  audit('Context created', c.id, c.name + ' · ' + orgOf(d.org).name + ' · ' + d.pack);
-  UI.modal = null;
-  clearF('cx');
-  toast(c.name + ' created for ' + orgOf(d.org).name + '.');
-  ok();
-};
 A.ctxAdmin = d => {
   modal(
     'Assign an administrator to ' + h(S.contexts.find(c => c.id === d.id).name),

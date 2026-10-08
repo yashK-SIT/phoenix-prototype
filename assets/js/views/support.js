@@ -158,55 +158,11 @@ F.icd = (d) => {
   ok();
 };
 // ---------- REVIEW INBOX / METRICS / AUDIT ----------
-route("inbox", "any", () => {
-  const it = inboxItems();
-  return (
-    head(
-      "Unified review inbox",
-      "Everything waiting for your review or decision. Items stay open and visible to the Programme Administrator until acted on.",
-    ) +
-    table(
-      ["Type", "Item", "Detail", ""],
-      it.map(([t, n, dd, r, p]) => [
-        pill(t, "p-navy"),
-        h(n),
-        h(dd),
-        B("Open", "go", { r, ...p }),
-      ]),
-      "Nothing waiting. Well done.",
-    ) +
-    (hasB("AI Owner") || role() === "F"
-      ? '<div style="height:16px"></div>' +
-        card(
-          "AI outputs awaiting review (Class C)",
-          "Draft → Review → Edit → Approve/Reject → Release",
-          table(
-            ["Job", "Purpose", "By", "Sources", ""],
-            S.ai
-              .filter((j) => j.status === "In review" && j.cls === "C")
-              .map((j) => [
-                h(j.id),
-                h(j.purpose),
-                nm(j.by),
-                h(j.sources),
-                B("Reject", "aiRev", { id: j.id, v: "Rejected" }) +
-                  B(
-                    "Approve release",
-                    "aiRev",
-                    { id: j.id, v: "Released" },
-                    "btn-p btn-sm",
-                  ),
-              ]),
-          ),
-        )
-      : "")
-  );
-});
 A.aiRev = (d) => {
   const j = byId("ai", d.id);
   j.status = d.v;
   j.reviewed = true;
-  notify(j.by, "AI output " + d.v.toLowerCase() + ": " + j.purpose, "inbox");
+  notify(j.by, "AI output " + d.v.toLowerCase() + ": " + j.purpose, "home");
   audit("AI output " + d.v, j.id, "");
   ok();
 };
@@ -288,6 +244,30 @@ F.prov = (d) => {
 // ---------- GAP CLOSURE (Section 6 user-story audit) ----------
 function migrate() {
   ensurePlatformData();
+  // policies carry structured text; the Participant Agreement v3 (processing covered by the agreement) is published
+  S.agreements.forEach((g) => {
+    if (!g.text) g.text = polSeedText(g);
+  });
+  const g11 = byId("agreements", "g11");
+  if (g11 && g11.status === "Draft" && !g11.coversPurposes) {
+    S.agreements
+      .filter((g) => g.type === g11.type && g.ctx === g11.ctx && g.status === "Active")
+      .forEach((g) => (g.status = "Superseded"));
+    Object.assign(g11, {
+      status: "Active",
+      effective: g11.effective && g11.effective > "2026-10-07" ? g11.effective : "2026-10-07",
+      summary:
+        "How PHOENIX may use your information is now part of this agreement. The separate permission choices are removed, so there is nothing to switch on or off later.",
+      coversPurposes: true,
+    });
+    g11.text = polSeedText({ ...g11, ver: 3 });
+  }
+  // Purpose Compass questions are data managed by the Platform Administrator
+  if (!S.compassQs) S.compassQs = seedCompassQs();
+  // one default programme for self-registration (there is no programme choice)
+  S.settings.defaultCtx = S.settings.defaultCtx || "c1";
+  // two-person conversations (sponsor ↔ project owner)
+  S.dms = S.dms || [];
   // deliverables → evidence → Learning Harvest → profile evolution
   S.evolution = S.evolution || [];
   S.rooms.forEach((x) =>
@@ -610,7 +590,7 @@ const initiativesView = () =>
       card(
         h(i.title),
         "Published " + fmt(i.at) + " by " + nm(i.by),
-        `<p class="muted">${h(i.summary)}</p><div class="row wrap" style="margin-top:12px">${B("Sponsor seats", "go", { r: "billing", tab: "sponsor" })}${B("Browse projects", "go", { r: "funding", tab: "discover" }, "btn-p btn-sm")}</div>`,
+        `<p class="muted">${h(i.summary)}</p><div class="row wrap" style="margin-top:12px">${B("Browse projects", "go", { r: "funding", tab: "discover" }, "btn-p btn-sm")}</div>`,
       ),
     )
     .join('<div class="section-gap"></div>') ||
@@ -878,37 +858,7 @@ F.coh = (d) => {
   toast("Request sent to the Platform Administrator.");
   ok();
 };
-A.cohortCreate = (d) => {
-  if (role() !== "T") return deny("not permitted");
-  const r = byId("cohortReqs", d.id);
-  r.status = "Created";
-  S.contexts.push({
-    id: uid("c"),
-    name: r.name,
-    org: r.org,
-    pack: r.pack,
-    kind: "Cohort",
-    status: "Active",
-  });
-  S.assign.push({
-    id: uid("a"),
-    pid: r.by,
-    role: "O",
-    ctx: S.contexts.slice(-1)[0].id,
-    status: "Active",
-    bundles: [],
-    onb: { agreement: false, consents: true, profile: true, compass: true },
-  });
-  notify(
-    r.by,
-    "Your cohort context “" +
-      r.name +
-      "” is ready. Switch to it from the context menu.",
-    "home",
-  );
-  audit("Cohort context created", r.name, "");
-  ok();
-};
+// Contexts are no longer created from the Platform Admin screens; cohort requests stay on record.
 // ---- Facilitator AI summary of a Circle (FCS-09, class B)
 A.circleSummary = (d) => {
   const c = byId("circles", d.id);

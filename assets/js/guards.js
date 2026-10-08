@@ -44,7 +44,6 @@ const G = {
   // circles
   circleState: d => isFac(d.id) || 'only the facilitator can change the Circle lifecycle',
   pauseCircle: d => isFac(d.id) || 'only the facilitator can pause a Circle',
-  completeCircle: d => isFac(d.id) || 'only the facilitator can complete a Circle',
   memSet: d => (d.kind && d.kind !== 'circles' ? true : isFac(d.c) || 'only the facilitator can change membership'),
   memRole: d => isFac(d.c) || 'only the facilitator can assign member roles',
   newSession: d =>
@@ -91,8 +90,6 @@ const G = {
   mentorReq: d =>
     (byId('mentorReqs', d.id)?.to === myId() && byId('mentorReqs', d.id).status === 'Pending') ||
     'only the requested mentor can respond',
-  mentorRequest: () => role() === 'F' || 'only a Faculty/Steward raises Mentor Requests',
-  mrq: () => role() === 'F' || 'only a Faculty/Steward raises Mentor Requests',
   checkin: d => byId('ropes', d.id)?.mentor === myId() || 'only the mentor records check-ins',
   ck: d => byId('ropes', d.id)?.mentor === myId() || 'only the mentor records check-ins',
   reqFinal: d => byId('ropes', d.id)?.mentor === myId() || 'only the mentor can finalise requirements',
@@ -278,9 +275,6 @@ const G = {
     const i = byId('invites', d.id);
     return (i && (role() === 'A' || (role() === 'O' && i.ctx === ctxId()))) || 'not permitted';
   },
-  agrNew: () => role() === 'A' || 'only a Programme Administrator publishes agreements',
-  agrPublish: () => role() === 'A' || 'only a Programme Administrator publishes agreements',
-  agrRetire: () => role() === 'A' || 'only a Programme Administrator retires agreements',
   cfg: () => ['A', 'O'].includes(role()) || 'only administrators change configuration',
   vote: d => (d.c ? true : role() === 'A' || 'only a Programme Administrator changes the voting rule'),
   cfgRestore: () => role() === 'A' || 'only a Programme Administrator restores configuration',
@@ -293,8 +287,6 @@ const G = {
     'only an authorised reviewer releases consequential AI outputs',
   ann: () => role() === 'A' || 'only a Programme Administrator sends announcements',
   // platform
-  ctxNew: () => role() === 'T' || 'only the Platform Administrator creates contexts',
-  cx: () => role() === 'T' || 'not permitted',
   ctxAdmin: () => role() === 'T' || 'not permitted',
   cxa: () => role() === 'T' || 'not permitted',
   aiToggle: () => role() === 'T' || 'not permitted',
@@ -468,7 +460,16 @@ Object.assign(G, {
     const m = byId('mentorReqs', d.id);
     return (m && (mentorReqVisible(m) || role() === 'A')) || 'you cannot view this request';
   },
-  mrq: d => (role() === 'F' && isSteward(d.project)) || 'only an assigned Faculty/Steward raises Mentor Requests',
+  mrq: d => (role() === 'F' && isSteward(d.project)) || byId('projects', d.project)?.owner === myId() || 'only the project owner or an assigned Faculty/Steward raises Mentor Requests',
+  mentorRequest: d => (role() === 'F' && isSteward(d.project)) || byId('projects', d.project)?.owner === myId() || 'only the project owner or an assigned Faculty/Steward raises Mentor Requests',
+  pfr: d => {
+    const c = byId('circles', d.c);
+    return (c && canFinalReview(c)) || 'only the project owner, Faculty/Steward or facilitator writes the final review';
+  },
+  cdoc: d => {
+    const c = byId('circles', d.c);
+    return (c && c.state === 'Active' && (memberOf(c) || isFac(d.c))) || 'only members of this Circle upload documents';
+  },
   // action rooms
   ri: d => {
     const x = byId('rooms', d.r);
@@ -535,6 +536,16 @@ Object.assign(G, {
   rperm: platformOnly('changes role permissions'),
   roleReset: platformOnly('resets role permissions'),
   roleState: platformOnly('archives or restores roles'),
+  polNew: platformOnly('writes policies'),
+  polEdit: platformOnly('writes policies'),
+  poled: platformOnly('writes policies'),
+  polPublish: platformOnly('publishes policies'),
+  polDel: platformOnly('deletes policy drafts'),
+  cqNew: platformOnly('manages Purpose Compass questions'),
+  cqEdit: platformOnly('manages Purpose Compass questions'),
+  cq: platformOnly('manages Purpose Compass questions'),
+  cqMove: platformOnly('manages Purpose Compass questions'),
+  cqDel: platformOnly('manages Purpose Compass questions'),
 });
 // ---- deliverables → evidence → Learning Harvest → profile evolution; role assignment expiry
 Object.assign(G, {
@@ -558,6 +569,33 @@ Object.assign(G, {
   aexp: d => {
     const a = byId('assign', d.id);
     return (a && a.pid !== myId() && (role() === 'A' || (role() === 'O' && a.ctx === ctxId()))) || 'only an administrator in this context sets a role expiry';
+  },
+});
+// ---- pathways created by participants, reviewer assigned by the Programme Administrator
+Object.assign(G, {
+  dmOpen: d => {
+    const p = byId('projects', d.project);
+    if (!p) return 'project not found';
+    if (role() === 'S') return d.pid === p.owner || 'sponsors message the project owner';
+    return (p.owner === myId() && S.assign.some(a => a.pid === d.pid && roleBase(a.role) === 'S')) || 'only the project owner messages a sponsor about this project';
+  },
+  editSession: d => (isFac(d.c) && activeSpace('circles', d.c)) || 'only the project owner or facilitator edits sessions in an active Circle',
+  pwNew: () => roleBase(role()) === 'P' || 'only participants create their own pathway',
+  pwn: d => {
+    if (!d.id) return roleBase(role()) === 'P' || 'only participants create their own pathway';
+    const p = byId('pathways', d.id);
+    return (p && p.by === myId() && p.state === 'Changes requested') || 'only the participant can update a pathway returned for changes';
+  },
+  pwUpd: d => (byId('pathways', d.id)?.by === myId() && byId('pathways', d.id)?.state === 'Changes requested') || 'only the participant can update a pathway returned for changes',
+  pwAssign: () => role() === 'A' || 'only the Programme Administrator assigns pathway reviewers',
+  pwas: () => role() === 'A' || 'only the Programme Administrator assigns pathway reviewers',
+  pwDec: d => {
+    const p = byId('pathways', d.id);
+    return (p && p.reviewer === myId() && p.state === 'In review') || 'only the assigned reviewer decides on this pathway';
+  },
+  pwd: d => {
+    const p = byId('pathways', d.id);
+    return (p && p.reviewer === myId() && p.state === 'In review') || 'only the assigned reviewer decides on this pathway';
   },
 });
 // Wrap handlers. Same key may exist in A (click) and F (form submit); both are guarded.

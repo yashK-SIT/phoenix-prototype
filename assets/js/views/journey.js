@@ -57,10 +57,9 @@ function stageGate(p, kind, o) {
     items.push([agreed, 'The matter is discussed and agreed — at least one decision is recorded (weighted vote ≥ ' + S.settings.voting.threshold + '% or facilitator record).']);
     if (!skipsRope(p)) {
       items.push([!!p.rope, 'A Rope Team is formed: a mentor accepts a Mentor Request.']);
-      const act = !p.rope && fac && o.state === 'Active'
-        ? agreed
-          ? B(ic('route', 14) + 'Raise Mentor Request', 'mentorRequest', { project: p.id }, 'btn-p btn-sm') + B(ic('link', 14) + 'Find a collaborator', 'collabFind', { project: p.id })
-          : `<button class="btn btn-p btn-sm" type="button" disabled>${ic('route', 14)}Raise Mentor Request</button><span class="cap">Record an approved decision first.</span>`
+      const steward = r === 'F' && p.stewards.includes(myId());
+      const act = !p.rope && (steward || p.owner === myId()) && o.state === 'Active'
+        ? B(ic('route', 14) + 'Raise Mentor Request', 'mentorRequest', { project: p.id }, 'btn-p btn-sm') + (steward ? B(ic('link', 14) + 'Find a collaborator', 'collabFind', { project: p.id }) : '')
         : '';
       return gateCard('Forward: Circle → Rope Team', items, act, p, kind, o);
     }
@@ -237,7 +236,7 @@ function tick() {
   });
   S.circles.forEach(c =>
     (c.polls || []).forEach(p => {
-      if (p.status === 'Open' && p.closes < t) closePollCore({ c: c.id, p: p.id }, 'due', true);
+      if (p.status === 'Open' && (p.closes.length > 10 ? p.closes : p.closes + 'T23:59') < now().slice(0, 16)) closePollCore({ c: c.id, p: p.id }, 'due', true);
     }),
   );
 }

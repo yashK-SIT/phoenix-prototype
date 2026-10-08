@@ -1,7 +1,7 @@
 // ---------- ACTION ROOM TASK BOARD (Kanban) and MY TASKS ----------
 // Board columns follow the task lifecycle. Cards are dragged between columns (HTML5 drag and drop) or moved from the
 // task detail, which is also the keyboard and touch route. Every move passes the guard layer (A.taskMove).
-const TASK_COLS = ['To do', 'In progress', 'Done'];
+const TASK_COLS = ['To do', 'In progress', 'Review', 'Done'];
 const TASK_PRIOS = ['Urgent', 'High', 'Medium', 'Low'];
 const PRIO_IC = { Urgent: 'alert', High: 'arrow', Medium: 'more', Low: 'chev' };
 UI.kb = UI.kb || {};
@@ -37,15 +37,29 @@ function delivBlock(x, k, edit, lead) {
   const none = '<span class="cap">None</span>';
   return `<section class="tk-deliv col" style="gap:14px"><h3 class="h3">Deliverable</h3>
   ${edit && lead ? fi('tke', 'req', 'Required deliverable — must be done before evidence upload and the Learning Harvest', { type: 'checkbox', value: k.opt ? '' : 'yes' }) : `<div><span class="lbl">Requirement</span>${pill(k.opt ? 'Optional' : 'Required', k.opt ? 'p-grey' : 'p-navy')}</div>`}
-  <div class="field"><span class="lbl">Resources</span>${edit ? chkGroup('res', (x.resources || []).map(r => [r.id, h(r.t) + (r.from ? ` <span class="cap">· ${h(r.from)}</span>` : '')]), k.res || []) + '<span class="help">Resources are added on the Resources & wins tab.</span>' : (k.res || []).map(id => h(resLabel(x, id))).join(', ') || none}</div>
   ${edit ? msel('tke', 'partners', 'Partners / contributors', people, k.partners || [], { none: 'No other active members.' }) : `<div><span class="lbl">Partners / contributors</span>${(k.partners || []).map(nm).join(', ') || none}</div>`}
   <div class="field"><span class="lbl">Supporting records and evidence</span>${edit ? chkGroup('evidence', roomEvidence(x).map(e => [e.id, h(e.title) + ` <span class="cap">· ${h(e.review)}</span>`]), k.evidence || []) : kev.map(e => L(h(e.title), 'evidence', { id: e.id })).join(', ') || '<span class="cap">None attached</span>'}${x.state === 'Active' && memberOf(x) ? `<div style="margin-top:8px">${B(ic('upload', 14) + 'Upload evidence for this deliverable', 'go', { r: 'newevidence', link: x.id, task: k.id })}</div>` : ''}</div>
   ${k.status === 'Done' ? `<div class="field"><span class="lbl">Completion</span><div class="row wrap" style="gap:8px">${pill('Completed', 'p-green')}<span class="cap">${k.doneAt ? fmt(k.doneAt) : ''}</span></div>${edit ? fi('tke', 'doneNote', 'Completion note', { type: 'textarea', rows: 2, ph: 'What was delivered, and anything others should know' }) : k.doneNote ? `<p class="muted" style="margin-top:6px">${h(k.doneNote)}</p>` : ''}</div>` : ''}
   </section>`;
 }
 // Who may move a card, and where.
-const taskCanMove = (x, k) => x.state === 'Active' && k.status !== 'Declined' && (isLead(x) || role() === 'A' || (k.owner === myId() && k.status !== 'Proposed'));
-const taskTargets = (x, k) => (k.status === 'Proposed' ? (isLead(x) || role() === 'A' ? ['Proposed', ...TASK_COLS] : []) : TASK_COLS);
+// Who may review finished work in this room: its Reviewer or Facilitator, or a Faculty/Steward (member or project steward).
+function taskReviewer(x) {
+  const pr = S.projects.find(p => p.room === x.id);
+  return sCan('rooms', x, 'review') || (role() === 'F' && (memberOf(x) || (pr && pr.stewards.includes(myId()))));
+}
+// The assignee, project owner or facilitator moves work between To do, In progress and Review.
+// Only a reviewer moves Review → Done (or sends it back), and only a reviewer reopens Done work.
+const taskWorker = (x, k) => isLead(x) || role() === 'A' || (k.owner === myId() && k.status !== 'Proposed');
+function taskTargets(x, k) {
+  if (x.state !== 'Active' || k.status === 'Declined') return [];
+  if (k.status === 'Proposed') return isLead(x) || role() === 'A' ? ['Proposed', 'To do', 'In progress'] : [];
+  const t = new Set([k.status]);
+  if (k.status !== 'Done' && taskWorker(x, k)) ['To do', 'In progress', 'Review'].forEach(v => t.add(v));
+  if (taskReviewer(x) && ['Review', 'Done'].includes(k.status)) ['In progress', 'Review', 'Done'].forEach(v => t.add(v));
+  return TASK_COLS.filter(c => t.has(c));
+}
+const taskCanMove = (x, k) => taskTargets(x, k).some(s => s !== k.status);
 const kbState = x => (UI.kb[x.id] = UI.kb[x.id] || { view: 'board', who: '', prio: '', q: '', only: '' });
 function kbFilter(x, list) {
   const f = kbState(x);
@@ -194,7 +208,17 @@ A.taskMove = d => {
   k.status = to;
   if (from !== to) {
     (k.log = k.log || []).push({ at: now(), by: myId(), t: from === 'Proposed' ? 'Approved and moved to ' + to : 'Moved from ' + from + ' to ' + to });
-    if (to === 'Done') k.doneAt = now();
+    if (to === 'Done') {
+      k.doneAt = now();
+      k.reviewedBy = myId();
+    }
+    if (to === 'Review') {
+      k.reviewAt = now();
+      const pr = S.projects.find(p => p.room === x.id);
+      [...new Set([...x.members.filter(m => m.status === 'Active' && ['Reviewer', 'Facilitator'].includes(spaceRole('rooms', x, m.pid))).map(m => m.pid), ...(pr ? pr.stewards : [])])]
+        .filter(p => p && p !== myId())
+        .forEach(p => notify(p, `Ready for review in ${x.name}: ${taskKey(x, k)} “${k.t}”`, 'room', { id: x.id, tab: 'plan' }));
+    }
     sysMsg(x, `${me().name} moved ${taskKey(x, k)} “${k.t}” to ${to}`);
     taskNotify(x, k, `${taskKey(x, k)} “${k.t}” moved to ${to} in ${x.name}`);
     audit('Task moved', x.id, taskKey(x, k) + ': ' + from + ' → ' + to);
@@ -215,7 +239,7 @@ A.taskView = d => {
   mselReset('tke', 'partners');
   UI.form.tke = { t: k.t, desc: k.desc || '', owner: k.owner, due: k.due || '', prio: k.prio || 'Medium', status: k.status, doneNote: k.doneNote || '' };
   const mem = roomActive(x).map(m => [m.pid, P(m.pid).name + ' · ' + (spaceRole('rooms', x, m.pid) || '')]);
-  const stOpts = k.status === 'Proposed' ? (lead ? ['Proposed', ...TASK_COLS] : ['Proposed']) : TASK_COLS;
+  const stOpts = taskTargets(x, k).length ? taskTargets(x, k) : [k.status];
   modal(
     `<span class="kb-key" style="font-size:13px;margin-right:8px">${h(taskKey(x, k))}</span>${h(k.t)}`,
     () =>
@@ -250,13 +274,8 @@ F.tke = d => {
   // deliverable details
   const arr = v => [].concat(v || []);
   const same = (a, b) => a.length === b.length && a.every(v => b.includes(v));
-  const res = arr(d.res),
-    pts = arr(d.partners),
+  const pts = arr(d.partners),
     evs = arr(d.evidence);
-  if (!same(res, k.res || [])) {
-    ch.push('Resources: ' + (res.map(id => resLabel(x, id)).join(', ') || 'none'));
-    k.res = res;
-  }
   if (!same(pts, k.partners || [])) {
     ch.push('Partners: ' + (pts.map(p => P(p).name).join(', ') || 'none'));
     k.partners = pts;

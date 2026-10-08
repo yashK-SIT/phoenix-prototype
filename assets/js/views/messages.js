@@ -4,17 +4,19 @@ UI.chat = UI.chat || {};
 const CHAT_KINDS = {
   circles: 'Circle',
   ropes: 'Rope Team',
+  dms: 'Direct message',
   get rooms() {
     return WL();
   },
 };
 const CHAT_ROUTE = { circles: 'circle', ropes: 'rope', rooms: 'room' };
-const CHAT_IC = { circles: 'users', ropes: 'route', rooms: 'room' };
+const CHAT_IC = { circles: 'users', ropes: 'route', rooms: 'room', dms: 'message' };
 const IMG_RE = /\.(png|jpe?g|gif|webp|heic)$/i;
 const chatSpaces = (pid = myId()) => [
   ...S.circles.filter(c => inCtx(c) && memberOf(c, pid)).map(o => ({ kind: 'circles', o })),
   ...S.ropes.filter(r => inCtx(r) && memberOf(r, pid)).map(o => ({ kind: 'ropes', o })),
   ...S.rooms.filter(r => inCtx(r) && memberOf(r, pid) && r.state !== 'Draft').map(o => ({ kind: 'rooms', o })),
+  ...(S.dms || []).filter(r => memberOf(r, pid)).map(o => ({ kind: 'dms', o })),
 ];
 const hasChats = () => !!S && !!S.session && chatSpaces().length > 0;
 const readMark = (id, pid = myId()) => ((S.chatRead || {})[pid] || {})[id] || '';
@@ -94,11 +96,11 @@ function convList(sel) {
   list.sort((a, b) => b.last.localeCompare(a.last));
   const chip = (k, l) =>
     `<button type="button" class="fchip ${f === k ? 'on' : ''}" data-a="chatFilter" data-v="${k}">${l}</button>`;
-  return `<div class="mlist-h"><h1 class="h2">Messages</h1><p class="cap">Circles, Rope Teams and ${WL()}s you belong to</p><input class="input msearch" placeholder="Search conversations" value="${h(UI.chat.q || '')}" data-ch="chatSearch" aria-label="Search conversations"><div class="row wrap" style="gap:6px">${chip('all', 'All')}${chip('unread', 'Unread')}${chip('circles', 'Circles')}${chip('ropes', 'Rope Teams')}${chip('rooms', WL() + 's')}</div></div><div class="mlist" role="list">${
+  return `<div class="mlist-h"><h1 class="h2">Messages</h1><p class="cap">Circles, Rope Teams and ${WL()}s you belong to</p><input class="input msearch" placeholder="Search conversations" value="${h(UI.chat.q || '')}" data-ch="chatSearch" aria-label="Search conversations"><div class="row wrap" style="gap:6px">${chip('all', 'All')}${chip('unread', 'Unread')}${chip('circles', 'Circles')}${chip('ropes', 'Rope Teams')}${chip('rooms', WL() + 's')}${(S.dms || []).some(x => memberOf(x)) ? chip('dms', 'Direct') : ''}</div></div><div class="mlist" role="list">${
     list
       .map(({ kind, o, last, un }) => {
         const on = sel && sel.o.id === o.id;
-        return `<button type="button" role="listitem" class="mconv ${on ? 'on' : ''} ${un ? 'un' : ''}" data-a="chatOpen" data-id="${o.id}" data-k="${kind}" ${on ? 'aria-current="true"' : ''}><span class="mav ${kind === 'circles' ? 'c' : kind === 'rooms' ? 'a' : 'r'}">${ic(CHAT_IC[kind], 18)}</span><span class="mconv-b"><span class="row" style="gap:8px;justify-content:space-between"><b class="mname">${h(o.name)}</b><span class="mtime">${shortWhen(last)}</span></span><span class="row" style="gap:8px;justify-content:space-between"><span class="mprev">${chatPreview(o)}</span>${un ? `<span class="mbadge" aria-label="${un} unread">${un}</span>` : o.state !== 'Active' ? `<span class="mstate">${h(o.state)}</span>` : ''}</span></span></button>`;
+        return `<button type="button" role="listitem" class="mconv ${on ? 'on' : ''} ${un ? 'un' : ''}" data-a="chatOpen" data-id="${o.id}" data-k="${kind}" ${on ? 'aria-current="true"' : ''}><span class="mav ${kind === 'circles' ? 'c' : kind === 'rooms' ? 'a' : kind === 'dms' ? 'd' : 'r'}">${ic(CHAT_IC[kind], 18)}</span><span class="mconv-b"><span class="row" style="gap:8px;justify-content:space-between"><b class="mname">${h(o.name)}</b><span class="mtime">${shortWhen(last)}</span></span><span class="row" style="gap:8px;justify-content:space-between"><span class="mprev">${chatPreview(o)}</span>${un ? `<span class="mbadge" aria-label="${un} unread">${un}</span>` : o.state !== 'Active' ? `<span class="mstate">${h(o.state)}</span>` : ''}</span></span></button>`;
       })
       .join('') || `<div style="padding:24px 8px">${empty('message', f === 'unread' ? 'No unread messages' : 'No conversations', f === 'unread' ? 'You are all caught up.' : 'You join a conversation when you become a member of a Circle, Rope Team or ' + WL() + '.')}</div>`
   }</div>`;
@@ -157,7 +159,7 @@ function chatThread(kind, o, opts = {}) {
     .map(m => `<span class="av" title="${nm(m.pid)}">${ini(m.pid)}</span>`)
     .join('');
   return `<section class="mthread ${opts.embedded ? 'emb' : ''}" aria-label="Conversation: ${h(o.name)}">
-  <header class="mth-h">${!opts.embedded ? `<button type="button" class="iconbtn mback-btn" data-a="chatBack" aria-label="Back to conversations">${ic('chevl')}</button>` : ''}<span class="mav ${kind === 'circles' ? 'c' : kind === 'rooms' ? 'a' : 'r'}">${ic(CHAT_IC[kind], 18)}</span><div class="col" style="min-width:0;flex:1"><b class="mname">${h(o.name)}</b><span class="cap">${CHAT_KINDS[kind]} · ${members.length} members${o.state !== 'Active' ? ' · ' + h(o.state) : ''}</span></div><span class="mavs hide-sm">${avatars}</span>${openQ || qOnly ? `<button type="button" class="fchip ${qOnly ? 'on' : ''}" data-a="chatQOnly" data-id="${o.id}" title="Show open questions only">${ic('question', 14)}${openQ} open</button>` : ''}${acc.mem && openQ ? B(ic('sparkle', 14), 'chatQSum', { c: o.id, k: kind }, 'iconbtn mqs', 'aria-label="Summarise unresolved questions with AI" title="Summarise unresolved questions (AI, private)"') : ''}${!opts.embedded ? L(ic('arrow', 14) + '<span class="hide-sm">Open ' + CHAT_KINDS[kind] + '</span>', route_, { id: o.id }, 'btn btn-s btn-sm') : ''}</header>
+  <header class="mth-h">${!opts.embedded ? `<button type="button" class="iconbtn mback-btn" data-a="chatBack" aria-label="Back to conversations">${ic('chevl')}</button>` : ''}<span class="mav ${kind === 'circles' ? 'c' : kind === 'rooms' ? 'a' : 'r'}">${ic(CHAT_IC[kind], 18)}</span><div class="col" style="min-width:0;flex:1"><button type="button" class="mname mname-btn" data-a="chatMembers" data-c="${o.id}" data-k="${kind}" aria-haspopup="dialog" title="Show members">${h(o.name)}</button><span class="cap">${CHAT_KINDS[kind]} · ${members.length} members${o.state !== 'Active' ? ' · ' + h(o.state) : ''}</span></div><span class="mavs hide-sm">${avatars}</span>${openQ || qOnly ? `<button type="button" class="fchip ${qOnly ? 'on' : ''}" data-a="chatQOnly" data-id="${o.id}" title="Show open questions only">${ic('question', 14)}${openQ} open</button>` : ''}${acc.mem && openQ ? B(ic('sparkle', 14), 'chatQSum', { c: o.id, k: kind }, 'iconbtn mqs', 'aria-label="Summarise unresolved questions with AI" title="Summarise unresolved questions (AI, private)"') : ''}${!opts.embedded && route_ ? L(ic('arrow', 14) + '<span class="hide-sm">Open ' + CHAT_KINDS[kind] + '</span>', route_, { id: o.id }, 'btn btn-s btn-sm') : ''}${!opts.embedded && kind === 'dms' && o.project && byId('projects', o.project) && can('projects') && byId('projects', o.project).owner === myId() ? L(ic('arrow', 14) + '<span class="hide-sm">Open project</span>', 'project', { id: o.project }, 'btn btn-s btn-sm') : ''}</header>
   <div class="msgs" data-scroll="${o.id}" role="log" aria-live="polite">${rows || `<div class="mempty">${empty('message', qOnly ? 'No open questions' : 'No messages yet', qOnly ? 'Every question here has been answered.' : 'Start the conversation. Messages are visible to members of this ' + CHAT_KINDS[kind] + ' only.')}</div>`}${lastMine && lastSeen.length ? `<div class="mseen">Seen by ${h(lastSeen.join(', '))}</div>` : ''}</div>
   ${
     acc.ro
@@ -168,8 +170,9 @@ function chatThread(kind, o, opts = {}) {
   }</section>`;
 }
 const roleIn = (o, pid) => {
+  if ((S.dms || []).includes(o)) return roleInRaw(o, pid);
   const kind = S.circles.includes(o) ? 'circles' : S.ropes.includes(o) ? 'ropes' : 'rooms';
-  return spaceRole(kind, o, pid) || roleInRaw(o, pid);
+  return roleLabel(spaceRole(kind, o, pid) || roleInRaw(o, pid));
 };
 const roleInRaw = (o, pid) => (o.members.find(m => m.pid === pid) || {}).role || ROLE[(S.assign.find(a => a.pid === pid && a.ctx === o.ctx) || {}).role] || '';
 // ---- the Messages hub
@@ -183,6 +186,49 @@ route('messages', 'any', () => {
   if (sel) markRead(sel.o);
   return `<div class="msgshell ${UI.chat.open && sel ? 'has-sel' : ''}"><aside class="mside">${convList(sel)}</aside><div class="mmain">${sel ? chatThread(sel.kind, sel.o) : `<div class="mnone">${empty('message', sp.length ? 'Choose a conversation' : 'No conversations yet', sp.length ? 'Real-time chat with your Circles, Rope Teams and ' + WL() + 's. Messages, files, questions and coordination in one place.' : 'You join a conversation when you become a member of a Circle, Rope Team or ' + WL() + '.')}</div>`}</div></div>`;
 });
+// Clicking a conversation's name lists everyone in it, with their role in that space.
+A.chatMembers = d => {
+  const o = byId(d.k, d.c);
+  if (!o) return;
+  const ms = o.members.filter(m => !m.status || ['Active', 'Invited'].includes(m.status));
+  modal(
+    h(o.name) + ' · members',
+    `<p class="cap" style="margin-bottom:10px">${CHAT_KINDS[d.k]} · ${ms.filter(m => !m.status || m.status === 'Active').length} active member${ms.length === 1 ? '' : 's'}</p><div class="col" style="gap:2px">${ms
+      .map(m => `<div class="lrow"><span class="av">${ini(m.pid)}</span><div class="lt"><b>${nm(m.pid)}${m.pid === myId() ? ' <span class="cap">(you)</span>' : ''}</b><p class="cap">${h(roleIn(o, m.pid) || '—')}${m.label ? ' · ' + h(m.label) : ''}</p></div>${m.status && m.status !== 'Active' ? pill(m.status) : ''}</div>`)
+      .join('')}</div>`,
+  );
+};
+// A two-person conversation between a sponsor and a project owner, started from either side.
+function dmWith(pid, projectId) {
+  const ps = [myId(), pid].sort();
+  let o = (S.dms || []).find(x => x.members.map(m => m.pid).sort().join() === ps.join() && x.project === projectId);
+  if (!o) {
+    const pr = byId('projects', projectId);
+    const sp = role() === 'S' ? myId() : pid;
+    const ow = role() === 'S' ? pid : myId();
+    o = {
+      id: uid('dm'),
+      ctx: (pr && pr.ctx) || ctxId(),
+      project: projectId || null,
+      name: P(sp).name + ' · ' + (pr ? pr.title : 'project'),
+      state: 'Active',
+      members: [
+        { pid: sp, role: 'Sponsor', status: 'Active', label: (S.orgs.find(x => x.id === P(sp).org) || {}).name || '' },
+        { pid: ow, role: 'Project owner', status: 'Active' },
+      ],
+      chat: [],
+    };
+    (S.dms = S.dms || []).push(o);
+    sysMsg(o, 'Conversation started by ' + me().name);
+    audit('Direct conversation started', o.id, (pr ? pr.title : '') + ' · ' + P(pid).name);
+  }
+  return o;
+}
+A.dmOpen = d => {
+  const o = dmWith(d.pid, d.project);
+  save();
+  go('messages', { c: o.id, k: 'dms' });
+};
 A.chatOpen = d => {
   UI.chat.open = { id: d.id, k: d.k };
   UI.chat.reply = null;

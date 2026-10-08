@@ -12,7 +12,7 @@ const SPACE_ROLES = [
 ];
 const SPACE_ROLE_HELP = {
   "Project owner":
-    "Owns the project. Leads the work, manages members and joins votes with double weight.",
+    "Owns the project. Leads the work, manages the Circle with the facilitator, and joins votes with double weight.",
   Facilitator:
     "Faculty/Steward for this space. Facilitates, moderates, approves and reviews.",
   Member:
@@ -45,9 +45,6 @@ const defaultSpaceRole = (platformRole) =>
   ({
     F: "Facilitator",
     M: "Mentor",
-    C: "Partner",
-    O: "Observer",
-    A: "Observer",
   })[platformRole] || "Member";
 const ctxRole = (pid, c = ctxId()) =>
   (
@@ -75,9 +72,9 @@ const SPACE_CAN = {
     record: ALL_BUT_OBS,
     vote: ["Project owner", "Member"],
     poll: ["Project owner", "Facilitator"],
-    facilitate: ["Facilitator"],
+    facilitate: ["Project owner", "Facilitator"],
     members: ["Project owner", "Facilitator"],
-    moderate: ["Facilitator"],
+    moderate: ["Project owner", "Facilitator"],
     card: ALL_BUT_OBS,
     harvest: ALL_BUT_OBS,
   },
@@ -91,6 +88,10 @@ const SPACE_CAN = {
     moderate: ["Mentor", "Facilitator"],
     close: ["Mentor", "Facilitator"],
     ret: ALL_BUT_OBS,
+  },
+  dms: {
+    post: ALL_BUT_OBS,
+    moderate: [],
   },
   rooms: {
     post: ALL_BUT_OBS,
@@ -117,7 +118,7 @@ const roleTag = (kind, o) => {
     return spaceAdmin(kind, o) || ["A", "O"].includes(role())
       ? `<span class="srole" title="Programme oversight — not a member">${ic("shield", 13)}Oversight</span>`
       : "";
-  return `<span class="srole" title="${h(SPACE_ROLE_HELP[r])}">${ic("user", 13)}Your role here: <b>${h(r)}</b></span>`;
+  return `<span class="srole" title="${h(SPACE_ROLE_HELP[r])}">${ic("user", 13)}Your role here: <b>${h(roleLabel(r))}</b></span>`;
 };
 const roleNote = (kind, o) => {
   const r = spaceRole(kind, o);
@@ -129,9 +130,12 @@ const roleNote = (kind, o) => {
       )
     : "";
 };
-// Role selector used in the Members tabs.
+// Roles offered when inviting or changing someone's role. "Member" is shown as "Participant".
+const INVITE_ROLES = ["Member", "Facilitator", "Mentor"];
+const roleLabel = (r) => (r === "Member" ? "Participant" : r);
+// Role selector used in the Members tabs (a person who already holds another role keeps it as an option).
 const roleSelect = (act, data, cur, label) =>
-  `<select class="input" style="min-height:36px;font-size:12px;width:auto" data-ch="${act}"${attr(data)} aria-label="${h(label || "Role in this space")}">${SPACE_ROLES.map((x) => `<option ${x === normRole(cur) ? "selected" : ""}>${x}</option>`).join("")}</select>`;
+  `<select class="input" style="min-height:36px;font-size:12px;width:auto" data-ch="${act}"${attr(data)} aria-label="${h(label || "Role in this space")}">${[...INVITE_ROLES, ...(INVITE_ROLES.includes(normRole(cur)) ? [] : [normRole(cur)])].map((x) => `<option value="${x}" ${x === normRole(cur) ? "selected" : ""}>${roleLabel(x)}</option>`).join("")}</select>`;
 // Everyone in this context who could be added to a space, with their platform role.
 const eligiblePeople = (exclude = [], roles = ["P", "F", "M", "C", "O"]) =>
   S.assign

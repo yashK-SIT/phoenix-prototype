@@ -120,8 +120,8 @@ function inboxItems() {
           "AI output (Class C)",
           j.purpose,
           "Requested by " + P(j.by).name,
-          "inbox",
-          {},
+          "admin",
+          { tab: "ai" },
         ]),
       );
   if (r === "F")
@@ -889,11 +889,11 @@ function homeF() {
     head(
       "My PHOENIX",
       `Facilitator / Steward · ${h(ctx().name)}`,
-      B("Open review inbox", "go", { r: "inbox" }, "btn-p"),
+      B("Project reviews", "go", { r: "projects" }, "btn-p"),
     ) +
     `<div class="g12">
  <section class="card c7 purpose"><span class="over">Programme purpose</span><p class="h2" style="margin-top:8px">${h(ctx().name)}: move climate ideas from learning to accountable local action.</p><div class="purpose-facts">${[["Circles", myCircles().length, "circles"], ["Rope Teams", S.ropes.filter((r) => inCtx(r) && memberOf(r)).length, "ropeteams"], [WL() + "s", myRooms().length, "rooms"]].map(([l, n, r]) => `<a href="#" data-a="go" data-r="${r}"><b>${n}</b><span>${l}</span></a>`).join("")}</div><p class="cap" style="margin-top:8px">Spaces you facilitate or belong to in this programme.</p></section>${nextCard()}
- <div class="c12 g12">${stat("s-purple", "t-purple", "folder", subs.length, "Project submissions", "Awaiting review or clarification", "projects")}${stat("s-teal", "t-teal", "link", S.matches.filter((m) => m.steward === pid && m.status === "In steward review").length, "Match Briefs", "Awaiting your review", "matches")}${stat("s-slate", "t-navy", "award", S.evidence.filter((e) => e.review === "Submitted").length, "Evidence to review", "Set status and E0–E4", "evidence")}${stat("s-mist", "t-slate", "inbox", inbox.length, "Review inbox", "All items needing you", "inbox")}</div>
+ <div class="c12 g12">${stat("s-purple", "t-purple", "folder", subs.length, "Project submissions", "Awaiting review or clarification", "projects")}${stat("s-teal", "t-teal", "link", S.matches.filter((m) => m.steward === pid && m.status === "In steward review").length, "Match Briefs", "Awaiting your review", "matches")}${stat("s-slate", "t-navy", "award", S.evidence.filter((e) => e.review === "Submitted").length, "Evidence to review", "Set status and E0–E4", "evidence")}${stat("s-mist", "t-slate", "route", S.pathways.filter((x) => x.reviewer === pid && x.state === "In review").length, "Pathways to review", "Assigned to you", "pathway")}</div>
  ${myTasksCard()}
  ${card("Project submissions", "", subs.map((p) => lrow("folder", h(p.title), nm(p.owner) + " · " + pill(p.status), L("Review", "project", { id: p.id }))).join("") || empty("check", "No submissions waiting", ""), "", "c7")}
  ${card("Participants needing attention", "From Rope Team support indicators (activity-derived or participant-reported)", attention.join("") || empty("users", "No one flagged", ""), "", "c5")}
@@ -1120,7 +1120,7 @@ function homeO() {
       B("Organization workspace", "go", { r: "org" }, "btn-p"),
     ) +
     `<div class="g12">
- <div class="c12 g12">${stat("s-purple", "t-purple", "mail", inv.filter((i) => ["Pending", "Resent"].includes(i.status)).length, "Invitations pending", inv.filter((i) => i.status === "Accepted").length + " accepted", "org", { tab: "invites" })}${stat("s-teal", "t-teal", "users", metric("m2"), "Circle participation", "Aggregate", "metrics")}${stat("s-slate", "t-navy", "flag", metric("m6"), "Milestones completed", "Aggregate", "metrics")}${stat("s-mist", "t-slate", "card", S.seatPools.filter((s) => s.sponsor === myId()).reduce((a, s) => a + s.assigned.length, 0) + "/" + S.seatPools.filter((s) => s.sponsor === myId()).reduce((a, s) => a + s.total, 0), "Institution seats", "Assigned / total", "billing")}</div>
+ <div class="c12 g12">${stat("s-purple", "t-purple", "mail", inv.filter((i) => ["Pending", "Resent"].includes(i.status)).length, "Invitations pending", inv.filter((i) => i.status === "Accepted").length + " accepted", "org", { tab: "invites" })}${stat("s-teal", "t-teal", "users", metric("m2"), "Circle participation", "Aggregate", "metrics")}${stat("s-slate", "t-navy", "flag", metric("m6"), "Milestones completed", "Aggregate", "metrics")}${stat("s-mist", "t-slate", "card", S.seatPools.filter((s) => s.sponsor === myId()).reduce((a, s) => a + s.assigned.length, 0) + "/" + S.seatPools.filter((s) => s.sponsor === myId()).reduce((a, s) => a + s.total, 0), "Institution seats", "Assigned / total", "org")}</div>
  ${card("Circle and " + WL() + " activity", "Aggregate only — no individual participant records", table(["Space", "Type", "State", "Members"], [...S.circles.filter((x) => x.ctx === c).map((x) => [h(x.name), "Circle", pill(x.state), x.members.length]), ...S.rooms.filter((x) => x.ctx === c).map((x) => [h(x.name), WL(), pill(x.state), x.members.length])]), "", "c7")}
  ${card(
    "Aggregated evidence",
@@ -1151,7 +1151,7 @@ function homeS() {
       B("Projects & funding", "go", { r: "funding" }, "btn-p"),
     ) +
     `<div class="g12">${nextCard()}
- ${card("Projects matching your interests", ints.map(h).join(", "), match.map((p) => lrow("folder", h(p.title), "Stage: " + h(stageLabel(p.stage || "—")) + " · " + (p.tags || []).map(h).join(", "), L("View sponsor brief", "funding", { tab: "discover" }))).join("") || empty("folder", "No matching projects", ""), "", "c7")}
+ ${card("Projects matching your interests", ints.map(h).join(", "), match.map((p) => lrow("folder", h(p.title), "Stage: " + h(stageLabel(p.stage || "—")) + " · " + (p.tags || []).map(h).join(", "), `<span class="row wrap" style="gap:6px">${B(ic("message", 14), "dmOpen", { pid: p.owner, project: p.id }, "btn-s btn-sm", 'aria-label="Message project owner" title="Message project owner"')}${L("View sponsor brief", "funding", { tab: "discover" })}</span>`)).join("") || empty("folder", "No matching projects", ""), "", "c7")}
  ${card("Pitches received", "", pit.map((p) => lrow("send", cName(p.project), "From " + nm(p.from) + " · " + money("USD", p.amount), pill(p.status))).join("") || empty("send", "No pitches", ""), L("Open", "funding", { tab: "pitches" }), "c5")}
  ${card(
    "Funding and tranche status",
@@ -1185,10 +1185,6 @@ function homeS() {
    "Aggregate and funder-released only",
    dl([
      [
-       "Released Learning Harvests",
-       S.harvests.filter((x) => x.release === "Released").length,
-     ],
-     [
        "Evidence released to funders",
        S.evidence.filter((e) => e.release === "Approved for funder release")
          .length,
@@ -1212,24 +1208,6 @@ function homeS() {
    L("Approved evidence", "evidence"),
    "c7",
  )}
- ${card(
-   "Transactions",
-   "Read-only",
-   table(
-     ["Reference", "Product", "State", "Date"],
-     S.payments
-       .filter((p) => p.pid === myId() && !p.dup)
-       .map((p) => [
-         h(p.id),
-         h(byId("products", p.product)?.name || p.product),
-         pill(p.state),
-         fmt(p.at),
-       ]),
-     "No transactions yet.",
-   ),
-   L("Seats & payments", "billing"),
-   "c5",
- )}
  <div class="c12">${banner("info", "What sponsors never receive", "Private participant profiles, Purpose Compass responses, private discussions, mentor notes, AI conversations or unapproved evidence.")}</div></div>`
   );
 }
@@ -1247,7 +1225,7 @@ function homeA() {
       B("Programme admin", "go", { r: "admin" }, "btn-p"),
     ) +
     `<div class="g12">
- <div class="c12 g12">${stat("s-purple", "t-purple", "inbox", inboxItems().length, "Review inbox", "Across the programme", "inbox")}${stat("s-teal", "t-teal", "user", pend.length, "Role requests", "Awaiting approval", "admin", { tab: "approvals" })}${stat("s-slate", "t-navy", "alert", S.incidents.filter((i) => i.state !== "Closed").length, "Open incidents", "", "incidents")}${stat("s-mist", "t-slate", "card", S.ents.filter((e) => e.state === "Grace").length, "Payments in grace", "", "billing")}</div>
+ <div class="c12 g12">${stat("s-purple", "t-purple", "inbox", S.projects.filter((p) => inCtx(p) && p.status === "Submitted" && !p.stewards.length).length + S.pathways.filter((p) => inCtx(p) && p.state === "Awaiting reviewer").length, "Review requests", "Projects and pathways needing a reviewer", "admin", { tab: "requests" })}${stat("s-teal", "t-teal", "user", pend.length, "Role requests", "Awaiting approval", "admin", { tab: "approvals" })}${stat("s-slate", "t-navy", "alert", S.incidents.filter((i) => i.state !== "Closed").length, "Open incidents", "", "incidents")}${stat("s-mist", "t-slate", "card", S.ents.filter((e) => e.state === "Grace").length, "Payments in grace", "", "billing")}</div>
  ${card(
    "Programme metrics",
    "Starter registry",

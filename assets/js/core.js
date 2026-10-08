@@ -108,13 +108,15 @@ const tech = m => lvl(m).includes('T') || (lvl(m).includes('M') && role() === 'T
 const hasB = b => (asg()?.bundles || []).includes(b);
 const mine = pid => pid === S.session?.pid;
 const myId = () => S.session?.pid;
-const consent = (pid, k) => (S.consents[pid] || {})[k] || 'Declined';
+// Optional processing purposes are covered by the agreement (product decision): there is no separate opt-in.
+// Legal basis to be confirmed by the WSS Trust/Data Steward before any real data is processed.
+const consent = () => 'Granted';
 const ent = pid => S.ents.filter(e => e.pid === pid && e.ctx === ctxId() && ['Active', 'Grace'].includes(e.state));
 const inCtx = o => !o.ctx || o.ctx === ctxId();
 const reaccept = () => {
   const a = asg();
   if (!a) return null;
-  const g = S.agreements.find(g => g.ctx === a.ctx && g.status === 'Active' && g.roles.includes(a.role));
+  const g = S.agreements.find(g => g.ctx === a.ctx && g.status === 'Active' && g.roles.includes(roleBase(a.role)));
   if (!g) return null;
   return S.accepts.some(x => x.pid === a.pid && x.ag === g.id) ? null : g;
 };
@@ -402,6 +404,8 @@ function navItems() {
       ['tenants', 'Organizations', 'building'],
       ['platform', 'Contexts', 'layers'],
       ['roles', 'Role management', 'shield'],
+      ['policies', 'Policies & agreements', 'file'],
+      ['compassqs', 'Purpose Compass', 'target'],
       ['platform:integrations', 'Integrations', 'link'],
       ['platform:security', 'Security & access', 'lock'],
       ['platform:health', 'Health & alerts', 'chart'],
@@ -420,9 +424,9 @@ function navItems() {
   add('matching', 'matches', 'Match Briefs', 'link');
   add('evidence', 'evidence', r === 'S' || r === 'O' ? 'Approved evidence' : 'Evidence', 'award');
   add('repository', 'repository', 'Repository', 'archive');
-  add('harvest', 'harvests', 'Learning Harvests', 'sparkle');
+  add('harvest', 'harvests', 'Learning Harvests', 'sparkle', r !== 'S');
   if (can('funding')) items.push(['funding', r === 'S' ? 'Projects & funding' : 'Funding', 'coin']);
-  if (can('payments'))
+  if (can('payments') && r === 'A')
     items.push([
       'billing',
       r === 'S' ? 'Seats & payments' : r === 'A' ? 'Products & payments' : 'Access & billing',
@@ -430,8 +434,6 @@ function navItems() {
     ]);
   if (r === 'O') items.push(['org', 'Organization workspace', 'building']);
   if (r === 'A') items.push(['admin', 'Programme admin', 'settings']);
-  if (r === 'F' || r === 'A' || hasB('Reviewer') || hasB('Incident/Safety Owner'))
-    items.push(['inbox', 'Review inbox', 'inbox']);
   items.push(['resources', 'Resources & guidance', 'file']);
   items.push([
     'incidents',
@@ -484,7 +486,6 @@ const GROUP = {
 function navCount(r) {
   const pid = myId();
   if (r === 'messages') return unreadTotal();
-  if (r === 'inbox') return inboxItems().length;
   if (r === 'projects' && role() === 'F')
     return S.projects.filter(p => inCtx(p) && p.status === 'Submitted' && stewardOf(p)).length;
   if (r === 'matches')
@@ -517,10 +518,10 @@ function sidebar() {
 function topbar() {
   const a = asg(),
     c = ctx();
-  const others = S.assign.filter(x => x.pid === myId()).length;
+  const others = roleChoices().length;
   const unread = S.notifs.filter(n => n.pid === myId() && !n.read).length;
   return `<header class="top"><div class="mbrand" style="align-items:center"><span class="mark" style="width:32px;height:32px;font-size:14px">P</span></div>
- <button class="ctx" type="button" data-a="switcher" aria-label="Switch role or context. Current: ${h(c?.name)}, ${ROLE[a.role]}" title="${h(c?.name)} · ${ROLE[a.role]}">${ctxOrgMark()}<span class="ctxt"><b>${h(c?.name)}</b><small>${ROLE[a.role]}${a.bundles.length ? ' · +' + a.bundles.length + ' bundle' + (a.bundles.length > 1 ? 's' : '') : ''}</small></span>${others > 1 ? ic('chev', 16) : ''}</button>
+ <button class="ctx" type="button" data-a="switcher" aria-label="${h(me().name)}, ${h(ROLE[a.role])}${others > 1 ? '. Switch role' : ''}" title="${h(me().name)} · ${h(ROLE[a.role])}"><span class="ctxt"><b>${h(me().name)}</b><small>${h(ROLE[a.role])}${a.bundles.length ? ' · +' + a.bundles.length + ' bundle' + (a.bundles.length > 1 ? 's' : '') : ''}</small></span>${others > 1 ? ic('chev', 16) : ''}</button>
  <div class="grow"></div>
  ${can('ai') ? `<button type="button" class="btn btn-s btn-sm askbtn ${UI.panel === 'ask' ? 'on' : ''}" data-a="askToggle" aria-expanded="${UI.panel === 'ask'}" aria-controls="assist" title="Ask PHOENIX">${ic('sparkle', 16)}<span class="hide-md">Ask PHOENIX</span></button>` : ''}
  <div class="nwrap"><button class="iconbtn ${UI.panel === 'notif' ? 'on' : ''}" type="button" data-a="notifToggle" aria-haspopup="dialog" aria-expanded="${UI.panel === 'notif'}" aria-label="Notifications, ${unread} unread">${ic('bell')}${unread ? `<span class="badge">${unread}</span>` : ''}</button>${UI.panel === 'notif' ? notifMenu() : ''}</div>
@@ -586,10 +587,8 @@ function render() {
       html = PUB.pending();
     } else if (
       !a.onb.agreement ||
-      (reaccept() && !['privacy'].includes(UI.route)) ||
-      !a.onb.consents ||
       !a.onb.profile ||
-      (!a.onb.compass && a.role === 'P')
+      (!a.onb.compass && roleBase(a.role) === 'P')
     ) {
       html = ONB();
     } else {
@@ -606,7 +605,8 @@ function render() {
           inner = banner('err', 'Something went wrong on this screen', h(e.message));
         }
       }
-      html = `<div class="ph"><div class="app">${sidebar()}<div class="main">${topbar()}<main class="content${enter ? ' enter' : ''}" id="main">${inner}</main>${bottomnav()}</div></div></div>`;
+      const pg = reaccept();
+      html = `<div class="ph"${pg ? ' inert' : ''}><div class="app">${sidebar()}<div class="main">${topbar()}<main class="content${enter ? ' enter' : ''}" id="main">${inner}</main>${bottomnav()}</div></div></div>${pg ? policyGate(pg) : ''}`;
     }
   }
   if (UI.modal)
@@ -767,18 +767,42 @@ A.logout = () => {
   UI.route = 'login';
   render();
 };
+// The switcher lists roles, not programmes: one entry per distinct role the person holds.
+function roleChoices(pid = myId()) {
+  const cur = S.session ? asg() : null;
+  const out = [];
+  S.assign
+    .filter(x => x.pid === pid)
+    .forEach(x => {
+      const i = out.findIndex(y => y.role === x.role);
+      if (i < 0) out.push(x);
+      else if ((cur && x.id === cur.id) || (out[i].status !== 'Active' && x.status === 'Active')) out[i] = x;
+    });
+  return out;
+}
 A.switcher = () => {
-  const list = S.assign.filter(x => x.pid === myId());
+  const list = roleChoices();
   if (list.length < 2) {
-    toast('You hold one role in one context.', 'warn');
+    toast('You hold one role.', 'warn');
     render();
     return;
   }
   modal(
-    'Switch role or context',
-    `<p class="muted">My PHOENIX changes to the role and context you choose. Permissions always come from that context-scoped assignment.</p><div class="col" style="gap:8px">${list.map(x => `<button class="demo-acc" type="button" data-a="doSwitch" data-id="${x.id}"><span class="tile t-soft">${ic('users', 18)}</span><span class="col" style="flex:1"><b>${h(S.contexts.find(c => c.id === x.ctx).name)}</b><span class="cap">${ROLE[x.role]}${x.bundles.length ? ' · ' + x.bundles.join(', ') : ''}</span></span>${x.id === S.session.aid ? pill('Current', 'p-teal') : pill(x.status)}</button>`).join('')}</div>`,
+    'Switch role',
+    `<p class="muted">My PHOENIX changes to the role you choose. What you can see and do follows that role.</p><div class="col" style="gap:8px">${list.map(x => `<button class="demo-acc" type="button" data-a="doSwitch" data-id="${x.id}"><span class="tile t-soft">${ic('user', 18)}</span><span class="col" style="flex:1"><b>${h(ROLE[x.role])}</b><span class="cap">${x.bundles.length ? h(x.bundles.join(', ')) : 'No extra bundles'}</span></span>${x.id === S.session.aid ? pill('Current', 'p-teal') : pill(x.status)}</button>`).join('')}</div>`,
   );
 };
+// A policy published in another tab reaches this one straight away.
+window.addEventListener('storage', e => {
+  if (e.key !== KEY || !e.newValue || !S || !S.session) return;
+  try {
+    const n = JSON.parse(e.newValue);
+    if (n && n.agreements && JSON.stringify(n.agreements) !== JSON.stringify(S.agreements)) {
+      S.agreements = n.agreements;
+      render();
+    }
+  } catch (x) {}
+});
 A.doSwitch = d => {
   resetUI();
   S.session.aid = d.id;
@@ -798,7 +822,7 @@ A.moreNav = () =>
       })
       .join(
         '',
-      )}${can('ai') ? `<a href="#" class="nav" data-a="go" data-r="ask">${ic('sparkle')}<span>Ask PHOENIX</span></a>` : ''}${role() !== 'T' ? `<a href="#" class="nav" data-a="go" data-r="privacy">${ic('shield')}<span>Privacy & consent</span></a>` : ''}<a href="#" class="nav out" data-a="logout">${ic('logout')}<span>Log out</span></a></div>`,
+      )}${can('ai') ? `<a href="#" class="nav" data-a="go" data-r="ask">${ic('sparkle')}<span>Ask PHOENIX</span></a>` : ''}${role() !== 'T' ? `<a href="#" class="nav" data-a="go" data-r="privacy">${ic('shield')}<span>Privacy & agreements</span></a>` : ''}<a href="#" class="nav out" data-a="logout">${ic('logout')}<span>Log out</span></a></div>`,
   );
 A.read = d => {
   const n = S.notifs.find(x => x.id === d.id);

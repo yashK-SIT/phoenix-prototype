@@ -115,10 +115,10 @@ const lumOf = hex => {
   return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
 };
 // Logo, or initials on the brand colour with whichever text colour reads.
+// Brand colour and logo are not used: every organization shows its initials on the primary colour.
 function orgMark(o, size = 28) {
   if (!o) return '';
-  if (o.logo) return `<span class="orgmark" style="width:${size}px;height:${size}px"><img src="${o.logo}" alt=""></span>`;
-  const bg = HEX.test(o.brand || '') ? o.brand : '#004369';
+  const bg = '#004369';
   const fg = lumOf(bg) > 0.4 ? '#102330' : '#ffffff';
   const t = (o.short || o.name || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase();
   return `<span class="orgmark" style="width:${size}px;height:${size}px;background:${bg};color:${fg};font-size:${Math.round(size * 0.36)}px" aria-hidden="true">${h(t)}</span>`;
@@ -163,6 +163,84 @@ route('tenants', 'platform', () => {
     )
   );
 });
+// The person named under Admin: their invitation or role in the organization's programme, or whoever holds the role there.
+const orgAdminState = ad => {
+  const p = S.people.find(x => (x.email || '').toLowerCase() === ad.email.toLowerCase());
+  const a = p && S.assign.find(x => x.pid === p.id && x.ctx === ad.ctx && roleBase(x.role) === 'A');
+  if (a) return a.status;
+  const inv = byId('invites', ad.inv);
+  if (!inv) return 'Not invited';
+  if (['Pending', 'Resent'].includes(inv.status)) return inv.expires < today() ? 'Expired' : 'Invitation sent';
+  return inv.status;
+};
+function orgAdminCard(o, cs) {
+  if (o.admin && o.admin.email)
+    return card(
+      'Programme Administrator',
+      'Named under Admin. They run ' + h(S.contexts.find(c => c.id === o.admin.ctx)?.name || 'the organization’s programme') + '.',
+      dl([
+        ['Name', h(o.admin.name)],
+        ['Email', `<a class="lnk" href="mailto:${h(o.admin.email)}">${h(o.admin.email)}</a>`],
+        ['Phone', h(o.admin.phone || '—')],
+        ['Status', pill(orgAdminState(o.admin))],
+      ]),
+    );
+  const hs = S.assign.filter(a => roleBase(a.role) === 'A' && cs.some(c => c.id === a.ctx));
+  return card(
+    'Programme Administrator',
+    'Edit the organization to name the admin.',
+    hs.length ? table(['Person', 'Email', 'Context', 'Status'], hs.map(a => [`<b>${nm(a.pid)}</b>`, h(P(a.pid).email), h(S.contexts.find(c => c.id === a.ctx)?.name || ''), pill(a.status)]), '') : '<p class="cap">No Programme Administrator yet.</p>',
+  );
+}
+// Form values for the Admin section when editing: the named admin, or the current role holder.
+const orgAdminPrefill = o => {
+  if (o.admin) return { aname: o.admin.name, aemail: o.admin.email, aphone: o.admin.phone || '' };
+  const a = S.assign.find(x => roleBase(x.role) === 'A' && S.contexts.some(c => c.id === x.ctx && c.org === o.id));
+  return a ? { aname: P(a.pid).name, aemail: P(a.pid).email, aphone: '' } : {};
+};
+// An organization runs one programme on the University pack. A new one starts with copies of the default
+// programme's current policies, so its people have agreements to accept.
+function orgProgramme(o) {
+  const cs = S.contexts.filter(c => c.org === o.id);
+  const ex = (o.admin && cs.find(c => c.id === o.admin.ctx)) || cs.find(c => c.kind === 'Programme') || cs[0];
+  if (ex) return ex;
+  const c = { id: uid('c'), name: o.name + ' Programme', org: o.id, pack: 'uni', kind: 'Programme', status: 'Active' };
+  S.contexts.push(c);
+  S.agreements
+    .filter(g => g.ctx === S.settings.defaultCtx && g.status === 'Active')
+    .forEach(g =>
+      S.agreements.push({ id: uid('g'), type: g.type, ctx: c.id, ver: 1, status: 'Active', effective: today(), roles: [...g.roles], summary: '', text: g.text || polSeedText(g), ...(g.coversPurposes ? { coversPurposes: true } : {}) }),
+    );
+  audit('Context created', c.id, c.name + ' · ' + o.name);
+  return c;
+}
+// The person under Admin becomes the Programme Administrator. The Platform Administrator appoints them, so the
+// invitation is pre-approved. A changed email withdraws the earlier pending invitation; nobody loses a role.
+function orgAdminSet(o, d) {
+  const c = orgProgramme(o);
+  const email = d.aemail.trim();
+  const same = x => (x || '').toLowerCase() === email.toLowerCase();
+  const prev = o.admin;
+  const p = S.people.find(x => same(x.email));
+  const holds = p && S.assign.some(a => a.pid === p.id && a.ctx === c.id && roleBase(a.role) === 'A');
+  const live = S.invites.find(i => same(i.email) && i.ctx === c.id && i.role === 'A' && ['Pending', 'Resent'].includes(i.status) && i.expires >= today());
+  if (prev && prev.inv && !same(prev.email)) {
+    const old = byId('invites', prev.inv);
+    if (old && ['Pending', 'Resent'].includes(old.status)) old.status = 'Revoked';
+  }
+  let sent = null;
+  if (!holds && !live) {
+    const e = new Date();
+    e.setDate(e.getDate() + (+S.settings.inviteValidityDays || 14));
+    sent = { id: uid('i'), token: 'TKN-' + uid(''), email, role: 'A', ctx: c.id, org: o.id, status: 'Pending', expires: e.toISOString().slice(0, 10), by: myId(), sent: today(), preApproved: myId() };
+    S.invites.push(sent);
+    audit('Invitations created', c.id, '1 × ' + ROLE.A + ' (pre-approved)');
+  }
+  const ad = { name: d.aname.trim(), email, phone: (d.aphone || '').trim(), ctx: c.id, inv: sent ? sent.id : live ? live.id : prev && same(prev.email) ? prev.inv : null };
+  if (!prev || prev.email !== ad.email || prev.name !== ad.name || prev.phone !== ad.phone) audit('Organization admin set', o.id, ad.name + ' · ' + ad.email);
+  o.admin = ad;
+  return sent;
+}
 function tenantDetail(o) {
   if (!o) return empty('building', 'Organization not found', '', L('All organizations', 'tenants'));
   const cs = S.contexts.filter(c => c.org === o.id);
@@ -177,6 +255,7 @@ function tenantDetail(o) {
         ['Organization name', h(o.name)],
         ['Short name', h(o.short || '—')],
         ['Type', h(o.type)],
+        ['Use-case pack', h((S.packs.find(p => p.id === o.pack) || {}).name || '—')],
         ['Primary contact', h(o.contact || '—')],
         ['Email', o.email ? `<a class="lnk" href="mailto:${h(o.email)}">${h(o.email)}</a>` : '—'],
         ['Phone', h(o.phone || '—')],
@@ -184,28 +263,22 @@ function tenantDetail(o) {
         ['Email domains', o.domains ? o.domains.split(',').map(d => `<span class="pill p-grey">${h(d.trim())}</span>`).join(' ') : '—'],
         ['Address', h(o.address || '—')],
         ['Country', h(o.country || '—')],
-        ['Time zone', h(o.tz || '—')],
         ['Default language', h(o.lang || '—')],
         ['Data residency', h(o.region || '—')],
       ]),
       '',
-      'c8',
-    )}${card(
-      'Branding',
-      'Shown wherever this organization’s contexts appear.',
-      `<div class="brandbox"><div class="brandlogo">${o.logo ? `<img src="${o.logo}" alt="${h(o.name)} logo">` : orgMark(o, 64)}</div><div class="col" style="gap:4px"><span class="cap">Brand colour</span><span class="row" style="gap:8px"><span class="swatch" style="background:${h(o.brand)}"></span><b>${h(o.brand.toUpperCase())}</b></span><span class="cap" style="margin-top:6px">${o.logo ? 'Logo uploaded' : 'No logo — initials on the brand colour are used'}</span></div></div>`,
-      '',
-      'c4',
+      'c12',
     )}
+    <div class="c12">${orgAdminCard(o, cs)}</div>
     <div class="c12">${card(
       'Contexts',
       'Programmes, cohorts and organization spaces owned by this organization.',
       table(
         ['Context', 'Kind', 'Pack', 'Status', 'Members'],
         cs.map(c => [`<b>${h(c.name)}</b><div class="cap">${c.id}</div>`, h(c.kind), h(S.packs.find(p => p.id === c.pack)?.name || '—'), pill(c.status), S.assign.filter(a => a.ctx === c.id).length]),
-        'No contexts yet. Create the first one for this organization.',
+        'No contexts for this organization.',
       ),
-      o.status === 'Active' ? B(ic('plus', 14) + 'Create context', 'ctxNew', { org: o.id }, 'btn-s btn-sm') : '',
+      '',
     )}</div>
     <div class="c12">${card(
       'People',
@@ -225,9 +298,7 @@ A.tenantNew = d => {
   const o = d.id && orgOf(d.id);
   clearF('tnt');
   UI._tntLogo = undefined;
-  UI.form.tnt = o
-    ? { ...o }
-    : { type: 'University', status: 'Active', brand: '#004369', tz: 'Europe/London', lang: 'English', region: 'United Kingdom', country: '' };
+  UI.form.tnt = o ? { ...o, ...orgAdminPrefill(o) } : { type: 'University', status: 'Active', lang: 'English', region: 'United Kingdom', country: '' };
   modal(
     o ? 'Edit ' + h(o.name) : 'Create an organization',
     () => {
@@ -236,8 +307,9 @@ A.tenantNew = d => {
       return `<form data-f="tnt" class="col tnt-form" style="gap:18px" novalidate><input type="hidden" name="id" value="${o ? o.id : ''}">${errSum(f)}
     <fieldset class="fs"><legend>Identity</legend><div class="f2">${fi(f, 'name', 'Organization name', { req: true, max: 120 })}${fi(f, 'short', 'Short name or code', { max: 12, help: 'Used in lists and as initials when there is no logo.' })}</div><div class="f2">${fi(f, 'type', 'Type', { type: 'select', req: true, opts: ORG_TYPES })}${fi(f, 'status', 'Status', { type: 'select', req: true, opts: ['Active', 'Suspended'] })}</div>${fi(f, 'profile', 'About the organization', { type: 'textarea', rows: 2, max: 400 })}</fieldset>
     <fieldset class="fs"><legend>Contact</legend><div class="f2">${fi(f, 'contact', 'Primary contact name', { req: true })}${fi(f, 'email', 'Primary contact email', { type: 'email', req: true, auto: 'email' })}</div><div class="f2">${fi(f, 'phone', 'Phone', { type: 'tel', auto: 'tel' })}${fi(f, 'web', 'Website', { type: 'url', ph: 'https://' })}</div></fieldset>
-    <fieldset class="fs"><legend>Domain and branding</legend>${fi(f, 'domains', 'Email domains', { req: true, ph: 'example.org, mail.example.org', help: 'Comma-separated. People signing up with these domains can be matched to this organization.' })}<div class="f2"><div class="field"><label class="lbl" for="tnt_brand">Brand colour <span class="req">*</span></label><div class="row" style="gap:8px;flex-wrap:nowrap"><input type="color" id="tnt_brandpick" value="${h(HEX.test(cur.brand || '') ? cur.brand : '#004369')}" data-brandpick="1" aria-label="Pick brand colour" class="colorpick"><input id="tnt_brand" name="brand" class="input${fe(f, 'brand') ? ' err' : ''}" value="${h(cur.brand || '')}" placeholder="#004369" maxlength="7" data-brandhex="1"></div>${fe(f, 'brand') ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe(f, 'brand')}</span>` : '<span class="help">Hex value, for example #004369.</span>'}</div><div class="field"><span class="lbl">Brand logo</span><div class="row" style="gap:10px;flex-wrap:nowrap"><span class="tnt-prev">${cur.logo ? `<img src="${cur.logo}" alt="">` : orgMark({ ...cur, name: cur.name || '?' }, 40)}</span><label class="btn btn-s btn-sm" style="cursor:pointer">${ic('upload', 14)}${cur.logo ? 'Replace' : 'Upload'}<input type="file" name="logo" accept="image/png,image/jpeg,image/svg+xml,image/webp" class="sr" data-tntlogo="1"></label>${cur.logo ? B('Remove', 'tntLogoX', {}, 'btn-g btn-sm') : ''}</div>${fe(f, 'logo') ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe(f, 'logo')}</span>` : '<span class="help">PNG, JPG, SVG or WebP, up to 300 KB.</span>'}</div></div></fieldset>
-    <fieldset class="fs"><legend>Location and data</legend>${fi(f, 'address', 'Address', { type: 'textarea', rows: 2 })}<div class="f2">${fi(f, 'country', 'Country', { req: true })}${fi(f, 'tz', 'Time zone', { type: 'select', req: true, opts: TIMEZONES })}</div><div class="f2">${fi(f, 'lang', 'Default language', { type: 'select', opts: LANGS })}${fi(f, 'region', 'Data residency region', { type: 'select', req: true, opts: REGIONS, help: 'Where this organization’s data is expected to be stored.' })}</div></fieldset>
+    <fieldset class="fs"><legend>Admin</legend><p class="cap" style="margin:0 0 10px">${o ? 'The Programme Administrator for this organization. Changing the email sends a new invitation and withdraws the earlier one if it is still pending; anyone who already holds the role keeps it.' : 'This person becomes the Programme Administrator for this organization. They get an invitation to set up their account. You are appointing them, so the role needs no further approval.'}</p><div class="f2">${fi(f, 'aname', 'Name', { req: true, auto: 'off' })}${fi(f, 'aemail', 'Email', { type: 'email', req: true, auto: 'off' })}</div><div class="f2">${fi(f, 'aphone', 'Phone number', { type: 'tel', auto: 'off' })}</div></fieldset>
+    <fieldset class="fs"><legend>Domain</legend>${fi(f, 'domains', 'Email domains', { req: true, ph: 'example.org, mail.example.org', help: 'Comma-separated. People signing up with these domains can be matched to this organization.' })}</fieldset>
+    <fieldset class="fs"><legend>Location and data</legend>${fi(f, 'address', 'Address', { type: 'textarea', rows: 2 })}<div class="f2">${fi(f, 'country', 'Country', { req: true })}${fi(f, 'region', 'Data residency region', { type: 'select', req: true, opts: REGIONS, help: 'Where this organization’s data is expected to be stored.' })}</div></fieldset>
     <div class="actions">${B('Cancel', 'closeM', {}, 'btn-g')}<button class="btn btn-p" type="submit">${o ? 'Save changes' : 'Create organization'}</button></div></form>`;
     },
     true,
@@ -292,19 +364,14 @@ F.tnt = d => {
     contact: ['req'],
     email: ['req', 'email'],
     domains: ['req', ['fn', { f: () => doms.length && doms.every(x => DOMAIN.test(x)), m: 'Enter domains like example.org, separated by commas.' }], ['fn', { f: () => !taken, m: 'Domain ' + taken + ' already belongs to another organization.' }]],
-    brand: ['req', ['fn', { f: v => HEX.test(v), m: 'Enter a hex colour such as #004369.' }]],
     web: [['fn', { f: v => !v || /^https?:\/\/[^\s.]+\.[^\s]+$/i.test(v), m: 'Enter a full web address starting with https://' }]],
     country: ['req'],
-    tz: ['req'],
     region: ['req'],
+    aname: [['req', 'Enter the admin’s name.']],
+    aemail: [['req', 'Enter the admin’s email.'], 'email'],
+    aphone: [['fn', { f: v => !v || /^\+?[\d\s()-]{7,20}$/.test(v.trim()), m: 'Enter a phone number using digits, spaces, brackets or a leading +.' }]],
   });
-  if (UI._tntLogo === 'bad') {
-    UI.err.tnt = { ...(UI.err.tnt || {}), logo: 'Logo must be a PNG, JPG, SVG or WebP image up to 300 KB.' };
-    UI._tntLogo = undefined;
-    return render();
-  }
   if (!ok_) return render();
-  const logo = tntLogo(o);
   const rec = {
     name: d.name.trim(),
     short: (d.short || '').trim().toUpperCase(),
@@ -316,26 +383,24 @@ F.tnt = d => {
     phone: (d.phone || '').trim(),
     web: (d.web || '').trim(),
     domains: doms.join(', '),
-    brand: d.brand.toLowerCase(),
-    logo,
     address: (d.address || '').trim(),
     country: d.country.trim(),
-    tz: d.tz,
     lang: d.lang || 'English',
     region: d.region,
+    pack: o ? o.pack || 'uni' : 'uni',
   };
   let target = o;
   if (o) {
     const changed = Object.keys(rec).filter(k => (o[k] || '') !== (rec[k] || ''));
     Object.assign(o, rec);
     audit('Organization updated', o.id, changed.join(', ') || 'no changes');
-    toast('Organization saved.');
   } else {
     target = { id: uid('o'), created: today(), ...rec };
     S.orgs.push(target);
     audit('Organization created', target.id, target.name);
-    toast(target.name + ' created. It is now available when you create a context.');
   }
+  const sent = orgAdminSet(target, d);
+  toast(o ? 'Organization saved.' + (sent ? ' Invitation sent to ' + sent.email + '.' : '') : target.name + ' created with its programme. Invitation sent to ' + target.admin.email + ' as Programme Administrator.');
   UI._tntLogo = undefined;
   UI.modal = null;
   clearF('tnt');
@@ -517,5 +582,207 @@ A.roleState = d => {
   }
   r.status = d.v;
   audit('Role ' + (d.v === 'Active' ? 'restored' : 'archived'), r.id, r.name);
+  ok();
+};
+
+// ---------- POLICIES: the Platform Administrator writes, versions and publishes agreement text ----------
+// Publishing a new version asks everyone it applies to to review the changes and accept (policy update dialog).
+const polKey = g => g.type + '|' + g.ctx;
+function polGroups() {
+  return [...new Set(S.agreements.map(polKey))].map(k => {
+    const vs = S.agreements.filter(g => polKey(g) === k).sort((a, b) => b.ver - a.ver);
+    return { k, type: vs[0].type, ctx: vs[0].ctx, vs, act: vs.find(g => g.status === 'Active'), draft: vs.find(g => g.status === 'Draft') };
+  });
+}
+const polAffected = g => S.assign.filter(a => a.ctx === g.ctx && a.status === 'Active' && g.roles.includes(roleBase(a.role)));
+const polAccepted = g => polAffected(g).filter(a => S.accepts.some(x => x.pid === a.pid && x.ag === g.id));
+const ctxName = id => h((S.contexts.find(c => c.id === id) || {}).name || id);
+route('policies', 'platform', () => {
+  const g0 = UI.p.id && byId('agreements', UI.p.id);
+  if (g0) return policyPage(g0);
+  const gs = polGroups();
+  return (
+    head('Policies & agreements', 'Each policy has versions. Publishing a new version asks everyone it applies to to review the changes and accept them before they continue.') +
+    table(
+      ['Policy', 'Programme', 'Applies to', 'Current version', 'Accepted', 'Draft', ''],
+      gs.map(x => [
+        `<b>${h(x.type)}</b>`,
+        ctxName(x.ctx),
+        (x.act || x.vs[0]).roles.map(r => h(ROLE[r] || r)).join(', '),
+        x.act ? 'v' + x.act.ver + ` <span class="cap">· ${fmt(x.act.effective)}</span>` : '<span class="cap">None published</span>',
+        x.act ? polAccepted(x.act).length + ' of ' + polAffected(x.act).length : '—',
+        x.draft ? pill('Draft v' + x.draft.ver, 'p-amber') : '—',
+        L('Open', 'policies', { id: (x.act || x.vs[0]).id }, 'btn btn-s btn-sm'),
+      ]),
+      'No policies yet.',
+    )
+  );
+});
+function policyPage(g) {
+  const grp = polGroups().find(x => x.k === polKey(g));
+  const act = grp.act,
+    draft = grp.draft;
+  const shown = (UI.p.v && byId('agreements', UI.p.v)) || act || g;
+  const roles = (act || g).roles.map(r => h(ROLE[r] || r)).join(', ');
+  return (
+    head(h(grp.type), ctxName(grp.ctx) + ' · applies to ' + roles, draft ? '' : B(ic('plus', 16) + 'New version', 'polNew', { id: (act || g).id }, 'btn-p'), [['Policies & agreements', 'policies'], [h(grp.type)]]) +
+    (draft
+      ? card(
+          'Draft v' + draft.ver + ' — not published',
+          'Nobody sees this until you publish it. ' + (draft.summary ? 'Change: ' + h(draft.summary) : ''),
+          polDiffHtml(act, draft),
+          `<div class="row wrap">${B(ic('edit', 14) + 'Edit draft', 'polEdit', { id: draft.id })}${CB('Delete draft', 'polDel', { id: draft.id }, 'Delete draft v' + draft.ver + '? This cannot be undone.')}${CB(ic('send', 14) + 'Publish v' + draft.ver, 'polPublish', { id: draft.id }, 'Publish ' + h(grp.type) + ' v' + draft.ver + '? Everyone it applies to (' + polAffected(draft).length + ' people) will see the changes and must accept them before they continue.', 'btn-p btn-sm')}</div>`,
+        ) + '<div class="section-gap"></div>'
+      : '') +
+    `<div class="g12">${card((shown.status === 'Active' ? 'Current policy · ' : 'Version ') + 'v' + shown.ver, 'Effective ' + fmt(shown.effective) + ' · ' + h(shown.status), `<div class="col" style="gap:10px">${polBody(shown)}</div>`, '', 'c7')}
+ ${card(
+   'Version history',
+   act ? polAccepted(act).length + ' of ' + polAffected(act).length + ' people have accepted v' + act.ver + '.' : '',
+   table(
+     ['Version', 'Status', 'Effective', 'Change', ''],
+     grp.vs
+       .filter(v => v.status !== 'Draft')
+       .map(v => [
+         'v' + v.ver,
+         pill(v.status),
+         fmt(v.effective),
+         h(v.summary || '—'),
+         `<div class="row wrap" style="gap:6px">${v.id !== shown.id ? L('View', 'policies', { id: g.id, v: v.id }, 'btn btn-g btn-sm') : ''}${polPrev(v) ? B('Compare', 'polCmp', { id: v.id }) : ''}</div>`,
+       ]),
+   ),
+   '',
+   'c5',
+ )}</div>`
+  );
+}
+function polEditor(base, draft) {
+  clearF('poled');
+  UI.form.poled = { text: (draft || base).text || '', summary: draft ? draft.summary || '' : '', effective: draft ? draft.effective : today() };
+  modal(
+    draft ? 'Edit draft v' + draft.ver : 'New version of ' + h(base.type),
+    () =>
+      `<form data-f="poled" class="col" style="gap:14px" novalidate><input type="hidden" name="base" value="${base.id}"><input type="hidden" name="draft" value="${draft ? draft.id : ''}">${fi('poled', 'summary', 'What changed', { req: true, help: 'One or two sentences, shown to people together with the comparison.' })}${fi('poled', 'effective', 'Effective date', { type: 'date', req: true })}${fi('poled', 'text', 'Policy text', { type: 'textarea', rows: 16, req: true, help: 'Start each section with “## ” and a heading. Sections are compared heading by heading, word by word.' })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save draft</button></div></form>`,
+    true,
+  );
+}
+A.polNew = d => polEditor(byId('agreements', d.id), null);
+A.polEdit = d => {
+  const g = byId('agreements', d.id);
+  polEditor(g, g);
+};
+F.poled = d => {
+  if (!validate('poled', d, { summary: ['req'], effective: ['req', 'date'], text: ['req', ['min', 40]] })) return render();
+  const base = byId('agreements', d.base);
+  let g = d.draft && byId('agreements', d.draft);
+  if (!g) {
+    const max = Math.max(...S.agreements.filter(x => polKey(x) === polKey(base)).map(x => x.ver));
+    g = { id: uid('g'), type: base.type, ctx: base.ctx, ver: max + 1, status: 'Draft', roles: [...base.roles] };
+    S.agreements.push(g);
+  }
+  Object.assign(g, { summary: d.summary.trim(), effective: d.effective, text: d.text.replace(/\r/g, '').trim(), by: myId(), at: now() });
+  audit('Policy draft saved', g.id, g.type + ' v' + g.ver);
+  UI.modal = null;
+  clearF('poled');
+  toast('Draft saved. Check the comparison, then publish.');
+  save();
+  go('policies', { id: g.id });
+};
+A.polPublish = d => {
+  const g = byId('agreements', d.id);
+  S.agreements.filter(x => polKey(x) === polKey(g) && x.status === 'Active').forEach(x => (x.status = 'Superseded'));
+  g.status = 'Active';
+  g.published = now();
+  const aff = polAffected(g);
+  aff.forEach(a => notify(a.pid, `Policy updated: ${g.type} v${g.ver}. Review the changes to continue.`, 'home'));
+  audit('Policy published', g.id, g.type + ' v' + g.ver + ' · ' + aff.length + ' people must accept');
+  toast('Published. ' + aff.length + ' people will be asked to review and accept the changes.');
+  ok();
+};
+A.polDel = d => {
+  const g = byId('agreements', d.id);
+  const keep = polGroups().find(x => x.k === polKey(g));
+  S.agreements = S.agreements.filter(x => x.id !== d.id);
+  audit('Policy draft deleted', d.id, g.type + ' v' + g.ver);
+  save();
+  go('policies', keep && keep.act ? { id: keep.act.id } : {});
+};
+A.polCmp = d => {
+  const g = byId('agreements', d.id);
+  modal(h(g.type) + ': v' + polPrev(g).ver + ' → v' + g.ver, polDiffHtml(polPrev(g), g), true);
+};
+
+// ---------- PURPOSE COMPASS QUESTIONS: managed by the Platform Administrator ----------
+// Add, edit, delete and reorder at any time. Deleting stops the question being asked; existing answers are kept.
+route('compassqs', 'platform', () => {
+  const qs = compassQs();
+  const sets = [...new Set(qs.map(q => q.set))];
+  const last = qs.length - 1;
+  return (
+    head('Purpose Compass questions', 'The questions people answer in the Purpose Compass, in the order they are asked. Changes apply the next time someone opens the Compass; existing answers are kept.', B(ic('plus', 16) + 'Add question', 'cqNew', {}, 'btn-p')) +
+    card(
+      'Active questions',
+      qs.length + ' question' + (qs.length === 1 ? '' : 's') + ' in ' + sets.length + ' set' + (sets.length === 1 ? '' : 's') + '. Questions in the same set appear together on one screen.',
+      table(
+        ['#', 'Question', 'Set', 'Type', 'Required', 'Asked', ''],
+        qs.map((q, i) => [
+          String(i + 1),
+          `<b>${h(q.text)}</b>${q.help ? `<div class="cap">${h(q.help)}</div>` : ''}`,
+          h(q.set),
+          h((COMPASS_TYPES.find(t => t[0] === q.type) || [, q.type])[1]),
+          q.req ? pill('Required', 'p-navy') : '<span class="cap">Optional</span>',
+          q.onb ? 'At onboarding' : 'Later, in Profile',
+          `<div class="row" style="gap:4px;flex-wrap:nowrap">${B('↑', 'cqMove', { id: q.id, dir: -1 }, 'btn-g btn-sm' + (i === 0 ? ' is-off' : ''), `aria-label="Move up"${i === 0 ? ' disabled' : ''}`)}${B('↓', 'cqMove', { id: q.id, dir: 1 }, 'btn-g btn-sm' + (i === last ? ' is-off' : ''), `aria-label="Move down"${i === last ? ' disabled' : ''}`)}${B('Edit', 'cqEdit', { id: q.id })}${CB('Delete', 'cqDel', { id: q.id }, 'Delete “' + h(q.text.slice(0, 80)) + '”? People will no longer be asked it. Answers already given are kept.')}</div>`,
+        ]),
+        'No active questions. People skip the Purpose Compass until you add one.',
+      ),
+      '<p class="cap">Answers to the Purpose (PC1), Outcome (PC2) and First milestone (PC5) questions also show on the person’s North Star card. Deleting those questions leaves the card empty for new people.</p>',
+    )
+  );
+});
+function cqEditor(q) {
+  clearF('cq');
+  const sets = [...new Set(compassQs().map(x => x.set))];
+  UI.form.cq = q
+    ? { text: q.text, set: q.set, setNote: q.setNote || '', help: q.help || '', type: q.type, req: q.req ? 'yes' : '', onb: q.onb ? 'yes' : '', vis: q.vis || 'Private' }
+    : { type: 'textarea', onb: 'yes', vis: 'Private', set: sets[sets.length - 1] || '' };
+  modal(
+    q ? 'Edit question' : 'Add a question',
+    () =>
+      `<form data-f="cq" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${q ? q.id : ''}">${fi('cq', 'text', 'Question', { type: 'textarea', rows: 2, req: true })}<div class="f2"><div class="field"><label class="lbl" for="cq_set">Set <span class="req">*</span></label><input id="cq_set" name="set" class="input${fe('cq', 'set') ? ' err' : ''}" list="cq-sets" value="${h(fv('cq', 'set', ''))}" placeholder="e.g. Blockers"><datalist id="cq-sets">${sets.map(x => `<option value="${h(x)}">`).join('')}</datalist>${fe('cq', 'set') ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe('cq', 'set')}</span>` : ''}<span class="help">Pick an existing set or type a new one.</span></div>${fi('cq', 'type', 'Answer type', { type: 'select', opts: COMPASS_TYPES })}</div>${fi('cq', 'setNote', 'Set description (optional)', { help: 'Shown under the set title.' })}${fi('cq', 'help', 'Help text (optional)')}${fi('cq', 'vis', 'Visibility shown to the person', { type: 'select', opts: COMPASS_VIS })}${fi('cq', 'req', 'Required', { type: 'checkbox' })}${fi('cq', 'onb', 'Ask at onboarding (otherwise asked later, in Profile)', { type: 'checkbox' })}<div class="actions"><span></span><button class="btn btn-p" type="submit">${q ? 'Save changes' : 'Add question'}</button></div></form>`,
+  );
+}
+A.cqNew = () => cqEditor(null);
+A.cqEdit = d => cqEditor((S.compassQs || []).find(q => q.id === d.id));
+F.cq = d => {
+  if (!validate('cq', d, { text: ['req', ['min', 3]], set: ['req'] })) return render();
+  const fields = { text: d.text.trim(), set: d.set.trim(), setNote: (d.setNote || '').trim(), help: (d.help || '').trim(), type: COMPASS_TYPES.some(t => t[0] === d.type) ? d.type : 'textarea', req: d.req === 'yes', onb: d.onb === 'yes', vis: d.vis || 'Private' };
+  let q = d.id && (S.compassQs || []).find(x => x.id === d.id);
+  if (q) Object.assign(q, fields);
+  else {
+    q = { id: 'q' + uid(''), ...fields, order: Math.max(0, ...compassQs().map(x => x.order)) + 1 };
+    (S.compassQs = S.compassQs || []).push(q);
+  }
+  audit(d.id ? 'Purpose Compass question edited' : 'Purpose Compass question added', q.id, q.text.slice(0, 80));
+  UI.modal = null;
+  clearF('cq');
+  toast(d.id ? 'Question updated.' : 'Question added at the end. Move it up if needed.');
+  ok();
+};
+A.cqMove = d => {
+  const qs = compassQs();
+  const i = qs.findIndex(q => q.id === d.id);
+  const j = i + +d.dir;
+  if (i < 0 || j < 0 || j >= qs.length) return;
+  [qs[i].order, qs[j].order] = [qs[j].order, qs[i].order];
+  audit('Purpose Compass question moved', d.id, +d.dir < 0 ? 'up' : 'down');
+  ok();
+};
+A.cqDel = d => {
+  const q = (S.compassQs || []).find(x => x.id === d.id);
+  q.deleted = true;
+  q.deletedAt = now();
+  compassQs().forEach((x, i) => (x.order = i + 1));
+  audit('Purpose Compass question deleted', q.id, q.text.slice(0, 80));
+  toast('Question deleted. Existing answers are kept.');
   ok();
 };

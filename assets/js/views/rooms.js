@@ -63,23 +63,22 @@ A.newRoom = (d) => {
   const pr = d.project && byId("projects", d.project);
   UI.form.nr = {
     name: pr ? pr.title + " — execution" : "",
-    origin: d.origin || "Institutional project",
+    origin: d.origin === "Learning pathway" ? "Learning pathway" : "Project",
     oid: d.oid || "",
     project: d.project || "",
   };
   modal(
-    (canCreateRoom() ? "Create " : "Propose ") + "a " + WL(),
+    (canCreateRoom() ? "Create " : "Propose ") + (/^[aeiou]/i.test(WL()) ? "an " : "a ") + WL(),
     () => `<form data-f="nr" class="col" style="gap:14px" novalidate><input type="hidden" name="project" value="${d.project || ""}"><input type="hidden" name="oid" value="${d.oid || ""}">
- ${fi("nr", "name", "Name", { req: true })}${fi("nr", "purpose", "Purpose / charter", { type: "textarea", rows: 3, req: true })}${fi("nr", "outcome", "Expected outcome", { req: true })}
- ${fi("nr", "origin", "Primary origin", { type: "select", req: true, opts: ["Approved PHOENIX match", "Opportunity Card", "Circle decision", "Rope Team recommendation", "Learning pathway", "Institutional project", "Community initiative", "Direct invitation between authorised collaborators", "Programme Administrator configuration"], help: d.oid ? "Linked to " + cName(d.oid) + " (linked, not duplicated)" : "" })}
- <fieldset style="border:0;padding:0;margin:0"><legend class="lbl" style="margin-bottom:8px">Does this ${WL()}…</legend><div class="col" style="gap:6px">${["represent an institution", "include external partners", "contain restricted or sensitive data", "commit funding or resources", "support research", "grant public-release or elevated authority"].map((x) => `<label class="row"><input class="chk" type="checkbox" name="flags" value="${x}">${x}</label>`).join("")}</div><span class="help" style="margin-top:6px;display:block">Any ticked item requires extra approval before activation.</span></fieldset>
+ ${fi("nr", "name", "Name", { req: true })}${fi("nr", "purpose", "Purpose / charter", { type: "textarea", rows: 3, req: true })}${fi("nr", "outcome", "Expected outcome", { type: "textarea", rows: 3, req: true })}
+ ${fi("nr", "origin", "Primary origin", { type: "select", req: true, opts: ["Project", "Learning pathway"], help: d.oid ? "Linked to " + cName(d.oid) + " (linked, not duplicated)" : "" })}
  <div class="actions"><span></span><button class="btn btn-p" type="submit">${canCreateRoom() ? "Create" : "Propose"}</button></div></form>`,
   );
 };
 F.nr = (d) => {
   if (!validate("nr", d, { name: ["req"], purpose: ["req"], outcome: ["req"] }))
     return render();
-  const flags = [].concat(d.flags || []);
+  const flags = [];
   const creator = canCreateRoom();
   const pr = d.project && byId("projects", d.project);
   const st = !creator
@@ -235,7 +234,6 @@ route("room", "rooms", () => {
       ["contribs", "Contributions", pendC || null],
       ["dec", "Decisions"],
       ["risk", "Risks & dependencies"],
-      ["res", "Resources & wins"],
       ["change", "Change Objects", x.changes.length || null],
       ["ev", "Evidence"],
       ["members", "Members"],
@@ -386,32 +384,6 @@ route("room", "rooms", () => {
         : "",
       "c12",
     )}</div>`;
-  if (t.cur === "res")
-    body = `<div class="g12">${card(
-      "Resources and commitments",
-      "",
-      table(
-        ["Resource", "From", "Status", "Used in deliverables"],
-        x.resources.map((k) => [
-          h(k.t),
-          h(k.from),
-          pill(k.status),
-          x.tasks
-            .filter((t) => (t.res || []).includes(k.id))
-            .map((t) => h(t.t))
-            .join(", ") || '<span class="cap">—</span>',
-        ]),
-      ),
-      !ro && canPropose
-        ? B(
-            ic("plus", 14) + "Add",
-            "roomItem",
-            { r: x.id, k: "resources" },
-            "btn-s btn-sm",
-          )
-        : "",
-      "c6",
-    )}${card("Visible wins", "Approved achievements are displayed.", x.wins.map((w) => lrow("award", h(w.t), "", pill(w.status) + (w.status !== "Approved" && lead ? B("Approve", "winApprove", { r: x.id, t: w.t }) : ""))).join("") || '<p class="cap">None yet.</p>', !ro && canPropose ? B(ic("plus", 14) + "Record a win", "roomItem", { r: x.id, k: "wins" }, "btn-s btn-sm") : "", "c6")}</div>`;
   if (t.cur === "change")
     body = card(
       "Change Objects",
@@ -507,7 +479,7 @@ route("room", "rooms", () => {
                   sr,
                   "Role of " + P(m.pid).name,
                 )
-              : h(sr) +
+              : h(roleLabel(sr)) +
                 (m.req
                   ? `<div class="cap">Responsibility: ${h(m.req)}</div>`
                   : ""),
@@ -668,7 +640,7 @@ A.roomItem = (d) => {
       wins: "Record a visible win",
     }[k],
     () =>
-      `<form data-f="ri" class="col" style="gap:14px" novalidate><input type="hidden" name="r" value="${x.id}"><input type="hidden" name="k" value="${k}"><input type="hidden" name="st" value="${d.st || ""}">${fi("ri", "t", k === "deps" ? "Dependent activity / resource" : "Title", { req: true })}${["tasks", "decisions", "risks"].includes(k) ? fi("ri", "owner", k === "tasks" ? "Assignee" : "Owner", { type: "select", req: true, opts: mem, value: d.owner || myId(), help: k === "tasks" ? "Any active member of this " + WL() + "." : "" }) : ""}${["tasks", "milestones"].includes(k) ? fi("ri", "due", "Due date", { type: "date", req: true }) : ""}${k === "tasks" ? fi("ri", "prio", "Priority", { type: "select", opts: TASK_PRIOS, value: "Medium" }) + fi("ri", "desc", "Description", { type: "textarea", rows: 3 }) + `<div class="field"><span class="lbl">Resources</span>${chkGroup("res", (x.resources || []).map((r) => [r.id, h(r.t) + (r.from ? ` <span class="cap">· ${h(r.from)}</span>` : "")]), [])}</div>` + msel("ri", "partners", "Partners / contributors", roomActive(x).map((m) => ({ pid: m.pid, sub: spaceRole("rooms", x, m.pid) || "" })), [], { help: "People who contribute to this deliverable besides the assignee." }) + fi("ri", "req", "Required deliverable — must be done before evidence upload and the Learning Harvest", { type: "checkbox", value: "yes" }) : ""}${k === "deps" ? fi("ri", "on", "Depends on (party)", { req: true }) : ""}${k === "resources" ? fi("ri", "from", "Provided by", { req: true }) : ""}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save</button></div></form>`,
+      `<form data-f="ri" class="col" style="gap:14px" novalidate><input type="hidden" name="r" value="${x.id}"><input type="hidden" name="k" value="${k}"><input type="hidden" name="st" value="${d.st || ""}">${fi("ri", "t", k === "deps" ? "Dependent activity / resource" : "Title", { req: true })}${["tasks", "decisions", "risks"].includes(k) ? fi("ri", "owner", k === "tasks" ? "Assignee" : "Owner", { type: "select", req: true, opts: mem, value: d.owner || myId(), help: k === "tasks" ? "Any active member of this " + WL() + "." : "" }) : ""}${["tasks", "milestones"].includes(k) ? fi("ri", "due", "Due date", { type: "date", req: true }) : ""}${k === "tasks" ? fi("ri", "prio", "Priority", { type: "select", opts: TASK_PRIOS, value: "Medium" }) + fi("ri", "desc", "Description", { type: "textarea", rows: 3 }) + msel("ri", "partners", "Partners / contributors", roomActive(x).map((m) => ({ pid: m.pid, sub: spaceRole("rooms", x, m.pid) || "" })), [], { help: "People who contribute to this deliverable besides the assignee." }) + fi("ri", "req", "Required deliverable — must be done before evidence upload and the Learning Harvest", { type: "checkbox", value: "yes" }) : ""}${k === "deps" ? fi("ri", "on", "Depends on (party)", { req: true }) : ""}${k === "resources" ? fi("ri", "from", "Provided by", { req: true }) : ""}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save</button></div></form>`,
   );
 };
 F.ri = (d) => {
@@ -690,7 +662,6 @@ F.ri = (d) => {
       key: nextTaskKey(x),
       prio: d.prio || "Medium",
       desc: d.desc || "",
-      res: [].concat(d.res || []),
       partners: [].concat(d.partners || []).filter((p) => p !== d.owner),
       evidence: [],
       ...(d.req === "yes" ? {} : { opt: true }),
@@ -907,18 +878,16 @@ A.roomInviteNew = (d) => {
   modal(
     "Invite or add to " + h(x.name),
     () =>
-      `<form data-f="rin" class="col" style="gap:14px" novalidate><input type="hidden" name="r" value="${x.id}">${fi("rin", "pid", "Person", { type: "select", req: true, ph: "Select", opts: S.assign.filter((a) => a.ctx === x.ctx && a.status === "Active" && !memberOf(x, a.pid)).map((a) => [a.pid, P(a.pid).name + " — " + ROLE[a.role]]) })}${fi("rin", "kind", "Join case", { type: "select", req: true, opts: Object.keys(JOIN_RULES) })}${table(
-        ["Join case", "Approval rule"],
-        Object.entries(JOIN_RULES).map(([k, v]) => [h(k), h(v)]),
-      )}<div class="actions"><span></span><button class="btn btn-p" type="submit">Continue</button></div></form>`,
+      `<form data-f="rin" class="col" style="gap:14px" novalidate><input type="hidden" name="r" value="${x.id}">${fi("rin", "pid", "Person", { type: "select", req: true, ph: "Select", opts: S.assign.filter((a) => a.ctx === x.ctx && a.status === "Active" && !memberOf(x, a.pid)).map((a) => [a.pid, P(a.pid).name + " — " + ROLE[a.role]]) })}${fi("rin", "role", "Role in this " + WL(), { type: "select", req: true, opts: INVITE_ROLES.map((r) => [r, roleLabel(r)]), help: "You can change the role later in Members. Sponsors cannot be added." })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Continue</button></div></form>`,
     true,
   );
 };
 F.rin = (d) => {
-  if (!validate("rin", d, { pid: ["req"], kind: ["req"] })) return render();
+  if (!validate("rin", d, { pid: ["req"], role: ["req"] })) return render();
   const x = byId("rooms", d.r);
   const a = S.assign.find((a) => a.pid === d.pid && a.ctx === x.ctx);
-  if (d.kind === "Sponsor" || roleBase(a.role) === "S") {
+  d.kind = "Participant in this context";
+  if (roleBase(a.role) === "S") {
     x.joinReqs.push({
       id: uid("jr"),
       pid: d.pid,
@@ -951,8 +920,9 @@ F.rin = (d) => {
     return deny("no valid mandate on file");
   }
   if (d.kind === "Participant in this context") {
-    x.members.push({ pid: d.pid, role: "Member", status: "Invited" });
-    notify(d.pid, "Invitation to join " + x.name, "room", { id: x.id });
+    const rl = INVITE_ROLES.includes(d.role) ? d.role : "Member";
+    x.members.push({ pid: d.pid, role: rl, status: "Invited" });
+    notify(d.pid, "Invitation to join " + x.name + " as " + roleLabel(rl), "room", { id: x.id });
   } else {
     x.joinReqs.push({
       id: uid("jr"),
@@ -1118,7 +1088,7 @@ function roomFlow(x) {
       hv
         ? `${pill(hv.state)} ${hvDone(hv) ? "Approved." : "Not complete until it is reviewed and approved."}`
         : st.allDone && st.ev.length
-          ? "Built from your Purpose Compass Baseline, the completed deliverables, the evidence, resources, partner contributions and linked records."
+          ? "Built from your Purpose Compass Baseline, the completed deliverables, the evidence, partner contributions and linked records."
           : "Available after evidence is submitted.",
       s3,
       hv
@@ -1199,15 +1169,7 @@ function roomOverview(x, pr, lead, ro) {
         ),
     L("Tasks & milestones", "room", { id: x.id, tab: "plan" }),
   )}${pr ? reportsCard(pr, "rooms", x) : ""}</div>
-  <div class="c5 col" style="gap:24px">${pr ? stageGate(pr, "rooms", x) : ""}${card(
-    "Visible wins",
-    "Approved achievements.",
-    x.wins
-      .filter((w) => w.status === "Approved")
-      .map((w) => lrow("award", h(w.t), "", pill("Approved"), "t-teal"))
-      .join("") || '<p class="cap">No approved wins yet.</p>',
-    L("Resources & wins", "room", { id: x.id, tab: "res" }),
-  )}${returnsCard(x)}</div></div>`;
+  <div class="c5 col" style="gap:24px">${pr ? stageGate(pr, "rooms", x) : ""}${returnsCard(x)}</div></div>`;
 }
 A.taskDecide = (d) => {
   const x = byId("rooms", d.r);

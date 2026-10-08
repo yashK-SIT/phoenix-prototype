@@ -19,7 +19,7 @@ PUB.login = () => {
   const st = UI.p.state;
   return authWrap(`
  <div class="col" style="gap:4px"><h1 class="h1">Sign in</h1><p class="sub">One account for every PHOENIX programme you belong to.</p></div>
- ${UI.pre?.addRole ? banner('info', 'Sign in to add your new role', 'We will add ' + ROLE[UI.pre.addRole.role] + ' in ' + h(S.contexts.find(c => c.id === UI.pre.addRole.ctx).name) + ' to your existing record. No second account is created.') : ''}
+ ${UI.pre?.addRole ? banner('info', 'Sign in to add your new role', 'We will add the ' + ROLE[UI.pre.addRole.role] + ' role to your existing record. No second account is created.') : ''}
  ${st === 'failed' ? banner('err', 'Email or password is incorrect', 'Check your details and try again, or reset your password.') : ''}
  ${st === 'locked' ? banner('err', 'Account temporarily locked', 'Too many failed attempts. Try again in 15 minutes or reset your password.') : ''}
  ${st === 'deactivated' ? banner('err', 'This account is deactivated', 'Contact your programme administrator.') : ''}
@@ -44,11 +44,14 @@ function startSession(p, mfaDone) {
       pid: p.id,
       role: r.role,
       ctx: r.ctx,
-      status: roleNeedsApproval(roleBase(r.role)) ? 'Pending role approval' : 'Active',
+      status: roleNeedsApproval(roleBase(r.role)) && !(r.inv && byId('invites', r.inv)?.preApproved) ? 'Pending role approval' : 'Active',
       bundles: [],
       onb: { agreement: false, consents: false, profile: true, compass: roleBase(r.role) !== 'P' },
     };
     if (r.inv && byId('invites', r.inv)?.until) na.until = byId('invites', r.inv).until;
+    const piv = r.inv && byId('invites', r.inv);
+    if (piv && piv.preApproved) na.approval = [{ at: now(), by: piv.preApproved, note: 'Appointed by the Platform Administrator' }];
+    if (piv && piv.org && !p.org) p.org = piv.org;
     S.assign.push(na);
     if (r.inv) {
       const iv = byId('invites', r.inv);
@@ -116,16 +119,17 @@ F.forgot = d => {
   audit('Password reset requested', d.email, '');
   go('forgot', { sent: 1 });
 };
-// Register (D-01: Participant or Sponsor only)
+// Register (D-01: Participant or Sponsor only). There is no programme choice: people join the default programme.
+const defaultCtx = () => S.settings.defaultCtx || (S.contexts.find(c => c.kind !== 'Platform' && c.status === 'Active') || {}).id;
+const selfRole = r => (['P', 'S'].includes(r) ? r : 'P');
 PUB.register = () => {
   const f = 'reg';
   const inv = UI.pre?.invite ? byId('invites', UI.pre.invite) : null;
   const r = fv(f, 'role', inv ? inv.role : 'P');
   const exists = UI.p.exists;
-  const openCtx = S.contexts.filter(c => c.kind !== 'Platform' && c.status === 'Active');
   return authWrap(
     `<div class="col" style="gap:4px"><p class="over">Step 1 · Account</p><h1 class="h1">Create your account</h1><p class="sub">We only ask for what is needed to start. Everything else is asked later, in context.</p></div>
- ${inv ? banner('ok', 'Invitation verified', `You are joining <b>${h(S.contexts.find(c => c.id === inv.ctx).name)}</b> as <b>${ROLE[inv.role]}</b>. Your email comes from the invitation and cannot be changed here.`) : ''}
+ ${inv ? banner('ok', 'Invitation verified', `You are joining as <b>${ROLE[inv.role]}</b>. Your email comes from the invitation and cannot be changed here.`) : ''}
  ${exists ? banner('info', 'This email already has a PHOENIX account', 'Sign in and we will add this role to your existing record. No second account is created.') + B('Sign in to continue', 'go', { r: 'login' }, 'btn-p btn-sm') : ''}
  ${errSum(f)}
  <form data-f="reg" class="col" style="gap:16px" novalidate>
@@ -148,7 +152,6 @@ PUB.register = () => {
  ${inv ? fi(f, 'email', 'Email address', { value: inv.email, ro: true, help: 'From your invitation' }) : fi(f, 'email', 'Email address', { type: 'email', req: true, auto: 'email', help: 'We will send a verification link to this address.' })}
  <div class="f2">${fi(f, 'pw', 'Password', { type: 'password', req: true, auto: 'new-password' })}${fi(f, 'pw2', 'Confirm password', { type: 'password', req: true, auto: 'new-password' })}</div>
  <p class="help" style="margin-top:-8px">At least 10 characters, including a number. ${assumed('policy for Technical Operator to confirm')}</p>
- ${inv ? '' : fi(f, 'ctx', 'Programme you are joining', { type: 'select', req: true, ph: 'Select a programme', opts: openCtx.map(c => [c.id, c.name]), help: 'Self-registered users choose an open programme; the programme administrator can review the membership. ' + assumed('OI-04') })}
  <button class="btn btn-p btn-block" type="submit">Create account</button></form>
  <p class="cap">Already have an account? ${L('Sign in', 'login')}</p>`,
     true,
@@ -174,12 +177,11 @@ F.reg = d => {
       ],
     ],
     pw2: ['req', ['fn', { f: (v, dd) => v === dd.pw, m: 'Passwords do not match.' }]],
-    ...(inv ? {} : { ctx: ['req'] }),
   });
   if (!okv) return render();
   const ex = S.people.find(p => p.email.toLowerCase() === d.email.toLowerCase());
   if (ex) {
-    UI.pre = { addRole: { email: ex.email, role: d.role, ctx: inv ? inv.ctx : d.ctx, inv: inv?.id } };
+    UI.pre = { addRole: { email: ex.email, role: inv ? inv.role : selfRole(d.role), ctx: inv ? inv.ctx : defaultCtx(), inv: inv?.id } };
     UI.p = { exists: 1 };
     audit('Registration matched existing record', ex.id, 'Role to be added on sign-in');
     return render();
@@ -191,11 +193,13 @@ F.reg = d => {
     email: d.email.trim(),
     verified: false,
     status: 'Active',
+    ...(inv && inv.org ? { org: inv.org } : {}),
   };
   S.people.push(p);
   S.pw[p.id] = d.pw;
-  const role = d.role,
-    cx = inv ? inv.ctx : d.ctx;
+  // The role comes from the invitation, never from the form; without one only Participant or Sponsor is possible.
+  const role = inv ? inv.role : selfRole(d.role),
+    cx = inv ? inv.ctx : defaultCtx();
   const a = {
     id: uid('a'),
     pid: p.id,
@@ -205,17 +209,10 @@ F.reg = d => {
     bundles: [],
     onb: { agreement: false, consents: false, profile: false, compass: role !== 'P' },
     ...(inv && inv.until ? { until: inv.until } : {}),
+    ...(inv && inv.preApproved ? { preApproved: inv.preApproved } : {}),
   };
   S.assign.push(a);
-  S.consents[p.id] = {
-    ai: 'Declined',
-    matching: 'Declined',
-    research: 'Declined',
-    xorg: 'Declined',
-    public: 'Declined',
-    ext: 'Declined',
-    history: [],
-  };
+  S.consents[p.id] = { history: [] };
   if (inv) {
     inv.status = 'Accepted';
     audit('Invitation accepted', inv.id, p.email);
@@ -267,7 +264,7 @@ PUB.invite = () => {
    ['Email', h(inv.email)],
    ['Valid until', fmt(inv.expires)],
  ])}</div>
- ${roleNeedsApproval(roleBase(inv.role)) ? banner('warn', 'This role needs approval', 'After you register, an authorised approver must approve it before it becomes active.') : ''}
+ ${inv.preApproved ? banner('info', 'Already approved', 'The Platform Administrator appointed you to this role. It is active as soon as your account is set up.') : roleNeedsApproval(roleBase(inv.role)) ? banner('warn', 'This role needs approval', 'After you register, an authorised approver must approve it before it becomes active.') : ''}
  ${exists ? banner('info', 'You already have a PHOENIX account', 'Sign in and this role is added to your existing record.') + B('Sign in to accept', 'acceptInvExisting', { id: inv.id }, 'btn-p btn-block') : B('Accept and create account', 'acceptInv', { id: inv.id }, 'btn-p btn-block')}
  <p class="cap">This link works once.</p>`);
 };
@@ -319,7 +316,8 @@ A.doVerify = () => {
   p.verified = true;
   const a = S.assign.filter(x => x.pid === p.id).find(x => x.status === 'Registered (email unverified)');
   if (a) {
-    a.status = roleNeedsApproval(roleBase(a.role)) ? 'Pending role approval' : 'Active';
+    a.status = roleNeedsApproval(roleBase(a.role)) && !a.preApproved ? 'Pending role approval' : 'Active';
+    if (a.preApproved) a.approval = [{ at: now(), by: a.preApproved, note: 'Appointed by the Platform Administrator' }];
     if (a.status !== 'Active') {
       a.approval = [{ at: now(), by: 'system', note: 'Sensitive role — approval requested' }];
       S.assign

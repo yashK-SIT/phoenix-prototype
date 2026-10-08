@@ -29,11 +29,20 @@ const evVisible = e =>
       const o = byId('circles', l) || byId('rooms', l) || byId('ropes', l);
       return o && memberOf(o);
     }));
-// Evidence belongs to a project when it is linked to the project itself or to its Circle, Rope Team or Action Room.
+// An Action Room belongs to the project that names it, the project it was created from, the project of the Circle or
+// Rope Team whose decision created it, or a related project.
+const roomProject = x =>
+  !x
+    ? null
+    : S.projects.find(p => p.room === x.id) ||
+      (x.origin && x.origin.id && (byId('projects', x.origin.id) || S.projects.find(p => [p.circle, p.rope].includes(x.origin.id)))) ||
+      S.projects.find(p => (x.related || []).includes(p.id)) ||
+      null;
+// Evidence belongs to a project when it is linked to the project itself, its Circle or Rope Team, or an Action Room of it.
 const evProjects = e =>
-  S.projects.filter(p => e.project === p.id || (e.linked || []).some(l => l && [p.id, p.circle, p.rope, p.room].includes(l)));
+  S.projects.filter(p => e.project === p.id || (e.linked || []).some(l => l && ([p.id, p.circle, p.rope, p.room].includes(l) || roomProject(byId('rooms', l)) === p)));
 const evProjectName = e => evProjects(e).map(p => h(p.title)).join(', ');
-const spaceProject = id => S.projects.find(p => [p.circle, p.rope, p.room].includes(id));
+const spaceProject = id => S.projects.find(p => [p.circle, p.rope, p.room].includes(id)) || roomProject(byId('rooms', id)) || undefined;
 route('evidence', 'evidence', () => {
   const r = role();
   if (UI.p.id) {
@@ -164,8 +173,6 @@ function evDetail(e) {
         ['Owner', nm(e.owner)],
         ['Source', h(e.source)],
         ['Purpose', h(e.purpose)],
-        ['Consent / personal content', h(e.consent)],
-        ['Sensitivity', h(e.sens)],
         ['Visibility', h(e.vis)],
         ['Retention', h(e.retention)],
         ['Linked to', e.linked.map(cName).join(', ')],
@@ -333,7 +340,7 @@ route('newevidence', 'evidence', () => {
   return (
     head(
       'Upload evidence',
-      'Required metadata first. Sensitivity and consent record whether it contains personal or identifiable content.',
+      'Add the evidence, say what it supports, and link it to the space it belongs to. A reviewer checks it.',
       '',
       [['Evidence', 'evidence'], ['Upload']],
     ) +
@@ -342,17 +349,21 @@ route('newevidence', 'evidence', () => {
  ${neFmtFields(f, fv(f, 'fmt', 'File upload'), spaces)}
  ${neTaskField(f, spaces)}
  ${fi(f, 'title', 'Title', { req: true })}<div class="f2">${fi(f, 'type', 'Evidence type', { type: 'select', req: true, ph: 'Select', opts: EV_TYPES })}${fi(f, 'claim', 'Claim or metric it supports', { req: true })}</div>
- <fieldset style="border:0;padding:0;margin:0"><legend class="lbl" style="margin-bottom:8px">Link to (no duplication) <span class="req">*</span></legend><div class="g2">${spaces.map(s => `<label class="row"><input class="chk" type="checkbox" name="link" value="${s.id}" ${UI.p.link === s.id ? 'checked' : ''}><span>${h(s.name)}${spaceProject(s.id) ? `<span class="cap" style="display:block">Project: ${h(spaceProject(s.id).title)}</span>` : ''}</span></label>`).join('') || '<p class="cap">Join a Circle or ' + WL() + ' to link evidence.</p>'}</div>${fe(f, 'link') ? `<span class="emsg">${ic('alert', 14)}${fe(f, 'link')}</span>` : ''}</fieldset>
+ ${spaces.length ? fi(f, 'link', 'Link to', { type: 'select', req: true, ph: 'Select a Circle, Rope Team or ' + WL(), value: UI.p.link || '', opts: spaces.map(s => [s.id, (byId('circles', s.id) ? 'Circle' : byId('ropes', s.id) ? 'Rope Team' : WL()) + ' · ' + s.name + (spaceProject(s.id) ? ' — ' + spaceProject(s.id).title : '')]), help: 'Linked by reference, not copied.' }) : banner('info', '', 'Join a Circle, Rope Team or ' + WL() + ' to link evidence.')}
  <div class="f2">${fi(f, 'source', 'Source', { req: true, ph: 'e.g. Field survey' })}${fi(f, 'purpose', 'Purpose', { type: 'select', req: true, opts: ['Project evidence', 'Milestone evidence', 'Learning evidence', 'Portfolio'], ph: 'Select' })}</div>
- <div class="f2">${fi(f, 'consent', 'Personal or identifiable content?', { type: 'select', req: true, ph: 'Select', opts: ['Contains no personal data', 'Contains identifiable people — consent recorded', 'Contains testimony — participant consent recorded', 'Contains third-party personal information'] })}${fi(f, 'sens', 'Sensitivity', { type: 'select', req: true, opts: ['Low', 'Medium', 'High'], ph: 'Select' })}</div>
- <div class="f2">${fi(f, 'vis', 'Visibility', { type: 'select', req: true, opts: ['Only me + reviewer', 'Circle', 'Room', 'Rope Team'], ph: 'Select' })}${fi(f, 'retention', 'Retention', { type: 'select', req: true, opts: ['Programme duration', 'Programme duration + 2 years'], ph: 'Select' })}</div>
  <div class="actions">${L('Cancel', 'evidence', {}, 'btn btn-g')}<button class="btn btn-p" type="submit">Submit for review</button></div></form>`
   );
 });
 F.ne = (d, form) => {
   const fmt = EV_FMTS.includes(d.fmt) ? d.fmt : 'File upload';
   const file = fmt === 'File upload' ? form.querySelector('input[type=file]')?.files?.[0] : null;
-  d.link = [].concat(d.link || []);
+  d.link = [].concat(d.link || []).filter(Boolean);
+  // visibility follows the space it is linked to; the other governance fields are not asked any more
+  const sp0 = d.link[0];
+  d.vis = byId('circles', sp0) ? 'Circle' : byId('ropes', sp0) ? 'Rope Team' : 'Room';
+  d.consent = 'Not recorded';
+  d.sens = 'Not recorded';
+  d.retention = 'Programme duration';
   const [tRoom, tId] = (d.task || '').split('|');
   if (tRoom && !d.link.includes(tRoom)) d.link.push(tRoom);
   const okv = validate(
@@ -364,10 +375,6 @@ F.ne = (d, form) => {
       claim: ['req'],
       source: ['req'],
       purpose: ['req'],
-      consent: ['req'],
-      sens: ['req'],
-      vis: ['req'],
-      retention: ['req'],
     },
   );
   const e = UI.err.ne;
@@ -382,7 +389,7 @@ F.ne = (d, form) => {
   if (fmt === 'Link' && !/^https?:\/\/[^\s.]+\.[^\s]+$/i.test((d.url || '').trim())) e.url = 'Enter a full link starting with http:// or https://.';
   if (fmt === 'Reflection or written output' && (d.text || '').trim().length < 20) e.text = 'Write at least a couple of sentences (20 characters or more).';
   if (fmt === 'Repository record' && !byId('records', d.rec)) e.rec = 'Choose the record this evidence refers to.';
-  if (!d.link.length) e.link = 'Link the evidence to at least one Circle, Rope Team or ' + WL() + '.';
+  if (!d.link.length) e.link = 'Choose the Circle, Rope Team or ' + WL() + ' this evidence belongs to.';
   if (Object.keys(e).length) return render();
   if (file && /eicar|virus/i.test(file.name)) {
     S.records.push({
@@ -497,16 +504,14 @@ route('repository', 'repository', () => {
           `${used.toFixed(1)} MB used of the 50 GB quota (${((used / 51200) * 100).toFixed(2)}%). Warning at 80%.`,
         )
       : '') +
-    `<div class="row" style="margin-bottom:16px"><input class="input" style="max-width:360px" placeholder="Search by title, type, people, Circle, tags" value="${h(q)}" data-ch="repoQ" aria-label="Search records"></div>` +
+    `<div class="row" style="margin-bottom:16px"><input class="input" style="max-width:360px" placeholder="Search by title, type, people or space" value="${h(q)}" data-ch="repoQ" aria-label="Search records"></div>` +
     table(
-      ['Record', 'Type', 'Linked to', 'Owner', 'Sensitivity', 'Consent', 'State', ''],
+      ['Record', 'Type', 'Linked to', 'Owner', 'State', ''],
       list.map(x => [
         `<b>${h(x.title)}</b><div class="cap">v${x.ver}${x.note ? ' · ' + h(x.note) : ''}</div>`,
         h(x.kind),
         x.linked.map(cName).join(', ') || '—',
         nm(x.owner),
-        h(x.sens),
-        h(x.consent),
         pill(x.state),
         x.state !== 'Quarantined' ? B('Details', 'repoView', { id: x.id }) : '',
       ]),
@@ -530,9 +535,7 @@ A.repoView = d => {
         ['Date', fmt(x.date)],
         ['Owner', nm(x.owner)],
         ['Linked to', x.linked.map(cName).join(', ')],
-        ['Sensitivity', h(x.sens)],
         ['Visibility', h(x.vis)],
-        ['Consent', h(x.consent)],
         ['Retention', h(x.retention)],
         ['Review', pill(x.review)],
         [
@@ -580,7 +583,7 @@ A.repoUp = () => {
   modal(
     'Upload a record',
     () =>
-      `<form data-f="ru" class="col" style="gap:12px" novalidate>${fi('ru', 'title', 'Title', { req: true })}${fi('ru', 'kind', 'Type', { type: 'select', req: true, ph: 'Select', opts: ['Meeting notes', 'Transcript', 'Approved chat export', 'Decision', 'Commitment', 'Document', 'Recording (external link)'] })}<div class="field"><label class="lbl">File</label><input type="file" name="file" class="input" style="padding:8px"></div>${fi('ru', 'link', 'Link to', { type: 'select', req: true, ph: 'Select', opts: sp.map(s => [s.id, s.name]) })}<div class="f2">${fi('ru', 'sens', 'Sensitivity', { type: 'select', req: true, opts: ['Low', 'Medium', 'High'] })}${fi('ru', 'consent', 'Recording / processing consent', { type: 'select', req: true, opts: ['n/a (notes)', 'All participants consented', 'Recording consent missing for 1+ member'] })}</div>${fi('ru', 'tags', 'Tags')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Upload</button></div></form>`,
+      `<form data-f="ru" class="col" style="gap:12px" novalidate>${fi('ru', 'title', 'Title', { req: true })}${fi('ru', 'kind', 'Type', { type: 'select', req: true, ph: 'Select', opts: ['Meeting notes', 'Transcript', 'Approved chat export', 'Decision', 'Commitment', 'Document', 'Recording (external link)'] })}<div class="field"><label class="lbl">File</label><input type="file" name="file" class="input" style="padding:8px"></div>${fi('ru', 'link', 'Link to', { type: 'select', req: true, ph: 'Select', opts: sp.map(s => [s.id, s.name]) })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Upload</button></div></form>`,
   );
 };
 F.ru = (d, form) => {
@@ -597,14 +600,13 @@ F.ru = (d, form) => {
     owner: myId(),
     linked: [d.link],
     date: today(),
-    sens: d.sens,
     vis: 'Linked space members',
-    consent: d.consent,
+    consent: 'Not recorded',
     retention: 'Programme',
     review: 'Approved',
     state: 'Active',
     ver: 1,
-    tags: d.tags,
+    tags: '',
     sizeMB: file ? +(file.size / 1048576).toFixed(2) : 0.1,
   });
   audit('Record uploaded', d.title, d.kind);
@@ -626,6 +628,7 @@ const HV_SECTIONS = [
 const canComplete = () => role() === 'F' || hasB('Reviewer') || hasB('Project Lead');
 route('harvests', 'harvest', () => {
   const r = role();
+  if (r === 'S') return deniedView('harvest');
   const list = S.harvests.filter(x => {
     const o = byId('circles', x.scope) || byId('rooms', x.scope) || byId('ropes', x.scope);
     return (
@@ -735,7 +738,7 @@ route('harvest', 'harvest', () => {
   const r = role();
   const o = byId('circles', x.scope) || byId('rooms', x.scope) || byId('ropes', x.scope);
   const mem = o ? memberOf(o) : x.personal === myId();
-  if (['S', 'O'].includes(r) && x.release !== 'Released') return deniedView('harvest');
+  if (r === 'S' || (r === 'O' && x.release !== 'Released')) return deniedView('harvest');
   const comp = canComplete() && (mem || r === 'F');
   const edit = ['Draft', 'Review'].includes(x.state) && (x.by === myId() || comp);
   if (x.tpl === 2) return hv2View(x, mem, comp, edit);
@@ -933,7 +936,6 @@ function hvCompile(x, pid) {
     bullets(done.map(k => `${k.t} — ${P(k.owner).name}${k.doneAt ? ', completed ' + fmt(dOnly(k.doneAt)) : ''}${evOf(k).length ? ' · evidence: ' + evOf(k).map(e => e.title).join('; ') : ''}${k.doneNote ? ' · ' + k.doneNote : ''}`)),
     (x.outcome ? 'Intended outcome: ' + x.outcome : 'Charter: ' + x.charter),
     ms.length ? 'Milestones achieved: ' + ms.map(m => m.t).join('; ') : '',
-    wins.length ? 'Approved visible wins: ' + wins.map(w => w.t).join('; ') : '',
     `Evidence submitted (${ev.length}): ` + ev.map(e => `${e.title} (${e.review}, ${e.level})`).join('; '),
     recs.length + linkedRecs.length ? 'Records: ' + [...recs.map(r => r.title), ...linkedRecs.map(l => l.label)].join('; ') : '',
   ]
@@ -948,13 +950,7 @@ function hvCompile(x, pid) {
     ...S.evidence.filter(e => e.linked.includes(x.id) && ['Rejected', 'Insufficient', 'Needs Revision'].includes(e.review)).map(e => `Evidence ${e.review.toLowerCase()}: ${e.title}`),
     ...(x.returns || []).map(r => `Work returned to ${r.to}: ${r.why}`),
   ];
-  const resources = [
-    ...(x.resources || []).map(r => {
-      const used = live.filter(k => (k.res || []).includes(r.id));
-      return `${r.t}${r.from ? ' — ' + r.from : ''} (${r.status})${used.length ? ' · used in: ' + used.map(k => k.t).join('; ') : ' · not linked to a deliverable'} · how it contributed: `;
-    }),
-    ...lib.map(l => `${l.label} (${l.type.toLowerCase()}) · how it contributed: `),
-  ];
+  const resources = lib.map(l => `${l.label} (${l.type.toLowerCase()}) · how it contributed: `);
   const ppl = new Map();
   const add = (p, t) => p && p !== pid && ppl.set(p, [...(ppl.get(p) || []), t]);
   done.forEach(k => add(k.owner, `delivered “${k.t}”`));
@@ -970,7 +966,6 @@ function hvCompile(x, pid) {
     ...done.map(k => L2('Deliverable', k.id, k.t, 'room', { id: x.id, tab: 'plan' })),
     ...ev.map(e => L2('Evidence', e.id, e.title, 'evidence', { id: e.id })),
     ...ms.map(m => L2('Milestone', m.id, m.t, 'room', { id: x.id, tab: 'plan' })),
-    ...(x.resources || []).map(r => L2('Resource', r.id, r.t, 'room', { id: x.id, tab: 'res' })),
     ...lib.map(l => L2('Resource', l.id, l.label, l.type === 'Learning resource' ? 'resources' : 'room', l.type === 'Learning resource' ? {} : { id: x.id, tab: 'about' })),
     ...[...ppl.keys()].map(p => L2('Partner', p, P(p).name, 'room', { id: x.id, tab: 'members' })),
     ...(x.contribs || []).filter(c => c.status === 'Accepted').map(c => L2('Contribution', c.id, c.t, 'room', { id: x.id, tab: 'contribs' })),
