@@ -3990,3 +3990,86 @@ mark.evo-add {
   display: block;
   padding: 6px 8px;
 }
+
+/* ---------- review conversation: messages between submitter and reviewers, with the activity log ---------- */
+.cv {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cv-m {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.cv-m .av {
+  flex: none;
+}
+.cv-b {
+  flex: 1;
+  min-width: 0;
+  max-width: 640px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--sunk);
+}
+.cv-m.mine {
+  flex-direction: row-reverse;
+}
+.cv-m.mine .cv-b {
+  background: var(--ever-50);
+  border-color: var(--ever-100);
+}
+.cv-h {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-bottom: 4px;
+}
+.cv-h time {
+  margin-left: auto;
+  white-space: nowrap;
+}
+.cv-b p {
+  margin: 0;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.cv-a {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 4px 0 4px 8px;
+  border-left: 2px solid var(--line-2);
+  color: var(--text-2);
+  font-size: 13px;
+}
+.cv-a svg {
+  color: var(--text-3);
+  flex: none;
+}
+.cv-a .cv-at {
+  font-weight: 600;
+}
+.cv-f {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+@media (max-width: 599px) {
+  .cv-b {
+    max-width: none;
+  }
+  .cv-h time {
+    margin-left: 0;
+    flex-basis: 100%;
+  }
+}

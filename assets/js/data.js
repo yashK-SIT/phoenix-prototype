@@ -2112,7 +2112,7 @@ function seed() {
       pid: 'p7',
       t: 'Role approval requested: Grace Mbeki — Mentor',
       r: 'admin',
-      p: { tab: 'approvals' },
+      p: { tab: 'users' },
       read: false,
       at: '2026-09-29',
     },

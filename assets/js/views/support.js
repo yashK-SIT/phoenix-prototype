@@ -244,6 +244,28 @@ F.prov = (d) => {
 // ---------- GAP CLOSURE (Section 6 user-story audit) ----------
 function migrate() {
   ensurePlatformData();
+  // review conversations: earlier clarification requests become the first messages of the project's conversation
+  S.projects.forEach((p) => {
+    if (p.thread) return;
+    p.thread = (p.clar || []).map((c) => ({ id: uid("m"), at: c.at, by: c.by, kind: "clarify", text: c.text }));
+    if (p.thread.length) p.history = (p.history || []).filter((x) => x.t !== "Clarification requested");
+  });
+  S.pathways.forEach((p) => {
+    p.thread = p.thread || [];
+    if (p.state === "Changes requested") p.state = "Clarification requested";
+    // custom pathways now wait for the Programme Administrator to assign a Steward
+    if (p.state === "In review" && !p.reviewer) p.state = "Awaiting reviewer";
+  });
+  // Rope Teams carry their own documents plus a copy of the linked Circle's documents
+  S.ropes.forEach((x) => {
+    x.docs = x.docs || [];
+    if (!x.circleDocs) x.circleDocs = circleDocsCopy(byId("circles", x.circle));
+  });
+  // Role approvals moved into Programme admin → Users
+  S.notifs.forEach((n) => {
+    if (n.r === "admin" && n.p && n.p.tab === "approvals") n.p.tab = "users";
+    if (n.r === "rope" && n.p && n.p.tab === "contrib") n.p.tab = "about";
+  });
   // policies carry structured text; the Participant Agreement v3 (processing covered by the agreement) is published
   S.agreements.forEach((g) => {
     if (!g.text) g.text = polSeedText(g);
@@ -739,7 +761,7 @@ F.fb = (d) => {
         m.pid,
         "Mentor feedback on " + x.name + " from " + me().name,
         "rope",
-        { id: x.id, tab: "contrib" },
+        { id: x.id, tab: "about" },
       ),
     );
   audit("Mentor feedback sent", x.id, "");

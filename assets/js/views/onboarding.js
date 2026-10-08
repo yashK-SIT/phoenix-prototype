@@ -376,11 +376,16 @@ function polSeedText(g) {
   ].join('\n');
 }
 // Shown over the app when a policy that applies to the signed-in person has a new version they have not accepted.
+// The current policy is shown first; the comparison with the previous version opens only on request.
 function policyGate(g) {
   const prev = polPrev(g);
-  return `<div class="pgate" role="presentation"><div class="pgate-m" role="dialog" aria-modal="true" aria-labelledby="pgate-t"><header class="pgate-h"><span class="over">Policy update</span><h2 class="h2" id="pgate-t">${h(g.type)} — version ${g.ver}</h2><p class="cap">Effective ${fmt(g.effective)}. Review what changed and confirm to continue.</p></header>
-  <div class="pgate-b">${g.summary ? banner('info', 'What changed', h(g.summary)) : ''}<h3 class="h3" style="margin:14px 0 8px">Changes compared with the previous policy</h3>${polDiffHtml(prev, g)}<details class="pgate-full"><summary>Read the full updated policy</summary><div class="col" style="gap:10px;margin-top:10px">${polBody(g)}</div></details></div>
-  <form data-f="agr" class="pgate-f" novalidate><input type="hidden" name="g" value="${g.id}"><input type="hidden" name="mode" value="update">${fi('agr', 'a1', `I have read the changes and accept <b>${h(g.type)} v${g.ver}</b>.`, { type: 'checkbox', req: true })}<div class="actions">${B('Sign out', 'logout', {}, 'btn-s')}<button class="btn btn-p" type="submit">Accept and continue</button></div></form></div></div>`;
+  const cmp = UI.tab.agrCmp === g.id;
+  return `<div class="pgate" role="presentation"><div class="pgate-m" role="dialog" aria-modal="true" aria-labelledby="pgate-t"><header class="pgate-h"><span class="over">Policy update</span><h2 class="h2" id="pgate-t">${h(g.type)} — version ${g.ver}</h2><p class="cap">Effective ${fmt(g.effective)}. Read the current policy and confirm to continue.</p></header>
+  <div class="pgate-b"><div class="col" style="gap:16px"><div class="kv"><div class="col"><span class="cap">Policy</span><b>${h(g.type)}</b></div><div class="col"><span class="cap">Version</span><b>v${g.ver}</b></div><div class="col"><span class="cap">Effective</span><b>${fmt(g.effective)}</b></div></div>
+  <div class="row wrap" style="gap:8px">${B(ic('download', 16) + 'Download policy', 'polDownload', { id: g.id })}${prev ? B(ic('eye', 16) + (cmp ? 'Hide differences' : 'Compare with previous policy'), 'agrCmp', { id: g.id }, 'btn-s btn-sm', `aria-expanded="${cmp}"`) : ''}</div>
+  ${cmp ? `<section class="col" style="gap:8px"><h3 class="h3">What changed since v${prev.ver}</h3>${g.summary ? `<p class="muted">${h(g.summary)}</p>` : ''}${polDiffHtml(prev, g)}</section>` : ''}
+  <section class="col" style="gap:10px"><h3 class="h3">Current policy</h3>${polBody(g)}</section></div></div>
+  <form data-f="agr" class="pgate-f" novalidate><input type="hidden" name="g" value="${g.id}"><input type="hidden" name="mode" value="update">${fi('agr', 'a1', `I have read and accept <b>${h(g.type)} v${g.ver}</b>.`, { type: 'checkbox', req: true })}<div class="actions">${B('Sign out', 'logout', {}, 'btn-s')}<button class="btn btn-p" type="submit">Accept and continue</button></div></form></div></div>`;
 }
 function onbTop(cur, steps) {
   return `<header class="onb-top"><div class="row" style="gap:10px"><span class="mark">P</span><span class="wm hide-sm"><b>PHOENIX</b><span>Foundation Alpha</span></span></div><nav class="steps" aria-label="Onboarding progress">${steps.map((l, i) => `${i ? '<span class="sline"></span>' : ''}<div class="step ${i < cur ? 'done' : i === cur ? 'cur' : ''}"><span class="n">${i < cur ? ic('check', 14) : i + 1}</span><span class="st">${l}</span></div>`).join('')}</nav><div class="row">${roleChoices().length > 1 ? B('Switch role', 'switcher', {}, 'btn-g btn-sm') : ''}${B('Save and exit', 'logout', {}, 'btn-g btn-sm hide-sm')}</div></header>`;
@@ -415,6 +420,7 @@ function ONB() {
     const pr = S.profiles[myId()] || {};
     body = `<div class="col" style="gap:4px"><p class="over">Step 3 of ${steps.length}</p><h1 class="h1">Your minimum profile</h1><p class="sub">Just the basics. Each field shows who can see it. Every save creates a version.</p></div>${errSum(f)}
   <form data-f="prof" class="card col" style="gap:18px" novalidate><div class="f2">${fi(f, 'name', 'Full name', { value: me().name, ro: true, vis: 'You and authorised administration' })}${fi(f, 'display', 'Display name', { req: true, value: me().display, vis: 'Your collaboration contexts' })}</div>
+  <div class="f2">${dobField(f, me().dob || '')}<span></span></div>
   ${me().org ? fi(f, 'aff', 'Organisation / affiliation', { value: S.orgs.find(o => o.id === me().org).name, ro: true, vis: 'Context-visible' }) : ''}
   ${fi(f, 'bio', 'Short biography', { type: 'textarea', rows: 3, max: 400, value: pr.bio, help: 'Optional · up to 400 characters', vis: 'Your choice — default: your collaboration contexts' })}
   ${fi(f, 'interests', 'Interests', { value: '', ph: 'Comma-separated, e.g. urban heat, food resilience', help: 'Optional' })}
@@ -507,12 +513,14 @@ F.prof = d => {
   if (
     !validate('prof', d, {
       display: ['req'],
+      dob: dobRules(true),
       ...(role() === 'S' ? { sponsorInt: ['req'] } : {}),
     })
   )
     return render();
   const p = me();
   p.display = d.display.trim();
+  p.dob = d.dob;
   const pr = (S.profiles[p.id] = S.profiles[p.id] || { ver: 0, history: [] });
   pr.bio = d.bio;
   pr.lang = 'English';

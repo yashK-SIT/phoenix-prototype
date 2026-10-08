@@ -302,6 +302,44 @@ const dl = pairs =>
     .filter(Boolean)
     .map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`)
     .join('')}</dl>`;
+// ---- review conversation: messages between whoever submitted something and the people reviewing it, shown
+// with the activity log, oldest first. Each object kind registers in CONVO:
+//   get(id) → object · acts(o) → [{at, by, t}] · role(o, pid) → label · post(o) → null or {kind, label}
+//   notify(o, kind) → tells the other parties.
+const CONVO = {};
+const CV_KIND = {
+  clarify: ['Clarification requested', 'p-amber'],
+  reply: ['Reply', 'p-navy'],
+  resubmit: ['Resubmitted', 'p-navy'],
+  reject: ['Rejected', 'p-red'],
+  approve: ['Approved', 'p-green'],
+};
+const convoAdd = (o, kind, text) =>
+  (o.thread = o.thread || []).push({ id: uid('m'), at: now(), by: myId(), kind, text });
+const convoN = o => (o.thread || []).length;
+function convoHtml(kind, o) {
+  const c = CONVO[kind];
+  const items = [...(o.thread || []).map(m => ({ ...m, msg: true })), ...c.acts(o)].sort((a, b) =>
+    String(a.at).localeCompare(String(b.at)),
+  );
+  const pm = c.post(o);
+  const list = items.length
+    ? `<ol class="cv">${items
+        .map(x => {
+          if (!x.msg)
+            return `<li class="cv-a">${ic('clock', 14)}<span class="cv-at">${h(x.t)}</span><span class="cap">${x.by ? nm(x.by) + ' · ' : ''}<time datetime="${h(x.at)}">${fmt(x.at)}</time></span></li>`;
+          const mine = x.by === myId();
+          const lab = c.role(o, x.by);
+          const k = CV_KIND[x.kind];
+          return `<li class="cv-m${mine ? ' mine' : ''}"><span class="av">${ini(x.by)}</span><div class="cv-b"><div class="cv-h"><b>${mine ? 'You' : nm(x.by)}</b>${lab ? `<span class="cap">${h(lab)}</span>` : ''}${k ? pill(k[0], k[1]) : ''}<time class="cap" datetime="${h(x.at)}">${fmt(x.at)}</time></div><p>${h(x.text)}</p></div></li>`;
+        })
+        .join('')}</ol>`
+    : '<p class="cap">No messages or activity yet.</p>';
+  const form = pm
+    ? `<form data-f="cv" class="cv-f" novalidate><input type="hidden" name="k" value="${kind}"><input type="hidden" name="id" value="${h(o.id)}">${fi('cv', 'text', pm.label, { type: 'textarea', rows: 3, req: true, max: 2000, ph: 'Write a message. Everyone in this review sees it.' })}<div class="actions"><span class="help">Messages are kept with the full history and cannot be edited.</span><button class="btn btn-p btn-sm" type="submit">${ic('send', 14)}Post</button></div></form>`
+    : '';
+  return `<div class="col" style="gap:14px">${list}${form}</div>`;
+}
 // ---- forms
 function fv(f, n, def) {
   return UI.form[f] && UI.form[f][n] != null ? UI.form[f][n] : (def ?? '');
@@ -328,7 +366,7 @@ function fi(f, n, label, o = {}) {
   else if (o.type === 'checkbox')
     return `<label class="row" style="align-items:flex-start;gap:10px"><input class="chk" type="checkbox" name="${n}" value="yes" ${v === 'yes' || v === true ? 'checked' : ''} aria-invalid="${!!e}"><span>${label}${req}</span></label>${e ? `<span class="emsg" role="alert">${ic('alert', 14)}${e}</span>` : ''}`;
   else
-    ctl = `<input id="${id}" name="${n}" class="input${ec}" type="${o.type || 'text'}" value="${h(v)}" placeholder="${h(o.ph || '')}" ${o.ro ? 'readonly' : ''} ${o.min != null ? `min="${o.min}"` : ''} ${o.step ? `step="${o.step}"` : ''} aria-invalid="${!!e}" ${o.auto ? `autocomplete="${o.auto}"` : ''}>`;
+    ctl = `<input id="${id}" name="${n}" class="input${ec}" type="${o.type || 'text'}" value="${h(v)}" placeholder="${h(o.ph || '')}" ${o.ro ? 'readonly' : ''} ${o.min != null ? `min="${o.min}"` : ''} ${o.maxv != null ? `max="${o.maxv}"` : ''} ${o.step ? `step="${o.step}"` : ''} aria-invalid="${!!e}" ${o.auto ? `autocomplete="${o.auto}"` : ''}>`;
   return `<div class="field ${o.cls || ''}"><label class="lbl" for="${id}">${label}${req}</label>${ctl}${e ? `<span class="emsg" role="alert">${ic('alert', 14)}${e}</span>` : ''}${o.help ? `<span class="help">${o.help}</span>` : ''}${o.vis ? `<span class="vis">${ic('lock', 14)}${o.vis}</span>` : ''}</div>`;
 }
 function validate(f, d, rules) {
@@ -372,6 +410,21 @@ function clearF(f) {
   delete UI.err[f];
   (UI._cleared = UI._cleared || new Set()).add(f);
 }
+// ---- date of birth: a real past date, not more than 120 years ago. No minimum age is enforced (policy not set).
+const dobOk = v => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  // Parsed as UTC so the round-trip check holds in every time zone.
+  const d = new Date(v + 'T00:00:00Z');
+  return !isNaN(d) && d.toISOString().slice(0, 10) === v && v < today() && +v.slice(0, 4) >= new Date().getFullYear() - 120;
+};
+const dobRules = req => [
+  ...(req ? [['req', 'Enter your date of birth.']] : []),
+  ['fn', { f: v => !v || dobOk(v), m: 'Enter a valid date of birth in the past.' }],
+];
+const dobField = (f, value, o = {}) =>
+  fi(f, 'dob', 'Date of birth', { type: 'date', req: o.req !== false, value, maxv: today(), auto: 'bday', vis: 'You and authorised administration', ...o });
+// Accounts are soft-deleted; a deleted account no longer matches an email address.
+const personByEmail = e => S.people.find(p => p.status !== 'Deleted' && (p.email || '').toLowerCase() === String(e || '').trim().toLowerCase());
 const errSum = f => {
   const e = UI.err[f];
   if (!e || !Object.keys(e).length) return '';
@@ -402,7 +455,6 @@ function navItems() {
     return [
       ['home', 'Platform health', 'grid'],
       ['tenants', 'Organizations', 'building'],
-      ['platform', 'Contexts', 'layers'],
       ['roles', 'Role management', 'shield'],
       ['policies', 'Policies & agreements', 'file'],
       ['compassqs', 'Purpose Compass', 'target'],
@@ -502,7 +554,7 @@ function sidebar() {
   const items = navItems()
     .map(([r, l, i]) => {
       const [rt, tb] = r.split(':');
-      const on = rt === act && (rt !== 'platform' || (UI.p.tab || 'contexts') === (tb || 'contexts')) ? ' on' : '';
+      const on = rt === act && (rt !== 'platform' || (UI.p.tab || 'integrations') === (tb || 'integrations')) ? ' on' : '';
       const g = role() === 'T' ? '' : rt === 'metrics' && !['A', 'O'].includes(role()) ? 'Insights' : GROUP[rt] || '';
       let sec = '';
       if (g !== last && g) {
@@ -540,7 +592,7 @@ const SHORT = {
   evidence: 'Evidence',
   funding: 'Funding',
   billing: 'Billing',
-  platform: 'Contexts',
+  platform: 'Platform',
   tenants: 'Orgs',
   roles: 'Roles',
   audit: 'Audit',
@@ -719,6 +771,20 @@ A.tab = d => {
 };
 A.closeM = closeM;
 A.mback = closeM;
+// Posting in a review conversation keeps any open dialog open, so the new message shows in place.
+F.cv = d => {
+  const c = CONVO[d.k];
+  const o = c && c.get(d.id);
+  const pm = o && c.post(o);
+  if (!pm) return render();
+  if (!validate('cv', d, { text: [['req', 'Write a message first.'], ['min', 2]] })) return render();
+  convoAdd(o, pm.kind, d.text.trim());
+  c.notify(o, pm.kind);
+  audit(pm.kind === 'reply' ? 'Clarification reply posted' : 'Review comment posted', o.id, d.text.trim());
+  clearF('cv');
+  toast('Message posted.');
+  ok();
+};
 // Confirmation step for destructive or hard-to-reverse actions. The confirmed action still passes the guard layer.
 const CB = (label, act, data, msg, cls = 'btn-s btn-sm', yes) =>
   B(label, 'confirmAct', { ...data, act, msg, yes: yes || String(label).replace(/<[^>]+>/g, '') }, cls);

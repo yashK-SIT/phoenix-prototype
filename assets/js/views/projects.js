@@ -23,6 +23,39 @@ function draftSections(t, dsc, type) {
     `“${t}”: ${s}. Three milestones over about eight weeks. Main risks are participation and scope.`,
   ];
 }
+// ---- review conversation between the project owner and the Programme Administrator / assigned reviewer
+const projParty = p => !!p && (p.owner === myId() || (role() === 'F' && p.stewards.includes(myId())) || role() === 'A');
+const ctxAdmins = c => [...new Set(S.assign.filter(a => a.ctx === c && roleBase(a.role) === 'A' && a.status === 'Active').map(a => a.pid))];
+// Owner and reviewers always; administrators while no reviewer is assigned, or once they have joined the conversation.
+const projParties = p => {
+  const adm = ctxAdmins(p.ctx).filter(a => !p.stewards.length || (p.thread || []).some(m => m.by === a));
+  return [...new Set([p.owner, ...p.stewards, ...adm])];
+};
+CONVO.project = {
+  get: id => byId('projects', id),
+  acts: p => (p.history || []).map(x => ({ at: x.at, by: x.by, t: x.t })),
+  role: (p, pid) =>
+    pid === p.owner
+      ? 'Project owner'
+      : p.stewards.includes(pid)
+        ? 'Assigned reviewer'
+        : ctxAdmins(p.ctx).includes(pid)
+          ? 'Programme Administrator'
+          : '',
+  post: p =>
+    !projParty(p)
+      ? null
+      : p.owner === myId()
+        ? p.status === 'Clarification requested'
+          ? { kind: 'reply', label: 'Reply to the clarification request' }
+          : { kind: 'comment', label: 'Message to your reviewer' }
+        : { kind: 'comment', label: 'Message to the project owner' },
+  notify: (p, kind) =>
+    projParties(p)
+      .filter(x => x !== myId())
+      .forEach(x => notify(x, `${me().name} ${kind === 'reply' ? 'replied to the clarification on' : 'commented on'} “${p.title}”`, 'project', { id: p.id })),
+};
+const projLog = (p, t) => p.history.push({ at: now(), by: myId(), t });
 route('projects', 'projects', () => {
   const r = role();
   const list = S.projects.filter(
@@ -262,7 +295,10 @@ route('project', 'projects', () => {
   if (((r === 'F' && stewardOf(p)) || r === 'A') && p.status === 'Submitted')
     actions =
       B('Request clarification', 'clarify', { id: p.id }) +
+      B('Reject', 'rejectProj', { id: p.id }) +
       B('Accept project', 'acceptProj', { id: p.id }, 'btn-p btn-sm');
+  if (((r === 'F' && stewardOf(p)) || r === 'A') && p.status === 'Clarification requested')
+    actions = B('Reject', 'rejectProj', { id: p.id });
   if (((r === 'F' && stewardOf(p)) || own) && p.status === 'Accepted' && !p.circle && canCreateCircle())
     actions = B(ic('plus', 14) + 'Create Circle', 'newCircle', { project: p.id }, 'btn-p btn-sm');
   if (r === 'F' && stewardOf(p) && p.status === 'Accepted' && p.circle && !['Final review', 'Closed'].includes(p.stage))
@@ -275,8 +311,11 @@ route('project', 'projects', () => {
     const rm = byId('rooms', p.room);
     actions = B('Submit final deliverables', 'submitFinal', { id: p.id }, 'btn-p btn-sm');
   }
-  if (r === 'A') actions += B(p.stewards.length ? 'Change reviewer' : 'Assign reviewer', 'assignStewards', { id: p.id }, p.stewards.length ? 'btn-s btn-sm' : 'btn-p btn-sm');
+  if (r === 'A' && p.status !== 'Rejected') actions += B(p.stewards.length ? 'Change reviewer' : 'Assign reviewer', 'assignStewards', { id: p.id }, p.stewards.length ? 'btn-s btn-sm' : 'btn-p btn-sm');
+  const lastRej = p.status === 'Rejected' && (p.thread || []).filter(m => m.kind === 'reject').slice(-1)[0];
   if (r === 'F' && stewardOf(p) && p.stage === 'Closed') actions = '';
+  if (own && ownRoomProjects().includes(p))
+    actions += B(ic('room', 14) + 'Create ' + WL(), 'newRoom', { origin: 'Project', project: p.id, oid: p.rope || p.circle || '' }, p.circle ? 'btn-p btn-sm' : 'btn-s btn-sm');
   const ready = p.sections && p.sections.every(s => ['Accepted', 'Edited'].includes(s.st));
   return (
     head(h(p.title), `${h(p.type)} · ${nm(p.owner)}`, pill(p.status) + actions, [
@@ -287,13 +326,15 @@ route('project', 'projects', () => {
     stageTrack(p, 'projects') +
     p.clar
       .filter(c => !c.resolved)
-      .map(c => banner('warn', 'Clarification requested by ' + nm(c.by), `“${h(c.text)}” · ${fmt(c.at)}`, 'message'))
+      .map(c => banner('warn', 'Clarification requested by ' + nm(c.by), `“${h(c.text)}” · ${fmt(c.at)}${own ? ' · Reply in the review conversation below, update the sections if needed, then resubmit.' : ''}`, 'message'))
       .join('') +
+    (lastRej ? banner('err', 'Rejected by ' + nm(lastRej.by), `“${h(lastRej.text)}” · ${fmt(lastRej.at)}`) : '') +
     (p.status === 'Submitted' && !p.stewards.length ? banner('info', 'Waiting for a reviewer', r === 'A' ? 'Assign a Steward, Faculty member or Facilitator to review this project.' : 'The Programme Administrator assigns a Steward, Faculty member or Facilitator to review this project. You are notified when it is assigned.') : '') +
     (p.stage === 'Final review' && p.finalNote ? banner('info', 'Final deliverables submitted', h(p.finalNote)) : '') +
     (p.changesNote ? banner('warn', 'Changes requested', h(p.changesNote)) : '') +
-    `<div class="g12" style="margin-top:16px"><section class="card c8"><div class="card-h"><h2 class="h2">Project summary</h2></div>${p.sections ? p.sections.map((s, i) => `<div class="lrow" style="align-items:flex-start"><span class="sn" style="color:#155E58">${i + 1}</span><div class="lt"><b>${SECTIONS[i]}</b><p class="muted" style="white-space:pre-line;margin-top:4px">${h(s.text) || '<span class="cap">Empty</span>'}</p></div>${pill(s.st, { Accepted: 'p-green', Edited: 'p-teal', Rejected: 'p-red' }[s.st] || 'p-grey')}</div>`).join('') : `<p class="muted">${h(p.desc || 'No sections yet.')}</p>`}</section>
- <aside class="c4 col" style="gap:16px">${own && ['Draft', 'Clarification requested'].includes(p.status) ? card('Before you submit', '', `<form data-f="submitProj" class="col" style="gap:12px" novalidate><input type="hidden" name="id" value="${p.id}">${!ready ? banner('warn', '', 'All 8 sections must be accepted or edited first.') : ''}${fi('sp', 'c1', 'I have reviewed every AI-drafted section and accept responsibility for the content.', { type: 'checkbox', req: true })}${fi('sp', 'c2', 'I understand reviewers in this programme will see this project.', { type: 'checkbox', req: true })}<button class="btn btn-p btn-block" type="submit" ${ready ? '' : 'disabled'}>${p.status === 'Clarification requested' ? 'Resubmit for review' : 'Submit for review'}</button></form>`) : ''}
+    `<div class="g12" style="margin-top:16px"><div class="c8 col" style="gap:16px"><section class="card"><div class="card-h"><h2 class="h2">Project summary</h2></div>${p.sections ? p.sections.map((s, i) => `<div class="lrow" style="align-items:flex-start"><span class="sn" style="color:#155E58">${i + 1}</span><div class="lt"><b>${SECTIONS[i]}</b><p class="muted" style="white-space:pre-line;margin-top:4px">${h(s.text) || '<span class="cap">Empty</span>'}</p></div>${pill(s.st, { Accepted: 'p-green', Edited: 'p-teal', Rejected: 'p-red' }[s.st] || 'p-grey')}</div>`).join('') : `<p class="muted">${h(p.desc || 'No sections yet.')}</p>`}</section>
+ ${projParty(p) && p.status !== 'Draft' ? card('Review conversation and activity', 'Messages between the project owner, the Programme Administrator and the assigned reviewer, with every review step. Oldest first.', convoHtml('project', p), '', 'cv-card') : ''}</div>
+ <aside class="c4 col" style="gap:16px">${own && ['Draft', 'Clarification requested'].includes(p.status) ? card('Before you submit', '', `<form data-f="submitProj" class="col" style="gap:12px" novalidate><input type="hidden" name="id" value="${p.id}">${!ready ? banner('warn', '', 'All 8 sections must be accepted or edited first.') : ''}${fi('sp', 'c1', 'I have reviewed every AI-drafted section and accept responsibility for the content.', { type: 'checkbox', req: true })}${fi('sp', 'c2', 'I understand reviewers in this programme will see this project.', { type: 'checkbox', req: true })}${p.status === 'Clarification requested' ? fi('sp', 'note', 'What you changed (optional)', { type: 'textarea', rows: 3, max: 2000, help: 'Added to the review conversation.' }) : ''}<button class="btn btn-p btn-block" type="submit" ${ready ? '' : 'disabled'}>${p.status === 'Clarification requested' ? 'Resubmit for review' : 'Submit for review'}</button></form>`) : ''}
  ${(S.stageReports || []).some(x => x.project === p.id) ? card('Reports along the chain', 'Circle → Rope Team → ' + WL(), (S.stageReports || []).filter(x => x.project === p.id).slice().reverse().map(x => lrow('send', h(x.kind), h(x.t) + `<span class="cap" style="display:block;margin-top:4px">${cName(x.from)} → ${cName(x.to)} · ${nm(x.by)} · ${fmt(x.at)}</span>`)).join('')) : ''}
  ${projEvidenceCard(p)}
  ${p.owner === myId() ? interestedSponsors(p) : ''}
@@ -306,15 +347,17 @@ route('project', 'projects', () => {
      ['Support path', h(pathLabel(p.supportPath) || 'Chosen on acceptance')],
    ]),
  )}
- ${card(
-   'History',
-   '',
-   p.history
-     .slice()
-     .reverse()
-     .map(x => `<p class="cap" style="margin-bottom:6px">${fmt(x.at)} · ${h(x.t)}</p>`)
-     .join('') || '<p class="cap">—</p>',
- )}</aside></div>`
+ ${projParty(p) && p.status !== 'Draft'
+   ? ''
+   : card(
+       'History',
+       '',
+       p.history
+         .slice()
+         .reverse()
+         .map(x => `<p class="cap" style="margin-bottom:6px">${fmt(x.at)} · ${h(x.t)}</p>`)
+         .join('') || '<p class="cap">—</p>',
+     )}</aside></div>`
   );
 });
 // Sponsors who showed interest in this project (saved it, pitched, funded or messaged). The owner can message them.
@@ -361,7 +404,8 @@ F.submitProj = d => {
   p.status = 'Submitted';
   p.submitted = today();
   p.clar.forEach(c => (c.resolved = true));
-  p.history.push({ at: today(), t: re ? 'Resubmitted after clarification' : 'Submitted for review' });
+  if (re && (d.note || '').trim()) convoAdd(p, 'resubmit', d.note.trim());
+  else projLog(p, re ? 'Resubmitted after clarification' : 'Submitted for review');
   // The Programme Administrator assigns the reviewer; a resubmission goes straight back to the assigned reviewer.
   if (p.stewards.length) p.stewards.forEach(s => notify(s, `${re ? 'Resubmitted' : 'New'} project for review: “${p.title}”`, 'project', { id: p.id }));
   else
@@ -384,19 +428,45 @@ A.clarify = d => {
   modal(
     'Request clarification',
     () =>
-      `<form data-f="clar" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${d.id}">${fi('clar', 'text', 'What needs clarifying?', { type: 'textarea', rows: 4, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send to participant</button></div></form>`,
+      `<form data-f="clar" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${d.id}">${fi('clar', 'text', 'What needs clarifying?', { type: 'textarea', rows: 4, req: true, help: 'Added to the review conversation. The project owner can reply there and resubmit.' })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send to the project owner</button></div></form>`,
   );
 };
 F.clar = d => {
   if (!validate('clar', d, { text: ['req', ['min', 10]] })) return render();
   const p = byId('projects', d.id);
   p.status = 'Clarification requested';
-  p.clar.push({ at: today(), by: myId(), text: d.text });
-  p.history.push({ at: today(), t: 'Clarification requested' });
-  notify(p.owner, `Clarification requested on “${p.title}”`, 'project', { id: p.id });
+  p.clar.push({ at: now(), by: myId(), text: d.text.trim() });
+  convoAdd(p, 'clarify', d.text.trim());
+  projParties(p)
+    .filter(x => x !== myId())
+    .forEach(x => notify(x, `${x === p.owner ? 'Clarification requested on' : me().name + ' asked for clarification on'} “${p.title}”`, 'project', { id: p.id }));
   audit('Clarification requested', p.id, d.text);
   UI.modal = null;
   clearF('clar');
+  ok();
+};
+A.rejectProj = d => {
+  clearF('prej');
+  const p = byId('projects', d.id);
+  modal(
+    'Reject project',
+    () =>
+      `<form data-f="prej" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${p.id}">${dl([['Project', h(p.title)], ['Owner', nm(p.owner)]])}${fi('prej', 'text', 'Why it is rejected', { type: 'textarea', rows: 4, req: true, help: 'The project owner sees this in the review conversation.' })}<div class="actions"><span></span><button class="btn btn-d" type="submit">Reject project</button></div></form>`,
+  );
+};
+F.prej = d => {
+  if (!validate('prej', d, { text: ['req', ['min', 10]] })) return render();
+  const p = byId('projects', d.id);
+  p.status = 'Rejected';
+  p.clar.forEach(c => (c.resolved = true));
+  convoAdd(p, 'reject', d.text.trim());
+  projParties(p)
+    .filter(x => x !== myId())
+    .forEach(x => notify(x, `“${p.title}” was rejected by ${me().name}`, 'project', { id: p.id }));
+  audit('Project rejected', p.id, d.text);
+  UI.modal = null;
+  clearF('prej');
+  toast('Project rejected. The owner has been told why.');
   ok();
 };
 A.acceptProj = d => {
@@ -413,7 +483,9 @@ F.acc = d => {
   const path = 'Circle → Rope Team → Room';
   p.status = 'Accepted';
   p.supportPath = path;
-  p.history.push({ at: today(), t: 'Accepted by ' + me().name + '; support path: ' + path });
+  p.clar.forEach(c => (c.resolved = true));
+  projLog(p, 'Accepted by ' + me().name + '; support path: ' + path);
+  if ((d.note || '').trim()) convoAdd(p, 'approve', d.note.trim());
   notify(p.owner, `Your project “${p.title}” was accepted. ${d.note || ''}`, 'project', { id: p.id });
   audit('Project accepted', p.id, path);
   UI.modal = null;
@@ -437,7 +509,7 @@ F.asst = d => {
   }
   p.stewards.forEach(s => notify(s, 'You were assigned to review the project “' + p.title + '”', 'project', { id: p.id }));
   notify(p.owner, 'A reviewer was assigned to your project “' + p.title + '”: ' + p.stewards.map(x => P(x).name).join(', '), 'project', { id: p.id });
-  p.history.push({ at: today(), t: 'Reviewer assigned by ' + me().name + ': ' + p.stewards.map(x => P(x).name).join(', ') });
+  projLog(p, 'Reviewer assigned by ' + me().name + ': ' + p.stewards.map(x => P(x).name).join(', '));
   audit('Project reviewer assigned', p.id, p.stewards.join(','));
   toast('Reviewer assigned.');
   UI.modal = null;

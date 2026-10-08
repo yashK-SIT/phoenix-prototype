@@ -28,7 +28,21 @@ const roomLead = id => {
 };
 const G = {
   // projects
-  clar: d => isSteward(d.id) || 'only an assigned Faculty/Steward can request clarification',
+  clar: d =>
+    (isSteward(d.id) && byId('projects', d.id).status === 'Submitted') ||
+    'only the Programme Administrator or an assigned Faculty/Steward can request clarification on a submitted project',
+  rejectProj: d =>
+    (isSteward(d.id) && ['Submitted', 'Clarification requested'].includes(byId('projects', d.id).status)) ||
+    'only the Programme Administrator or an assigned Faculty/Steward can reject a project under review',
+  prej: d =>
+    (isSteward(d.id) && ['Submitted', 'Clarification requested'].includes(byId('projects', d.id).status)) ||
+    'only the Programme Administrator or an assigned Faculty/Steward can reject a project under review',
+  // review conversations (projects and pathways)
+  cv: d => {
+    const c = CONVO[d.k];
+    const o = c && c.get(d.id);
+    return (o && !!c.post(o)) || 'only the submitter and their reviewers post in this conversation';
+  },
   acceptProj: d =>
     (isSteward(d.id) && byId('projects', d.id).status === 'Submitted') ||
     'only an assigned steward can accept a submitted project',
@@ -266,6 +280,12 @@ const G = {
     const a = byId('assign', d.id);
     return (a && a.pid !== myId() && (role() === 'A' || (role() === 'O' && a.ctx === ctxId()))) || 'not permitted';
   },
+  // user accounts: Programme Administrator only; never their own or a Platform Administrator's account
+  userNew: () => role() === 'A' || 'only a Programme Administrator adds users',
+  userView: d => (role() === 'A' && !!byId('assign', d.id)) || 'only a Programme Administrator views user accounts',
+  userEdit: d => (role() === 'A' && !!byId('assign', d.id) && userEditable(byId('assign', d.id).pid)) || 'you cannot edit this account',
+  usr: d => (role() === 'A' && (!d.aid || (!!byId('assign', d.aid) && userEditable(byId('assign', d.aid).pid)))) || 'you cannot edit this account',
+  userDel: d => (role() === 'A' && S.people.some(p => p.id === d.pid) && userEditable(d.pid)) || 'you cannot delete this account',
   invNew: () => ['A', 'O'].includes(role()) || 'only administrators create invitations',
   inv: d =>
     role() === 'A' ||
@@ -547,6 +567,24 @@ Object.assign(G, {
   cqMove: platformOnly('manages Purpose Compass questions'),
   cqDel: platformOnly('manages Purpose Compass questions'),
 });
+// ---- Rope Team documents; project owners create their own Action Room; milestone validation
+const roomFor = d => {
+  const pr = d.project && byId('projects', d.project);
+  if (pr && !canCreateRoom() && !canCreateRoomFor(pr)) return 'you can create an ' + WL() + ' only for your own accepted project that does not have one yet';
+  return can('rooms') || 'you cannot create or propose a workspace in this role';
+};
+Object.assign(G, {
+  rdoc: d => activeMember('ropes', d.id) || 'only members of an active Rope Team upload documents',
+  newRoom: roomFor,
+  nr: roomFor,
+  msAchieve: d => msValidator(byId('rooms', d.r)) || 'only the Steward or a Reviewer validates a milestone',
+  msEvReview: d => {
+    const x = byId('rooms', d.r);
+    const m = x && x.milestones.find(y => y.id === d.id);
+    const e = m && byId('evidence', m.evidence);
+    return (e && msValidator(x) && evReviewer(e)) || 'only a Steward or Reviewer who did not submit the evidence reviews it';
+  },
+});
 // ---- deliverables → evidence → Learning Harvest → profile evolution; role assignment expiry
 Object.assign(G, {
   hvGen: d => {
@@ -584,18 +622,19 @@ Object.assign(G, {
   pwn: d => {
     if (!d.id) return roleBase(role()) === 'P' || 'only participants create their own pathway';
     const p = byId('pathways', d.id);
-    return (p && p.by === myId() && p.state === 'Changes requested') || 'only the participant can update a pathway returned for changes';
+    return (p && p.by === myId() && p.state === 'Clarification requested') || 'only the creator can update a pathway after a clarification request';
   },
-  pwUpd: d => (byId('pathways', d.id)?.by === myId() && byId('pathways', d.id)?.state === 'Changes requested') || 'only the participant can update a pathway returned for changes',
-  pwAssign: () => role() === 'A' || 'only the Programme Administrator assigns pathway reviewers',
-  pwas: () => role() === 'A' || 'only the Programme Administrator assigns pathway reviewers',
+  pwUpd: d => (byId('pathways', d.id)?.by === myId() && byId('pathways', d.id)?.state === 'Clarification requested') || 'only the creator can update a pathway after a clarification request',
+  pwAssign: d => (role() === 'A' && ['Awaiting reviewer', 'In review', 'Clarification requested'].includes(byId('pathways', d.id)?.state)) || 'only the Programme Administrator assigns a Steward to a pathway under review',
+  pwas: d => (role() === 'A' && ['Awaiting reviewer', 'In review', 'Clarification requested'].includes(byId('pathways', d.id)?.state)) || 'only the Programme Administrator assigns a Steward to a pathway under review',
+  // The approver may reject while waiting on a clarification; approving or asking again needs it back in review.
   pwDec: d => {
     const p = byId('pathways', d.id);
-    return (p && p.reviewer === myId() && p.state === 'In review') || 'only the assigned reviewer decides on this pathway';
+    return (p && p.reviewer === myId() && (p.state === 'In review' || (d.v === 'Rejected' && p.state === 'Clarification requested'))) || 'only the assigned reviewer decides on this pathway';
   },
   pwd: d => {
     const p = byId('pathways', d.id);
-    return (p && p.reviewer === myId() && p.state === 'In review') || 'only the assigned reviewer decides on this pathway';
+    return (p && p.reviewer === myId() && (p.state === 'In review' || (d.v === 'Rejected' && p.state === 'Clarification requested'))) || 'only the assigned reviewer decides on this pathway';
   },
 });
 // Wrap handlers. Same key may exist in A (click) and F (form submit); both are guarded.

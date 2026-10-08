@@ -9,6 +9,10 @@ const ropeInviter = x => {
   const pr = byId('projects', x.project);
   return x.owner === myId() || (role() === 'F' && ((pr && pr.stewards.includes(myId())) || isRopeFac(x)));
 };
+// Documents: the Rope Team's own uploads, plus the Circle's documents copied in when the Rope Team was formed.
+const ropeCircleDocs = x => x.circleDocs || [];
+const ropeDocs = x => [...(x.docs || []), ...ropeCircleDocs(x)];
+const circleDocsCopy = c => (c && c.docs ? c.docs.map(d => ({ ...d, from: c.id })) : []);
 // Rope Teams a person may ask to join: those linked to a Circle they belong to.
 const ropeJoinable = x => !!x.circle && memberOf(byId('circles', x.circle) || {}) && !memberOf(x) && x.state === 'Active';
 A.mentorRequest = d => {
@@ -81,6 +85,8 @@ A.mentorReq = d => {
         support: [],
         reviews: [],
         contribs: [],
+        docs: [],
+        circleDocs: circleDocsCopy(circle),
         engagement: null,
         indicators: {},
         privateNotes: [],
@@ -206,7 +212,7 @@ route('rope', 'ropeteams', () => {
       ['support', 'Support requests', x.support.filter(s => s.status !== 'Resolved').length || null],
       (isMentor || isFac) && ['ind', 'Support indicators'],
       (isMentor || isFac) && ['notes', 'Private notes'],
-      ['contrib', 'Contributions', (x.contribs || []).length || null],
+      ['docs', 'Documents', ropeDocs(x).length || null],
       ['members', 'Members', x.members.filter(m => m.status === 'Requested').length || null],
       ['about', 'Charter & stage'],
     ],
@@ -281,26 +287,21 @@ route('rope', 'ropeteams', () => {
       x.privateNotes.map(n => lrow('lock', h(n.t), nm(n.by))).join('') || '<p class="cap">None.</p>',
       isMentor ? B(ic('plus', 14) + 'Add note', 'privNote', { id: x.id }, 'btn-s btn-sm') : '',
     );
-  if (t.cur === 'contrib')
-    body =
-      card(
-        'Mentor contributions',
-        'Guidance, reviews, recommendations and issues resolved — captured in the project record.',
-        table(
-          ['Date', 'Type', 'Contribution', 'By'],
-          (x.contribs || []).map(c => [fmt(c.at), pill(c.kind, 'p-grey'), h(c.t), nm(c.by)]),
-          'No contributions recorded yet.',
-        ),
-        isMentor && !ro
-          ? B(ic('plus', 14) + 'Record contribution', 'ropeContrib', { id: x.id }, 'btn-p btn-sm') +
-              B('Feedback to facilitator', 'ropeFeedback', { id: x.id }) +
-              B('Suggest an opportunity', 'suggestOpp', { id: x.id })
-          : '',
-      ) +
-      (isFac
-        ? '<div class="section-gap"></div>' +
-          card('Mentor feedback', '', S.feedback.filter(f => f.rope === x.id).map(f => lrow('message', h(f.t), nm(f.by) + ' · ' + fmt(f.at))).join('') || '<p class="cap">No feedback yet.</p>')
-        : '');
+  if (t.cur === 'docs') {
+    const own = x.docs || [];
+    const fromCircle = ropeCircleDocs(x);
+    const row = (d, src) => [`<span class="att">${ic('file', 14)}${h(d.n)}</span>`, src, d.mb != null ? d.mb + ' MB' : '—', nm(d.by), fmt(d.at)];
+    body = card(
+      'Documents',
+      'Documents for this Rope Team, including the documents of the linked Circle. Visible to everyone in the Rope Team.',
+      table(
+        ['Document', 'Source', 'Size', 'Uploaded by', 'Date'],
+        [...own.map(d => row(d, pill('Rope Team', 'p-teal'))), ...fromCircle.map(d => row(d, pill('Circle', 'p-purple') + ' <span class="cap">' + cName(x.circle) + '</span>'))],
+        'No documents yet.',
+      ),
+      !ro ? `<form data-f="rdoc" class="row wrap" style="gap:8px" novalidate><input type="hidden" name="id" value="${x.id}"><input type="file" name="f" class="input" style="padding:6px;max-width:320px" multiple aria-label="Choose documents"><button class="btn btn-p btn-sm" type="submit">${ic('upload', 14)}Upload</button></form>` : '',
+    );
+  }
   if (t.cur === 'members') {
     const reqs = x.members.map((m, i) => [m, i]).filter(([m]) => m.status === 'Requested');
     body =
@@ -360,8 +361,8 @@ route('rope', 'ropeteams', () => {
  <div class="${secs ? 'c5' : 'c12'} col" style="gap:24px">${pr ? reportsCard(pr, 'ropes', x) : ''}${card(
    'Mentor engagement',
    'When the need is addressed, the mentor and Faculty/Steward decide whether the engagement continues or ends.',
-   `${eng ? dl([['Decision', pill(eng.status)], ['Need addressed', h(eng.addressed)], ['Note', h(eng.note || '—')], ['Proposed by', nm(eng.by) + ' · ' + fmt(eng.at)]]) : '<p class="cap">Engagement is active.</p>'}<div class="row wrap" style="margin-top:12px">${isMentor && !ro && (!eng || eng.status === 'Continuing') ? B('Review engagement', 'engage', { id: x.id }, 'btn-s btn-sm') : ''}${isFac && eng && eng.status === 'Exit proposed' && !ro ? B('Continue instead', 'engageDecide', { id: x.id, v: 'Continuing' }) + B('Confirm mentor exit', 'engageDecide', { id: x.id, v: 'Exited' }, 'btn-p btn-sm') : ''}${!ro && (isMentor || isFac) ? B(ic('alert', 14) + 'Escalate a concern', 'escalateRope', { id: x.id }) : ''}${(isFac || isMentor) && x.state === 'Active' ? B('Close Rope Team', 'ropeClose', { id: x.id }) : ''}</div>`,
- )}</div>
+   `${eng ? dl([['Decision', pill(eng.status)], ['Need addressed', h(eng.addressed)], ['Note', h(eng.note || '—')], ['Proposed by', nm(eng.by) + ' · ' + fmt(eng.at)]]) : '<p class="cap">Engagement is active.</p>'}<div class="row wrap" style="margin-top:12px">${isMentor && !ro && (!eng || eng.status === 'Continuing') ? B('Review engagement', 'engage', { id: x.id }, 'btn-s btn-sm') : ''}${isFac && eng && eng.status === 'Exit proposed' && !ro ? B('Continue instead', 'engageDecide', { id: x.id, v: 'Continuing' }) + B('Confirm mentor exit', 'engageDecide', { id: x.id, v: 'Exited' }, 'btn-p btn-sm') : ''}${isMentor && !ro ? B('Feedback to facilitator', 'ropeFeedback', { id: x.id }) + B('Suggest an opportunity', 'suggestOpp', { id: x.id }) : ''}${!ro && (isMentor || isFac) ? B(ic('alert', 14) + 'Escalate a concern', 'escalateRope', { id: x.id }) : ''}${(isFac || isMentor) && x.state === 'Active' ? B('Close Rope Team', 'ropeClose', { id: x.id }) : ''}</div>`,
+ )}${isFac ? card('Mentor feedback', 'Feedback the mentor sent to the facilitator.', S.feedback.filter(f => f.rope === x.id).map(f => lrow('message', h(f.t), nm(f.by) + ' · ' + fmt(f.at))).join('') || '<p class="cap">No feedback yet.</p>') : ''}</div>
  ${returnsCard(x) ? `<div class="c12">${returnsCard(x)}</div>` : ''}</div>`;
   }
   return (
@@ -441,6 +442,26 @@ F.rvr = d => {
   audit('Mentor review recorded', x.id, v.title + ' · ' + d.status);
   UI.modal = null;
   clearF('rvr');
+  ok();
+};
+// Same upload rules as Circle documents.
+F.rdoc = (d, form) => {
+  const x = byId('ropes', d.id);
+  const files = [...(form.querySelector('input[type=file]')?.files || [])];
+  if (!files.length) {
+    toast('Choose at least one document.', 'warn');
+    return render();
+  }
+  const big = files.find(f => f.size > S.settings.maxFileMB * 1048576);
+  if (big) {
+    toast(big.name + ' is over ' + S.settings.maxFileMB + ' MB.', 'err');
+    return render();
+  }
+  x.docs = x.docs || [];
+  files.forEach(f => x.docs.push({ id: uid('dc'), n: f.name, mb: +(f.size / 1048576).toFixed(2), by: myId(), at: now() }));
+  sysMsg(x, me().name + ' uploaded ' + files.length + ' document' + (files.length > 1 ? 's' : ''));
+  audit('Rope Team documents uploaded', x.id, files.map(f => f.name).join(', '));
+  toast('Uploaded.');
   ok();
 };
 A.engage = d => {

@@ -205,7 +205,7 @@ function inboxItems() {
           P(a.pid).name + " — " + ROLE[a.role],
           S.contexts.find((c) => c.id === a.ctx).name,
           "admin",
-          { tab: "approvals" },
+          { tab: "users" },
         ]),
       );
   if (hasB("Incident/Safety Owner"))
@@ -1225,7 +1225,7 @@ function homeA() {
       B("Programme admin", "go", { r: "admin" }, "btn-p"),
     ) +
     `<div class="g12">
- <div class="c12 g12">${stat("s-purple", "t-purple", "inbox", S.projects.filter((p) => inCtx(p) && p.status === "Submitted" && !p.stewards.length).length + S.pathways.filter((p) => inCtx(p) && p.state === "Awaiting reviewer").length, "Review requests", "Projects and pathways needing a reviewer", "admin", { tab: "requests" })}${stat("s-teal", "t-teal", "user", pend.length, "Role requests", "Awaiting approval", "admin", { tab: "approvals" })}${stat("s-slate", "t-navy", "alert", S.incidents.filter((i) => i.state !== "Closed").length, "Open incidents", "", "incidents")}${stat("s-mist", "t-slate", "card", S.ents.filter((e) => e.state === "Grace").length, "Payments in grace", "", "billing")}</div>
+ <div class="c12 g12">${stat("s-purple", "t-purple", "inbox", S.projects.filter((p) => inCtx(p) && p.status === "Submitted" && !p.stewards.length).length + S.pathways.filter((p) => inCtx(p) && pwNeedsSteward(p)).length, "Review requests", "Projects and pathways needing a reviewer", "admin", { tab: "requests" })}${stat("s-teal", "t-teal", "user", pend.length, "Role requests", "Awaiting approval", "admin", { tab: "users" })}${stat("s-slate", "t-navy", "alert", S.incidents.filter((i) => i.state !== "Closed").length, "Open incidents", "", "incidents")}${stat("s-mist", "t-slate", "card", S.ents.filter((e) => e.state === "Grace").length, "Payments in grace", "", "billing")}</div>
  ${card(
    "Programme metrics",
    "Starter registry",

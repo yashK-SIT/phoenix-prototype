@@ -88,8 +88,11 @@ F.inv = d => {
   toast(`${list.length - dup} invitation(s) sent${dup ? ', ' + dup + ' duplicate(s) skipped' : ''}.`);
   ok();
 };
-function usersTable(ctxFilter, canEdit) {
-  const as = S.assign.filter(a => !ctxFilter || a.ctx === ctxFilter);
+// crud: the Programme Administrator can also add, view, edit and delete the account itself.
+function usersTable(ctxFilter, canEdit, crud) {
+  const as = S.assign
+    .filter(a => !ctxFilter || a.ctx === ctxFilter)
+    .sort((x, y) => (y.status === 'Pending role approval') - (x.status === 'Pending role approval'));
   return table(
     ['Person', 'Role and context', 'Status', 'Bundles and mandate', ''],
     as.map(a => [
@@ -97,10 +100,128 @@ function usersTable(ctxFilter, canEdit) {
       `<b style="font-weight:600">${ROLE[a.role]}</b><div class="cap">${h(S.contexts.find(c => c.id === a.ctx).name)}</div>`,
       pill(a.status),
       `<div class="row wrap" style="gap:4px">${a.bundles.map(b => pill(b, 'p-grey')).join('')}${a.mandate ? pill(a.mandate.valid ? 'Mandate to ' + fmt(a.mandate.until) : 'Mandate expired', a.mandate.valid ? 'p-teal' : 'p-red') : ''}${a.until ? pill((a.status === 'Expired' ? 'Role expired ' : 'Role expires ') + fmt(a.until), a.status === 'Expired' ? 'p-red' : 'p-grey') : ''}</div>`,
-      canEdit && a.pid !== myId() ? B('Manage', 'userManage', { id: a.id }) : '',
+      crud
+        ? `<div class="row wrap" style="gap:6px;justify-content:flex-end">${B('View', 'userView', { id: a.id })}${userEditable(a.pid) ? B(ic('edit', 14) + 'Edit', 'userEdit', { id: a.id }) + B('Manage', 'userManage', { id: a.id }) + CB('Delete', 'userDel', { pid: a.pid }, 'Delete the account of ' + P(a.pid).name + '? All of their roles are removed and they can no longer sign in. Their past contributions stay on record under their name.', 'btn-d btn-sm') : ''}</div>`
+        : canEdit && a.pid !== myId()
+          ? B('Manage', 'userManage', { id: a.id })
+          : '',
     ]),
   );
 }
+// ---- user accounts (Programme Administrator): create, read, update, delete
+// Not your own account, and never a Platform Administrator's account.
+const userEditable = pid => pid !== myId() && !S.assign.some(a => a.pid === pid && roleBase(a.role) === 'T');
+const USER_ROLES = ['P', 'F', 'M', 'C', 'O', 'S', 'A'];
+const userCtxs = () => S.contexts.filter(c => c.kind !== 'Platform');
+function userForm(p, a) {
+  const f = 'usr';
+  const st = a ? (['Active', 'Deactivated'].includes(a.status) ? ['Active', 'Deactivated'] : [a.status, 'Active', 'Deactivated']) : null;
+  return `<form data-f="usr" class="col" style="gap:14px" novalidate>${errSum(f)}<input type="hidden" name="aid" value="${a ? a.id : ''}">
+  <h3 class="h3">Account</h3>
+  <div class="f2">${fi(f, 'name', 'Full name', { req: true, value: p?.name, auto: 'off' })}${fi(f, 'display', 'Display name', { req: true, value: p?.display, auto: 'off' })}</div>
+  <div class="f2">${fi(f, 'email', 'Email address', { type: 'email', req: true, value: p?.email, auto: 'off' })}${dobField(f, p?.dob || '', { req: true, auto: 'off', vis: '' })}</div>
+  <h3 class="h3">${a ? 'This role assignment' : 'First role'}</h3>
+  <div class="f2">${fi(f, 'role', 'Role', { type: 'select', req: true, ph: 'Choose a role', value: a?.role, opts: invitableRoles(USER_ROLES).map(r => [r.id, r.name + (r.system ? '' : ' (custom)')]) })}${fi(f, 'ctx', 'Context', { type: 'select', req: true, value: a ? a.ctx : ctxId(), opts: userCtxs().map(c => [c.id, c.name]) })}</div>
+  ${a ? fi(f, 'status', 'Role status', { type: 'select', value: a.status, opts: st }) : ''}
+  ${a && S.assign.filter(x => x.pid === a.pid).length > 1 ? banner('info', '', 'Account details apply to every role this person holds. Role and status apply only to this assignment.') : ''}
+  ${a ? '' : banner('info', '', 'The account is created verified and the role is active. On first sign-in the person accepts the agreement for their role and completes their profile. Prototype: they sign in with the demo password demo1234.')}
+  <div class="actions">${B('Cancel', 'closeM')}<button class="btn btn-p" type="submit">${a ? 'Save changes' : 'Create user'}</button></div></form>`;
+}
+A.userNew = () => {
+  clearF('usr');
+  modal('Add user', () => userForm(null, null), true);
+};
+A.userEdit = d => {
+  clearF('usr');
+  const a = byId('assign', d.id);
+  modal('Edit ' + nm(a.pid), () => userForm(P(a.pid), a), true);
+};
+A.userView = d => {
+  const a = byId('assign', d.id);
+  const p = P(a.pid);
+  const roles = S.assign.filter(x => x.pid === p.id);
+  modal(
+    h(p.name),
+    `<div class="col" style="gap:16px">${dl([
+      ['Full name', h(p.name)],
+      ['Display name', h(p.display)],
+      ['Email', h(p.email)],
+      ['Date of birth', p.dob ? fmt(p.dob) : '<span class="cap">Not recorded</span>'],
+      ['Organization', h((S.orgs.find(o => o.id === p.org) || {}).name || '—')],
+      ['Email verified', p.verified ? 'Yes' : 'No'],
+      ['Account status', pill(p.status || 'Active')],
+    ])}<div><h3 class="h3" style="margin-bottom:8px">Roles</h3>${table(
+      ['Role', 'Context', 'Status', 'Expires'],
+      roles.map(x => [h(ROLE[x.role]), h((S.contexts.find(c => c.id === x.ctx) || {}).name || x.ctx), pill(x.status), x.until ? fmt(x.until) : '—']),
+    )}</div><div class="actions">${B('Close', 'closeM')}${userEditable(p.id) ? B(ic('edit', 14) + 'Edit', 'userEdit', { id: a.id }, 'btn-p btn-sm') : ''}</div></div>`,
+    true,
+  );
+};
+F.usr = d => {
+  const a = d.aid ? byId('assign', d.aid) : null;
+  const pid = a ? a.pid : null;
+  const okv = validate('usr', d, {
+    name: ['req'],
+    display: ['req'],
+    email: ['req', 'email', ['fn', { f: v => { const x = personByEmail(v); return !x || x.id === pid; }, m: 'Another account already uses this email address.' }]],
+    dob: dobRules(true),
+    role: ['req'],
+    ctx: ['req'],
+  });
+  if (!okv) return render();
+  if (S.assign.some(x => x !== a && x.pid === pid && pid && x.role === d.role && x.ctx === d.ctx)) {
+    UI.err.usr = { role: 'This person already holds that role in that context.' };
+    return render();
+  }
+  const fields = { name: d.name.trim(), display: d.display.trim(), email: d.email.trim(), dob: d.dob };
+  if (a) {
+    const p = P(pid);
+    const was = JSON.stringify({ name: p.name, display: p.display, email: p.email, dob: p.dob, role: a.role, ctx: a.ctx, status: a.status });
+    Object.assign(p, fields);
+    const roleChanged = a.role !== d.role || a.ctx !== d.ctx;
+    Object.assign(a, { role: d.role, ctx: d.ctx });
+    if (d.status && d.status !== a.status) {
+      a.status = d.status;
+      notify(a.pid, 'Your ' + ROLE[a.role] + ' access is now ' + d.status, 'home');
+    }
+    if (roleChanged) notify(a.pid, 'Your role was changed to ' + ROLE[a.role] + ' in ' + S.contexts.find(c => c.id === a.ctx).name, 'home');
+    audit('User updated', p.id, was + ' → ' + JSON.stringify({ ...fields, role: a.role, ctx: a.ctx, status: a.status }));
+    toast('User updated.');
+  } else {
+    const p = { id: uid('p'), ...fields, verified: true, status: 'Active' };
+    S.people.push(p);
+    S.pw[p.id] = 'demo1234';
+    S.consents[p.id] = { history: [] };
+    S.assign.push({
+      id: uid('a'),
+      pid: p.id,
+      role: d.role,
+      ctx: d.ctx,
+      status: 'Active',
+      bundles: [],
+      approval: [{ at: now(), by: myId(), note: 'Account created by ' + me().name }],
+      onb: { agreement: false, consents: false, profile: false, compass: roleBase(d.role) !== 'P' },
+    });
+    notify(p.id, 'An account was created for you as ' + ROLE[d.role], 'home');
+    audit('User created', p.id, ROLE[d.role] + ' · ' + d.ctx);
+    toast('User created.');
+  }
+  UI.modal = null;
+  clearF('usr');
+  ok();
+};
+// Soft delete: the person record stays so names on past records still resolve; roles and sign-in are removed.
+A.userDel = d => {
+  const p = P(d.pid);
+  const n = S.assign.filter(a => a.pid === p.id).length;
+  S.assign = S.assign.filter(a => a.pid !== p.id);
+  delete S.pw[p.id];
+  p.status = 'Deleted';
+  p.deletedAt = now();
+  audit('User deleted', p.id, p.email + ' · ' + n + ' role(s) removed');
+  toast(p.name + '’s account was deleted.');
+  ok();
+};
 A.userManage = d => {
   const a = byId('assign', d.id);
   const isO = role() === 'O';
@@ -333,22 +454,18 @@ A.doExport = d => {
 // ---------- PROGRAMME ADMIN (6.7, E12, F12) ----------
 route('admin', 'admin', () => {
   if (role() !== 'A') return deniedView('admin');
-  const c = ctxId();
   const pend = S.assign.filter(a => a.status === 'Pending role approval');
   const rqProj = S.projects.filter(p => inCtx(p) && p.status === 'Submitted' && !p.stewards.length);
-  const rqPw = S.pathways.filter(p => inCtx(p) && p.state === 'Awaiting reviewer');
+  const rqPw = S.pathways.filter(p => inCtx(p) && pwNeedsSteward(p));
+  const inProj = S.projects.filter(p => inCtx(p) && ['Submitted', 'Clarification requested'].includes(p.status) && p.stewards.length);
   const t = tabs(
     'adm',
     [
       ['requests', 'Review requests', rqProj.length + rqPw.length],
-      ['users', 'Users'],
+      ['users', 'Users', pend.length || null],
       ['invites', 'Invitations'],
-      ['approvals', 'Role approvals', pend.length],
       ['library', 'Pathway library'],
-      ['packs', 'Packs & configuration'],
-      ['ai', 'AI sources & queue'],
       ['notify', 'Notifications'],
-      ['xorg', 'Cross-org approvals', S.xorg.filter(x => x.status === 'Pending').length],
       ['initiatives', 'Sponsor initiatives'],
       [
         'support',
@@ -374,44 +491,33 @@ route('admin', 'admin', () => {
       ) +
       '<div class="section-gap"></div>' +
       card(
-        'Pathways waiting for a reviewer',
-        'Assign a Steward or Faculty member. They approve the pathway, reject it or ask the participant for changes.',
+        'Projects in review',
+        'Projects with an assigned reviewer. Open one to read the conversation and add a comment.',
         table(
-          ['Pathway', 'Participant', 'Steps', 'Submitted', ''],
-          rqPw.map(p => [h(p.name), nm(p.pid), p.steps.map(x => h(x.t)).join(' → '), fmt(p.submitted || ''), B('Assign reviewer', 'pwAssign', { id: p.id }, 'btn-p btn-sm')]),
-          'No pathways are waiting for a reviewer.',
+          ['Item', 'Submitted by', 'Reviewer', 'Status', 'Messages', ''],
+          [
+            ...inProj.map(p => [`<b>${h(p.title)}</b><div class="cap">Project</div>`, nm(p.owner), p.stewards.map(nm).join(', '), pill(p.status), convoN(p), L('Open', 'project', { id: p.id })]),
+          ],
+          'Nothing is in review right now.',
         ),
-      );
+      ) +
+      '<div class="section-gap"></div>' +
+      pwAdminCards();
   if (t.cur === 'users')
-    body = card(
-      'Users and roles',
-      'Activate, deactivate, manage memberships and bundles. No direct database work.',
-      usersTable(null, true),
-    );
+    body =
+      (pend.length ? banner('warn', pend.length + ' role' + (pend.length > 1 ? 's' : '') + ' awaiting approval', 'Open Manage on the person to approve or decline the role.') + '<div style="height:12px"></div>' : '') +
+      card(
+        'Users and roles',
+        'Add, view, edit and delete user accounts. Manage roles, bundles and mandates. No direct database work.',
+        usersTable(null, true, true),
+        B(ic('plus', 14) + 'Add user', 'userNew', {}, 'btn-p btn-sm'),
+      );
   if (t.cur === 'invites')
     body = card(
       'Invitations',
       '',
       inviteTable(null),
       B(ic('plus', 14) + 'Create / bulk upload', 'invNew', {}, 'btn-p btn-sm'),
-    );
-  if (t.cur === 'approvals')
-    body = card(
-      'Sensitive role approvals',
-      'Unapproved roles cannot activate. Approval status and history are kept.',
-      table(
-        ['Person', 'Role', 'Context', 'Requested', 'History', ''],
-        pend.map(a => [
-          nm(a.pid),
-          ROLE[a.role],
-          h(S.contexts.find(c => c.id === a.ctx).name),
-          fmt(a.approval?.[0]?.at),
-          (a.approval || []).map(x => h(x.note)).join('; '),
-          B('Decline', 'roleDecide', { id: a.id, v: 'Role not activated' }) +
-            B('Approve', 'roleDecide', { id: a.id, v: 'Active' }, 'btn-p btn-sm'),
-        ]),
-        'No roles awaiting approval.',
-      ),
     );
   if (t.cur === 'library')
     body = card(
@@ -428,116 +534,6 @@ route('admin', 'admin', () => {
       ),
       B(ic('plus', 14) + 'Add template', 'tplNew', {}, 'btn-p btn-sm'),
     );
-  if (t.cur === 'packs')
-    body =
-      card(
-        'Use-case packs',
-        'One platform; packs are configuration, not code branches.',
-        table(
-          ['Pack', 'Workspace label', 'Enabled flows', 'Evidence types', 'Metrics', 'Status', ''],
-          S.packs.map(p => [
-            `<b>${h(p.name)}</b>`,
-            h(p.labels.workspace),
-            p.flows.join(' '),
-            h(p.evidenceTypes),
-            p.metrics,
-            pill(p.status),
-            p.status === 'Draft' ? B('Activate', 'packAct', { id: p.id }, 'btn-p btn-sm') : '',
-          ]),
-        ),
-      ) +
-      '<div style="height:16px"></div>' +
-      cfgForm(false) +
-      '<div style="height:16px"></div>' +
-      tplForm() +
-      '<div style="height:16px"></div>' +
-      card(
-        'Voting rule (D-03)',
-        'Configurable until OI-01 is settled.',
-        `<form data-f="vote" class="col" style="gap:12px" novalidate><div class="g3">${fi('vote', 'owner', 'Owner weight', { type: 'number', min: 1, value: S.settings.voting.ownerWeight, req: true })}${fi('vote', 'member', 'Member weight', { type: 'number', min: 1, value: S.settings.voting.memberWeight, req: true })}${fi('vote', 'th', 'Approval threshold (%)', { type: 'number', min: 1, value: S.settings.voting.threshold, req: true })}</div>${assumed('OI-01 relative weights')}<div class="actions"><span></span><button class="btn btn-s" type="submit">Save rule</button></div></form>`,
-      ) +
-      '<div style="height:16px"></div>' +
-      card(
-        'Configuration versions',
-        'Export and restore without code changes or database work.',
-        table(
-          ['Version', 'Date', 'By', 'Note', ''],
-          S.configVersions.map(v => [
-            h(v.id),
-            fmt(v.at),
-            nm(v.by),
-            h(v.note),
-            B('Restore', 'cfgRestore', { id: v.id }),
-          ]),
-        ),
-        B('Save current as version', 'cfgSave', {}, 'btn-p btn-sm') +
-          B(ic('download', 14) + 'Export configuration', 'doExport', { n: 'Full configuration' }),
-      ) +
-      '<div style="height:16px"></div>' +
-      card(
-        'Metrics registry',
-        'About 8–12 visible pilot signals.',
-        table(
-          ['Metric', 'Definition', 'Category', 'Owner', 'Gate', 'Status', ''],
-          S.metrics.map(m => [
-            h(m.name),
-            h(m.def),
-            h(m.cat),
-            h(m.owner),
-            h(m.gate),
-            pill(m.status),
-            B(m.status === 'Active' ? 'Hide' : 'Show', 'metToggle', { id: m.id }),
-          ]),
-        ),
-      );
-  if (t.cur === 'ai')
-    body =
-      card(
-        'Approved AI sources',
-        'Ask PHOENIX answers only from approved sources.',
-        table(
-          ['Source', 'Status', ''],
-          S.aiSources.map(s => [
-            h(s.title),
-            pill(s.status === 'Approved' ? 'Approved' : 'Not approved'),
-            hasB('AI Owner') ? B(s.status === 'Approved' ? 'Withdraw' : 'Approve', 'srcToggle', { id: s.id }) : '',
-          ]),
-        ),
-      ) +
-      '<div style="height:16px"></div>' +
-      card(
-        'AI job log',
-        'User, purpose, class, sources, consent, model and review state for every job.',
-        table(
-          ['Job', 'By', 'Class', 'Purpose', 'Sources', 'Consent', 'Status'],
-          S.ai
-            .slice()
-            .reverse()
-            .map(j => [
-              h(j.id),
-              nm(j.by),
-              pill(j.cls, 'p-ai'),
-              h(j.purpose),
-              h(j.sources),
-              h(j.consent),
-              pill(j.status),
-            ]),
-        ),
-      );
-  if (t.cur === 'ai' && hasB('AI Owner'))
-    body +=
-      '<div class="section-gap"></div>' +
-      card(
-        'AI outputs awaiting review (Class C)',
-        'Draft → Review → Edit → Approve/Reject → Release. Nothing is released without a person approving it.',
-        table(
-          ['Job', 'Purpose', 'Requested by', 'Sources', ''],
-          S.ai
-            .filter(j => j.status === 'In review' && j.cls === 'C')
-            .map(j => [h(j.id), h(j.purpose), nm(j.by), h(j.sources), B('Reject', 'aiRev', { id: j.id, v: 'Rejected' }) + B('Approve release', 'aiRev', { id: j.id, v: 'Released' }, 'btn-p btn-sm')]),
-          'Nothing waiting for review.',
-        ),
-      );
   if (t.cur === 'notify')
     body =
       card(
@@ -601,7 +597,6 @@ route('admin', 'admin', () => {
           ]),
         ),
       );
-  if (t.cur === 'xorg') body = xorgView();
   if (t.cur === 'initiatives')
     body = card(
       'Initiative summaries for sponsors',
@@ -670,54 +665,6 @@ F.tpl = d => {
   clearF('tpl');
   ok();
 };
-A.packAct = d => {
-  byId('packs', d.id).status = 'Active';
-  audit('Pack activated', d.id, 'Configured from approved primitives, no code changes');
-  toast('Fourth pack activated without code changes.');
-  ok();
-};
-F.vote = d => {
-  if (!validate('vote', d, { owner: ['req', 'num'], member: ['req', 'num'], th: ['req', 'num'] })) return render();
-  S.settings.voting = { ...S.settings.voting, ownerWeight: +d.owner, memberWeight: +d.member, threshold: +d.th };
-  audit('Voting rule changed', 'D-03', JSON.stringify(S.settings.voting));
-  clearF('vote');
-  toast('Voting rule saved.');
-  ok();
-};
-A.cfgSave = () => {
-  S.configVersions.push({
-    id: uid('cv'),
-    at: today(),
-    by: myId(),
-    note: 'Saved by ' + me().name,
-    snapshot: JSON.stringify({ packs: S.packs, settings: S.settings }),
-  });
-  audit('Configuration version saved', 'F12', '');
-  ok();
-};
-A.cfgRestore = d => {
-  const v = byId('configVersions', d.id);
-  if (v.snapshot) {
-    const s = JSON.parse(v.snapshot);
-    S.packs = s.packs;
-    S.settings = s.settings;
-  }
-  audit('Configuration restored', v.id, '');
-  toast('Configuration ' + v.id + ' restored.');
-  ok();
-};
-A.metToggle = d => {
-  const m = byId('metrics', d.id);
-  m.status = m.status === 'Active' ? 'Hidden' : 'Active';
-  audit('Metric visibility', m.id, m.status);
-  ok();
-};
-A.srcToggle = d => {
-  const s = byId('aiSources', d.id);
-  s.status = s.status === 'Approved' ? 'Not approved' : 'Approved';
-  audit('AI source ' + s.status, s.id, '');
-  ok();
-};
 F.ann = d => {
   if (!validate('ann', d, { t: ['req'] })) return render();
   const ps = S.assign.filter(a => a.ctx === ctxId() && (d.to === 'all' || a.role === d.to)).map(a => a.pid);
@@ -743,7 +690,6 @@ route('platform', 'platform', () => {
   const t = tabs(
     'plat',
     [
-      ['contexts', 'Contexts'],
       ['integrations', 'Integrations'],
       ['security', 'Security & access'],
       ['health', 'Health & alerts'],
@@ -753,50 +699,6 @@ route('platform', 'platform', () => {
     UI.p.tab,
   );
   let body = '';
-  if (t.cur === 'contexts')
-    body =
-      card(
-        'Contexts',
-        'Programmes, cohorts and organization spaces. Strict isolation: every record carries its context ID. Organizations are managed under Organizations.',
-        table(
-          ['Context', 'Kind', 'Organization', 'Pack', 'Status', 'Members', ''],
-          S.contexts.map(c => [
-            `<b>${h(c.name)}</b><div class="cap">${c.id}</div>`,
-            h(c.kind),
-            c.org && orgOf(c.org) ? `<span class="row" style="gap:8px;flex-wrap:nowrap">${orgMark(orgOf(c.org), 24)}${L(h(orgOf(c.org).name), 'tenants', { id: c.org })}</span>` : '—',
-            h(S.packs.find(p => p.id === c.pack)?.name || '—'),
-            pill(c.status),
-            S.assign.filter(a => a.ctx === c.id).length,
-            c.kind !== 'Platform' ? B('Assign administrator', 'ctxAdmin', { id: c.id }) : '',
-          ]),
-        ),
-        '',
-      ) +
-      (S.cohortReqs.filter(r => r.status === 'Pending').length
-        ? '<div class="section-gap"></div>' +
-          card(
-            'Cohort requests',
-            'From Organization Representatives',
-            table(
-              ['Cohort', 'Organization', 'Pack', 'Start', ''],
-              S.cohortReqs
-                .filter(r => r.status === 'Pending')
-                .map(r => [
-                  h(r.name),
-                  h(S.orgs.find(o => o.id === r.org)?.name),
-                  h(S.packs.find(p => p.id === r.pack)?.name),
-                  fmt(r.start),
-                  '',
-                ]),
-            ),
-          )
-        : '') +
-      '<div class="section-gap"></div>' +
-      banner(
-        'info',
-        'No default content access',
-        'Technical administration does not grant access to participant content. Cross-organization visibility only through explicit authorisation or approved aggregation.',
-      );
   if (t.cur === 'integrations')
     body =
       card(
@@ -933,33 +835,6 @@ route('platform', 'platform', () => {
     body
   );
 });
-A.ctxAdmin = d => {
-  modal(
-    'Assign an administrator to ' + h(S.contexts.find(c => c.id === d.id).name),
-    `<form data-f="cxa" class="col" style="gap:12px"><input type="hidden" name="ctx" value="${d.id}">${fi('cxa', 'role', 'Administrator role', { type: 'select', opts: [['O', 'Organization Representative / Administrator'], ['A', 'Programme Administrator']] })}${fi('cxa', 'pid', 'Person', { type: 'select', opts: S.people.map(p => [p.id, p.name + ' · ' + p.email]) })}${banner('info', '', 'Technical administration assigns the role; it gives you no access to the context’s participant content. ' + assumed('OI-14 who assigns organization administrators'))}<div class="actions"><span></span><button class="btn btn-p" type="submit">Assign</button></div></form>`,
-  );
-};
-F.cxa = d => {
-  const rr = d.role || 'A';
-  if (S.assign.some(a => a.pid === d.pid && a.ctx === d.ctx && a.role === rr)) {
-    toast('Already assigned.', 'warn');
-    return render();
-  }
-  S.assign.push({
-    id: uid('a'),
-    pid: d.pid,
-    role: rr,
-    ctx: d.ctx,
-    status: 'Active',
-    bundles: [],
-    onb: { agreement: false, consents: true, profile: true, compass: true },
-  });
-  notify(d.pid, 'You were assigned as ' + ROLE[rr] + ' for ' + S.contexts.find(c => c.id === d.ctx).name, 'home');
-  audit(ROLE[rr] + ' assigned', d.ctx, d.pid);
-  toast(ROLE[rr] + ' assigned. They accept the agreement for that role on next sign-in.');
-  UI.modal = null;
-  ok();
-};
 A.aiToggle = () => {
   S.settings.aiAvailable = !S.settings.aiAvailable;
   S.integrations[1].status = S.settings.aiAvailable ? 'Healthy' : 'Unavailable';

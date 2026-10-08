@@ -64,7 +64,7 @@ function stageGate(p, kind, o) {
       return gateCard('Forward: Circle → Rope Team', items, act, p, kind, o);
     }
     items.push([!!p.room, 'The ' + WL() + ' is created or linked.']);
-    const act = !p.room && fac && o.state === 'Active'
+    const act = !p.room && (fac || ownRoomProjects().includes(p)) && o.state === 'Active'
       ? agreed
         ? B(ic('room', 14) + 'Create or link ' + WL(), 'newRoom', { origin: 'Circle decision', oid: o.id, project: p.id }, 'btn-p btn-sm')
         : `<button class="btn btn-p btn-sm" type="button" disabled>${ic('room', 14)}Create ${WL()}</button><span class="cap">Record an approved decision first.</span>`
@@ -74,10 +74,11 @@ function stageGate(p, kind, o) {
   if (kind === 'ropes') {
     items.push([(o.reviews || []).some(v => v.status === 'Looks good'), 'Mentor has reviewed the team’s work.']);
     items.push([!!o.reqFinal, 'Guidance is complete and requirements are finalised (mentor).']);
-    items.push([!!p.room, 'The ' + WL() + ' is created or linked (Faculty/Steward).']);
+    items.push([!!p.room, 'The ' + WL() + ' is created or linked (project owner or Faculty/Steward).']);
     let act = '';
+    const ownerCan = p.owner === myId() && !p.room && o.state === 'Active' && ownRoomProjects().includes(p);
     if (o.state === 'Active' && o.mentor === myId() && !o.reqFinal) act = B(ic('check', 14) + 'Mark requirements finalised', 'reqFinal', { id: o.id }, 'btn-p btn-sm');
-    if (o.reqFinal && !p.room && fac) act = B(ic('room', 14) + 'Create ' + WL(), 'newRoom', { origin: 'Rope Team recommendation', oid: o.id, project: p.id }, 'btn-p btn-sm');
+    if (!p.room && ((o.reqFinal && fac) || ownerCan)) act = B(ic('room', 14) + 'Create ' + WL(), 'newRoom', { origin: 'Rope Team recommendation', oid: o.id, project: p.id }, 'btn-p btn-sm') + (ownerCan && !o.reqFinal ? '<span class="cap">Requirements are not finalised yet; you can still start.</span>' : '');
     if (!o.reqFinal && fac && !act) act = '<span class="cap">Waiting for the mentor to finalise requirements.</span>';
     return gateCard('Forward: Rope Team → ' + WL(), items, act, p, kind, o);
   }

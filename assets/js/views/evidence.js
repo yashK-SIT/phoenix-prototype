@@ -189,7 +189,7 @@ function evDetail(e) {
       '',
       'c8',
     )}
- <aside class="c4 col" style="gap:12px">${rev && ['Submitted', 'Needs Revision'].includes(e.review) ? card('Review', 'You set the status and level. Approval does not release it.', `<form data-f="evr" class="col" style="gap:12px" novalidate><input type="hidden" name="id" value="${e.id}">${fi('evr', 'review', 'Review status', { type: 'select', req: true, opts: REVIEW.filter(x => x !== 'Submitted' && x !== 'Withdrawn'), ph: 'Select' })}${fi('evr', 'level', 'Evidence Support Level', { type: 'select', req: true, opts: LEVELS.map(([k, v]) => [k, k + ' — ' + v]), value: e.level })}${fi('evr', 'limits', 'Limitations or uncertainty', { type: 'textarea', rows: 3, req: true, value: e.limits })}${fi('evr', 'comment', 'Comment to submitter', { type: 'textarea', rows: 2 })}<button class="btn btn-p" type="submit">Save review</button></form>`) : ''}
+ <aside class="c4 col" style="gap:12px">${rev && ['Submitted', 'Needs Revision'].includes(e.review) ? card('Review', 'You set the status and level. Approval does not release it.', evReviewForm(e)) : ''}
  ${own && e.review === 'Needs Revision' ? card('Revise and resubmit', 'History is kept.', B('Resubmit', 'evResub', { id: e.id }, 'btn-p btn-block')) : ''}
  ${own && !['Withdrawn'].includes(e.review) ? card('Release to a new audience', 'Moving evidence to a new audience or purpose is a new release decision.', (rr.length ? rr.map(x => `<div class="lrow"><div class="lt"><b>${h(x.audience)}</b><p class="cap">${h(x.status)}</p></div>${x.status === 'Awaiting owner decision' ? B('Decline', 'relDecide', { id: x.id, v: 'Declined by owner' }) + B('Authorise', 'relDecide', { id: x.id, v: 'Owner authorised — disclosure review' }, 'btn-p btn-sm') : ''}</div>`).join('') : '') + (e.review === 'Approved' ? B('Authorise funder / public release', 'relNew', { id: e.id }, 'btn-s btn-block') : '<p class="cap">Only approved evidence can be released.</p>') + (e.sens === 'High' ? banner('warn', '', 'Contains identifiable or sensitive content. Explicit authorisation is required, and a human disclosure review follows.') : '')) : ''}
  ${own && e.review !== 'Withdrawn' ? CB('Withdraw evidence', 'evWithdraw', { id: e.id }, 'Withdraw this evidence? It leaves review and any release stops. History is kept.') : ''}
@@ -210,6 +210,9 @@ function evDetail(e) {
  ${card('History', '', e.history.map(x => `<p class="cap" style="margin-bottom:6px">${fmt(x.at)} · ${h(x.t)}</p>`).join(''))}</aside></div>`
   );
 }
+// Used on the evidence page and from an Action Room milestone.
+const evReviewForm = e =>
+  `<form data-f="evr" class="col" style="gap:12px" novalidate><input type="hidden" name="id" value="${e.id}">${fi('evr', 'review', 'Review status', { type: 'select', req: true, opts: REVIEW.filter(x => x !== 'Submitted' && x !== 'Withdrawn'), ph: 'Select', help: 'Approved lets the linked milestone be validated as achieved.' })}${fi('evr', 'level', 'Evidence Support Level', { type: 'select', req: true, opts: LEVELS.map(([k, v]) => [k, k + ' — ' + v]), value: e.level })}${fi('evr', 'limits', 'Limitations or uncertainty', { type: 'textarea', rows: 3, req: true, value: e.limits })}${fi('evr', 'comment', 'Comment to submitter', { type: 'textarea', rows: 2 })}<button class="btn btn-p" type="submit">Save review</button></form>`;
 F.evr = d => {
   if (!validate('evr', d, { review: ['req'], level: ['req'], limits: ['req'] })) return render();
   const e = byId('evidence', d.id);
@@ -237,8 +240,11 @@ F.evr = d => {
         notify(a.pid, 'Material negative finding recorded on evidence ' + e.title, 'evidence', { id: e.id }),
       );
   notify(e.owner, `Evidence review: “${e.title}” — ${d.review} (${d.level})`, 'evidence', { id: e.id });
+  msEvidenceReviewed(e);
   audit('Evidence reviewed', e.id, d.review + ' ' + d.level);
   clearF('evr');
+  UI.modal = null;
+  toast(d.review === 'Approved' && S.rooms.some(x => (x.milestones || []).some(m => m.evidence === e.id && m.status !== 'Achieved')) ? 'Evidence approved. The linked milestone can now be validated as achieved.' : 'Review saved.');
   ok();
 };
 A.evResub = d => {

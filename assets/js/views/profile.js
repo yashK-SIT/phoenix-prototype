@@ -63,6 +63,11 @@ route("profile", "any", () => {
           ["Full name", h(me().name) + " " + pill("Self-declared", "p-grey")],
           ["Display name", h(me().display)],
           [
+            "Date of birth",
+            (me().dob ? fmt(me().dob) : "Not recorded") +
+              ' · <span class="cap">Private; you and authorised administration</span>',
+          ],
+          [
             "Email",
             h(me().email) +
               ' · <span class="cap">Private; released only for an approved introduction</span>',
@@ -321,19 +326,21 @@ A.editBasics = () => {
   const pr = S.profiles[myId()] || {};
   UI.form.basics = {
     display: me().display,
+    dob: me().dob || "",
     bio: pr.bio || "",
     lang: pr.lang || "",
   };
   modal(
     "Edit basics",
     () =>
-      `<form data-f="basics" class="col" style="gap:14px" novalidate>${fi("basics", "display", "Display name", { req: true })}${fi("basics", "bio", "Short biography", { type: "textarea", rows: 3, max: 400 })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save new version</button></div></form>`,
+      `<form data-f="basics" class="col" style="gap:14px" novalidate>${fi("basics", "display", "Display name", { req: true })}${dobField("basics", me().dob || "")}${fi("basics", "bio", "Short biography", { type: "textarea", rows: 3, max: 400 })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save new version</button></div></form>`,
   );
 };
 F.basics = (d) => {
-  if (!validate("basics", d, { display: ["req"] }))
+  if (!validate("basics", d, { display: ["req"], dob: dobRules(true) }))
     return render();
   me().display = d.display;
+  me().dob = d.dob;
   const pr = (S.profiles[myId()] = S.profiles[myId()] || {
     ver: 0,
     history: [],
@@ -901,7 +908,7 @@ route("pathway", "pathways", () => {
           card(
             "Proposed: " + h(p.name),
             "Mode " + h(p.mode) + " · by " + nm(p.by),
-            `<ol class="req-list">${p.steps.map((s) => `<li>${h(s.t)}</li>`).join("")}</ol><div class="row wrap" style="margin-top:12px">${B(ic("clock", 14) + "View activity", "pwActivity", { id: p.id })}${B("Request a change", "pwChange", { id: p.id })}${B("Accept pathway", "pwAccept", { id: p.id }, "btn-p btn-sm")}</div>`,
+            `<ol class="req-list">${p.steps.map((s) => `<li>${h(s.t)}</li>`).join("")}</ol><div class="row wrap" style="margin-top:12px">${B(ic("message", 14) + "Conversation & activity", "pwActivity", { id: p.id })}${B("Request a change", "pwChange", { id: p.id })}${B("Accept pathway", "pwAccept", { id: p.id }, "btn-p btn-sm")}</div>`,
           ),
         )
         .join('<div style="height:16px"></div>') +
@@ -935,7 +942,7 @@ route("pathway", "pathways", () => {
                   ),
                 )
                 .join(""),
-            B(ic("clock", 14) + "View activity", "pwActivity", { id: cur.id }),
+            B(ic("message", 14) + "Conversation & activity", "pwActivity", { id: cur.id }),
           )
         : empty(
             "route",
@@ -958,7 +965,7 @@ route("pathway", "pathways", () => {
             pill(
               p.state === "Draft" && p.changeReq ? "Change requested" : p.state,
             ),
-            B("View activity", "pwActivity", { id: p.id }),
+            B("Conversation & activity", "pwActivity", { id: p.id }),
           ]),
         ),
       )
@@ -983,6 +990,7 @@ route("pathway", "pathways", () => {
         ? B("Template library", "go", { r: "admin", tab: "library" }, "btn-s")
         : "",
     ) +
+    (r === "A" ? pwAdminCards() + '<div class="section-gap"></div>' : "") +
     pwToReviewCard() +
     table(
       ["Participant", "Current pathway", "Other pathways", "Actions"],
@@ -1011,21 +1019,7 @@ route("pathway", "pathways", () => {
             : "",
         ];
       }),
-    ) +
-    (hasB("Reviewer")
-      ? `<div style="height:16px"></div>` +
-        card(
-          "Awaiting your approval (mode 3)",
-          "",
-          S.pathways
-            .filter((p) => p.state === "In review" && !p.reviewer && inCtx(p))
-            .map(
-              (p) =>
-                `<div class="lrow"><div class="lt"><b>${h(p.name)}</b><p class="cap">For ${nm(p.pid)} · drafted by ${nm(p.by)} · ${p.steps.map((s) => h(s.t)).join(" → ")}</p></div><div class="row">${B("View activity", "pwActivity", { id: p.id })}${B("Return", "pwReview", { id: p.id, v: "Draft" })}${B("Approve", "pwReview", { id: p.id, v: "Proposed to participant" }, "btn-p btn-sm")}</div></div>`,
-            )
-            .join("") || empty("check", "Nothing waiting", ""),
-        )
-      : "")
+    )
   );
 });
 A.proposePathway = (d) => {
@@ -1066,7 +1060,51 @@ const pwFiles = (files) =>
     : "";
 const pwStepDone = (s) =>
   `Completed ${s.doneAt ? fmt(s.doneAt) : ""}${s.doneBy ? " by " + nm(s.doneBy) : ""}${s.note ? `<span style="display:block;margin-top:4px">“${h(s.note)}”</span>` : ""}${pwFiles(s.files)}`;
-const pwActBtn = (p) => (pwCanView(p) ? B("View activity", "pwActivity", { id: p.id }) : "");
+const pwActBtn = (p) => (pwCanView(p) ? B("Conversation & activity", "pwActivity", { id: p.id }) : "");
+// ---- review conversation between the pathway creator and the approver (assigned reviewer or Reviewer bundle)
+const pwParty = (p) =>
+  !!p &&
+  (p.by === myId() ||
+    p.pid === myId() ||
+    p.reviewer === myId() ||
+    role() === "A" ||
+    (hasB("Reviewer") && !p.reviewer && ["In review", "Draft"].includes(p.state)));
+const pwParties = (p) => {
+  const adm = ctxAdmins(p.ctx).filter((a) => p.state === "Awaiting reviewer" || (p.thread || []).some((m) => m.by === a));
+  return [...new Set([p.by, p.pid, p.reviewer, ...adm].filter(Boolean))];
+};
+// The creator is answering when the approver has asked for clarification or returned the pathway.
+const pwAsked = (p) => p.state === "Clarification requested" || (p.state === "Draft" && !!p.changeReq);
+CONVO.pathway = {
+  get: (id) => byId("pathways", id),
+  acts: (p) => p.activity || [],
+  role: (p, pid) =>
+    pid === p.by
+      ? "Pathway creator"
+      : pid === p.reviewer
+        ? "Steward (approver)"
+        : pid === p.pid
+          ? "Participant"
+          : ctxAdmins(p.ctx).includes(pid)
+            ? "Programme Administrator"
+            : S.assign.some((a) => a.pid === pid && a.bundles.includes("Reviewer"))
+              ? "Reviewer"
+              : "",
+  post: (p) =>
+    !pwParty(p)
+      ? null
+      : p.by === myId() && pwAsked(p)
+        ? { kind: "reply", label: "Reply to the clarification request" }
+        : p.by === myId()
+          ? { kind: "comment", label: p.reviewer ? "Message to your approver" : "Message" }
+          : { kind: "comment", label: "Message to the pathway creator" },
+  notify: (p, kind) =>
+    pwParties(p)
+      .filter((x) => x !== myId())
+      .forEach((x) =>
+        notify(x, `${me().name} ${kind === "reply" ? "replied to the clarification on" : "commented on"} the pathway “${p.name}”`, "pathway"),
+      ),
+};
 const pwCanView = (p) =>
   !!p &&
   (p.pid === myId() ||
@@ -1100,7 +1138,8 @@ F.pp = (d) => {
     t: t.trim(),
     done: false,
   }));
-  const state = d.mode === "3" ? "In review" : "Proposed to participant";
+  // Custom (mode 3) pathways go to the Programme Administrator, who assigns a Steward to approve them.
+  const state = d.mode === "3" ? "Awaiting reviewer" : "Proposed to participant";
   const p = {
     id: uid("pw"),
     pid: d.pid,
@@ -1127,26 +1166,19 @@ F.pp = (d) => {
         : (d.pid === myId()
             ? "Drafted their own custom pathway"
             : "Drafted a custom pathway") +
-          " (mode 3) and sent it for Reviewer approval",
+          " (mode 3) and sent it for Steward approval",
   );
   S.pathways.push(p);
-  if (state === "In review")
-    S.assign
-      .filter((a) => a.ctx === ctxId() && a.bundles.includes("Reviewer"))
-      .forEach((a) =>
-        notify(
-          a.pid,
-          "Custom pathway awaiting approval for " + P(d.pid).name,
-          "pathway",
-        ),
-      );
-  else notify(d.pid, "A pathway was proposed to you: " + p.name, "pathway");
+  if (state === "Awaiting reviewer") {
+    p.submitted = today();
+    ctxAdmins(ctxId()).forEach((a) => notify(a, "Assign a Steward to the pathway “" + p.name + "” from " + me().name, "admin", { tab: "requests" }));
+  } else notify(d.pid, "A pathway was proposed to you: " + p.name, "pathway");
   audit("Pathway proposed", p.id, p.mode);
   clearF("pp");
   UI.modal = null;
   toast(
-    state === "In review"
-      ? "Sent to a Reviewer for approval."
+    state === "Awaiting reviewer"
+      ? "Sent to the Programme Administrator, who assigns a Steward to approve it."
       : "Proposed to the participant.",
   );
   ok();
@@ -1156,12 +1188,12 @@ A.draftPathway = (d) => {
   modal(
     "Draft your own pathway",
     () =>
-      `<form data-f="pp" class="col" style="gap:14px" novalidate><input type="hidden" name="pid" value="${d.pid}"><input type="hidden" name="mode" value="3">${fi("pp", "name", "Pathway name", { req: true })}${fi("pp", "steps", "Steps (one per line, 3–5)", { type: "textarea", rows: 5, req: true })}${banner("info", "", "Custom pathways are reviewed by an authorised Reviewer before they are proposed back to you.")}<div class="actions"><span></span><button class="btn btn-p" type="submit">Submit for review</button></div></form>`,
+      `<form data-f="pp" class="col" style="gap:14px" novalidate><input type="hidden" name="pid" value="${d.pid}"><input type="hidden" name="mode" value="3">${fi("pp", "name", "Pathway name", { req: true })}${fi("pp", "steps", "Steps (one per line, 3–5)", { type: "textarea", rows: 5, req: true })}${banner("info", "", "Custom pathways are approved by a Steward, assigned by the Programme Administrator.")}<div class="actions"><span></span><button class="btn btn-p" type="submit">Submit for review</button></div></form>`,
   );
 };
 // ---- A participant creates and submits a pathway; the Programme Administrator assigns a reviewer (Steward or
 // Faculty), who approves it, rejects it or asks for changes; the participant updates and resubmits.
-const PW_OPEN = ["Awaiting reviewer", "In review", "Changes requested", "Rejected"];
+const PW_OPEN = ["Awaiting reviewer", "In review", "Clarification requested", "Rejected"];
 const stepsRule = [
   "req",
   [
@@ -1185,23 +1217,23 @@ function pwMineCard(list) {
       mine
         .map(
           (p) =>
-            `<div class="lrow" style="align-items:flex-start"><span class="tile t-soft">${ic("route", 18)}</span><div class="lt"><b>${h(p.name)}</b><p class="cap">${p.steps.map((s) => h(s.t)).join(" → ")}</p><p class="cap" style="margin-top:4px">${p.state === "Awaiting reviewer" ? "Waiting for a reviewer to be assigned" : p.state === "In review" ? "With " + nm(p.reviewer) + " for review" : p.state === "Changes requested" ? "Changes requested by " + nm(p.reviewer) : "Rejected by " + nm(p.reviewer)}</p>${p.reviewNote && ["Changes requested", "Rejected"].includes(p.state) ? `<p class="pw-note">${h(p.reviewNote)}</p>` : ""}</div><div class="row wrap" style="gap:6px">${pill(p.state, { "Changes requested": "p-amber", Rejected: "p-red" }[p.state])}${B("View activity", "pwActivity", { id: p.id })}${p.state === "Changes requested" ? B("Update and resubmit", "pwUpd", { id: p.id }, "btn-p btn-sm") : ""}</div></div>`,
+            `<div class="lrow" style="align-items:flex-start"><span class="tile t-soft">${ic("route", 18)}</span><div class="lt"><b>${h(p.name)}</b><p class="cap">${p.steps.map((s) => h(s.t)).join(" → ")}</p><p class="cap" style="margin-top:4px">${p.state === "Awaiting reviewer" ? "Waiting for the Programme Administrator to assign a Steward" : p.state === "In review" ? "With " + nm(p.reviewer) + " for review" : p.state === "Clarification requested" ? "Clarification requested by " + nm(p.reviewer) + " — reply in the conversation, or update and resubmit" : "Rejected by " + nm(p.reviewer)}</p>${p.reviewNote && ["Clarification requested", "Rejected"].includes(p.state) ? `<p class="pw-note">${h(p.reviewNote)}</p>` : ""}</div><div class="row wrap" style="gap:6px">${pill(p.state, { "Clarification requested": "p-amber", Rejected: "p-red" }[p.state])}${B(ic("message", 14) + "Conversation & activity" + (convoN(p) ? " (" + convoN(p) + ")" : ""), "pwActivity", { id: p.id })}${p.state === "Clarification requested" ? B("Update and resubmit", "pwUpd", { id: p.id }, "btn-p btn-sm") : ""}</div></div>`,
         )
         .join(""),
     ) + '<div style="height:16px"></div>'
   );
 }
 function pwToReviewCard() {
-  const mine = S.pathways.filter((p) => p.reviewer === myId() && p.state === "In review" && inCtx(p));
+  const mine = S.pathways.filter((p) => p.reviewer === myId() && ["In review", "Clarification requested"].includes(p.state) && inCtx(p));
   if (!mine.length && role() !== "F") return "";
   return (
     card(
       "Pathways assigned to you for review",
-      "Approve to make the pathway current for the participant, ask for changes, or reject it.",
+      "Approve to make the pathway current for the participant, request clarification, or reject it. Pathways waiting on the creator stay here until they are resubmitted.",
       mine
         .map(
           (p) =>
-            `<div class="lrow" style="align-items:flex-start"><span class="tile t-soft">${ic("route", 18)}</span><div class="lt"><b>${h(p.name)}</b><p class="cap">For ${nm(p.pid)} · ${h(p.mode)}${p.resubmitted ? " · resubmitted " + fmt(p.resubmitted) : ""}</p><ol class="req-list" style="margin-top:6px">${p.steps.map((s) => `<li>${h(s.t)}</li>`).join("")}</ol>${p.note ? `<p class="cap">Participant’s note: ${h(p.note)}</p>` : ""}</div><div class="row wrap" style="gap:6px">${B("View activity", "pwActivity", { id: p.id })}${B("Reject", "pwDec", { id: p.id, v: "Rejected" })}${B("Request changes", "pwDec", { id: p.id, v: "Changes requested" })}${B("Approve", "pwDec", { id: p.id, v: "Current" }, "btn-p btn-sm")}</div></div>`,
+            `<div class="lrow" style="align-items:flex-start"><span class="tile t-soft">${ic("route", 18)}</span><div class="lt"><b>${h(p.name)}</b><p class="cap">For ${nm(p.pid)} · ${h(p.mode)}${p.resubmitted ? " · resubmitted " + fmt(p.resubmitted) : ""}</p><ol class="req-list" style="margin-top:6px">${p.steps.map((s) => `<li>${h(s.t)}</li>`).join("")}</ol>${p.note ? `<p class="cap">Creator’s note: ${h(p.note)}</p>` : ""}</div><div class="row wrap" style="gap:6px">${p.state === "Clarification requested" ? pill("Waiting for the creator", "p-amber") : ""}${B(ic("message", 14) + "Conversation & activity" + (convoN(p) ? " (" + convoN(p) + ")" : ""), "pwActivity", { id: p.id })}${B("Reject", "pwDec", { id: p.id, v: "Rejected" })}${p.state === "In review" ? B("Request clarification", "pwDec", { id: p.id, v: "Clarification requested" }) + B("Approve", "pwDec", { id: p.id, v: "Current" }, "btn-p btn-sm") : ""}</div></div>`,
         )
         .join("") || empty("check", "Nothing to review", "Pathways the Programme Administrator assigns to you appear here."),
     ) + '<div style="height:16px"></div>'
@@ -1211,7 +1243,7 @@ function pwForm(p) {
   const tpls = S.templates.filter((t) => t.status === "Approved");
   const src = fv("pwn", "src", p ? p.tpl || "custom" : "custom");
   const tpl = byId("templates", src);
-  return `<form data-f="pwn" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${p ? p.id : ""}">${p && p.reviewNote ? banner("warn", "Changes requested by " + nm(p.reviewer), h(p.reviewNote)) : ""}${p ? "" : fi("pwn", "src", "Start from", { type: "select", opts: [["custom", "My own steps"], ...tpls.map((t) => [t.id, "Template: " + t.name])], ch: "pwnSrc" })}${fi("pwn", "name", "Pathway name", { req: true, value: p ? p.name : tpl ? tpl.name : "" })}${fi("pwn", "steps", "Steps (one per line, 3–5)", { type: "textarea", rows: 5, req: true, value: p ? p.steps.map((s) => s.t).join("\n") : tpl ? tpl.steps.join("\n") : "" })}${fi("pwn", "note", p ? "What you changed" : "Note for the reviewer (optional)", { type: "textarea", rows: 2, req: !!p })}${banner("info", "", "The Programme Administrator assigns a Steward or Faculty member to review your pathway. It becomes current when they approve it.")}<div class="actions"><span></span><button class="btn btn-p" type="submit">${p ? "Resubmit for review" : "Submit for review"}</button></div></form>`;
+  return `<form data-f="pwn" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${p ? p.id : ""}">${p && p.reviewNote ? banner("warn", "Clarification requested by " + nm(p.reviewer), h(p.reviewNote)) : ""}${p ? "" : fi("pwn", "src", "Start from", { type: "select", opts: [["custom", "My own steps"], ...tpls.map((t) => [t.id, "Template: " + t.name])], ch: "pwnSrc" })}${fi("pwn", "name", "Pathway name", { req: true, value: p ? p.name : tpl ? tpl.name : "" })}${fi("pwn", "steps", "Steps (one per line, 3–5)", { type: "textarea", rows: 5, req: true, value: p ? p.steps.map((s) => s.t).join("\n") : tpl ? tpl.steps.join("\n") : "" })}${fi("pwn", "note", p ? "Your response and what you changed" : "Note for the reviewer (optional)", { type: "textarea", rows: 2, req: !!p, help: p ? "Added to the review conversation." : "" })}${banner("info", "", "The Programme Administrator assigns a Steward or Faculty member to review your pathway. It becomes current when they approve it.")}<div class="actions"><span></span><button class="btn btn-p" type="submit">${p ? "Resubmit for review" : "Submit for review"}</button></div></form>`;
 }
 A.pwNew = () => {
   clearF("pwn");
@@ -1240,8 +1272,10 @@ F.pwn = (d) => {
     .map((t) => ({ t: t.trim(), done: false }));
   if (p0) {
     Object.assign(p0, { name: d.name.trim(), steps, state: "In review", resubmitted: today(), note: d.note.trim() });
-    pwLog(p0, "Updated and resubmitted: " + d.note.trim());
-    notify(p0.reviewer, "Pathway resubmitted for your review: " + p0.name + " (" + me().name + ")", "pathway");
+    convoAdd(p0, "resubmit", d.note.trim());
+    pwParties(p0)
+      .filter((x) => x !== myId())
+      .forEach((x) => notify(x, "Pathway resubmitted for review: " + p0.name + " (" + me().name + ")", "pathway"));
     audit("Pathway resubmitted", p0.id, d.note);
     toast("Resubmitted to " + P(p0.reviewer).name + ".");
   } else {
@@ -1273,32 +1307,87 @@ F.pwn = (d) => {
   clearF("pwn");
   ok();
 };
+// ---- Programme Administrator assigns (or changes) the Steward who approves a pathway
+const pwStewards = (p) => S.assign.filter((a) => a.ctx === p.ctx && roleBase(a.role) === "F" && a.status === "Active" && a.pid !== p.by && a.pid !== p.pid);
+const pwNeedsSteward = (p) => p.state === "Awaiting reviewer" || (p.state === "In review" && !p.reviewer);
 A.pwAssign = (d) => {
   clearF("pwas");
   const p = byId("pathways", d.id);
-  const rv = S.assign.filter((a) => a.ctx === p.ctx && roleBase(a.role) === "F" && a.status === "Active");
+  const rv = pwStewards(p);
   modal(
-    "Assign a reviewer",
+    p.reviewer ? "Change the Steward" : "Assign a Steward",
     () =>
-      `<form data-f="pwas" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${p.id}">${dl([["Pathway", h(p.name)], ["Participant", nm(p.pid)], ["Steps", p.steps.map((s) => h(s.t)).join(" → ")]])}${fi("pwas", "rv", "Steward or Faculty member", { type: "select", req: true, ph: "Choose a reviewer", opts: rv.map((a) => [a.pid, P(a.pid).name + " · " + ROLE[a.role]]) })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Assign</button></div></form>`,
+      `<form data-f="pwas" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${p.id}">${dl([["Pathway", h(p.name)], ["Created by", nm(p.by)], ["For", nm(p.pid)], ["Steps", p.steps.map((s) => h(s.t)).join(" → ")], p.reviewer && ["Current Steward", nm(p.reviewer)]])}${
+        rv.length
+          ? fi("pwas", "rv", "Steward", { type: "select", req: true, ph: "Choose a Steward", value: p.reviewer || "", opts: rv.map((a) => [a.pid, P(a.pid).name + " · " + ROLE[a.role]]), help: "Active Facilitators / Stewards in this programme. The person who created the pathway cannot approve it." })
+          : banner("warn", "No Steward available in this programme", "Invite a Facilitator / Steward from " + L("Programme admin → Invitations", "admin", { tab: "invites" }) + ", then assign them here.")
+      }${banner("info", "", "The Steward approves the pathway, rejects it or requests clarification. The creator and the Steward talk in the pathway conversation; every message and step is kept.")}<div class="actions"><span></span><button class="btn btn-p" type="submit" ${rv.length ? "" : "disabled"}>${p.reviewer ? "Change Steward" : "Assign Steward"}</button></div></form>`,
   );
 };
 F.pwas = (d) => {
-  if (!validate("pwas", d, { rv: [["req", "Choose a reviewer."]] })) return render();
+  if (!validate("pwas", d, { rv: [["req", "Choose a Steward."]] })) return render();
   const p = byId("pathways", d.id);
+  if (!pwStewards(p).some((a) => a.pid === d.rv)) {
+    UI.err.pwas = { rv: "Choose an active Steward in this programme." };
+    return render();
+  }
+  const was = p.reviewer;
+  if (was === d.rv) {
+    UI.modal = null;
+    return ok();
+  }
   p.reviewer = d.rv;
-  p.state = "In review";
-  pwLog(p, "Reviewer assigned by " + me().name + ": " + P(d.rv).name);
-  notify(d.rv, "Pathway assigned to you for review: " + p.name + " (" + P(p.pid).name + ")", "pathway");
-  notify(p.pid, "A reviewer was assigned to your pathway “" + p.name + "”: " + P(d.rv).name, "pathway");
-  audit("Pathway reviewer assigned", p.id, d.rv);
+  if (p.state !== "Clarification requested") p.state = "In review";
+  pwLog(p, (was ? "Steward changed by " + me().name + ": " + P(was).name + " → " : "Steward assigned by " + me().name + ": ") + P(d.rv).name);
+  notify(d.rv, "Pathway assigned to you for approval: " + p.name + " (" + P(p.by).name + ")", "pathway");
+  [...new Set([p.by, p.pid])].forEach((x) => notify(x, "A Steward was assigned to the pathway “" + p.name + "”: " + P(d.rv).name, "pathway"));
+  if (was) notify(was, "You are no longer the Steward for the pathway “" + p.name + "”", "pathway");
+  audit("Pathway Steward assigned", p.id, (was ? was + " → " : "") + d.rv);
   UI.modal = null;
   clearF("pwas");
-  toast("Reviewer assigned.");
+  toast(was ? "Steward changed." : "Steward assigned. They can now approve the pathway or ask for clarification.");
   ok();
 };
+// Programme Administrator view: pathways waiting for a Steward, and pathways a Steward is reviewing.
+function pwAdminCards() {
+  const wait = S.pathways.filter((p) => inCtx(p) && pwNeedsSteward(p));
+  const inRev = S.pathways.filter((p) => inCtx(p) && p.reviewer && ["In review", "Clarification requested"].includes(p.state));
+  const conv = (p) => B(ic("message", 14) + "Conversation" + (convoN(p) ? " (" + convoN(p) + ")" : ""), "pwActivity", { id: p.id });
+  return (
+    card(
+      "Pathways waiting for a Steward",
+      "Assign a Steward to approve each pathway. They approve it, reject it or request clarification from the creator.",
+      table(
+        ["Pathway", "Created by", "For", "Steps", "Submitted", ""],
+        wait.map((p) => [`<b>${h(p.name)}</b><div class="cap">${h(p.mode)}</div>`, nm(p.by), nm(p.pid), p.steps.map((x) => h(x.t)).join(" → "), fmt(p.submitted || ""), conv(p) + B("Assign Steward", "pwAssign", { id: p.id }, "btn-p btn-sm")]),
+        "No pathways are waiting for a Steward.",
+      ),
+    ) +
+    '<div class="section-gap"></div>' +
+    card(
+      "Pathways with a Steward",
+      "Open the conversation to follow the review or add a comment.",
+      table(
+        ["Pathway", "Created by", "Steward", "Status", ""],
+        inRev.map((p) => [`<b>${h(p.name)}</b>`, nm(p.by), nm(p.reviewer), pill(p.state), conv(p) + B("Change Steward", "pwAssign", { id: p.id })]),
+        "No pathways are with a Steward right now.",
+      ),
+    )
+  );
+}
 A.pwDec = (d) => {
   const p = byId("pathways", d.id);
+  // A pathway someone else wrote for the participant still needs the participant's acceptance after approval.
+  if (d.v === "Current" && p.by !== p.pid) {
+    p.state = "Proposed to participant";
+    p.reviewNote = "";
+    pwLog(p, "Approved by " + me().name + " and proposed to the participant");
+    notify(p.pid, "Pathway proposed to you: " + p.name, "pathway");
+    notify(p.by, "Your pathway “" + p.name + "” was approved by " + me().name, "pathway");
+    audit("Pathway approved", p.id, "Proposed to participant");
+    toast("Approved. The participant is asked to accept it.");
+    return ok();
+  }
   if (d.v === "Current") {
     S.pathways
       .filter((x) => x.pid === p.pid && x.ctx === p.ctx && x.state === "Current" && x !== p)
@@ -1316,22 +1405,25 @@ A.pwDec = (d) => {
   }
   clearF("pwd");
   modal(
-    d.v === "Rejected" ? "Reject pathway" : "Request changes",
+    d.v === "Rejected" ? "Reject pathway" : "Request clarification",
     () =>
-      `<form data-f="pwd" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${p.id}"><input type="hidden" name="v" value="${d.v}">${dl([["Pathway", h(p.name)], ["Participant", nm(p.pid)]])}${fi("pwd", "note", d.v === "Rejected" ? "Why it is rejected" : "What needs to change", { type: "textarea", rows: 3, req: true })}<div class="actions"><span></span><button class="btn ${d.v === "Rejected" ? "btn-d" : "btn-p"}" type="submit">${d.v === "Rejected" ? "Reject" : "Send back for changes"}</button></div></form>`,
+      `<form data-f="pwd" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${p.id}"><input type="hidden" name="v" value="${d.v}">${dl([["Pathway", h(p.name)], ["Created by", nm(p.by)]])}${fi("pwd", "note", d.v === "Rejected" ? "Why it is rejected" : "What needs clarifying or changing?", { type: "textarea", rows: 3, req: true, help: "Added to the review conversation. The creator can reply there and resubmit." })}<div class="actions"><span></span><button class="btn ${d.v === "Rejected" ? "btn-d" : "btn-p"}" type="submit">${d.v === "Rejected" ? "Reject" : "Send to the creator"}</button></div></form>`,
   );
 };
 F.pwd = (d) => {
   if (!validate("pwd", d, { note: ["req", ["min", 5]] })) return render();
   const p = byId("pathways", d.id);
-  p.state = d.v === "Rejected" ? "Rejected" : "Changes requested";
+  const rej = d.v === "Rejected";
+  p.state = rej ? "Rejected" : "Clarification requested";
   p.reviewNote = d.note.trim();
-  pwLog(p, (d.v === "Rejected" ? "Rejected by " : "Changes requested by ") + me().name + ": " + p.reviewNote);
-  notify(p.pid, (d.v === "Rejected" ? "Your pathway was rejected: " : "Changes requested on your pathway: ") + p.name, "pathway");
+  convoAdd(p, rej ? "reject" : "clarify", p.reviewNote);
+  pwParties(p)
+    .filter((x) => x !== myId())
+    .forEach((x) => notify(x, (rej ? "Pathway rejected: " : "Clarification requested on the pathway: ") + p.name, "pathway"));
   audit("Pathway " + p.state.toLowerCase(), p.id, p.reviewNote);
   UI.modal = null;
   clearF("pwd");
-  toast(d.v === "Rejected" ? "Rejected. The participant has been told why." : "Sent back to the participant for changes.");
+  toast(rej ? "Rejected. The creator has been told why." : "Clarification requested. The creator can reply or resubmit.");
   ok();
 };
 A.pwReview = (d) => {
@@ -1363,7 +1455,7 @@ F.pwr = (d) => {
   const p = byId("pathways", d.id);
   p.state = "Draft";
   p.changeReq = d.why;
-  pwLog(p, "Returned by Reviewer — changes requested: " + d.why);
+  convoAdd(p, "clarify", d.why.trim());
   notify(
     p.by,
     "Pathway returned by reviewer: " + p.name + " — " + d.why,
@@ -1401,7 +1493,7 @@ F.pwc = (d) => {
   const p = byId("pathways", d.id);
   p.state = "Draft";
   p.changeReq = d.why;
-  pwLog(p, "Requested changes: " + d.why);
+  convoAdd(p, "clarify", d.why.trim());
   notify(
     p.by,
     `${me().name} requested a change to “${p.name}”: ${d.why}`,
@@ -1448,19 +1540,13 @@ F.pwv = (d) => {
     .split("\n")
     .filter((x) => x.trim())
     .map((t) => ({ t: t.trim(), done: false }));
-  p.state = p.mode.startsWith("3") ? "In review" : "Proposed to participant";
+  // Custom pathways go back to their Steward, or to the Programme Administrator if none is assigned yet.
+  p.state = !p.mode.startsWith("3") ? "Proposed to participant" : p.reviewer ? "In review" : "Awaiting reviewer";
   p.changeReq = "";
-  pwLog(p, "Revised and re-proposed: " + d.note);
-  if (p.state === "In review")
-    S.assign
-      .filter((a) => a.ctx === p.ctx && a.bundles.includes("Reviewer"))
-      .forEach((a) =>
-        notify(
-          a.pid,
-          "Revised pathway awaiting approval for " + P(p.pid).name,
-          "pathway",
-        ),
-      );
+  convoAdd(p, "resubmit", d.note.trim());
+  if (p.state === "In review") notify(p.reviewer, "Revised pathway awaiting your approval: " + p.name, "pathway");
+  else if (p.state === "Awaiting reviewer")
+    ctxAdmins(p.ctx).forEach((a) => notify(a, "Assign a Steward to the revised pathway “" + p.name + "”", "admin", { tab: "requests" }));
   else notify(p.pid, "Revised pathway proposed to you: " + p.name, "pathway");
   audit("Pathway revised", p.id, d.note);
   UI.modal = null;
@@ -1564,22 +1650,21 @@ F.pws = (d, form) => {
 // Full history for the participant and for the people who propose, adapt and approve pathways.
 A.pwActivity = (d) => {
   const p = byId("pathways", d.id);
-  const acts = (p.activity || [])
-    .slice()
-    .sort((a, b) => a.at.localeCompare(b.at));
-  modal(
-    "Pathway activity · " + h(p.name),
+  clearF("cv");
+  // A function body, so a message posted from the dialog shows in place.
+  modal("Pathway · " + h(p.name), () =>
     `<div class="col" style="gap:16px">${dl([
       ["Participant", nm(p.pid)],
       ["Mode", h(p.mode)],
-      ["Proposed by", nm(p.by)],
+      ["Created by", nm(p.by)],
+      ["Approver", p.reviewer ? nm(p.reviewer) : p.state === "Awaiting reviewer" ? "Assigned by the Programme Administrator" : "—"],
       [
         "State",
         pill(p.state === "Draft" && p.changeReq ? "Change requested" : p.state),
       ],
       p.changeReq &&
         p.state === "Draft" && ["Open change request", h(p.changeReq)],
-    ])}<div><h3 class="h3" style="margin-bottom:8px">Steps</h3>${table(
+    ])}<div><h3 class="h3" style="margin-bottom:8px">Conversation and activity</h3><p class="cap" style="margin-bottom:10px">Messages between the pathway creator and the approver, with every review step. Oldest first.</p>${convoHtml("pathway", p)}</div><div><h3 class="h3" style="margin-bottom:8px">Steps</h3>${table(
       ["Step", "Status", "Completed by", "Completed on", "Note and files"],
       p.steps.map((s, i) => [
         `${i + 1}. ${h(s.t)}`,
@@ -1590,11 +1675,7 @@ A.pwActivity = (d) => {
           ? `${s.note ? h(s.note) : ""}${pwFiles(s.files)}`
           : "",
       ]),
-    )}</div><div><h3 class="h3" style="margin-bottom:8px">History</h3>${
-      acts.length
-        ? `<ol class="mtl">${acts.map((a) => `<li class="done"><span class="mtl-dot">${ic("check", 13)}</span><div class="col"><b>${h(a.t)}</b><span class="cap">${nm(a.by)} · ${fmt(a.at)}</span></div></li>`).join("")}</ol>`
-        : '<p class="cap">No recorded activity yet.</p>'
-    }</div></div>`,
+    )}</div></div>`,
     true,
   );
 };

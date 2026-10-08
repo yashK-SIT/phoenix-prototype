@@ -4,6 +4,10 @@ const isLead = (x) =>
   sCan("rooms", x, "lead") || (hasB("Project Lead") && memberOf(x));
 const canCreateRoom = () =>
   ["F", "C", "O", "A"].includes(role()) || hasB("Project Lead");
+// A project owner creates the Action Room for their own accepted project directly (no proposal step).
+const ownRoomProjects = () =>
+  S.projects.filter((p) => inCtx(p) && p.owner === myId() && p.status === "Accepted" && !p.room && !["Final review", "Closed"].includes(p.stage));
+const canCreateRoomFor = (pr) => canCreateRoom() || (!!pr && ownRoomProjects().includes(pr));
 route("rooms", "rooms", () => {
   const r = role();
   const list = S.rooms.filter(
@@ -23,6 +27,8 @@ route("rooms", "rooms", () => {
             { origin: "Institutional project" },
             "btn-p",
           )
+        : ownRoomProjects().length
+          ? B(ic("plus", 16) + "Create " + WL(), "newRoom", { origin: "Project" }, "btn-p")
         : r === "P" && S.settings.participantCanProposeWorkspace
           ? B(
               "Propose a " + WL(),
@@ -60,27 +66,44 @@ route("rooms", "rooms", () => {
 });
 A.newRoom = (d) => {
   clearF("nr");
-  const pr = d.project && byId("projects", d.project);
+  // A project owner without creation rights picks one of their own accepted projects.
+  const own = !canCreateRoom() ? ownRoomProjects() : [];
+  const pick = !d.project && own.length > 0;
+  const pr = byId("projects", d.project || (pick ? own[0].id : ""));
+  const creator = canCreateRoomFor(pr);
   UI.form.nr = {
     name: pr ? pr.title + " — execution" : "",
     origin: d.origin === "Learning pathway" ? "Learning pathway" : "Project",
     oid: d.oid || "",
-    project: d.project || "",
+    project: pr ? pr.id : "",
   };
   modal(
-    (canCreateRoom() ? "Create " : "Propose ") + (/^[aeiou]/i.test(WL()) ? "an " : "a ") + WL(),
-    () => `<form data-f="nr" class="col" style="gap:14px" novalidate><input type="hidden" name="project" value="${d.project || ""}"><input type="hidden" name="oid" value="${d.oid || ""}">
+    (creator ? "Create " : "Propose ") + (/^[aeiou]/i.test(WL()) ? "an " : "a ") + WL(),
+    () => {
+      const cp = byId("projects", fv("nr", "project")) || pr;
+      const rope = cp && byId("ropes", cp.rope);
+      return `<form data-f="nr" class="col" style="gap:14px" novalidate>${pick ? fi("nr", "project", "Project", { type: "select", req: true, opts: own.map((p) => [p.id, p.title]), ch: "nrProject", help: "Your accepted projects that do not have an " + WL() + " yet." }) : `<input type="hidden" name="project" value="${pr ? pr.id : ""}">`}<input type="hidden" name="oid" value="${d.oid || ""}">
  ${fi("nr", "name", "Name", { req: true })}${fi("nr", "purpose", "Purpose / charter", { type: "textarea", rows: 3, req: true })}${fi("nr", "outcome", "Expected outcome", { type: "textarea", rows: 3, req: true })}
  ${fi("nr", "origin", "Primary origin", { type: "select", req: true, opts: ["Project", "Learning pathway"], help: d.oid ? "Linked to " + cName(d.oid) + " (linked, not duplicated)" : "" })}
- <div class="actions"><span></span><button class="btn btn-p" type="submit">${canCreateRoom() ? "Create" : "Propose"}</button></div></form>`,
+ ${cp && !canCreateRoom() ? banner("info", "", "You lead this " + WL() + " as project owner. Your project’s Steward joins as facilitator to validate milestones, and Circle members are invited." + (rope && !rope.reqFinal ? " The Rope Team has not finalised requirements yet — you can still start, and keep working with your mentor." : "")) : ""}
+ <div class="actions"><span></span><button class="btn btn-p" type="submit">${creator ? "Create" : "Propose"}</button></div></form>`;
+    },
   );
+};
+A.nrProject = (d, el) => {
+  const pr = byId("projects", el.value);
+  const f = {};
+  new FormData(el.form).forEach((v, k) => (f[k] = v));
+  if (pr) f.name = pr.title + " — execution";
+  UI.form.nr = f;
+  render();
 };
 F.nr = (d) => {
   if (!validate("nr", d, { name: ["req"], purpose: ["req"], outcome: ["req"] }))
     return render();
   const flags = [];
-  const creator = canCreateRoom();
   const pr = d.project && byId("projects", d.project);
+  const creator = canCreateRoomFor(pr);
   const st = !creator
     ? "Proposed"
     : flags.length
@@ -123,6 +146,11 @@ F.nr = (d) => {
           : defaultSpaceRole(role()),
       status: "Active",
     });
+  // The project's Steward joins as facilitator: they review contributions and validate milestones.
+  if (pr)
+    pr.stewards.forEach((s) => {
+      if (!x.members.some((m) => m.pid === s)) x.members.push({ pid: s, role: "Facilitator", status: "Active" });
+    });
   if (pr) {
     const c = byId("circles", pr.circle);
     if (c)
@@ -157,8 +185,11 @@ F.nr = (d) => {
       pr.stage = "Room";
       pr.history.push({
         at: today(),
-        t: WL() + " created; moved to " + WL() + " stage",
+        t: WL() + " created by " + me().name + "; moved to " + WL() + " stage",
       });
+      pr.stewards
+        .filter((s) => s !== myId())
+        .forEach((s) => notify(s, me().name + " created the " + WL() + " for “" + pr.title + "”. You are its facilitator.", "room", { id: x.id }));
     }
   }
   if (st !== "Active")
@@ -253,34 +284,33 @@ route("room", "rooms", () => {
     body = `<div class="g12">${roomFlowBanner(x)}<div class="c12">${taskBoard(x, lead, ro)}</div>
  ${card(
    "Milestones",
-   "Evidence-linked completion is validated by a Reviewer.",
+   "Each milestone moves through three steps: 1. a member links evidence · 2. a Steward or Reviewer approves the evidence · 3. the Steward validates the milestone as achieved.",
    table(
-     ["Milestone", "Due", "Status", "Evidence", ""],
-     x.milestones.map((m) => [
-       h(m.t),
-       fmt(m.due) + dueTag(m.due, m.status === "Achieved"),
-       pill(m.status),
-       m.evidence
-         ? L(h(byId("evidence", m.evidence)?.title || m.evidence), "evidence", {
-             id: m.evidence,
-           }) +
-           " " +
-           pill(byId("evidence", m.evidence)?.review || "")
-         : "—",
-       !ro
-         ? (m.status !== "Achieved" && isM
-             ? B("Link evidence", "msEvidence", { r: x.id, id: m.id })
-             : "") +
-           (m.status !== "Achieved" && m.evidence && canReview
-             ? B(
-                 "Validate as achieved",
-                 "msAchieve",
-                 { r: x.id, id: m.id },
-                 "btn-p btn-sm",
-               )
-             : "")
-         : "",
-     ]),
+     ["Milestone", "Due", "Status", "Evidence", "Next step", ""],
+     x.milestones.map((m) => {
+       const ev = byId("evidence", m.evidence);
+       const st = msStep(x, m);
+       const validator = msValidator(x);
+       return [
+         h(m.t),
+         fmt(m.due) + dueTag(m.due, m.status === "Achieved"),
+         pill(m.status),
+         ev ? L(h(ev.title), "evidence", { id: ev.id }) + " " + pill(ev.review) : '<span class="cap">None linked</span>',
+         `<span class="cap">${st}</span>`,
+         !ro
+           ? `<div class="row wrap" style="gap:6px;justify-content:flex-end">${
+               (m.status !== "Achieved" && isM ? B(ev ? "Change evidence" : "Link evidence", "msEvidence", { r: x.id, id: m.id }) : "") +
+               (m.status !== "Achieved" && ev && ev.review === "Submitted" && validator && evReviewer(ev) ? B("Review evidence", "msEvReview", { r: x.id, id: m.id }, "btn-s btn-sm") : "") +
+               (m.status !== "Achieved" && validator
+                 ? ev && ev.review === "Approved"
+                   ? CB("Validate as achieved", "msAchieve", { r: x.id, id: m.id }, "Record “" + m.t + "” as achieved? This is based on the approved evidence “" + ev.title + "” and cannot be undone here.", "btn-p btn-sm", "Validate")
+                   : `<button type="button" class="btn btn-p btn-sm" disabled title="The linked evidence must be approved first">Validate as achieved</button>`
+                 : "")
+             }</div>`
+           : "",
+       ];
+     }),
+     "No milestones yet.",
    ),
    !ro && lead
      ? B(
@@ -734,6 +764,70 @@ A.winApprove = (d) => {
   audit("Visible win approved", x.id, d.t);
   ok();
 };
+// ---- Milestones: a member links evidence → a Steward or Reviewer approves the evidence → the Steward validates.
+// Who validates: a Facilitator or Reviewer in this room, the project's Steward, a Reviewer, or the Programme Administrator.
+const msValidator = (x) =>
+  !!x && (sCan("rooms", x, "review") || hasB("Reviewer") || role() === "A" || (role() === "F" && ((projOf("rooms", x) || {}).stewards || []).includes(myId())));
+// Who reviews evidence: a Faculty/Steward or Reviewer who did not submit it.
+const evReviewer = (e) => !!e && e.owner !== myId() && (role() === "F" || hasB("Reviewer"));
+const msValidators = (x) => {
+  const pr = projOf("rooms", x);
+  return [
+    ...new Set([
+      ...x.members.filter((m) => (!m.status || m.status === "Active") && ["Facilitator", "Reviewer"].includes(normRole(m.role))).map((m) => m.pid),
+      ...((pr && pr.stewards) || []),
+    ]),
+  ];
+};
+function msStep(x, m) {
+  if (m.status === "Achieved") return "Validated" + (m.validatedBy ? " by " + nm(m.validatedBy) + " · " + fmt(m.validatedAt) : "");
+  const ev = byId("evidence", m.evidence);
+  if (!ev) return "Waiting for a member to link evidence.";
+  if (ev.review === "Approved") return "Evidence approved. Ready for the Steward to validate.";
+  if (ev.review === "Submitted") return "Evidence waiting for review by a Steward or Reviewer.";
+  if (ev.review === "Needs Revision") return "Evidence needs revision: the submitter revises and resubmits it.";
+  return "Evidence " + ev.review.toLowerCase() + ": link other evidence.";
+}
+// Tell the people who act next.
+function msNotify(x, m) {
+  const ev = byId("evidence", m.evidence);
+  if (!ev) return;
+  const ready = ev.review === "Approved";
+  msValidators(x)
+    .filter((p) => p !== myId())
+    .forEach((p) =>
+      notify(p, (ready ? "Milestone ready to validate: " : "Evidence to review for milestone: ") + m.t + " (" + x.name + ")", ready ? "room" : "evidence", ready ? { id: x.id, tab: "plan" } : { id: ev.id }),
+    );
+}
+// Called after evidence is reviewed: milestones that rely on it move on.
+function msEvidenceReviewed(e) {
+  S.rooms.forEach((x) =>
+    (x.milestones || [])
+      .filter((m) => m.evidence === e.id && m.status !== "Achieved")
+      .forEach((m) => {
+        sysMsg(x, "Evidence for milestone “" + m.t + "” " + e.review.toLowerCase() + " by " + me().name);
+        if (e.review === "Approved") msNotify(x, m);
+      }),
+  );
+}
+A.msEvReview = (d) => {
+  const x = byId("rooms", d.r);
+  const m = x.milestones.find((y) => y.id === d.id);
+  const e = byId("evidence", m.evidence);
+  clearF("evr");
+  modal(
+    "Review evidence for “" + h(m.t) + "”",
+    () =>
+      `<div class="col" style="gap:14px">${dl([
+        ["Evidence", L(h(e.title), "evidence", { id: e.id })],
+        ["Type", h(e.type)],
+        ["Claim", h(e.claim || "—")],
+        ["Submitted by", nm(e.owner)],
+        ["Status", pill(e.review)],
+      ])}${evReviewForm(e)}</div>`,
+    true,
+  );
+};
 A.msEvidence = (d) => {
   const x = byId("rooms", d.r);
   const ev = S.evidence.filter(
@@ -748,21 +842,32 @@ A.msEvidence = (d) => {
 F.mse = (d) => {
   const x = byId("rooms", d.r);
   const m = x.milestones.find((m) => m.id === d.id);
+  if (!d.ev) return closeM();
   m.evidence = d.ev;
   if (m.status === "Not started") m.status = "In progress";
+  sysMsg(x, me().name + " linked evidence to milestone “" + m.t + "”");
+  msNotify(x, m);
   audit("Evidence linked to milestone", x.id, m.t);
   UI.modal = null;
+  toast(byId("evidence", d.ev)?.review === "Approved" ? "Linked. The evidence is approved, so the Steward can validate the milestone." : "Linked. A Steward or Reviewer reviews the evidence next.");
   ok();
 };
 A.msAchieve = (d) => {
   const x = byId("rooms", d.r);
   const m = x.milestones.find((m) => m.id === d.id);
   const ev = byId("evidence", m.evidence);
+  // The UI only offers this once the evidence is approved; this check stays as a safeguard.
   if (!ev || ev.review !== "Approved")
     return deny(
       "evidence must be approved before the milestone is recorded as achieved",
     );
   m.status = "Achieved";
+  m.validatedBy = myId();
+  m.validatedAt = now();
+  sysMsg(x, "Milestone validated as achieved by " + me().name + ": " + m.t);
+  const pr = projOf("rooms", x);
+  if (pr) pr.history.push({ at: now(), by: myId(), t: "Milestone achieved: " + m.t });
+  if (ev.owner !== x.lead) notify(ev.owner, "Milestone validated: " + m.t, "room", { id: x.id, tab: "plan" });
   S.candidates.push({
     id: uid("cd"),
     pid: ev.owner,

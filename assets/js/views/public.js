@@ -30,7 +30,7 @@ PUB.login = () => {
  <button class="btn btn-p btn-block" type="submit">Sign in</button></form>
  <div class="divider">or</div>
  <div class="col" style="gap:8px"><p>New to PHOENIX? ${L('Create an account', 'register')}</p><p class="cap">Participants and Sponsors can register directly. Every other role joins by invitation.</p>${B(ic('mail', 16) + 'I have an invitation link', 'go', { r: 'invite' }, 'btn-s')}</div>
- ${B(ic('link', 16) + 'Arrive from the LMS (demo deep link)', 'go', { r: 'lms' }, 'btn-g btn-sm')}<details class="card" style="padding:16px"><summary style="cursor:pointer;font-weight:700">Demo accounts (password: demo1234)</summary><p class="cap" style="margin-top:8px">One-click demo sign-in skips two-step verification. Signing in with email and password as an administrator asks for a code (use 123456).</p><div class="col" style="gap:8px;margin-top:12px">${DEMO.map(([pid, aid, l]) => `<button type="button" class="demo-acc" data-a="demoLogin" data-pid="${pid}"><span class="av">${ini(pid)}</span><span class="col" style="flex:1"><b>${nm(pid)}</b><span class="cap">${l}</span></span>${ic('chevr', 16)}</button>`).join('')}</div></details>`);
+ ${B(ic('link', 16) + 'Arrive from the LMS (demo deep link)', 'go', { r: 'lms' }, 'btn-g btn-sm')}<details class="card" style="padding:16px"><summary style="cursor:pointer;font-weight:700">Demo accounts (password: demo1234)</summary><p class="cap" style="margin-top:8px">One-click demo sign-in skips two-step verification. Signing in with email and password as an administrator asks for a code (use 123456).</p><div class="col" style="gap:8px;margin-top:12px">${DEMO.filter(([pid]) => S.assign.some(a => a.pid === pid)).map(([pid, aid, l]) => `<button type="button" class="demo-acc" data-a="demoLogin" data-pid="${pid}"><span class="av">${ini(pid)}</span><span class="col" style="flex:1"><b>${nm(pid)}</b><span class="cap">${l}</span></span>${ic('chevr', 16)}</button>`).join('')}</div></details>`);
 };
 let fails = {};
 function startSession(p, mfaDone) {
@@ -61,7 +61,7 @@ function startSession(p, mfaDone) {
       S.assign
         .filter(x => roleBase(x.role) === 'A')
         .forEach(x =>
-          notify(x.pid, `Role approval requested: ${p.name} — ${ROLE[r.role]}`, 'admin', { tab: 'approvals' }),
+          notify(x.pid, `Role approval requested: ${p.name} — ${ROLE[r.role]}`, 'admin', { tab: 'users' }),
         );
       na.approval = [{ at: now(), by: 'system', note: 'Sensitive role — approval requested' }];
     }
@@ -82,7 +82,7 @@ function startSession(p, mfaDone) {
 }
 F.login = d => {
   if (!validate('login', d, { email: ['req', 'email'], pw: ['req'] })) return render();
-  const p = S.people.find(x => x.email.toLowerCase() === d.email.trim().toLowerCase());
+  const p = personByEmail(d.email);
   if (!p || S.pw[p.id] !== d.pw) {
     fails[d.email] = (fails[d.email] || 0) + 1;
     audit('Sign-in failed', d.email, 'Wrong credentials', 'denied');
@@ -149,7 +149,7 @@ PUB.register = () => {
          )}</div><p class="cap">Facilitators, Mentors, Partners and Organization Representatives join by invitation only.</p></fieldset>`
  }
  <div class="f2">${fi(f, 'name', 'Full name', { req: true, auto: 'name', vis: 'You and authorised administration' })}${fi(f, 'display', 'Display name', { req: true, vis: 'Your collaboration contexts' })}</div>
- ${inv ? fi(f, 'email', 'Email address', { value: inv.email, ro: true, help: 'From your invitation' }) : fi(f, 'email', 'Email address', { type: 'email', req: true, auto: 'email', help: 'We will send a verification link to this address.' })}
+ <div class="f2">${inv ? fi(f, 'email', 'Email address', { value: inv.email, ro: true, help: 'From your invitation' }) : fi(f, 'email', 'Email address', { type: 'email', req: true, auto: 'email', help: 'We will send a verification link to this address.' })}${dobField(f)}</div>
  <div class="f2">${fi(f, 'pw', 'Password', { type: 'password', req: true, auto: 'new-password' })}${fi(f, 'pw2', 'Confirm password', { type: 'password', req: true, auto: 'new-password' })}</div>
  <p class="help" style="margin-top:-8px">At least 10 characters, including a number. ${assumed('policy for Technical Operator to confirm')}</p>
  <button class="btn btn-p btn-block" type="submit">Create account</button></form>
@@ -169,6 +169,7 @@ F.reg = d => {
     name: ['req'],
     display: ['req'],
     email: ['req', 'email'],
+    dob: dobRules(true),
     pw: [
       'req',
       [
@@ -179,7 +180,7 @@ F.reg = d => {
     pw2: ['req', ['fn', { f: (v, dd) => v === dd.pw, m: 'Passwords do not match.' }]],
   });
   if (!okv) return render();
-  const ex = S.people.find(p => p.email.toLowerCase() === d.email.toLowerCase());
+  const ex = personByEmail(d.email);
   if (ex) {
     UI.pre = { addRole: { email: ex.email, role: inv ? inv.role : selfRole(d.role), ctx: inv ? inv.ctx : defaultCtx(), inv: inv?.id } };
     UI.p = { exists: 1 };
@@ -191,6 +192,7 @@ F.reg = d => {
     name: d.name.trim(),
     display: d.display.trim(),
     email: d.email.trim(),
+    dob: d.dob,
     verified: false,
     status: 'Active',
     ...(inv && inv.org ? { org: inv.org } : {}),
@@ -255,7 +257,7 @@ PUB.invite = () => {
     );
   }
   const c = S.contexts.find(x => x.id === inv.ctx);
-  const exists = S.people.find(p => p.email === inv.email);
+  const exists = personByEmail(inv.email);
   return authWrap(`<span class="tile t-teal" style="width:48px;height:48px">${ic('mail', 22)}</span><div class="col" style="gap:4px"><h1 class="h1">You have been invited</h1><p class="sub">Review the details, then continue.</p></div>
  <div class="card" style="background:#F7F8FB;padding:16px">${dl([
    ['Context', h(c.name)],
@@ -323,7 +325,7 @@ A.doVerify = () => {
       S.assign
         .filter(x => roleBase(x.role) === 'A')
         .forEach(x =>
-          notify(x.pid, `Role approval requested: ${p.name} — ${ROLE[a.role]}`, 'admin', { tab: 'approvals' }),
+          notify(x.pid, `Role approval requested: ${p.name} — ${ROLE[a.role]}`, 'admin', { tab: 'users' }),
         );
     }
   }
