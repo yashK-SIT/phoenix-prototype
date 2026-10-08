@@ -6,7 +6,25 @@ function save() {
     localStorage.setItem(KEY, JSON.stringify(S));
   } catch (e) {}
 }
-const UI = { route: 'login', p: {}, tab: {}, form: {}, err: {}, modal: null, toast: null, q: {}, pre: null };
+const UI = {
+  route: 'login',
+  p: {},
+  tab: {},
+  form: {},
+  err: {},
+  modal: null,
+  toast: null,
+  q: {},
+  pre: null,
+  theme: localStorage.getItem('phoenix_theme') || 'dark',
+  sidebarCollapsed: localStorage.getItem('phoenix_sidebar_collapsed') === 'true',
+  mobileNavOpen: false,
+  searchOpen: false,
+  searchQuery: '',
+};
+try {
+  document.documentElement.setAttribute('data-theme', UI.theme);
+} catch (e) {}
 const h = s =>
   String(s ?? '').replace(
     /[&<>"']/g,
@@ -149,6 +167,7 @@ function go(r, p = {}) {
     return;
   }
   if (UI.panel === 'notif' || UI.panel === 'user') UI.panel = null;
+  UI.mobileNavOpen = false;
   UI.route = r;
   UI.p = p;
   UI.modal = null;
@@ -434,14 +453,14 @@ function navItems() {
     ]);
   if (r === 'O') items.push(['org', 'Organization workspace', 'building']);
   if (r === 'A') items.push(['admin', 'Programme admin', 'settings']);
+  if (can('metrics') && r !== 'P') items.push(['metrics', 'Metrics & reports', 'chart']);
+  if (r === 'A' || r === 'O') items.push(['audit', 'Audit log', 'file']);
   items.push(['resources', 'Resources & guidance', 'file']);
   items.push([
     'incidents',
     r === 'A' && hasB('Incident/Safety Owner') ? 'Incidents & concerns' : 'Report a concern',
     'alert',
   ]);
-  if (can('metrics') && r !== 'P') items.push(['metrics', 'Metrics & reports', 'chart']);
-  if (r === 'A' || r === 'O') items.push(['audit', 'Audit log', 'file']);
   return items;
 }
 const PARENT = {
@@ -496,6 +515,61 @@ function navCount(r) {
     return S.mentorReqs.filter(m => m.to === pid && m.status === 'Pending').length;
   return 0;
 }
+function searchPalette() {
+  const q = (UI.searchQuery || '').toLowerCase();
+  const res = [];
+  if (q.length > 0) {
+    (S.projects || []).filter(p => inCtx(p) && ((p.title || '').toLowerCase().includes(q) || (p.desc || '').toLowerCase().includes(q)))
+      .slice(0, 5)
+      .forEach(p => res.push({ type: 'Project', title: p.title, sub: p.stage || p.status, r: 'project', p: { id: p.id }, icon: 'folder' }));
+
+    (S.rooms || []).filter(r => inCtx(r) && ((r.name || '').toLowerCase().includes(q) || (r.charter || '').toLowerCase().includes(q)))
+      .slice(0, 5)
+      .forEach(r => res.push({ type: WL(), title: r.name, sub: r.state, r: 'room', p: { id: r.id }, icon: 'room' }));
+
+    (S.ropes || []).filter(rt => inCtx(rt) && ((rt.name || '').toLowerCase().includes(q) || (rt.charter || '').toLowerCase().includes(q)))
+      .slice(0, 5)
+      .forEach(rt => res.push({ type: 'Rope Team', title: rt.name, sub: rt.state, r: 'rope', p: { id: rt.id }, icon: 'route' }));
+
+    (S.circles || []).filter(c => inCtx(c) && ((c.name || '').toLowerCase().includes(q) || (c.purpose || '').toLowerCase().includes(q)))
+      .slice(0, 5)
+      .forEach(c => res.push({ type: 'Circle', title: c.name, sub: c.state, r: 'circle', p: { id: c.id }, icon: 'users' }));
+
+    (S.people || []).filter(p => (p.name || '').toLowerCase().includes(q) || (p.email || '').toLowerCase().includes(q))
+      .slice(0, 5)
+      .forEach(p => res.push({ type: 'Person', title: p.name, sub: p.email || p.display, r: 'profile', p: { id: p.id }, icon: 'user' }));
+
+    (S.evidence || []).filter(e => (e.title || '').toLowerCase().includes(q))
+      .slice(0, 5)
+      .forEach(e => res.push({ type: 'Evidence', title: e.title, sub: e.status || e.review, r: 'evidence', p: { id: e.id }, icon: 'award' }));
+  }
+
+  return `<div class="mback" data-a="closeSearch"><div class="omni-modal" role="dialog" aria-modal="true" aria-label="Global search">
+    <div class="omni-input-wrap">
+      ${ic('search', 18)}
+      <input type="text" id="omni_input" placeholder="Search projects, action rooms, rope teams, circles, people..." value="${h(UI.searchQuery || '')}" data-a="noop" oninput="A.searchOmni(this)">
+      <button type="button" class="iconbtn" data-a="closeSearch" aria-label="Close search" style="width:28px;height:28px;border:none;box-shadow:none">${ic('x', 16)}</button>
+    </div>
+    <div class="omni-results">
+      ${!q ? `<div style="padding:28px;text-align:center;color:var(--text-3);font-size:13px">Start typing to quickly search across projects, Action Rooms, Rope Teams, Circles and people.</div>` :
+        res.length ? res.map(item => `
+          <button type="button" class="omni-item" data-a="omniGo" data-r="${item.r}" ${attr(item.p)}>
+            <span class="tile t-soft" style="width:32px;height:32px">${ic(item.icon, 16)}</span>
+            <div class="col" style="flex:1;min-width:0">
+              <b style="font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h(item.title)}</b>
+              <span class="cap" style="font-size:11.5px">${h(item.sub)}</span>
+            </div>
+            <span class="omni-item-badge p-grey">${h(item.type)}</span>
+          </button>
+        `).join('') : `<div style="padding:28px;text-align:center;color:var(--text-3);font-size:13px">No results found for "${h(q)}"</div>`
+      }
+    </div>
+    <div style="padding:10px 16px;border-top:1px solid var(--line);background:var(--surface-sunk);font-size:11.5px;color:var(--text-4);display:flex;align-items:center;justify-content:space-between">
+      <span>Press <kbd style="font-family:var(--mono);padding:1px 4px;border:1px solid var(--line);border-radius:3px">ESC</kbd> to exit</span>
+      <span>${res.length} item${res.length === 1 ? '' : 's'}</span>
+    </div>
+  </div></div>`;
+}
 function sidebar() {
   const act = PARENT[UI.route] || UI.route;
   let last = null;
@@ -503,29 +577,72 @@ function sidebar() {
     .map(([r, l, i]) => {
       const [rt, tb] = r.split(':');
       const on = rt === act && (rt !== 'platform' || (UI.p.tab || 'contexts') === (tb || 'contexts')) ? ' on' : '';
-      const g = role() === 'T' ? '' : rt === 'metrics' && !['A', 'O'].includes(role()) ? 'Insights' : GROUP[rt] || '';
+      const g =
+        role() === 'T'
+          ? rt === 'home'
+            ? ''
+            : ['tenants', 'platform'].includes(rt)
+              ? 'Tenancy & Contexts'
+              : ['roles', 'policies', 'compassqs'].includes(rt)
+                ? 'Governance'
+                : 'Infrastructure & Logs'
+          : rt === 'metrics' && !['A', 'O'].includes(role())
+            ? 'Insights'
+            : GROUP[rt] || '';
       let sec = '';
       if (g !== last && g) {
         sec = `<div class="navsec">${g}</div>`;
       }
       last = g;
       const n = navCount(rt);
-      return `${sec}<a href="#" class="nav${on}" data-a="go" data-r="${rt}"${tb ? ` data-tab="${tb}"` : ''} title="${h(l)}"${on ? ' aria-current="page"' : ''}>${ic(i)}<span class="t">${h(l)}</span>${n ? `<span class="ncount">${n}</span>` : ''}</a>`;
+      return `${sec}<a href="#" class="nav${on}" data-a="go" data-r="${rt}"${tb ? ` data-tab="${tb}"` : ''} title="${h(l)}"${on ? ' aria-current="page"' : ''}>${ic(i)}<span class="t">${h(l)}</span>${n ? `<span class="ncount">${n}</span>` : ''}<span class="nav-tip">${h(l)}</span></a>`;
     })
     .join('');
-  return `<aside class="side" aria-label="Main navigation"><a href="#" class="brand" data-a="go" data-r="home"><span class="mark">P</span><span class="wm"><b>PHOENIX</b><span>Foundation Alpha</span></span></a><nav class="col" style="gap:2px">${items}</nav></aside>`;
+  return `<aside class="side ${UI.mobileNavOpen ? 'drawer-open' : ''}" aria-label="Main navigation">
+    <div class="side-header">
+      <a href="#" class="brand" data-a="go" data-r="home">
+        <span class="mark">P</span>
+        <span class="wm"><b>PHOENIX</b><span>Foundation Alpha</span></span>
+      </a>
+      <button type="button" class="side-collapse-btn" data-a="toggleSidebar" aria-label="Toggle sidebar width" title="${UI.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}">
+        ${ic(UI.sidebarCollapsed ? 'sidebar' : 'sidebarToggle', 14)}
+      </button>
+    </div>
+    <nav class="side-nav">${items}</nav>
+  </aside>`;
 }
 function topbar() {
   const a = asg(),
     c = ctx();
   const others = roleChoices().length;
   const unread = S.notifs.filter(n => n.pid === myId() && !n.read).length;
-  return `<header class="top"><div class="mbrand" style="align-items:center"><span class="mark" style="width:32px;height:32px;font-size:14px">P</span></div>
- <button class="ctx" type="button" data-a="switcher" aria-label="${h(me().name)}, ${h(ROLE[a.role])}${others > 1 ? '. Switch role' : ''}" title="${h(me().name)} · ${h(ROLE[a.role])}"><span class="ctxt"><b>${h(me().name)}</b><small>${h(ROLE[a.role])}${a.bundles.length ? ' · +' + a.bundles.length + ' bundle' + (a.bundles.length > 1 ? 's' : '') : ''}</small></span>${others > 1 ? ic('chev', 16) : ''}</button>
- <div class="grow"></div>
- ${can('ai') ? `<button type="button" class="btn btn-s btn-sm askbtn ${UI.panel === 'ask' ? 'on' : ''}" data-a="askToggle" aria-expanded="${UI.panel === 'ask'}" aria-controls="assist" title="Ask PHOENIX">${ic('sparkle', 16)}<span class="hide-md">Ask PHOENIX</span></button>` : ''}
- <div class="nwrap"><button class="iconbtn ${UI.panel === 'notif' ? 'on' : ''}" type="button" data-a="notifToggle" aria-haspopup="dialog" aria-expanded="${UI.panel === 'notif'}" aria-label="Notifications, ${unread} unread">${ic('bell')}${unread ? `<span class="badge">${unread}</span>` : ''}</button>${UI.panel === 'notif' ? notifMenu() : ''}</div>
- <div class="uwrap"><button class="who ${UI.panel === 'user' ? 'on' : ''}" type="button" data-a="userToggle" aria-haspopup="menu" aria-expanded="${UI.panel === 'user'}" aria-controls="user-menu" aria-label="Account menu for ${h(me().name)}"><span class="av">${ini(myId())}</span><span class="hide-sm">${h(me().display)}</span><span class="who-chev">${ic('chev', 14)}</span></button>${UI.panel === 'user' ? userMenu() : ''}</div></header>`;
+  const isDark = (document.documentElement.getAttribute('data-theme') || UI.theme) === 'dark';
+  return `<header class="top">
+    <button type="button" class="iconbtn mbrand" data-a="toggleMobileNav" aria-label="Toggle navigation menu">${ic('menu', 18)}</button>
+    ${UI.sidebarCollapsed ? `<button type="button" class="iconbtn hide-sm" data-a="toggleSidebar" aria-label="Expand sidebar" title="Expand sidebar">${ic('sidebar', 16)}</button>` : ''}
+    <button class="ctx-pill" type="button" data-a="switcher" aria-label="${h(me().name)}, ${h(ROLE[a.role])}${others > 1 ? '. Switch role' : ''}" title="${h(me().name)} · ${h(ROLE[a.role])}">
+      <span class="role-badge">${h(ROLE[a.role])}</span>
+      <b>${h(me().name)}</b>
+      ${c ? `<span class="cap hide-sm" style="color:var(--text-3)">· ${h(c.name)}</span>` : ''}
+      ${others > 1 ? ic('chev', 14) : ''}
+    </button>
+    <div class="grow"></div>
+    <div class="omnibar">
+      <button type="button" class="omnibar-btn" data-a="openSearch" aria-label="Global search">
+        ${ic('search', 15)}
+        <span>Search spaces, projects, records...</span>
+        <kbd class="omnibar-kbd">Ctrl K</kbd>
+      </button>
+    </div>
+    <div class="top-actions">
+      <button type="button" class="iconbtn" data-a="toggleTheme" aria-label="Toggle theme" title="Switch to ${isDark ? 'light' : 'dark'} mode">
+        ${ic(isDark ? 'sun' : 'moon', 16)}
+      </button>
+      ${can('ai') ? `<button type="button" class="askbtn ${UI.panel === 'ask' ? 'on' : ''}" data-a="askToggle" aria-expanded="${UI.panel === 'ask'}" aria-controls="assist" title="Ask PHOENIX">${ic('sparkle', 16)}<span class="hide-md">Ask PHOENIX</span></button>` : ''}
+      <div class="nwrap"><button class="iconbtn ${UI.panel === 'notif' ? 'on' : ''}" type="button" data-a="notifToggle" aria-haspopup="dialog" aria-expanded="${UI.panel === 'notif'}" aria-label="Notifications, ${unread} unread">${ic('bell', 16)}${unread ? `<span class="badge">${unread}</span>` : ''}</button>${UI.panel === 'notif' ? notifMenu() : ''}</div>
+      <div class="uwrap"><button class="who ${UI.panel === 'user' ? 'on' : ''}" type="button" data-a="userToggle" aria-haspopup="menu" aria-expanded="${UI.panel === 'user'}" aria-controls="user-menu" aria-label="Account menu for ${h(me().name)}"><span class="av">${ini(myId())}</span><span class="hide-sm">${h(me().display)}</span><span class="who-chev">${ic('chev', 14)}</span></button>${UI.panel === 'user' ? userMenu() : ''}</div>
+    </div>
+  </header>`;
 }
 const SHORT = {
   home: 'Home',
@@ -606,7 +723,7 @@ function render() {
         }
       }
       const pg = reaccept();
-      html = `<div class="ph"${pg ? ' inert' : ''}><div class="app">${sidebar()}<div class="main">${topbar()}<main class="content${enter ? ' enter' : ''}" id="main">${inner}</main>${bottomnav()}</div></div></div>${pg ? policyGate(pg) : ''}`;
+      html = `<div class="ph"${pg ? ' inert' : ''}><div class="app${UI.sidebarCollapsed ? ' collapsed' : ''}">${sidebar()}<div class="main">${topbar()}<main class="content${enter ? ' enter' : ''}" id="main">${inner}</main>${bottomnav()}</div></div></div>${pg ? policyGate(pg) : ''}${UI.searchOpen ? searchPalette() : ''}${UI.mobileNavOpen ? '<div class="mback" style="z-index:39" data-a="toggleMobileNav"></div>' : ''}`;
     }
   }
   if (UI.modal)
@@ -703,9 +820,65 @@ document.addEventListener('change', e => {
   if (A[el.dataset.ch]) A[el.dataset.ch](el.dataset, el);
 });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && UI.modal && !(e.target.classList && e.target.classList.contains('msel-q'))) closeM();
-  else if (e.key === 'Escape' && !UI.modal && UI.panel) closePanel();
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    if (UI.searchOpen) A.closeSearch();
+    else A.openSearch();
+  } else if (e.key === 'Escape' && UI.searchOpen) {
+    A.closeSearch();
+  } else if (e.key === 'Escape' && UI.modal && !(e.target.classList && e.target.classList.contains('msel-q'))) {
+    closeM();
+  } else if (e.key === 'Escape' && !UI.modal && UI.panel) {
+    closePanel();
+  }
 });
+A.toggleTheme = () => {
+  UI.theme = (document.documentElement.getAttribute('data-theme') || UI.theme) === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('phoenix_theme', UI.theme);
+  document.documentElement.setAttribute('data-theme', UI.theme);
+  render();
+};
+A.toggleSidebar = () => {
+  UI.sidebarCollapsed = !UI.sidebarCollapsed;
+  localStorage.setItem('phoenix_sidebar_collapsed', UI.sidebarCollapsed ? 'true' : 'false');
+  render();
+};
+A.toggleMobileNav = () => {
+  UI.mobileNavOpen = !UI.mobileNavOpen;
+  render();
+};
+A.openSearch = () => {
+  UI.searchOpen = true;
+  UI.searchQuery = '';
+  render();
+  setTimeout(() => {
+    const el = document.getElementById('omni_input');
+    if (el) el.focus();
+  }, 40);
+};
+A.closeSearch = () => {
+  UI.searchOpen = false;
+  UI.searchQuery = '';
+  render();
+};
+A.noop = () => {};
+A.searchOmni = (el) => {
+  UI.searchQuery = el.value.trim();
+  render();
+  const inp = document.getElementById('omni_input');
+  if (inp) {
+    inp.focus();
+    inp.setSelectionRange(inp.value.length, inp.value.length);
+  }
+};
+A.omniGo = (d) => {
+  UI.searchOpen = false;
+  UI.searchQuery = '';
+  const p = { ...d };
+  delete p.a;
+  delete p.r;
+  go(d.r, p);
+};
 A.go = d => {
   const p = { ...d };
   delete p.a;
@@ -881,5 +1054,10 @@ function boot() {
   save();
   if (S.session && !S.assign.find(a => a.id === S.session.aid)) S.session = null;
   UI.route = S.session ? 'home' : 'login';
+  UI.theme = localStorage.getItem('phoenix_theme') || 'dark';
+  UI.sidebarCollapsed = localStorage.getItem('phoenix_sidebar_collapsed') === 'true';
+  try {
+    document.documentElement.setAttribute('data-theme', UI.theme);
+  } catch (e) {}
   render();
 }
