@@ -72,14 +72,30 @@ function inboxItems() {
           { id: e.id },
         ]),
       );
-  if (hasB("Reviewer"))
+  if (r === "F")
+    S.rooms
+      .filter((x) => inCtx(x) && msIsSteward(x))
+      .forEach((x) =>
+        msPending(x)
+          .filter(([, it]) => byId("evidence", it.ev)?.owner !== me_)
+          .forEach(([m, it]) =>
+            out.push([
+              "Milestone evidence",
+              byId("evidence", it.ev)?.title || it.ev,
+              "For “" + m.t + "” · " + x.name,
+              "room",
+              { id: x.id, tab: "plan" },
+            ]),
+          ),
+      );
+  if (r === "F")
     S.pathways
-      .filter((p) => inCtx(p) && p.state === "In review")
+      .filter((p) => inCtx(p) && p.reviewer === me_ && p.state === "In review")
       .forEach((p) =>
         out.push([
-          "Pathway approval (mode 3)",
+          "Pathway approval",
           p.name,
-          "For " + P(p.pid).name,
+          "From " + P(p.by).name,
           "pathway",
           { id: p.id },
         ]),
@@ -589,11 +605,7 @@ function metric(id) {
         .filter((m) => m.status === "Achieved");
       return ms.length
         ? Math.round(
-            (ms.filter(
-              (m) =>
-                m.evidence &&
-                byId("evidence", m.evidence)?.review === "Approved",
-            ).length /
+            (ms.filter(msReady).length /
               ms.length) *
               100,
           ) + "%"
@@ -853,6 +865,10 @@ function homeF() {
       ["Submitted", "Clarification requested"].includes(p.status),
   );
   const inbox = inboxItems();
+  const msMine = S.rooms
+    .filter((x) => inCtx(x) && msIsSteward(x))
+    .flatMap((x) => msPending(x).map(([m, it]) => [x, m, it]))
+    .filter(([, , it]) => byId("evidence", it.ev)?.owner !== pid);
   const attention = S.ropes
     .filter((r) => inCtx(r) && memberOf(r))
     .flatMap((r) =>
@@ -893,8 +909,9 @@ function homeF() {
     ) +
     `<div class="g12">
  <section class="card c7 purpose"><span class="over">Programme purpose</span><p class="h2" style="margin-top:8px">${h(ctx().name)}: move climate ideas from learning to accountable local action.</p><div class="purpose-facts">${[["Circles", myCircles().length, "circles"], ["Rope Teams", S.ropes.filter((r) => inCtx(r) && memberOf(r)).length, "ropeteams"], [WL() + "s", myRooms().length, "rooms"]].map(([l, n, r]) => `<a href="#" data-a="go" data-r="${r}"><b>${n}</b><span>${l}</span></a>`).join("")}</div><p class="cap" style="margin-top:8px">Spaces you facilitate or belong to in this programme.</p></section>${nextCard()}
- <div class="c12 g12">${stat("s-purple", "t-purple", "folder", subs.length, "Project submissions", "Awaiting review or clarification", "projects")}${stat("s-teal", "t-teal", "link", S.matches.filter((m) => m.steward === pid && m.status === "In steward review").length, "Match Briefs", "Awaiting your review", "matches")}${stat("s-slate", "t-navy", "award", S.evidence.filter((e) => e.review === "Submitted").length, "Evidence to review", "Set status and E0–E4", "evidence")}${stat("s-mist", "t-slate", "route", S.pathways.filter((x) => x.reviewer === pid && x.state === "In review").length, "Pathways to review", "Assigned to you", "pathway")}</div>
+ <div class="c12 g12">${stat("s-purple", "t-purple", "folder", subs.length, "Project submissions", "Awaiting review or clarification", "projects")}${stat("s-teal", "t-teal", "link", S.matches.filter((m) => m.steward === pid && m.status === "In steward review").length, "Match Briefs", "Awaiting your review", "matches")}${stat("s-slate", "t-navy", "award", new Set([...S.evidence.filter((e) => e.review === "Submitted" && e.owner !== pid).map((e) => e.id), ...msMine.map(([, , it]) => it.ev)]).size, "Evidence to review", msMine.length ? msMine.length + " for milestones you steward" : "Set status and E0–E4", "evidence", { tab: "queue" })}${stat("s-mist", "t-slate", "route", S.pathways.filter((x) => x.reviewer === pid && x.state === "In review").length, "Pathways to review", "Assigned to you", "pathway")}</div>
  ${myTasksCard()}
+ ${msMine.length ? card("Milestone evidence to review", "Approve every piece before you validate the milestone.", msMine.map(([x, m, it]) => lrow("award", h(byId("evidence", it.ev)?.title || it.ev), "For “" + h(m.t) + "” · " + h(x.name) + " · added by " + nm(it.by), B("Review", "msRev", { r: x.id, id: m.id, i: msItems(m).indexOf(it) }, "btn-p btn-sm"))).join(""), L("Review queue", "evidence", { tab: "queue" }), "c12") : ""}
  ${card("Project submissions", "", subs.map((p) => lrow("folder", h(p.title), nm(p.owner) + " · " + pill(p.status), L("Review", "project", { id: p.id }))).join("") || empty("check", "No submissions waiting", ""), "", "c7")}
  ${card("Participants needing attention", "From Rope Team support indicators (activity-derived or participant-reported)", attention.join("") || empty("users", "No one flagged", ""), "", "c5")}
  ${card("Upcoming commitments", "", commits.join("") || empty("calendar", "No open commitments", ""), "", "c7")}

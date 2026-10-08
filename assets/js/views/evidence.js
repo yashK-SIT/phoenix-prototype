@@ -102,6 +102,7 @@ route('evidence', 'evidence', () => {
       can('evidence', 'CRM') ? B(ic('upload', 16) + 'Upload evidence', 'go', { r: 'newevidence' }, 'btn-p') : '',
     ) +
     t.html +
+    (t.cur === 'queue' ? msQueueCard() : '') +
     `<div class="row wrap" style="margin-bottom:16px"><select class="input" style="width:auto" data-ch="qf" data-k="evp" aria-label="Project"><option value="">Project: all</option>${projs.map(p => `<option value="${p.id}" ${pf === p.id ? 'selected' : ''}>${h(p.title)}</option>`).join('')}<option value="none" ${pf === 'none' ? 'selected' : ''}>Not linked to a project</option></select><select class="input" style="width:auto" data-ch="qf" data-k="evg" aria-label="Layout"><option value="project" ${grouped ? 'selected' : ''}>Group by project</option><option value="flat" ${!grouped ? 'selected' : ''}>Single list</option></select></div>` +
     (grouped
       ? groups
@@ -189,7 +190,7 @@ function evDetail(e) {
       '',
       'c8',
     )}
- <aside class="c4 col" style="gap:12px">${rev && ['Submitted', 'Needs Revision'].includes(e.review) ? card('Review', 'You set the status and level. Approval does not release it.', evReviewForm(e)) : ''}
+ <aside class="c4 col" style="gap:12px">${evMilestonesCard(e)}${rev && ['Submitted', 'Needs Revision'].includes(e.review) ? card('Review', 'You set the status and level. Approval does not release it.', evReviewForm(e)) : ''}
  ${own && e.review === 'Needs Revision' ? card('Revise and resubmit', 'History is kept.', B('Resubmit', 'evResub', { id: e.id }, 'btn-p btn-block')) : ''}
  ${own && !['Withdrawn'].includes(e.review) ? card('Release to a new audience', 'Moving evidence to a new audience or purpose is a new release decision.', (rr.length ? rr.map(x => `<div class="lrow"><div class="lt"><b>${h(x.audience)}</b><p class="cap">${h(x.status)}</p></div>${x.status === 'Awaiting owner decision' ? B('Decline', 'relDecide', { id: x.id, v: 'Declined by owner' }) + B('Authorise', 'relDecide', { id: x.id, v: 'Owner authorised — disclosure review' }, 'btn-p btn-sm') : ''}</div>`).join('') : '') + (e.review === 'Approved' ? B('Authorise funder / public release', 'relNew', { id: e.id }, 'btn-s btn-block') : '<p class="cap">Only approved evidence can be released.</p>') + (e.sens === 'High' ? banner('warn', '', 'Contains identifiable or sensitive content. Explicit authorisation is required, and a human disclosure review follows.') : '')) : ''}
  ${own && e.review !== 'Withdrawn' ? CB('Withdraw evidence', 'evWithdraw', { id: e.id }, 'Withdraw this evidence? It leaves review and any release stops. History is kept.') : ''}
@@ -210,18 +211,60 @@ function evDetail(e) {
  ${card('History', '', e.history.map(x => `<p class="cap" style="margin-bottom:6px">${fmt(x.at)} · ${h(x.t)}</p>`).join(''))}</aside></div>`
   );
 }
+// The Steward's queue of milestone evidence, across the Action Rooms they steward.
+function msQueueCard() {
+  const rows = S.rooms
+    .filter(x => inCtx(x) && msIsSteward(x))
+    .flatMap(x => msPending(x).map(([m, it]) => [x, m, it, msItems(m).indexOf(it)]))
+    .filter(([, , it]) => byId('evidence', it.ev)?.owner !== myId());
+  return (
+    card(
+      'Milestone evidence awaiting your review',
+      'Evidence added to milestones in the ' + WL() + 's you steward. Approve every piece before you validate the milestone.',
+      table(
+        ['Evidence', 'Milestone', WL(), 'Added by', 'Added', ''],
+        rows.map(([x, m, it, i]) => {
+          const e = byId('evidence', it.ev);
+          return [L(h(e.title), 'evidence', { id: e.id }), h(m.t), L(h(x.name), 'room', { id: x.id, tab: 'plan' }), nm(it.by), fmt(it.at), B('Review', 'msRev', { r: x.id, id: m.id, i }, 'btn-p btn-sm')];
+        }),
+        'No milestone evidence is waiting for you.',
+      ),
+    ) + '<div class="section-gap"></div>'
+  );
+}
+// Milestones this evidence supports, with the Steward's review for each; the Steward reviews from here too.
+function evMilestonesCard(e) {
+  const rows = S.rooms.flatMap(x =>
+    (x.milestones || []).flatMap(m =>
+      msItems(m)
+        .map((it, i) => [x, m, it, i])
+        .filter(([, , it]) => it.ev === e.id),
+    ),
+  );
+  if (!rows.length) return '';
+  return card(
+    'Milestones',
+    'The Steward approves this evidence for each milestone before it can be validated.',
+    rows
+      .map(([x, m, it, i]) => {
+        const st = msToReview(it) ? MS_PEND : it.st;
+        const act = msIsSteward(x) && m.status !== 'Achieved' && e.owner !== myId() && msToReview(it) ? B('Review for this milestone', 'msRev', { r: x.id, id: m.id, i }, 'btn-p btn-sm') : '';
+        return `<div class="lrow" style="align-items:flex-start"><div class="lt"><b>${h(m.t)}</b><p class="cap">${L(h(x.name), 'room', { id: x.id, tab: 'plan' })} · milestone ${h(m.status.toLowerCase())}${it.rv ? ' · reviewed by ' + nm(it.rv) : ''}</p>${act ? `<div style="margin-top:8px">${act}</div>` : ''}</div>${pill(st, MS_PILL[st])}</div>`;
+      })
+      .join(''),
+  );
+}
 // Used on the evidence page and from an Action Room milestone.
 const evReviewForm = e =>
   `<form data-f="evr" class="col" style="gap:12px" novalidate><input type="hidden" name="id" value="${e.id}">${fi('evr', 'review', 'Review status', { type: 'select', req: true, opts: REVIEW.filter(x => x !== 'Submitted' && x !== 'Withdrawn'), ph: 'Select', help: 'Approved lets the linked milestone be validated as achieved.' })}${fi('evr', 'level', 'Evidence Support Level', { type: 'select', req: true, opts: LEVELS.map(([k, v]) => [k, k + ' — ' + v]), value: e.level })}${fi('evr', 'limits', 'Limitations or uncertainty', { type: 'textarea', rows: 3, req: true, value: e.limits })}${fi('evr', 'comment', 'Comment to submitter', { type: 'textarea', rows: 2 })}<button class="btn btn-p" type="submit">Save review</button></form>`;
-F.evr = d => {
-  if (!validate('evr', d, { review: ['req'], level: ['req'], limits: ['req'] })) return render();
-  const e = byId('evidence', d.id);
-  e.review = d.review;
-  e.level = d.level;
-  e.limits = d.limits;
+// Records a review on the evidence itself. Used by the evidence page and by the Steward's milestone review.
+function evApplyReview(e, review, level, limits, comment) {
+  e.review = review;
+  e.level = level;
+  e.limits = limits;
   e.reviewer = myId();
-  e.history.push({ at: today(), t: `${d.review} at ${d.level} by ${me().name}${d.comment ? ': ' + d.comment : ''}` });
-  if (d.review === 'Approved') {
+  e.history.push({ at: today(), t: `${review} at ${level} by ${me().name}${comment ? ': ' + comment : ''}` });
+  if (review === 'Approved')
     S.candidates.push({
       id: uid('cd'),
       pid: e.owner,
@@ -231,20 +274,23 @@ F.evr = d => {
       prov: 'Evidence-supported',
       status: 'Pending',
     });
-    const pw = S.pathways.find(p => p.pid === e.owner && p.state === 'Current');
-  }
-  if (/negative|harm|unintended/i.test(d.limits))
+  if (/negative|harm|unintended/i.test(limits))
     S.assign
       .filter(a => a.bundles.includes('Incident/Safety Owner'))
       .forEach(a =>
         notify(a.pid, 'Material negative finding recorded on evidence ' + e.title, 'evidence', { id: e.id }),
       );
-  notify(e.owner, `Evidence review: “${e.title}” — ${d.review} (${d.level})`, 'evidence', { id: e.id });
+  notify(e.owner, `Evidence review: “${e.title}” — ${review} (${level})${comment ? ': ' + comment : ''}`, 'evidence', { id: e.id });
+  audit('Evidence reviewed', e.id, review + ' ' + level);
+}
+F.evr = d => {
+  if (!validate('evr', d, { review: ['req'], level: ['req'], limits: ['req'] })) return render();
+  const e = byId('evidence', d.id);
+  evApplyReview(e, d.review, d.level, d.limits, d.comment || '');
   msEvidenceReviewed(e);
-  audit('Evidence reviewed', e.id, d.review + ' ' + d.level);
   clearF('evr');
   UI.modal = null;
-  toast(d.review === 'Approved' && S.rooms.some(x => (x.milestones || []).some(m => m.evidence === e.id && m.status !== 'Achieved')) ? 'Evidence approved. The linked milestone can now be validated as achieved.' : 'Review saved.');
+  toast('Review saved.');
   ok();
 };
 A.evResub = d => {
@@ -252,6 +298,7 @@ A.evResub = d => {
   e.review = 'Submitted';
   e.history.push({ at: today(), t: 'Resubmitted after revision' });
   if (e.reviewer) notify(e.reviewer, 'Evidence resubmitted: ' + e.title, 'evidence', { id: e.id });
+  msEvidenceResubmitted(e);
   audit('Evidence resubmitted', e.id, '');
   ok();
 };
@@ -339,6 +386,17 @@ A.neFmt = (d, el) => {
   if (UI.err.ne) delete UI.err.ne.file;
   render();
 };
+// Uploading from a milestone: the new evidence is added to it and sent to the Steward.
+const neMs = ms => {
+  const [r, id] = String(ms || '').split('|');
+  const x = byId('rooms', r);
+  const m = x && x.milestones.find(y => y.id === id);
+  return m && memberOf(x) && m.status !== 'Achieved' ? [x, m] : [];
+};
+const neMsBanner = () => {
+  const [x, m] = neMs(UI.p.ms);
+  return m ? '<div style="max-width:880px;margin-bottom:16px">' + banner('info', 'Evidence for the milestone “' + h(m.t) + '”', 'After you submit it, it is added to this milestone in ' + h(x.name) + ' and sent to the Steward for review. You return to the ' + WL() + '.') + '</div>' : '';
+};
 route('newevidence', 'evidence', () => {
   if (!can('evidence', 'CRM')) return deniedView('evidence');
   const f = 'ne';
@@ -350,7 +408,7 @@ route('newevidence', 'evidence', () => {
       '',
       [['Evidence', 'evidence'], ['Upload']],
     ) +
-    `${UI.p.from && byId('rooms', UI.p.from) ? '<div style="max-width:880px;margin-bottom:16px">' + banner('info', 'Evidence for ' + h(byId('rooms', UI.p.from).name), 'This evidence supports the completed deliverables. After you submit it you return to the ' + WL() + ', where you can generate the Learning Harvest.') + '</div>' : ''}<form data-f="ne" class="card col" style="gap:16px;max-width:880px" novalidate>${errSum(f)}<input type="hidden" name="from" value="${h(UI.p.from || '')}">
+    `${neMsBanner()}${!UI.p.ms && UI.p.from && byId('rooms', UI.p.from) ? '<div style="max-width:880px;margin-bottom:16px">' + banner('info', 'Evidence for ' + h(byId('rooms', UI.p.from).name), 'This evidence supports the completed deliverables. After you submit it you return to the ' + WL() + ', where you can generate the Learning Harvest.') + '</div>' : ''}<form data-f="ne" class="card col" style="gap:16px;max-width:880px" novalidate>${errSum(f)}<input type="hidden" name="from" value="${h(UI.p.from || '')}"><input type="hidden" name="ms" value="${h(UI.p.ms || '')}">
  ${fi(f, 'fmt', 'Evidence format', { type: 'select', req: true, opts: EV_FMTS, value: 'File upload', ch: 'neFmt', help: 'Documents, files, outputs and results can be uploaded or linked. Reflections are written here.' })}
  ${neFmtFields(f, fv(f, 'fmt', 'File upload'), spaces)}
  ${neTaskField(f, spaces)}
@@ -462,6 +520,14 @@ F.ne = (d, form) => {
   }
   audit('Evidence submitted', ev.id, ev.type + ' · ' + fmt + (tk ? ' · supports ' + tk.t : ''));
   clearF('ne');
+  const [mx, mm] = neMs(d.ms);
+  if (mm) {
+    if (!ev.linked.includes(mx.id)) ev.linked.push(mx.id);
+    msLink(mx, mm, ev);
+    save();
+    go('room', { id: mx.id, tab: 'plan' });
+    return toast('Evidence added to “' + mm.t + '” and sent to the Steward for review.');
+  }
   save();
   const back = d.from && byId('rooms', d.from);
   if (back && memberOf(back)) {

@@ -64,29 +64,55 @@ route("rooms", "rooms", () => {
     )
   );
 });
+// Primary origin: the actual projects this person can start an Action Room for, then the non-project origins.
+// Creators see accepted projects in the programme without an Action Room; a project owner sees their own.
+const NR_PATHWAY = "_pathway";
+const NR_NONE = "_none";
+const NR_PROJECT_ORIGINS = ["Project", "Circle decision", "Rope Team recommendation"];
+const nrProjects = () =>
+  canCreateRoom()
+    ? S.projects.filter((p) => inCtx(p) && p.status === "Accepted" && !p.room && !["Final review", "Closed"].includes(p.stage))
+    : ownRoomProjects();
+const nrOtherOrigins = (otype) =>
+  canCreateRoom() || S.settings.participantCanProposeWorkspace
+    ? [
+        [NR_PATHWAY, "Learning pathway"],
+        [NR_NONE, "No project — " + (otype && !["Project", "Learning pathway"].includes(otype) ? otype.toLowerCase() : "institutional or community initiative")],
+      ]
+    : [];
+const nrOriginOpts = (otype) => [
+  ...nrProjects().map((p) => [p.id, "Project · " + p.title + " (" + P(p.owner).name + ")"]),
+  ...nrOtherOrigins(otype),
+];
+// The project behind what the button was pressed on: the project itself, or the project of a Circle or Rope Team.
+const nrProjectOf = (d) => byId("projects", d.project) || S.projects.find((p) => d.oid && [p.circle, p.rope].includes(d.oid)) || null;
 A.newRoom = (d) => {
   clearF("nr");
-  // A project owner without creation rights picks one of their own accepted projects.
-  const own = !canCreateRoom() ? ownRoomProjects() : [];
-  const pick = !d.project && own.length > 0;
-  const pr = byId("projects", d.project || (pick ? own[0].id : ""));
-  const creator = canCreateRoomFor(pr);
-  UI.form.nr = {
-    name: pr ? pr.title + " — execution" : "",
-    origin: d.origin === "Learning pathway" ? "Learning pathway" : "Project",
-    oid: d.oid || "",
-    project: pr ? pr.id : "",
-  };
+  const p0 = nrProjectOf(d);
+  const opts = nrOriginOpts(d.origin);
+  const def = p0 && opts.some(([v]) => v === p0.id)
+    ? p0.id
+    : d.origin === "Learning pathway"
+      ? NR_PATHWAY
+      : d.origin && !["Project", "Learning pathway"].includes(d.origin) && opts.some(([v]) => v === NR_NONE)
+        ? NR_NONE
+        : !canCreateRoom() && nrProjects().length === 1
+          ? nrProjects()[0].id
+          : "";
+  const pr = byId("projects", def);
+  UI.form.nr = { name: pr ? pr.title + " — execution" : "", project: def };
   modal(
-    (creator ? "Create " : "Propose ") + (/^[aeiou]/i.test(WL()) ? "an " : "a ") + WL(),
+    (canCreateRoomFor(pr) ? "Create " : "Propose ") + (/^[aeiou]/i.test(WL()) ? "an " : "a ") + WL(),
     () => {
-      const cp = byId("projects", fv("nr", "project")) || pr;
+      const cp = byId("projects", fv("nr", "project"));
       const rope = cp && byId("ropes", cp.rope);
-      return `<form data-f="nr" class="col" style="gap:14px" novalidate>${pick ? fi("nr", "project", "Project", { type: "select", req: true, opts: own.map((p) => [p.id, p.title]), ch: "nrProject", help: "Your accepted projects that do not have an " + WL() + " yet." }) : `<input type="hidden" name="project" value="${pr ? pr.id : ""}">`}<input type="hidden" name="oid" value="${d.oid || ""}">
+      const creator = canCreateRoomFor(cp);
+      const linked = d.oid && (!cp || !p0 || cp === p0) ? "Linked to " + cName(d.oid) + " (linked, not duplicated). " : "";
+      return `<form data-f="nr" class="col" style="gap:14px" novalidate><input type="hidden" name="oid" value="${h(d.oid || "")}"><input type="hidden" name="p0" value="${p0 ? p0.id : ""}"><input type="hidden" name="otype" value="${h(d.origin || "")}">
+ ${opts.length ? fi("nr", "project", "Primary origin", { type: "select", req: true, ph: "Choose the project this " + WL() + " is for", opts, ch: "nrProject", help: linked + (canCreateRoom() ? "Accepted projects in this programme that do not have an " + WL() + " yet." : "Your accepted projects that do not have an " + WL() + " yet.") }) : banner("warn", "No project available", "There is no accepted project without an " + WL() + " that you can start one for.")}
  ${fi("nr", "name", "Name", { req: true })}${fi("nr", "purpose", "Purpose / charter", { type: "textarea", rows: 3, req: true })}${fi("nr", "outcome", "Expected outcome", { type: "textarea", rows: 3, req: true })}
- ${fi("nr", "origin", "Primary origin", { type: "select", req: true, opts: ["Project", "Learning pathway"], help: d.oid ? "Linked to " + cName(d.oid) + " (linked, not duplicated)" : "" })}
  ${cp && !canCreateRoom() ? banner("info", "", "You lead this " + WL() + " as project owner. Your project’s Steward joins as facilitator to validate milestones, and Circle members are invited." + (rope && !rope.reqFinal ? " The Rope Team has not finalised requirements yet — you can still start, and keep working with your mentor." : "")) : ""}
- <div class="actions"><span></span><button class="btn btn-p" type="submit">${creator ? "Create" : "Propose"}</button></div></form>`;
+ <div class="actions"><span></span><button class="btn btn-p" type="submit" ${opts.length ? "" : "disabled"}>${creator ? "Create" : "Propose"}</button></div></form>`;
     },
   );
 };
@@ -99,10 +125,32 @@ A.nrProject = (d, el) => {
   render();
 };
 F.nr = (d) => {
-  if (!validate("nr", d, { name: ["req"], purpose: ["req"], outcome: ["req"] }))
+  if (
+    !validate("nr", d, {
+      project: [
+        ["req", "Choose the primary origin."],
+        ["fn", { f: (v) => nrOriginOpts(d.otype).some(([o]) => o === v), m: "Choose one of the listed origins." }],
+      ],
+      name: ["req"],
+      purpose: ["req"],
+      outcome: ["req"],
+    })
+  )
     return render();
   const flags = [];
-  const pr = d.project && byId("projects", d.project);
+  const pr = byId("projects", d.project) || null;
+  const p0 = byId("projects", d.p0);
+  // Keep the caller's specific origin (e.g. a Circle decision) only while its project is still the one chosen.
+  d.origin = pr
+    ? pr === p0 && NR_PROJECT_ORIGINS.includes(d.otype)
+      ? d.otype
+      : "Project"
+    : d.project === NR_PATHWAY
+      ? "Learning pathway"
+      : d.otype && !["Project", "Learning pathway"].includes(d.otype)
+        ? d.otype
+        : "Institutional project";
+  if (d.oid && pr && pr !== p0 && ![pr.circle, pr.rope].includes(d.oid)) d.oid = "";
   const creator = canCreateRoomFor(pr);
   const st = !creator
     ? "Proposed"
@@ -220,7 +268,7 @@ route("room", "rooms", () => {
   const canReview = sCan("rooms", x, "review") || r === "A";
   const canPropose = sCan("rooms", x, "propose");
   const myM = memberRec(x);
-  if (!isM && !(myM && myM.status === "Invited") && !["A", "O"].includes(r))
+  if (!isM && !(myM && myM.status === "Invited") && !["A", "O"].includes(r) && !msIsSteward(x))
     return deniedView("rooms");
   if (myM && myM.status === "Invited")
     return (
@@ -282,46 +330,7 @@ route("room", "rooms", () => {
       chatThread("rooms", x, { embedded: true });
   if (t.cur === "plan")
     body = `<div class="g12">${roomFlowBanner(x)}<div class="c12">${taskBoard(x, lead, ro)}</div>
- ${card(
-   "Milestones",
-   "Each milestone moves through three steps: 1. a member links evidence · 2. a Steward or Reviewer approves the evidence · 3. the Steward validates the milestone as achieved.",
-   table(
-     ["Milestone", "Due", "Status", "Evidence", "Next step", ""],
-     x.milestones.map((m) => {
-       const ev = byId("evidence", m.evidence);
-       const st = msStep(x, m);
-       const validator = msValidator(x);
-       return [
-         h(m.t),
-         fmt(m.due) + dueTag(m.due, m.status === "Achieved"),
-         pill(m.status),
-         ev ? L(h(ev.title), "evidence", { id: ev.id }) + " " + pill(ev.review) : '<span class="cap">None linked</span>',
-         `<span class="cap">${st}</span>`,
-         !ro
-           ? `<div class="row wrap" style="gap:6px;justify-content:flex-end">${
-               (m.status !== "Achieved" && isM ? B(ev ? "Change evidence" : "Link evidence", "msEvidence", { r: x.id, id: m.id }) : "") +
-               (m.status !== "Achieved" && ev && ev.review === "Submitted" && validator && evReviewer(ev) ? B("Review evidence", "msEvReview", { r: x.id, id: m.id }, "btn-s btn-sm") : "") +
-               (m.status !== "Achieved" && validator
-                 ? ev && ev.review === "Approved"
-                   ? CB("Validate as achieved", "msAchieve", { r: x.id, id: m.id }, "Record “" + m.t + "” as achieved? This is based on the approved evidence “" + ev.title + "” and cannot be undone here.", "btn-p btn-sm", "Validate")
-                   : `<button type="button" class="btn btn-p btn-sm" disabled title="The linked evidence must be approved first">Validate as achieved</button>`
-                 : "")
-             }</div>`
-           : "",
-       ];
-     }),
-     "No milestones yet.",
-   ),
-   !ro && lead
-     ? B(
-         ic("plus", 14) + "Add milestone",
-         "roomItem",
-         { r: x.id, k: "milestones" },
-         "btn-p btn-sm",
-       )
-     : "",
-   "c12",
- )}</div>`;
+ <div class="c12">${msCard(x, isM, lead, ro)}</div></div>`;
   if (t.cur === "dec")
     body = card(
       "Decisions",
@@ -712,7 +721,7 @@ F.ri = (d) => {
         }),
       );
   if (d.k === "milestones")
-    Object.assign(o, { due: d.due, status: "Not started", evidence: null });
+    Object.assign(o, { due: d.due, status: "Not started", evs: [] });
   if (d.k === "decisions") Object.assign(o, { owner: d.owner, state: "Draft" });
   if (d.k === "risks") Object.assign(o, { owner: d.owner, state: "Open" });
   if (d.k === "deps") Object.assign(o, { on: d.on, state: "Open" });
@@ -764,121 +773,262 @@ A.winApprove = (d) => {
   audit("Visible win approved", x.id, d.t);
   ok();
 };
-// ---- Milestones: a member links evidence → a Steward or Reviewer approves the evidence → the Steward validates.
-// Who validates: a Facilitator or Reviewer in this room, the project's Steward, a Reviewer, or the Programme Administrator.
-const msValidator = (x) =>
-  !!x && (sCan("rooms", x, "review") || hasB("Reviewer") || role() === "A" || (role() === "F" && ((projOf("rooms", x) || {}).stewards || []).includes(myId())));
-// Who reviews evidence: a Faculty/Steward or Reviewer who did not submit it.
-const evReviewer = (e) => !!e && e.owner !== myId() && (role() === "F" || hasB("Reviewer"));
-const msValidators = (x) => {
-  const pr = projOf("rooms", x);
-  return [
-    ...new Set([
-      ...x.members.filter((m) => (!m.status || m.status === "Active") && ["Facilitator", "Reviewer"].includes(normRole(m.role))).map((m) => m.pid),
-      ...((pr && pr.stewards) || []),
-    ]),
-  ];
+// ---- Milestones and their evidence
+// 1. A member links evidence to a milestone; every link is sent to the project's Steward for review.
+// 2. The Steward reviews each piece: approve, request changes (the submitter revises and resubmits) or reject.
+// 3. Once every linked piece is approved, the Steward validates the milestone as achieved.
+const MS_PEND = "Awaiting Steward review";
+const MS_PILL = { [MS_PEND]: "p-amber", Approved: "p-green", "Changes requested": "p-amber", Rejected: "p-red" };
+// The Steward: the project's assigned Steward(s); for a room without one, its Facilitators and Reviewers.
+const msStewards = (x) => {
+  if (!x) return [];
+  const pr = roomProject(x);
+  const st = pr ? pr.stewards.filter((s) => S.assign.some((a) => a.pid === s && a.ctx === x.ctx && roleBase(a.role) === "F" && a.status === "Active")) : [];
+  return st.length ? st : x.members.filter((m) => (!m.status || m.status === "Active") && ["Facilitator", "Reviewer"].includes(normRole(m.role))).map((m) => m.pid);
 };
-function msStep(x, m) {
-  if (m.status === "Achieved") return "Validated" + (m.validatedBy ? " by " + nm(m.validatedBy) + " · " + fmt(m.validatedAt) : "");
-  const ev = byId("evidence", m.evidence);
-  if (!ev) return "Waiting for a member to link evidence.";
-  if (ev.review === "Approved") return "Evidence approved. Ready for the Steward to validate.";
-  if (ev.review === "Submitted") return "Evidence waiting for review by a Steward or Reviewer.";
-  if (ev.review === "Needs Revision") return "Evidence needs revision: the submitter revises and resubmits it.";
-  return "Evidence " + ev.review.toLowerCase() + ": link other evidence.";
+const msIsSteward = (x) => msStewards(x).includes(myId());
+const msItems = (m) => m.evs || [];
+// A piece counts only while the Steward's approval stands and the evidence itself is still approved.
+const msItemOk = (it) => it.st === "Approved" && byId("evidence", it.ev)?.review === "Approved";
+const msReady = (m) => msItems(m).length > 0 && msItems(m).every(msItemOk);
+const msToReview = (it) => it.st === MS_PEND || (it.st === "Approved" && !msItemOk(it));
+const msPending = (x) => x.milestones.flatMap((m) => (m.status === "Achieved" ? [] : msItems(m).filter(msToReview).map((it) => [m, it])));
+function msStep(m) {
+  const its = msItems(m);
+  if (m.status === "Achieved") return "Validated" + (m.validatedBy ? " by " + nm(m.validatedBy) + " · " + fmt(m.validatedAt) : "") + ".";
+  if (!its.length) return "Next: a member adds evidence. It goes to the Steward for review.";
+  const n = (f) => its.filter(f).length;
+  if (n((it) => it.st === "Rejected")) return "Next: remove or replace the rejected evidence.";
+  if (n((it) => it.st === "Changes requested")) return "Next: the submitter revises the evidence and resubmits it; it then returns to the Steward.";
+  const p = n(msToReview);
+  if (p) return "Next: the Steward reviews " + p + " piece" + (p > 1 ? "s" : "") + " of evidence.";
+  return "Next: all evidence is approved. The Steward validates the milestone.";
 }
-// Tell the people who act next.
-function msNotify(x, m) {
-  const ev = byId("evidence", m.evidence);
-  if (!ev) return;
-  const ready = ev.review === "Approved";
-  msValidators(x)
+const msTellStewards = (x, t) =>
+  msStewards(x)
     .filter((p) => p !== myId())
-    .forEach((p) =>
-      notify(p, (ready ? "Milestone ready to validate: " : "Evidence to review for milestone: ") + m.t + " (" + x.name + ")", ready ? "room" : "evidence", ready ? { id: x.id, tab: "plan" } : { id: ev.id }),
-    );
+    .forEach((p) => notify(p, t, "room", { id: x.id, tab: "plan" }));
+function msLink(x, m, e) {
+  m.evs = msItems(m);
+  if (m.evs.some((it) => it.ev === e.id)) return false;
+  m.evs.push({ ev: e.id, st: MS_PEND, by: myId(), at: now() });
+  if (m.status === "Not started") m.status = "In progress";
+  e.history.push({ at: today(), t: "Sent to the Steward for milestone “" + m.t + "” in " + x.name });
+  sysMsg(x, me().name + " added “" + e.title + "” to milestone “" + m.t + "” — sent to the Steward for review");
+  msTellStewards(x, "Evidence to review for milestone “" + m.t + "” (" + x.name + "): " + e.title);
+  audit("Evidence linked to milestone", x.id, m.t + " · " + e.id);
+  return true;
 }
-// Called after evidence is reviewed: milestones that rely on it move on.
-function msEvidenceReviewed(e) {
-  S.rooms.forEach((x) =>
-    (x.milestones || [])
-      .filter((m) => m.evidence === e.id && m.status !== "Achieved")
-      .forEach((m) => {
-        sysMsg(x, "Evidence for milestone “" + m.t + "” " + e.review.toLowerCase() + " by " + me().name);
-        if (e.review === "Approved") msNotify(x, m);
-      }),
+// Evidence that can be added: linked to this room or to its project's spaces, not withdrawn or rejected, not already added.
+const msEvOptions = (x, m) => {
+  const pr = roomProject(x);
+  return S.evidence.filter((e) => ((e.linked || []).includes(x.id) || (pr && evProjects(e).includes(pr))) && !["Withdrawn", "Rejected"].includes(e.review) && !msItems(m).some((it) => it.ev === e.id));
+};
+function msCard(x, isM, lead, ro) {
+  const stw = msIsSteward(x);
+  const stewards = msStewards(x);
+  const pend = msPending(x).length;
+  const rows = x.milestones
+    .map((m) => {
+      const its = msItems(m);
+      const done = m.status === "Achieved";
+      const okN = its.filter(msItemOk).length;
+      const steps = [
+        [its.length > 0, "Evidence added (" + its.length + ")"],
+        [its.length > 0 && okN === its.length, "Steward approval (" + okN + " of " + its.length + ")"],
+        [done, "Validated as achieved"],
+      ];
+      const evs = its
+        .map((it, i) => {
+          const e = byId("evidence", it.ev);
+          if (!e) return "";
+          const st = it.st === "Approved" && !msItemOk(it) ? MS_PEND : it.st;
+          const act =
+            (stw && !done && !ro && e.owner !== myId() && msToReview(it) ? B("Review", "msRev", { r: x.id, id: m.id, i }, "btn-p btn-sm") : "") +
+            (!ro && !done && (isM || stw) && it.st !== "Approved" ? CB("Remove", "msUnlink", { r: x.id, id: m.id, i }, "Remove “" + e.title + "” from this milestone? The evidence itself is kept.") : "");
+          return `<li class="ms-ev"><div class="col" style="min-width:0;flex:1"><span class="att">${ic("file", 14)}${L(h(e.title), "evidence", { id: e.id })}</span><span class="cap">${h(e.type)} · by ${nm(e.owner)} · added ${fmt(it.at)}${it.rv ? " · reviewed by " + nm(it.rv) + " " + fmt(it.rvAt) : ""}</span>${it.note && it.st !== "Approved" ? `<p class="pw-note">${h(it.note)}</p>` : ""}</div><span class="row wrap" style="gap:6px">${pill(st, MS_PILL[st])}${act}</span></li>`;
+        })
+        .join("");
+      const validate =
+        stw && !done && !ro
+          ? msReady(m)
+            ? CB("Validate as achieved", "msAchieve", { r: x.id, id: m.id }, "Record “" + m.t + "” as achieved? All " + its.length + " piece" + (its.length > 1 ? "s" : "") + " of evidence are approved.", "btn-p btn-sm", "Validate")
+            : `<button type="button" class="btn btn-p btn-sm" disabled title="Every piece of evidence must be approved first">Validate as achieved</button>`
+          : "";
+      return `<article class="ms"><header class="ms-h"><div class="col" style="min-width:0"><b>${h(m.t)}</b><span class="cap">Due ${fmt(m.due)}${dueTag(m.due, done)}</span></div><span class="row wrap" style="gap:6px">${pill(m.status)}${!ro && !done && isM ? B(ic("plus", 14) + "Add evidence", "msEvidence", { r: x.id, id: m.id }) : ""}${validate}</span></header><ol class="ms-steps">${steps.map(([ok_, t], n) => `<li class="${ok_ ? "ok" : ""}"><span class="n">${ok_ ? ic("check", 12) : n + 1}</span>${t}</li>`).join("")}</ol>${evs ? `<ul class="ms-evs">${evs}</ul>` : ""}<p class="cap">${msStep(m)}</p></article>`;
+    })
+    .join("");
+  return card(
+    "Milestones",
+    "1. A member adds evidence → 2. the Steward reviews and approves every piece → 3. the Steward validates the milestone as achieved." + (stewards.length ? " Steward: " + stewards.map(nm).join(", ") + "." : ""),
+    (stw && pend ? banner("warn", pend + " piece" + (pend > 1 ? "s" : "") + " of evidence waiting for your review", "Review each one below. A milestone can be validated once all of its evidence is approved.") : "") +
+      (!stewards.length ? banner("warn", "No Steward for this " + WL(), "Ask the Programme Administrator to assign a Steward to the project. Evidence cannot be reviewed or milestones validated without one.") : "") +
+      (rows ? `<div class="col" style="gap:12px">${rows}</div>` : empty("flag", "No milestones yet", lead ? "Add a milestone, then add the evidence that shows it is done." : "The project lead adds milestones.")),
+    !ro && lead ? B(ic("plus", 14) + "Add milestone", "roomItem", { r: x.id, k: "milestones" }, "btn-p btn-sm") : "",
   );
 }
-A.msEvReview = (d) => {
+A.msEvidence = (d) => {
   const x = byId("rooms", d.r);
   const m = x.milestones.find((y) => y.id === d.id);
-  const e = byId("evidence", m.evidence);
-  clearF("evr");
+  const ev = msEvOptions(x, m);
+  const stewards = msStewards(x);
+  clearF("mse");
+  modal(
+    "Add evidence to “" + h(m.t) + "”",
+    () =>
+      `<form data-f="mse" class="col" style="gap:14px" novalidate><input type="hidden" name="r" value="${x.id}"><input type="hidden" name="id" value="${m.id}">${ev.length ? fi("mse", "ev", "Evidence", { type: "select", req: true, ph: "Choose evidence", opts: ev.map((e) => [e.id, e.title + " · " + e.review]) }) : '<p class="cap">There is no evidence from this project to add yet. Upload it first.</p>'}${banner("info", "", "Adding evidence sends it to the Steward" + (stewards.length ? " (" + stewards.map((p) => h(P(p).name)).join(", ") + ")" : "") + " for review. The milestone can be validated once every piece of its evidence is approved.")}<div class="actions">${B(ic("upload", 14) + "Upload new evidence", "go", { r: "newevidence", link: x.id, from: x.id, ms: x.id + "|" + m.id })}${ev.length ? '<button class="btn btn-p" type="submit">Add and send for review</button>' : ""}</div></form>`,
+  );
+};
+F.mse = (d) => {
+  if (!validate("mse", d, { ev: [["req", "Choose the evidence to add."]] })) return render();
+  const x = byId("rooms", d.r);
+  const m = x.milestones.find((y) => y.id === d.id);
+  const e = byId("evidence", d.ev);
+  if (!e || !msEvOptions(x, m).includes(e)) {
+    UI.err.mse = { ev: "This evidence cannot be added to this milestone." };
+    return render();
+  }
+  msLink(x, m, e);
+  UI.modal = null;
+  clearF("mse");
+  toast("Added and sent to the Steward for review.");
+  ok();
+};
+A.msUnlink = (d) => {
+  const x = byId("rooms", d.r);
+  const m = x.milestones.find((y) => y.id === d.id);
+  const it = msItems(m)[+d.i];
+  if (!it) return render();
+  m.evs.splice(+d.i, 1);
+  const e = byId("evidence", it.ev);
+  sysMsg(x, me().name + " removed “" + (e ? e.title : it.ev) + "” from milestone “" + m.t + "”");
+  audit("Evidence removed from milestone", x.id, m.t + " · " + it.ev);
+  ok();
+};
+// The Steward reviews one piece of evidence for one milestone.
+A.msRev = (d) => {
+  const x = byId("rooms", d.r);
+  const m = x.milestones.find((y) => y.id === d.id);
+  const it = msItems(m)[+d.i];
+  const e = byId("evidence", it.ev);
+  clearF("msr");
+  UI.form.msr = { level: e.level && e.level !== "E0" ? e.level : "E2", limits: e.limits || "" };
   modal(
     "Review evidence for “" + h(m.t) + "”",
     () =>
       `<div class="col" style="gap:14px">${dl([
         ["Evidence", L(h(e.title), "evidence", { id: e.id })],
+        ["Submitted by", nm(e.owner) + (e.history && e.history[0] ? " · " + fmt(e.history[0].at) : "")],
         ["Type", h(e.type)],
         ["Claim", h(e.claim || "—")],
-        ["Submitted by", nm(e.owner)],
-        ["Status", pill(e.review)],
-      ])}${evReviewForm(e)}</div>`,
+        ["Format", h(e.format || "—")],
+        e.file && ["File", `<span class="att">${ic("file", 14)}${h(e.file)}</span>`],
+        e.url && ["Link", h(e.url)],
+        e.text && ["Written evidence", `<span style="white-space:pre-line">${h(e.text)}</span>`],
+        ["Source", h(e.source || "—")],
+        ["Current evidence status", pill(e.review) + " " + pill(e.level, "p-navy")],
+      ])}<form data-f="msr" class="col" style="gap:12px" novalidate>${errSum("msr")}<input type="hidden" name="r" value="${x.id}"><input type="hidden" name="id" value="${m.id}"><input type="hidden" name="i" value="${d.i}">${fi("msr", "dec", "Decision", {
+        type: "select",
+        req: true,
+        ph: "Choose a decision",
+        opts: [
+          ["Approved", "Approve — it supports this milestone"],
+          ["Changes requested", "Request changes — the submitter revises and resubmits"],
+          ["Rejected", "Reject — it does not support this milestone"],
+        ],
+      })}<div class="f2">${fi("msr", "level", "Evidence Support Level", { type: "select", opts: LEVELS.map(([k, v]) => [k, k + " — " + v]) })}<span></span></div>${fi("msr", "limits", "Limitations or uncertainty", { type: "textarea", rows: 2, help: "Required when you approve. Write “None noted” if there are none." })}${fi("msr", "note", "Note to the submitter", { type: "textarea", rows: 2, help: "Required when you request changes or reject." })}<div class="actions">${B("Cancel", "closeM")}<button class="btn btn-p" type="submit">Save review</button></div></form></div>`,
     true,
   );
 };
-A.msEvidence = (d) => {
+F.msr = (d) => {
+  const okv = validate("msr", d, {
+    dec: [["req", "Choose a decision."]],
+    limits: [["fn", { f: (v, dd) => dd.dec !== "Approved" || v.length > 0, m: "Describe limitations or uncertainty, or write “None noted”." }]],
+    note: [["fn", { f: (v, dd) => dd.dec === "Approved" || v.length >= 5, m: "Tell the submitter what to change, or why it does not support the milestone." }]],
+  });
+  if (!okv) return render();
   const x = byId("rooms", d.r);
-  const ev = S.evidence.filter(
-    (e) =>
-      e.linked.includes(x.id) && !["Withdrawn", "Rejected"].includes(e.review),
-  );
-  modal(
-    "Link evidence to milestone",
-    `<form data-f="mse" class="col" style="gap:14px"><input type="hidden" name="r" value="${x.id}"><input type="hidden" name="id" value="${d.id}">${ev.length ? fi("mse", "ev", "Evidence", { type: "select", opts: ev.map((e) => [e.id, e.title + " (" + e.review + ")"]) }) : '<p class="cap">No evidence linked to this ' + WL() + " yet.</p>"}<div class="actions">${B("Upload new evidence", "go", { r: "newevidence", link: x.id })}${ev.length ? '<button class="btn btn-p" type="submit">Link</button>' : ""}</div></form>`,
-  );
-};
-F.mse = (d) => {
-  const x = byId("rooms", d.r);
-  const m = x.milestones.find((m) => m.id === d.id);
-  if (!d.ev) return closeM();
-  m.evidence = d.ev;
-  if (m.status === "Not started") m.status = "In progress";
-  sysMsg(x, me().name + " linked evidence to milestone “" + m.t + "”");
-  msNotify(x, m);
-  audit("Evidence linked to milestone", x.id, m.t);
+  const m = x.milestones.find((y) => y.id === d.id);
+  const it = msItems(m)[+d.i];
+  const e = byId("evidence", it.ev);
+  const note = (d.note || "").trim();
+  it.st = d.dec;
+  it.rv = myId();
+  it.rvAt = now();
+  it.note = note;
+  if (d.dec === "Approved") evApplyReview(e, "Approved", d.level, d.limits.trim(), note);
+  else if (d.dec === "Changes requested") evApplyReview(e, "Needs Revision", d.level || e.level, (d.limits || e.limits || "").trim() || "—", note);
+  else {
+    e.history.push({ at: today(), t: "Not accepted for milestone “" + m.t + "” by " + me().name + ": " + note });
+    notify(e.owner, "Your evidence “" + e.title + "” does not support the milestone “" + m.t + "”: " + note, "room", { id: x.id, tab: "plan" });
+  }
+  msEvidenceReviewed(e);
+  sysMsg(x, "Steward review of “" + e.title + "” for milestone “" + m.t + "”: " + d.dec);
+  if (msReady(m)) notify(x.lead, "All evidence for the milestone “" + m.t + "” is approved. The Steward can validate it.", "room", { id: x.id, tab: "plan" });
+  audit("Milestone evidence reviewed", x.id, m.t + " · " + e.id + " · " + d.dec);
   UI.modal = null;
-  toast(byId("evidence", d.ev)?.review === "Approved" ? "Linked. The evidence is approved, so the Steward can validate the milestone." : "Linked. A Steward or Reviewer reviews the evidence next.");
+  clearF("msr");
+  toast(d.dec === "Approved" ? (msReady(m) ? "Approved. All evidence for this milestone is approved — you can validate it now." : "Approved.") : d.dec === "Changes requested" ? "Changes requested. The submitter has been told." : "Rejected for this milestone.");
   ok();
 };
+// A Steward's review on the evidence page counts for the milestones they steward that use this evidence.
+function msEvidenceReviewed(e) {
+  S.rooms.forEach((x) =>
+    (x.milestones || []).forEach((m) =>
+      msItems(m).forEach((it) => {
+        if (it.ev !== e.id || m.status === "Achieved" || it.st === "Rejected" || !msIsSteward(x)) return;
+        const st = e.review === "Approved" ? "Approved" : e.review === "Needs Revision" ? "Changes requested" : it.st;
+        if (st === it.st) return;
+        Object.assign(it, { st, rv: myId(), rvAt: now() });
+        sysMsg(x, "Evidence “" + e.title + "” for milestone “" + m.t + "”: " + st.toLowerCase() + " by " + me().name);
+      }),
+    ),
+  );
+}
+// Revised evidence goes back to the Steward of every milestone that asked for changes.
+function msEvidenceResubmitted(e) {
+  S.rooms.forEach((x) =>
+    (x.milestones || []).forEach((m) =>
+      msItems(m)
+        .filter((it) => it.ev === e.id && it.st === "Changes requested")
+        .forEach((it) => {
+          it.st = MS_PEND;
+          sysMsg(x, "“" + e.title + "” was revised and sent back to the Steward for milestone “" + m.t + "”");
+          msTellStewards(x, "Revised evidence to review for milestone “" + m.t + "” (" + x.name + "): " + e.title);
+        }),
+    ),
+  );
+}
 A.msAchieve = (d) => {
   const x = byId("rooms", d.r);
   const m = x.milestones.find((m) => m.id === d.id);
-  const ev = byId("evidence", m.evidence);
-  // The UI only offers this once the evidence is approved; this check stays as a safeguard.
-  if (!ev || ev.review !== "Approved")
+  // The UI only offers this once every piece is approved; this check stays as a safeguard.
+  if (!msReady(m))
     return deny(
-      "evidence must be approved before the milestone is recorded as achieved",
+      msItems(m).length
+        ? "every piece of evidence for this milestone must be approved by the Steward first (" + msItems(m).filter((it) => !msItemOk(it)).length + " not approved)"
+        : "add evidence and have the Steward approve it before the milestone is recorded as achieved",
     );
   m.status = "Achieved";
   m.validatedBy = myId();
   m.validatedAt = now();
   sysMsg(x, "Milestone validated as achieved by " + me().name + ": " + m.t);
-  const pr = projOf("rooms", x);
+  const pr = roomProject(x);
   if (pr) pr.history.push({ at: now(), by: myId(), t: "Milestone achieved: " + m.t });
-  if (ev.owner !== x.lead) notify(ev.owner, "Milestone validated: " + m.t, "room", { id: x.id, tab: "plan" });
-  S.candidates.push({
-    id: uid("cd"),
-    pid: ev.owner,
-    field: "Completed milestone",
-    value: m.t + " (" + x.name + ")",
-    source: "Validated milestone",
-    prov: "Evidence-supported",
-    status: "Pending",
-  });
-  notify(x.lead, "Milestone validated: " + m.t, "room", { id: x.id });
-  audit("Milestone validated", x.id, m.t);
+  const owners = [...new Set(msItems(m).map((it) => byId("evidence", it.ev).owner))];
+  owners.forEach((pid) =>
+    S.candidates.push({
+      id: uid("cd"),
+      pid,
+      field: "Completed milestone",
+      value: m.t + " (" + x.name + ")",
+      source: "Validated milestone",
+      prov: "Evidence-supported",
+      status: "Pending",
+    }),
+  );
+  [...new Set([x.lead, ...owners])].filter((p) => p !== myId()).forEach((p) => notify(p, "Milestone validated: " + m.t, "room", { id: x.id, tab: "plan" }));
+  audit("Milestone validated", x.id, m.t + " · " + msItems(m).length + " evidence");
   toast("Milestone recorded as achieved.");
   ok();
 };
@@ -1255,14 +1405,14 @@ function roomOverview(x, pr, lead, ro) {
   return `<div class="g12"><section class="card c12"><div class="kpis">${kpi("Tasks done", done + " of " + tasks.length, pct(done, tasks.length) + "% complete", pct(done, tasks.length))}${kpi("Milestones achieved", msDone + " of " + ms.length, "Validated against approved evidence", pct(msDone, ms.length))}${kpi("Open risks", openRisks, openRisks ? "Each has an owner" : "Nothing open")}${kpi("Next due", next ? fmt(next.due) : "—", next ? h(next.kind + ": " + next.t) + dueTag(next.due, false) : "Nothing scheduled")}</div></section>${roomFlow(x)}
   <div class="c7 col" style="gap:24px">${card(
     "Milestone timeline",
-    "Key dates and progress. Evidence-linked completion is validated by a Reviewer.",
+    "Key dates and progress. Each milestone is validated by the Steward once all of its evidence is approved.",
     ms.length
       ? `<ol class="mtl">${ms
           .slice()
           .sort((a, b) => a.due.localeCompare(b.due))
           .map(
             (m) =>
-              `<li class="${m.status === "Achieved" ? "done" : m.status === "In progress" ? "cur" : ""}"><span class="mtl-dot">${m.status === "Achieved" ? ic("check", 13) : ""}</span><div class="col"><b>${h(m.t)}</b><span class="cap">${fmt(m.due)}${dueTag(m.due, m.status === "Achieved")} · ${h(m.status)}${m.evidence ? " · evidence: " + h(byId("evidence", m.evidence)?.title || m.evidence) : ""}</span></div></li>`,
+              `<li class="${m.status === "Achieved" ? "done" : m.status === "In progress" ? "cur" : ""}"><span class="mtl-dot">${m.status === "Achieved" ? ic("check", 13) : ""}</span><div class="col"><b>${h(m.t)}</b><span class="cap">${fmt(m.due)}${dueTag(m.due, m.status === "Achieved")} · ${h(m.status)}${msItems(m).length ? " · evidence approved: " + msItems(m).filter(msItemOk).length + " of " + msItems(m).length : ""}</span></div></li>`,
           )
           .join("")}</ol>`
       : empty(

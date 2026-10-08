@@ -577,14 +577,27 @@ Object.assign(G, {
   rdoc: d => activeMember('ropes', d.id) || 'only members of an active Rope Team upload documents',
   newRoom: roomFor,
   nr: roomFor,
-  msAchieve: d => msValidator(byId('rooms', d.r)) || 'only the Steward or a Reviewer validates a milestone',
-  msEvReview: d => {
-    const x = byId('rooms', d.r);
-    const m = x && x.milestones.find(y => y.id === d.id);
-    const e = m && byId('evidence', m.evidence);
-    return (e && msValidator(x) && evReviewer(e)) || 'only a Steward or Reviewer who did not submit the evidence reviews it';
-  },
+  // milestones: members add evidence; only the Steward reviews it and validates the milestone
+  msEvidence: d => msOpen(d, x => activeMember('rooms', x.id)) || 'only members of an active ' + WL() + ' add evidence to an open milestone',
+  mse: d => msOpen(d, x => activeMember('rooms', x.id)) || 'only members of an active ' + WL() + ' add evidence to an open milestone',
+  msUnlink: d => msOpen(d, x => activeMember('rooms', x.id) || msIsSteward(x)) || 'only members or the Steward remove evidence from an open milestone',
+  msRev: d => msRevOk(d) || 'only the Steward reviews milestone evidence, and not their own',
+  msr: d => msRevOk(d) || 'only the Steward reviews milestone evidence, and not their own',
+  msAchieve: d => msOpen(d, msIsSteward) || 'only the Steward validates a milestone',
 });
+// An open milestone in an active Action Room, plus a check on the person.
+function msOpen(d, who) {
+  const x = byId('rooms', d.r);
+  const m = x && x.milestones.find(y => y.id === d.id);
+  return !!m && x.state === 'Active' && m.status !== 'Achieved' && !!who(x);
+}
+function msRevOk(d) {
+  const x = byId('rooms', d.r);
+  const m = x && x.milestones.find(y => y.id === d.id);
+  const it = m && msItems(m)[+d.i];
+  const e = it && byId('evidence', it.ev);
+  return !!e && msOpen(d, msIsSteward) && e.owner !== myId() && msToReview(it);
+}
 // ---- deliverables → evidence → Learning Harvest → profile evolution; role assignment expiry
 Object.assign(G, {
   hvGen: d => {

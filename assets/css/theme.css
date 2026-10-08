@@ -4073,3 +4073,75 @@ mark.evo-add {
     flex-basis: 100%;
   }
 }
+
+/* ---------- milestones: evidence → Steward approval → validation ---------- */
+.ms {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+.ms-h {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px 12px;
+}
+.ms-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  font-size: 13px;
+  color: var(--text-3);
+}
+.ms-steps li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ms-steps .n {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex: none;
+}
+.ms-steps li.ok {
+  color: var(--ok);
+  font-weight: 600;
+}
+.ms-steps li.ok .n {
+  background: var(--ok);
+  border-color: var(--ok);
+  color: #fff;
+}
+.ms-evs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ms-ev {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  background: var(--sunk);
+  border-radius: var(--r);
+}

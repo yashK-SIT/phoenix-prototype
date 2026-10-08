@@ -256,6 +256,20 @@ function migrate() {
     // custom pathways now wait for the Programme Administrator to assign a Steward
     if (p.state === "In review" && !p.reviewer) p.state = "Awaiting reviewer";
   });
+  // Milestones hold a list of evidence, each approved by the Steward; the project's Steward facilitates its Action Room
+  S.rooms.forEach((x) => {
+    (x.milestones || []).forEach((m) => {
+      if (m.evs) return;
+      const e = m.evidence && byId("evidence", m.evidence);
+      const ok_ = e && (m.status === "Achieved" || e.review === "Approved");
+      m.evs = e ? [{ ev: e.id, st: ok_ ? "Approved" : "Awaiting Steward review", by: x.lead, at: m.due || today(), ...(ok_ && e.reviewer ? { rv: e.reviewer, rvAt: m.due || today() } : {}) }] : [];
+      delete m.evidence;
+    });
+    const pr = roomProject(x);
+    (pr ? pr.stewards : []).forEach((s) => {
+      if (!x.members.some((m) => m.pid === s)) x.members.push({ pid: s, role: "Facilitator", status: "Active" });
+    });
+  });
   // Rope Teams carry their own documents plus a copy of the linked Circle's documents
   S.ropes.forEach((x) => {
     x.docs = x.docs || [];
