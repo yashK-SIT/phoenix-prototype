@@ -7,7 +7,6 @@ const DEMO = [
   ['p2', 'a2', 'Facilitator / Steward + Reviewer'],
   ['p3', 'a3', 'Mentor (+ Participant in Seva Hub)'],
   ['p4', 'a4', 'Partner / Collaborator'],
-  ['p5', 'a5', 'Organization Representative'],
   ['p6', 'a6', 'Sponsor / Funder'],
   ['p7', 'a7', 'Programme Admin + specialist bundles'],
   ['p8', 'a8', 'Platform Administrator'],
