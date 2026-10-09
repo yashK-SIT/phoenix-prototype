@@ -44,27 +44,16 @@ const OPP_KIND = { Need: ['target', 'need'], Offer: ['send', 'offer'], Asset: ['
 const oppKind = k => `<span class="opp-k opp-k-${(OPP_KIND[k] || [])[1] || 'opp'}">${ic((OPP_KIND[k] || [])[0] || 'card', 13)}${h(k)}</span>`;
 route('opportunities', 'opportunities', () => {
   expireCards();
-  const q = UI.q;
   const r = role();
   const list = S.cards.filter(c => inCtx(c) && (cardVisible(c) || r === 'A' || r === 'F'));
   const t = tabs('opps', [
     ['discover', 'Discover'],
     ['mine', 'My cards', S.cards.filter(c => c.owner === myId()).length],
   ]);
-  const f = (
+  const f =
     t.cur === 'mine'
       ? S.cards.filter(c => c.owner === myId())
-      : list.filter(c => ['Active', 'Paused'].includes(c.status) || r === 'A' || r === 'F')
-  ).filter(
-    c =>
-      (!q.kind || c.kind === q.kind) &&
-      (!q.status || c.status === q.status) &&
-      (!q.cat || c.cat === q.cat) &&
-      (!q.s || (c.title + ' ' + c.desc).toLowerCase().includes(q.s.toLowerCase())),
-  );
-  const srt =
-    q.sort === 'expiry' ? (a, b) => a.expires.localeCompare(b.expires) : (a, b) => a.title.localeCompare(b.title);
-  f.sort(srt);
+      : list.filter(c => ['Active', 'Paused'].includes(c.status) || r === 'A' || r === 'F');
   return (
     head(
       'Opportunities',
@@ -72,35 +61,31 @@ route('opportunities', 'opportunities', () => {
       ['P', 'C', 'O'].includes(r) ? B(ic('plus', 16) + 'New card', 'go', { r: 'newcard' }, 'btn-p') : '',
     ) +
     t.html +
-    `<section class="card flush rec-list opp-list"><div class="rec-toolbar opp-bar"><div class="rec-tf"><span class="rec-search">${ic('search', 16)}<input class="input" placeholder="Search" value="${h(q.s || '')}" data-ch="qf" data-k="s" aria-label="Search cards"></span>${[
-      'kind:Type:Need,Asset,Offer,Opportunity',
-      'status:Status:Draft,Active,Paused,Fulfilled/Closed,Withdrawn,Expired',
-      'cat:Category:' + [...new Set(S.cards.map(c => c.cat))].join(','),
-      'sort:Sort:title,expiry',
-    ]
-      .map(x => {
-        const [k, l, o] = x.split(':');
-        return `<select class="input" data-ch="qf" data-k="${k}" aria-label="${l}"><option value="">${l}: all</option>${o
-          .split(',')
-          .map(v => `<option ${q[k] === v ? 'selected' : ''}>${v}</option>`)
-          .join('')}</select>`;
-      })
-      .join('')}</div><span class="rec-count"><b>${f.length}</b> card${f.length === 1 ? '' : 's'}</span></div>` +
-    table(
-      ['Card', 'Type', 'Category', 'Owner', 'Audience', 'Expires', 'Status', ''],
-      f.map(c => [
-        `<span class="opp-name"><b>${h(c.title)}</b><span class="cap opp-desc">${h(c.desc)}</span></span>`,
-        oppKind(c.kind),
-        h(c.cat),
-        nm(c.owner) + (c.ownerOrg ? ' · ' + h(S.orgs.find(o => o.id === c.ownerOrg).name) : ''),
-        audienceText(c) + (c.from ? `<div class="cap">From ${L(cName(c.from), 'circle', { id: c.from })}</div>` : ''),
-        fmt(c.expires),
-        pill(c.status),
-        L('Open', 'card', { id: c.id }),
-      ]),
-      'No cards match these filters.',
-    ) +
-    `</section>`
+    dataView('opps:' + t.cur, {
+      label: 'cards',
+      items: f,
+      search: c => c.title + ' ' + c.desc + ' ' + c.cat + ' ' + P(c.owner).name,
+      searchLabel: 'Search cards',
+      quick: { label: 'Type', options: ['Need', 'Offer', 'Asset', 'Opportunity'].map(k => [k, k]), test: (c, v) => c.kind === v },
+      filters: [
+        { key: 'cat', label: 'Category', options: dvOpts(S.cards, c => c.cat), test: (c, v) => c.cat === v },
+        { key: 'status', label: 'Status', options: ['Draft', 'Active', 'Paused', 'Fulfilled/Closed', 'Withdrawn', 'Expired'].map(s => [s, s]), test: (c, v) => c.status === v },
+      ],
+      sorts: [
+        ['title', 'Title', (a, b) => a.title.localeCompare(b.title)],
+        ['expiry', 'Expiry date', (a, b) => a.expires.localeCompare(b.expires)],
+      ],
+      defaultSort: 'title',
+      row: c => ({
+        lead: `<span class="tile opp-tile-${(OPP_KIND[c.kind] || [])[1] || 'opp'}" aria-hidden="true">${ic((OPP_KIND[c.kind] || [])[0] || 'megaphone', 18)}</span>`,
+        title: h(c.title),
+        sub: `<span class="opp-desc">${h(c.desc)}</span>`,
+        meta: [h(c.cat), nm(c.owner) + (c.ownerOrg ? ' · ' + h(S.orgs.find(o => o.id === c.ownerOrg).name) : ''), audienceText(c), c.from ? `From ${L(cName(c.from), 'circle', { id: c.from })}` : '', 'Expires ' + fmt(c.expires)],
+        badges: oppKind(c.kind) + pill(c.status),
+        primary: L('Open', 'card', { id: c.id }),
+      }),
+      empty: t.cur === 'mine' ? ['megaphone', 'No cards yet', 'Publish a need, asset, offer or opportunity with an audience and expiry.', ['P', 'C', 'O'].includes(r) ? B(ic('plus', 16) + 'New card', 'go', { r: 'newcard' }, 'btn-p btn-sm') : ''] : ['megaphone', 'No cards match these filters.', ''],
+    })
   );
 });
 A.qf = (d, el) => {
@@ -217,7 +202,7 @@ route('card', 'opportunities', () => {
     }[c.status] || [];
   return (
     crumbsHtml([['Opportunities', 'opportunities'], [h(c.title)]]) +
-    `<div class="shead-main opp-head"><span class="tile opp-tile-${(OPP_KIND[c.kind] || [])[1] || 'opp'}" aria-hidden="true">${ic((OPP_KIND[c.kind] || [])[0] || 'megaphone', 20)}</span><div class="shead-t"><div class="shead-kind">${h(c.kind)} · ${h(c.cat)}</div><div class="row wrap opp-ttl"><h1 class="h1">${h(c.title)}</h1>${pill(c.status)}</div><div class="shead-meta"><span>${oppKind(c.kind)}</span><span>${nm(c.owner)}</span><span>Expires ${fmt(c.expires)}</span></div>${c.from ? `<div class="row wrap opp-src"><span class="srole opp-srole">${ic('users', 13)}From Circle: <b>${cName(c.from)}</b></span><span class="srole opp-srole">${ic('eye', 13)}${audienceText(c)}</span></div>` : ''}</div></div>` +
+    `<div class="shead-main opp-head"><span class="tile opp-tile-${(OPP_KIND[c.kind] || [])[1] || 'opp'}" aria-hidden="true">${ic((OPP_KIND[c.kind] || [])[0] || 'megaphone', 20)}</span><div class="shead-t"><div class="shead-kind">${h(c.kind)} · ${h(c.cat)}</div><div class="row wrap opp-ttl"><h1 class="h1">${h(c.title)}</h1>${pill(c.status)}</div><div class="shead-meta"><span>${nm(c.owner)}</span><span>Expires ${fmt(c.expires)}</span></div>${c.from ? `<div class="row wrap opp-src"><span class="srole opp-srole">${ic('users', 13)}From Circle: <b>${cName(c.from)}</b></span><span class="srole opp-srole">${ic('eye', 13)}${audienceText(c)}</span></div>` : ''}</div></div>` +
     `<div class="g12">${card('Details', '', dl([['Description', h(c.desc)], ['Owner', nm(c.owner) + (c.ownerOrg ? ' · ' + h(S.orgs.find(o => o.id === c.ownerOrg).name) : '')], ['Audience', audienceText(c)], ['Expires', fmt(c.expires)], ['Linked project', c.project ? cName(c.project) : '—'], ['Created from', c.from ? (memberOf(byId('circles', c.from) || {}) || ['A', 'O', 'F'].includes(r) || byId('circles', c.from)?.visibility === 'Programme' ? L(cName(c.from), 'circle', { id: c.from }) : cName(c.from)) + ' <span class="cap">(Circle)</span>' : '—'], c.from && ['Steward for introductions', nm(cardSteward(c))], own && ['Expressions of interest', c.interest.map(nm).join(', ') || 'None yet']]), '', 'c8')}
  <aside class="c4 col opp-side">${own ? card('Manage', '', `<div class="col opp-stack">${B(ic('edit', 14) + 'Edit', 'go', { r: 'newcard', edit: c.id })}${st.map(s => (s === 'Withdrawn' ? CB('Withdraw', 'cardState', { id: c.id, v: s }, 'Withdraw this card? It leaves discovery and any pending Match Briefs close.') : B(s === 'Active' ? 'Publish / resume' : s, 'cardState', { id: c.id, v: s }))).join('')}</div>`) : ''}
  ${!own && c.status === 'Active' && r !== 'F' ? card('Interested?', '', c.interest.includes(myId()) ? banner('ok', 'You expressed interest', 'A steward reviews any introduction. Your contact details are not shared.') : B('Express interest', 'interest', { id: c.id }, 'btn-p btn-block') + `<p class="cap opp-note">This does not introduce you. A steward reviews a Match Brief and both sides consent first.</p>`) : ''}
@@ -379,19 +364,29 @@ route('matches', 'matching', () => {
       'Match Briefs',
       'Potential match → Match Brief → steward approval → mutual consent → introduction. No hidden ranking.',
     ) +
-    `<section class="card flush rec-list mb-list"><div class="rec-bar"><span class="rec-count"><b>${list.length}</b> Match Brief${list.length === 1 ? '' : 's'}</span><span class="cap hide-sm">Contact details are released only after both parties consent</span></div>` +
-    table(
-      ['Parties', 'Origin', 'Status', 'Blockers', ''],
-      list.map(m => [
-        `<span class="mb-parties"><span class="avstack" aria-hidden="true"><span class="av sm">${ini(m.a)}</span><span class="av sm">${ini(m.b)}</span></span><b>${nm(m.a) + ' ↔ ' + nm(m.b)}</b></span>`,
-        h(m.origin),
-        pill(m.status),
-        m.blockers.length ? pill(m.blockers.length + ' do-not-introduce', 'p-red') : '—',
-        L('Open', 'match', { id: m.id }),
-      ]),
-      'No Match Briefs.',
-    ) +
-    `</section>`
+    dataView('matches', {
+      label: 'Match Briefs',
+      items: list,
+      search: m => P(m.a).name + ' ' + P(m.b).name + ' ' + m.origin + ' ' + m.status,
+      quick: dvOpts(list, m => m.status).length > 1 ? { label: 'Status', options: dvOpts(list, m => m.status), test: (m, v) => m.status === v } : null,
+      filters: [
+        { key: 'origin', label: 'Origin', options: dvOpts(list, m => m.origin), test: (m, v) => m.origin === v },
+        { key: 'blockers', label: 'Blockers', options: [['yes', 'Has do-not-introduce'], ['no', 'None']], test: (m, v) => (v === 'yes' ? m.blockers.length > 0 : !m.blockers.length) },
+      ],
+      sorts: [
+        ['parties', 'Parties', (a, b) => P(a.a).name.localeCompare(P(b.a).name)],
+        ['status', 'Status', (a, b) => a.status.localeCompare(b.status)],
+      ],
+      row: m => ({
+        lead: `<span class="avstack" aria-hidden="true"><span class="av sm">${ini(m.a)}</span><span class="av sm">${ini(m.b)}</span></span>`,
+        title: nm(m.a) + ' ↔ ' + nm(m.b),
+        sub: h(m.origin),
+        meta: [m.steward ? 'Steward · ' + nm(m.steward) : ''],
+        badges: pill(m.status) + (m.blockers.length ? pill(m.blockers.length + ' do-not-introduce', 'p-red') : ''),
+        primary: L('Open', 'match', { id: m.id }),
+      }),
+      empty: ['link', 'No Match Briefs.', 'Potential match → Match Brief → steward approval → mutual consent → introduction.'],
+    })
   );
 });
 route('match', 'matching', () => {

@@ -327,6 +327,12 @@ function spaceHead(kind, o, sub, crumbs, actions = '') {
   return `<header class="shead ws-head k-${kind}">${crumbs ? crumbsHtml(crumbs) : ''}<div class="shead-main"><span class="tile ws-tile ${tile}">${ic(icon, 22)}</span><div class="shead-t"><div class="shead-kind ws-kind">${h(SPACE_KIND_LABEL(kind))}</div><div class="ws-title"><h1 class="h1">${h(o.name)}</h1>${pill(o.state)}</div>${sub ? `<p class="sub">${sub}</p>` : ''}</div>${actions ? `<div class="shead-a">${actions}</div>` : ''}</div><div class="ws-facts">${facts.join('')}</div></header>`;
 }
 
+// One-line context for every section except Overview: which space this is, its state, and the same actions.
+function wsBar(kind, o, actions = '') {
+  const icon = { circles: 'users', ropes: 'route', rooms: 'room' }[kind];
+  const tile = { circles: 't-purple', ropes: 't-teal', rooms: 't-navy' }[kind];
+  return `<div class="ws-bar k-${kind}"><span class="tile ws-bar-tile ${tile}" aria-hidden="true">${ic(icon, 18)}</span><div class="ws-bar-t"><span class="ws-bar-kind">${h(SPACE_KIND_LABEL(kind))}</span><span class="ws-bar-n"><b>${h(o.name)}</b>${o.state ? pill(o.state) : ''}</span></div>${actions ? `<div class="ws-bar-a">${actions}</div>` : ''}</div>`;
+}
 // Context rail: the people in this space and the role each holds here. Read-only; the Members tab manages them.
 function wsTeamCard(kind, o) {
   const act = o.members.filter(m => !m.status || m.status === 'Active');
@@ -339,6 +345,26 @@ function wsTeamCard(kind, o) {
     'ws-team-card',
   );
 }
+
+// ---------- Data View helpers for space lists (display only; they read what the space already records) ----------
+const wsOpts = (list, f) => [...new Set(list.map(f).filter(Boolean))].sort().map(v => [v, v]);
+const wsPeople = (list, f) => [...new Set(list.map(f).filter(Boolean))].map(p => [p, P(p).name]).sort((a, b) => a[1].localeCompare(b[1]));
+const wsActive = o => (o.members || []).filter(m => !m.status || m.status === 'Active');
+const wsAvs = (ms, n = 4) => `<span class="avstack">${ms.slice(0, n).map(m => `<span class="av sm" title="${nm(m.pid)}">${ini(m.pid)}</span>`).join('')}</span>`;
+const wsMem = o => `<span class="ws-mem">${wsAvs(wsActive(o))}<span>${wsActive(o).length} member${wsActive(o).length === 1 ? '' : 's'}</span></span>`;
+const wsLastAt = o => ((o.chat || []).slice(-1)[0] || {}).at || '';
+const wsReq = x => (x.tasks || []).filter(k => !['Proposed', 'Declined'].includes(k.status) && !k.opt);
+const wsPct = x => (wsReq(x).length ? wsReq(x).filter(k => k.status === 'Done').length / wsReq(x).length : -1);
+const wsProg = x =>
+  `<span class="ws-prog"><span class="progress" aria-hidden="true"><span class="bar" style="width:${Math.max(0, Math.round(wsPct(x) * 100))}%"></span></span><span>${wsReq(x).length ? wsReq(x).filter(k => k.status === 'Done').length + ' of ' + wsReq(x).length + ' deliverables done' : 'No deliverables yet'}</span></span>`;
+const wsRoleTxt = (kind, o) => (spaceRole(kind, o) ? roleLabel(spaceRole(kind, o)) : { Invited: 'Invited', Requested: 'Pending' }[(memberRec(o) || {}).status] || 'Oversight');
+const wsUnread = o => (unreadIn(o) && memberOf(o) ? ` <span class="mbadge" title="Unread messages">${unreadIn(o)}</span>` : '');
+// The person's other spaces of the same kind, for the sub-navigation's "switch to" list.
+const wsOthers = (kind, o) =>
+  (S[kind] || [])
+    .filter(y => y !== o && inCtx(y) && memberOf(y))
+    .slice(0, 8)
+    .map(y => [h(y.name), { circles: 'circle', ropes: 'rope', rooms: 'room' }[kind], { id: y.id }]);
 
 // ---------- Tab bar overflow ----------
 // Tabs that do not fit on one line move into a "More" menu. The active tab always stays visible.
@@ -365,6 +391,15 @@ function fitTabs(root) {
     if (!hidden.length) return more.remove();
     const n = hidden.reduce((a, t) => a + (+(t.querySelector('.cnt') || {}).textContent || 0), 0);
     if (n) more.innerHTML = `More<span class="cnt">${n}</span>` + ic('chev', 14);
+    // the count makes the More button wider: hide more tabs until the bar fits again
+    for (let i = tabs.length - 1; i >= 0 && bar.scrollWidth > bar.clientWidth + 1; i--) {
+      if (tabs[i].hidden || tabs[i].classList.contains('on')) continue;
+      tabs[i].hidden = true;
+      hidden.unshift(tabs[i]);
+    }
+    hidden.sort((x, y) => tabs.indexOf(x) - tabs.indexOf(y));
+    const n2 = hidden.reduce((a, t) => a + (+(t.querySelector('.cnt') || {}).textContent || 0), 0);
+    if (n2 !== n) more.innerHTML = `More<span class="cnt">${n2}</span>` + ic('chev', 14);
     const menu = document.createElement('div');
     menu.className = 'tab-menu';
     menu.setAttribute('role', 'menu');

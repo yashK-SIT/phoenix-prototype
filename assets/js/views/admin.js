@@ -4,21 +4,40 @@ function inviteTable(scopeCtx) {
   inv.forEach(i => {
     if (['Pending', 'Resent'].includes(i.status) && i.expires < today()) i.status = 'Expired';
   });
-  return table(
-    ['Email', 'Role', 'Context', 'Status', 'Valid until', 'Invited by', ''],
-    inv.map(i => [
-      `<span class="adm-who"><span class="av sm" aria-hidden="true">${ic('mail', 12)}</span><b class="adm-em">${h(i.email)}</b></span>`,
-      ROLE[i.role],
-      `<span class="adm-sub">${h(S.contexts.find(c => c.id === i.ctx).name)}</span>`,
-      pill(i.status),
-      `<span class="adm-date">${fmt(i.expires)}</span>`,
-      nm(i.by),
-      ['Pending', 'Resent', 'Expired'].includes(i.status)
-        ? B('Resend', 'invAct', { id: i.id, v: 'Resent' }) +
-          (i.status !== 'Expired' ? CB('Revoke', 'invAct', { id: i.id, v: 'Revoked' }, 'Revoke the invitation for ' + i.email + '? The link stops working immediately.') : '')
-        : '',
-    ]),
-  );
+  const cn = i => S.contexts.find(c => c.id === i.ctx).name;
+  const uniq = xs => [...new Set(xs)].filter(Boolean);
+  const canResend = i => ['Pending', 'Resent', 'Expired'].includes(i.status);
+  const canRevoke = i => ['Pending', 'Resent'].includes(i.status);
+  return dataView('adm:inv:' + (scopeCtx || 'all'), {
+    label: 'invitations',
+    items: inv,
+    search: i => i.email + ' ' + ROLE[i.role] + ' ' + cn(i) + ' ' + P(i.by).name,
+    quick: { label: 'Status', options: uniq(inv.map(i => i.status)).map(x => [x, x]), test: (i, v) => i.status === v },
+    filters: [
+      { key: 'role', label: 'Role', options: uniq(inv.map(i => i.role)).map(r => [r, ROLE[r] || r]), test: (i, v) => i.role === v },
+      ...(scopeCtx ? [] : [{ key: 'ctx', label: 'Context', options: uniq(inv.map(i => i.ctx)).map(c => [c, S.contexts.find(x => x.id === c).name]), test: (i, v) => i.ctx === v }]),
+    ],
+    sorts: [
+      ['until', 'Valid until', (a, b) => String(a.expires).localeCompare(String(b.expires))],
+      ['email', 'Email', (a, b) => a.email.localeCompare(b.email)],
+      ['status', 'Status', (a, b) => a.status.localeCompare(b.status)],
+    ],
+    rowId: i => i.id,
+    row: i => ({
+      lead: `<span class="av adm-inv-av" aria-hidden="true">${ic('mail', 14)}</span>`,
+      title: `<span class="adm-em">${h(i.email)}</span>`,
+      sub: `${ROLE[i.role]} · ${h(cn(i))}`,
+      meta: [`Valid until ${fmt(i.expires)}`, `Invited by ${nm(i.by)}`],
+      badges: pill(i.status),
+      primary: canResend(i) ? B('Resend', 'invAct', { id: i.id, v: 'Resent' }) : '',
+      menu: canRevoke(i) ? CB(ic('x', 16) + 'Revoke', 'invAct', { id: i.id, v: 'Revoked' }, 'Revoke the invitation for ' + i.email + '? The link stops working immediately.', 'menu-i danger', 'Revoke') : '',
+    }),
+    bulk: [
+      { label: 'Resend', icon: 'refresh', run: ids => ids.map(id => byId('invites', id)).filter(i => i && canResend(i)).forEach(i => A.invAct({ id: i.id, v: 'Resent' })) },
+      { label: 'Revoke', icon: 'x', danger: true, confirm: 'Revoke the selected pending invitations? Their links stop working immediately. Accepted, expired and already revoked invitations are left as they are.', run: ids => ids.map(id => byId('invites', id)).filter(i => i && canRevoke(i)).forEach(i => A.invAct({ id: i.id, v: 'Revoked' })) },
+    ],
+    empty: ['mail', 'No invitations yet', 'Invite people to give them a role in this context.', ''],
+  });
 }
 A.invAct = d => {
   const i = byId('invites', d.id);
@@ -90,16 +109,34 @@ F.inv = d => {
 };
 function usersTable(ctxFilter, canEdit) {
   const as = S.assign.filter(a => !ctxFilter || a.ctx === ctxFilter);
-  return table(
-    ['Person', 'Role and context', 'Status', 'Bundles and mandate', ''],
-    as.map(a => [
-      `<div class="adm-who"><span class="av">${ini(a.pid)}</span><div class="adm-who-t"><b>${nm(a.pid)}</b><div class="cap">${h(P(a.pid).email)}</div></div></div>`,
-      `<span class="adm-role">${ROLE[a.role]}</span><div class="cap">${h(S.contexts.find(c => c.id === a.ctx).name)}</div>`,
-      pill(a.status),
-      `<div class="adm-tags">${a.bundles.map(b => pill(b, 'p-grey')).join('')}${a.mandate ? pill(a.mandate.valid ? 'Mandate to ' + fmt(a.mandate.until) : 'Mandate expired', a.mandate.valid ? 'p-teal' : 'p-red') : ''}${a.until ? pill((a.status === 'Expired' ? 'Role expired ' : 'Role expires ') + fmt(a.until), a.status === 'Expired' ? 'p-red' : 'p-grey') : ''}</div>`,
-      canEdit && a.pid !== myId() ? B('Manage', 'userManage', { id: a.id }) : '',
-    ]),
-  );
+  const cn = a => S.contexts.find(c => c.id === a.ctx).name;
+  const uniq = xs => [...new Set(xs)].filter(Boolean);
+  return dataView('adm:users:' + (ctxFilter || 'all'), {
+    label: 'role assignments',
+    searchLabel: 'Search people, emails or roles',
+    items: as,
+    search: a => P(a.pid).name + ' ' + (P(a.pid).email || '') + ' ' + ROLE[a.role] + ' ' + cn(a) + ' ' + a.bundles.join(' '),
+    quick: { label: 'Status', options: uniq(as.map(a => a.status)).map(x => [x, x]), test: (a, v) => a.status === v },
+    filters: [
+      { key: 'role', label: 'Role', options: uniq(as.map(a => a.role)).map(r => [r, ROLE[r] || r]), test: (a, v) => a.role === v },
+      { key: 'bundle', label: 'Permission bundle', options: S.bundles.map(b => [b.name, b.name]), test: (a, v) => a.bundles.includes(v) },
+      ...(ctxFilter ? [] : [{ key: 'ctx', label: 'Context', options: uniq(as.map(a => a.ctx)).map(c => [c, S.contexts.find(x => x.id === c).name]), test: (a, v) => a.ctx === v }]),
+    ],
+    sorts: [
+      ['name', 'Name', (a, b) => P(a.pid).name.localeCompare(P(b.pid).name)],
+      ['role', 'Role', (a, b) => String(ROLE[a.role]).localeCompare(String(ROLE[b.role]))],
+      ['status', 'Status', (a, b) => a.status.localeCompare(b.status)],
+    ],
+    row: a => ({
+      lead: `<span class="av">${ini(a.pid)}</span>`,
+      title: nm(a.pid),
+      sub: h(P(a.pid).email),
+      meta: [`<span class="adm-role">${ROLE[a.role]}</span>`, h(cn(a))],
+      badges: pill(a.status) + a.bundles.map(b => pill(b, 'p-grey')).join('') + (a.mandate ? pill(a.mandate.valid ? 'Mandate to ' + fmt(a.mandate.until) : 'Mandate expired', a.mandate.valid ? 'p-teal' : 'p-red') : '') + (a.until ? pill((a.status === 'Expired' ? 'Role expired ' : 'Role expires ') + fmt(a.until), a.status === 'Expired' ? 'p-red' : 'p-grey') : ''),
+      primary: canEdit && a.pid !== myId() ? B('Manage', 'userManage', { id: a.id }) : '',
+    }),
+    empty: ['users', 'No users in this context yet', 'Invite people to give them a role.', ''],
+  });
 }
 A.userManage = d => {
   const a = byId('assign', d.id);
@@ -236,17 +273,17 @@ route('org', 'admin', () => {
     body = card(
       'Projects and spaces',
       'Create projects and their structure; aggregate view only.',
-      table(
-        ['Project', 'Owner', 'Stage', 'Status'],
-        S.projects
-          .filter(p => p.ctx === c && p.status !== 'Draft')
-          .map(p => [
-            `<b>${h(p.title)}</b>`,
-            nm(p.owner),
-            p.stage ? pill(p.stage === 'Room' ? WL() : p.stage, SC[p.stage]) : '—',
-            pill(p.status),
-          ]),
-      ),
+      (ps =>
+        dataView('org:projects', {
+          label: 'projects',
+          items: ps,
+          search: p => p.title + ' ' + P(p.owner).name,
+          quick: { label: 'Stage', options: [...new Set(ps.map(p => p.stage).filter(Boolean))].map(x => [x, x === 'Room' ? WL() : x]), test: (p, v) => p.stage === v },
+          filters: [{ key: 'status', label: 'Status', options: [...new Set(ps.map(p => p.status))].map(x => [x, x]), test: (p, v) => p.status === v }],
+          sorts: [['title', 'Title', (a, b) => a.title.localeCompare(b.title)], ['owner', 'Owner', (a, b) => P(a.owner).name.localeCompare(P(b.owner).name)]],
+          row: p => ({ lead: `<span class="tile t-soft">${ic('folder', 18)}</span>`, title: h(p.title), sub: 'Owner: ' + nm(p.owner), badges: (p.stage ? pill(p.stage === 'Room' ? WL() : p.stage, SC[p.stage]) : '') + pill(p.status) }),
+          empty: ['folder', 'No projects yet', 'Projects in this context appear here once they are submitted.', ''],
+        }))(S.projects.filter(p => p.ctx === c && p.status !== 'Draft')),
       B(
         ic('plus', 14) + 'Create institutional ' + WL(),
         'newRoom',
@@ -300,13 +337,28 @@ function reportsView(isOrg) {
   const rows = S.metrics.filter(m => m.status === 'Active');
   const xs = ['Participation summary (aggregate)', 'Evidence summary (approved)', 'Learning Harvests (released)', ...(isOrg ? [] : ['Audit log', 'Payments & entitlements', 'Full configuration'])];
   return `<div class="adm-report"><dl class="adm-rmeta"><div><dt>Context</dt><dd>${h(ctx().name)}</dd></div><div><dt>Period</dt><dd>Programme to date · as of ${fmt(today())}</dd></div><div><dt>Metrics shown</dt><dd>${rows.length}</dd></div><div><dt>Exports</dt><dd>${xs.length} authorised</dd></div></dl><div class="g12">${card(
-    'Starter metrics',
+    `Starter metrics <span class="adm-n">${rows.length}</span>`,
     'Aggregate only. Metrics never determine trustworthiness, deservingness or fundability.',
-    table(
-      ['Metric', 'Category', 'Gate', 'Value'],
-      rows.map(m => [`<b>${h(m.name)}</b>${m.def ? `<div class="cap adm-def">${h(m.def)}</div>` : ''}`, h(m.cat), m.gate === 'None' ? '<span class="cap">None</span>' : h(m.gate), '<b class="adm-val">' + metric(m.id) + '</b>']),
-    ),
-    `<span class="adm-n">${rows.length}</span>`,
+    dataView('rep:metrics:' + (isOrg ? 'agg' : 'all'), {
+      label: 'metrics',
+      items: rows,
+      layout: 'table',
+      search: m => m.name + ' ' + (m.def || '') + ' ' + m.cat,
+      filters: [
+        { key: 'cat', label: 'Category', options: [...new Set(rows.map(m => m.cat))].map(v => [v, v]), test: (m, v) => m.cat === v },
+        { key: 'gate', label: 'Gate', options: [...new Set(rows.map(m => m.gate))].map(v => [v, v]), test: (m, v) => m.gate === v },
+      ],
+      sorts: [['name', 'Metric', (a, b) => a.name.localeCompare(b.name)], ['cat', 'Category', (a, b) => a.cat.localeCompare(b.cat)]],
+      columns: [
+        { label: 'Metric', sort: 'name', cell: m => `<b>${h(m.name)}</b>${m.def ? `<div class="cap adm-def">${h(m.def)}</div>` : ''}` },
+        { label: 'Category', sort: 'cat', cell: m => h(m.cat) },
+        { label: 'Gate', cell: m => (m.gate === 'None' ? '<span class="cap">None</span>' : h(m.gate)) },
+        { label: 'Value', num: true, cell: m => '<b class="adm-val">' + metric(m.id) + '</b>' },
+      ],
+      pageSize: 25,
+      empty: ['chart', 'No metrics are visible', 'A Programme Administrator chooses which metrics are shown.', ''],
+    }),
+    '',
     'c8 adm-panel adm-metrics',
   )}
  ${card('Authorised exports', 'Machine-readable; relationships and governance metadata kept. Small groups are suppressed.', `<div class="adm-xlist">${xs.map(x => B(`<span class="adm-x-ic" aria-hidden="true">${ic('file', 16)}</span><span class="adm-x-t">${x}</span><span class="adm-x-f">JSON</span>${ic('download', 16)}`, 'doExport', { n: x }, 'adm-x')).join('')}</div>`, '', 'c4 adm-panel adm-exports')}</div></div>`;
@@ -365,21 +417,28 @@ route('admin', 'admin', () => {
       `<div class="adm-stack">${card(
         'Projects waiting for a reviewer ' + n(rqProj.length),
         'Assign a Steward, Faculty member or Facilitator. They review the project and accept it or ask for clarification.',
-        table(
-          ['Project', 'Owner', 'Areas', 'Submitted', ''],
-          rqProj.map(p => [`<b>${L(h(p.title), 'project', { id: p.id })}</b>`, nm(p.owner), (p.tags || []).map(h).join(', ') || '—', `<span class="adm-date">${fmt(p.submitted || '')}</span>`, B('Assign reviewer', 'assignStewards', { id: p.id }, 'btn-p btn-sm')]),
-          'No projects are waiting for a reviewer.',
-        ),
+        dataView('adm:rqproj', {
+          label: 'projects',
+          items: rqProj,
+          search: p => p.title + ' ' + P(p.owner).name + ' ' + (p.tags || []).join(' '),
+          filters: [{ key: 'area', label: 'Area', options: [...new Set(rqProj.flatMap(p => p.tags || []))].map(x => [x, x]), test: (p, v) => (p.tags || []).includes(v) }],
+          sorts: [['sub', 'Submitted', (a, b) => String(a.submitted || '').localeCompare(String(b.submitted || ''))], ['title', 'Title', (a, b) => a.title.localeCompare(b.title)]],
+          row: p => ({ lead: `<span class="tile t-soft">${ic('folder', 18)}</span>`, title: L(h(p.title), 'project', { id: p.id }), sub: 'Owner: ' + nm(p.owner), meta: [(p.tags || []).map(h).join(', ') || '—', 'Submitted ' + fmt(p.submitted || '')], primary: B('Assign reviewer', 'assignStewards', { id: p.id }, 'btn-p btn-sm') }),
+          empty: ['check', 'No projects are waiting for a reviewer.', '', ''],
+        }),
         '',
         'adm-panel',
       )}${card(
         'Pathways waiting for a reviewer ' + n(rqPw.length),
         'Assign a Steward or Faculty member. They approve the pathway, reject it or ask the participant for changes.',
-        table(
-          ['Pathway', 'Participant', 'Steps', 'Submitted', ''],
-          rqPw.map(p => [`<b>${h(p.name)}</b>`, nm(p.pid), `<span class="adm-steps">${p.steps.map(x => h(x.t)).join(' → ')}</span>`, `<span class="adm-date">${fmt(p.submitted || '')}</span>`, B('Assign reviewer', 'pwAssign', { id: p.id }, 'btn-p btn-sm')]),
-          'No pathways are waiting for a reviewer.',
-        ),
+        dataView('adm:rqpw', {
+          label: 'pathways',
+          items: rqPw,
+          search: p => p.name + ' ' + P(p.pid).name + ' ' + p.steps.map(x => x.t).join(' '),
+          sorts: [['sub', 'Submitted', (a, b) => String(a.submitted || '').localeCompare(String(b.submitted || ''))], ['name', 'Pathway', (a, b) => a.name.localeCompare(b.name)]],
+          row: p => ({ lead: `<span class="tile t-soft">${ic('route', 18)}</span>`, title: h(p.name), sub: `<span class="adm-steps">${p.steps.map(x => h(x.t)).join(' → ')}</span>`, meta: [nm(p.pid), 'Submitted ' + fmt(p.submitted || '')], primary: B('Assign reviewer', 'pwAssign', { id: p.id }, 'btn-p btn-sm') }),
+          empty: ['check', 'No pathways are waiting for a reviewer.', '', ''],
+        }),
         '',
         'adm-panel',
       )}</div>`;
@@ -403,19 +462,25 @@ route('admin', 'admin', () => {
     body = card(
       'Sensitive role approvals ' + n(pend.length),
       'Unapproved roles cannot activate. Approval status and history are kept.',
-      table(
-        ['Person', 'Role', 'Context', 'Requested', 'History', ''],
-        pend.map(a => [
-          `<div class="adm-who"><span class="av">${ini(a.pid)}</span><b>${nm(a.pid)}</b></div>`,
-          `<span class="adm-role">${ROLE[a.role]}</span>`,
-          h(S.contexts.find(c => c.id === a.ctx).name),
-          `<span class="adm-date">${fmt(a.approval?.[0]?.at)}</span>`,
-          `<span class="cap">${(a.approval || []).map(x => h(x.note)).join('; ')}</span>`,
-          B('Decline', 'roleDecide', { id: a.id, v: 'Role not activated' }) +
-            B('Approve', 'roleDecide', { id: a.id, v: 'Active' }, 'btn-p btn-sm'),
-        ]),
-        'No roles awaiting approval.',
-      ),
+      dataView('adm:approvals', {
+        label: 'role requests',
+        items: pend,
+        search: a => P(a.pid).name + ' ' + ROLE[a.role] + ' ' + S.contexts.find(c => c.id === a.ctx).name,
+        filters: [
+          { key: 'role', label: 'Role', options: [...new Set(pend.map(a => a.role))].map(r => [r, ROLE[r] || r]), test: (a, v) => a.role === v },
+          { key: 'ctx', label: 'Context', options: [...new Set(pend.map(a => a.ctx))].map(c => [c, S.contexts.find(x => x.id === c).name]), test: (a, v) => a.ctx === v },
+        ],
+        sorts: [['req', 'Requested', (a, b) => String(a.approval?.[0]?.at || '').localeCompare(String(b.approval?.[0]?.at || ''))], ['name', 'Name', (a, b) => P(a.pid).name.localeCompare(P(b.pid).name)]],
+        rowId: a => a.id,
+        row: a => ({
+          lead: `<span class="av">${ini(a.pid)}</span>`,
+          title: nm(a.pid),
+          sub: `<span class="adm-role">${ROLE[a.role]}</span> · ${h(S.contexts.find(c => c.id === a.ctx).name)}`,
+          meta: ['Requested ' + fmt(a.approval?.[0]?.at), (a.approval || []).map(x => h(x.note)).join('; ')],
+          primary: B('Decline', 'roleDecide', { id: a.id, v: 'Role not activated' }) + B('Approve', 'roleDecide', { id: a.id, v: 'Active' }, 'btn-p btn-sm'),
+        }),
+        empty: ['check', 'No roles awaiting approval.', '', ''],
+      }),
       '',
       'adm-panel',
     );
@@ -423,15 +488,15 @@ route('admin', 'admin', () => {
     body = card(
       'Approved pathway templates ' + n(S.templates.length),
       'Mode 1 pathways come from this library.',
-      table(
-        ['Template', 'Steps', 'Status', ''],
-        S.templates.map(x => [
-          `<b>${h(x.name)}</b>`,
-          `<span class="adm-steps">${x.steps.map(h).join(' → ')}</span>`,
-          pill(x.status),
-          B(x.status === 'Approved' ? 'Retire' : 'Approve', 'tplState', { id: x.id }),
-        ]),
-      ),
+      dataView('adm:library', {
+        label: 'templates',
+        items: S.templates,
+        search: x => x.name + ' ' + x.steps.join(' '),
+        quick: { label: 'Status', options: [...new Set(S.templates.map(x => x.status))].map(v => [v, v]), test: (x, v) => x.status === v },
+        sorts: [['name', 'Name', (a, b) => a.name.localeCompare(b.name)], ['steps', 'Number of steps', (a, b) => a.steps.length - b.steps.length]],
+        row: x => ({ lead: `<span class="tile t-soft">${ic('route', 18)}</span>`, title: h(x.name), sub: `<span class="adm-steps">${x.steps.map(h).join(' → ')}</span>`, meta: [x.steps.length + ' steps'], badges: pill(x.status), primary: B(x.status === 'Approved' ? 'Retire' : 'Approve', 'tplState', { id: x.id }) }),
+        empty: ['route', 'No templates yet', 'Add an approved template for Mode 1 pathways.', ''],
+      }),
       B(ic('plus', 14) + 'Add template', 'tplNew', {}, 'btn-p btn-sm'),
       'adm-panel',
     );
@@ -477,18 +542,29 @@ route('admin', 'admin', () => {
       )}${card(
         'Metrics registry ' + n(S.metrics.length),
         'About 8–12 visible pilot signals.',
-        table(
-          ['Metric', 'Definition', 'Category', 'Owner', 'Gate', 'Status', ''],
-          S.metrics.map(m => [
-            `<b>${h(m.name)}</b>`,
-            `<span class="cap adm-def">${h(m.def)}</span>`,
-            h(m.cat),
-            h(m.owner),
-            h(m.gate),
-            pill(m.status),
-            B(m.status === 'Active' ? 'Hide' : 'Show', 'metToggle', { id: m.id }),
-          ]),
-        ),
+        dataView('adm:metreg', {
+          label: 'metrics',
+          items: S.metrics,
+          layout: 'table',
+          search: m => m.name + ' ' + m.def + ' ' + m.cat + ' ' + m.owner,
+          quick: { label: 'Status', options: [...new Set(S.metrics.map(m => m.status))].map(v => [v, v]), test: (m, v) => m.status === v },
+          filters: [
+            { key: 'cat', label: 'Category', options: [...new Set(S.metrics.map(m => m.cat))].map(v => [v, v]), test: (m, v) => m.cat === v },
+            { key: 'owner', label: 'Owner', options: [...new Set(S.metrics.map(m => m.owner))].map(v => [v, v]), test: (m, v) => m.owner === v },
+            { key: 'gate', label: 'Gate', options: [...new Set(S.metrics.map(m => m.gate))].map(v => [v, v]), test: (m, v) => m.gate === v },
+          ],
+          sorts: [['name', 'Metric', (a, b) => a.name.localeCompare(b.name)], ['cat', 'Category', (a, b) => a.cat.localeCompare(b.cat)], ['owner', 'Owner', (a, b) => a.owner.localeCompare(b.owner)]],
+          columns: [
+            { label: 'Metric', sort: 'name', cell: m => `<b>${h(m.name)}</b>` },
+            { label: 'Definition', hideSm: true, cell: m => `<span class="cap adm-def">${h(m.def)}</span>` },
+            { label: 'Category', sort: 'cat', cell: m => h(m.cat) },
+            { label: 'Owner', sort: 'owner', hideSm: true, cell: m => h(m.owner) },
+            { label: 'Gate', cell: m => h(m.gate) },
+            { label: 'Status', cell: m => pill(m.status) },
+            { label: '', cell: m => B(m.status === 'Active' ? 'Hide' : 'Show', 'metToggle', { id: m.id }) },
+          ],
+          pageSize: 25,
+        }),
         '',
         'adm-panel',
       )}</div>`;
@@ -510,21 +586,30 @@ route('admin', 'admin', () => {
       )}${card(
         'AI job log ' + n(S.ai.length),
         'User, purpose, class, sources, consent, model and review state for every job.',
-        table(
-          ['Job', 'By', 'Class', 'Purpose', 'Sources', 'Consent', 'Status'],
-          S.ai
-            .slice()
-            .reverse()
-            .map(j => [
-              `<code class="adm-id">${h(j.id)}</code>`,
-              nm(j.by),
-              pill(j.cls, 'p-ai'),
-              h(j.purpose),
-              `<span class="cap">${h(j.sources)}</span>`,
-              `<span class="cap">${h(j.consent)}</span>`,
-              pill(j.status),
-            ]),
-        ),
+        (js =>
+          dataView('adm:ailog', {
+            label: 'AI jobs',
+            items: js,
+            layout: 'table',
+            dense: true,
+            search: j => j.id + ' ' + P(j.by).name + ' ' + j.purpose + ' ' + j.sources,
+            quick: { label: 'Class', options: [...new Set(js.map(j => j.cls))].map(v => [v, 'Class ' + v]), test: (j, v) => j.cls === v },
+            filters: [
+              { key: 'status', label: 'Status', options: [...new Set(js.map(j => j.status))].map(v => [v, v]), test: (j, v) => j.status === v },
+              { key: 'by', label: 'Requested by', options: [...new Set(js.map(j => j.by))].map(v => [v, P(v).name]), test: (j, v) => j.by === v },
+            ],
+            sorts: [['by', 'Requested by', (a, b) => P(a.by).name.localeCompare(P(b.by).name)], ['status', 'Status', (a, b) => String(a.status).localeCompare(String(b.status))]],
+            columns: [
+              { label: 'Job', cell: j => `<code class="adm-id">${h(j.id)}</code>` },
+              { label: 'By', sort: 'by', cell: j => nm(j.by) },
+              { label: 'Class', cell: j => pill(j.cls, 'p-ai') },
+              { label: 'Purpose', cell: j => h(j.purpose) },
+              { label: 'Sources', hideSm: true, cell: j => `<span class="cap">${h(j.sources)}</span>` },
+              { label: 'Consent', hideSm: true, cell: j => `<span class="cap">${h(j.consent)}</span>` },
+              { label: 'Status', sort: 'status', cell: j => pill(j.status) },
+            ],
+            empty: ['sparkle', 'No AI jobs yet', '', ''],
+          }))(S.ai.slice().reverse()),
         '',
         'adm-panel',
       )}</div>`;
@@ -584,30 +669,33 @@ route('admin', 'admin', () => {
       `<div class="adm-stack">${card(
         'Support queries ' + n(S.supportQueries.length),
         '',
-        table(
-          ['From', 'Question', 'Status', ''],
-          S.supportQueries.map(q => [
-            `<b>${nm(q.by)}</b>`,
-            h(q.t),
-            pill(q.status),
-            q.status === 'Open' ? B('Mark resolved', 'sqDone', { id: q.id }) : '',
-          ]),
-        ),
+        dataView('adm:support', {
+          label: 'support queries',
+          items: S.supportQueries,
+          search: q => P(q.by).name + ' ' + q.t,
+          quick: { label: 'Status', options: [...new Set(S.supportQueries.map(q => q.status))].map(v => [v, v]), test: (q, v) => q.status === v },
+          sorts: [['from', 'From', (a, b) => P(a.by).name.localeCompare(P(b.by).name)]],
+          rowId: q => q.id,
+          row: q => ({ lead: `<span class="av">${ini(q.by)}</span>`, title: nm(q.by), sub: h(q.t), badges: pill(q.status), primary: q.status === 'Open' ? B('Mark resolved', 'sqDone', { id: q.id }) : '' }),
+          bulk: [{ label: 'Mark resolved', icon: 'check', run: ids => ids.forEach(id => byId('supportQueries', id)?.status === 'Open' && A.sqDone({ id })) }],
+          empty: ['question', 'No support queries', '', ''],
+        }),
         '',
         'adm-panel',
       )}${card(
         'Privacy requests ' + n((S.requests || []).length),
         'Correction, export and deletion requests.',
-        table(
-          ['From', 'Type', 'Details', 'Status', ''],
-          (S.requests || []).map(r => [
-            `<b>${nm(r.pid)}</b>`,
-            h(r.kind),
-            `<span class="cap">${h(r.detail)}</span>`,
-            pill(r.status),
-            r.status === 'Open' ? B('Complete', 'rqDone', { id: r.id }) : '',
-          ]),
-        ),
+        (rs =>
+          dataView('adm:privacy', {
+            label: 'privacy requests',
+            items: rs,
+            search: r => P(r.pid).name + ' ' + r.kind + ' ' + r.detail,
+            quick: { label: 'Status', options: [...new Set(rs.map(r => r.status))].map(v => [v, v]), test: (r, v) => r.status === v },
+            filters: [{ key: 'kind', label: 'Type', options: [...new Set(rs.map(r => r.kind))].map(v => [v, v]), test: (r, v) => r.kind === v }],
+            sorts: [['from', 'From', (a, b) => P(a.pid).name.localeCompare(P(b.pid).name)], ['kind', 'Type', (a, b) => a.kind.localeCompare(b.kind)]],
+            row: r => ({ lead: `<span class="av">${ini(r.pid)}</span>`, title: nm(r.pid), sub: h(r.detail), meta: [h(r.kind)], badges: pill(r.status), primary: r.status === 'Open' ? B('Complete', 'rqDone', { id: r.id }) : '' }),
+            empty: ['lock', 'No privacy requests', '', ''],
+          }))(S.requests || []),
         '',
         'adm-panel',
       )}</div>`;
@@ -770,18 +858,26 @@ route('platform', 'platform', () => {
       card(
         'Contexts ' + n(S.contexts.length),
         'Programmes, cohorts and organization spaces. Strict isolation: every record carries its context ID. Organizations are managed under Organizations.',
-        table(
-          ['Context', 'Kind', 'Organization', 'Pack', 'Status', 'Members', ''],
-          S.contexts.map(c => [
-            `<b>${h(c.name)}</b><div class="adm-id">${c.id}</div>`,
-            h(c.kind),
-            c.org && orgOf(c.org) ? `<span class="ops-org">${orgMark(orgOf(c.org), 24)}${L(h(orgOf(c.org).name), 'tenants', { id: c.org })}</span>` : '—',
-            h(S.packs.find(p => p.id === c.pack)?.name || '—'),
-            pill(c.status),
-            `<span class="ops-num">${S.assign.filter(a => a.ctx === c.id).length}</span>`,
-            c.kind !== 'Platform' ? B('Assign administrator', 'ctxAdmin', { id: c.id }) : '',
-          ]),
-        ),
+        dataView('plat:contexts', {
+          label: 'contexts',
+          items: S.contexts,
+          search: c => c.name + ' ' + c.id + ' ' + (orgOf(c.org)?.name || '') + ' ' + c.kind,
+          quick: { label: 'Kind', options: [...new Set(S.contexts.map(c => c.kind))].map(v => [v, v]), test: (c, v) => c.kind === v },
+          filters: [
+            { key: 'org', label: 'Organization', options: [...new Set(S.contexts.map(c => c.org).filter(o => o && orgOf(o)))].map(o => [o, orgOf(o).name]), test: (c, v) => c.org === v },
+            { key: 'pack', label: 'Pack', options: [...new Set(S.contexts.map(c => c.pack).filter(Boolean))].map(p => [p, S.packs.find(x => x.id === p)?.name || p]), test: (c, v) => c.pack === v },
+            { key: 'status', label: 'Status', options: [...new Set(S.contexts.map(c => c.status))].map(v => [v, v]), test: (c, v) => c.status === v },
+          ],
+          sorts: [['name', 'Name', (a, b) => a.name.localeCompare(b.name)], ['members', 'Members', (a, b) => S.assign.filter(x => x.ctx === a.id).length - S.assign.filter(x => x.ctx === b.id).length]],
+          row: c => ({
+            lead: c.org && orgOf(c.org) ? orgMark(orgOf(c.org), 32) : `<span class="tile t-soft">${ic('layers', 18)}</span>`,
+            title: h(c.name),
+            sub: `<span class="adm-id">${c.id}</span> · ${h(c.kind)}${c.org && orgOf(c.org) ? ' · ' + L(h(orgOf(c.org).name), 'tenants', { id: c.org }) : ''}`,
+            meta: ['Pack: ' + h(S.packs.find(p => p.id === c.pack)?.name || '—'), S.assign.filter(a => a.ctx === c.id).length + ' members'],
+            badges: pill(c.status),
+            primary: c.kind !== 'Platform' ? B('Assign administrator', 'ctxAdmin', { id: c.id }) : '',
+          }),
+        }),
         '',
         'adm-panel ops-ctx',
       ) +

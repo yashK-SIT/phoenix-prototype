@@ -62,24 +62,43 @@ route('projects', 'projects', () => {
       r === 'P' ? B(ic('plus', 16) + 'Start a project', 'go', { r: 'newproject' }, 'btn-p') : '',
     ) +
     t.html +
-    `<section class="card flush rec-list prj-list"><div class="rec-bar"><span class="rec-count"><b>${f.length}</b> project${f.length === 1 ? '' : 's'}</span><span class="cap hide-sm">Status, stage, owner, areas and funding need at a glance</span></div>` +
-    table(
-      ['Project', 'Status', 'Stage', 'Owner', 'Stewards', 'Areas', 'Funding need', ''],
-      f.map(p => [
-        `<span class="rec-name"><span class="tile t-soft" aria-hidden="true">${ic('folder', 16)}</span><span class="rec-nt"><b>${h(p.title)}</b><span class="cap">${h(p.type)}</span></span></span>`,
-        pill(p.status),
-        p.stage ? pill(stageLabel(p.stage), SC[p.stage]) : '<span class="cap">—</span>',
-        nm(p.owner),
-        p.stewards.map(nm).join(', ') || '<span class="cap">—</span>',
-        (p.tags || []).length ? `<span class="rec-tags">${p.tags.slice(0, 3).map(x => `<span class="rec-tag">${h(x)}</span>`).join('')}${p.tags.length > 3 ? `<span class="cap">+${p.tags.length - 3}</span>` : ''}</span>` : '<span class="cap">—</span>',
-        p.fundingNeed ? `<span class="rec-num">${money('USD', p.fundingNeed)}</span>` : '<span class="cap">—</span>',
-        L('Open', 'project', { id: p.id }),
-      ]),
-      r === 'P' ? 'You have no projects yet. Start one from an idea, need or opportunity.' : 'No projects.',
-    ) +
-    `</section>`
+    dataView('projects:' + t.cur, {
+      label: 'projects',
+      title: r === 'P' ? 'My projects' : 'Projects',
+      items: f,
+      search: p => [p.title, p.type, P(p.owner).name, p.area || '', ...(p.tags || []), ...p.stewards.map(s => P(s).name)].join(' '),
+      quick: dvOpts(f, p => p.status).length > 1 ? { label: 'Status', options: dvOpts(f, p => p.status), test: (p, v) => p.status === v } : null,
+      filters: [
+        dvOpts(f, p => p.stage).length && { key: 'stage', label: 'Stage', options: dvOpts(f, p => p.stage, stageLabel), test: (p, v) => p.stage === v },
+        dvOpts(f, p => p.tags || []).length && { key: 'area', label: 'Area of interest', options: dvOpts(f, p => p.tags || []), test: (p, v) => (p.tags || []).includes(v) },
+        dvOpts(f, p => p.owner).length > 1 && { key: 'owner', label: 'Owner', options: dvOpts(f, p => p.owner, id => P(id).name), test: (p, v) => p.owner === v },
+      ].filter(Boolean),
+      sorts: [
+        ['title', 'Title', (a, b) => a.title.localeCompare(b.title)],
+        ['submitted', 'Submitted', (a, b) => String(a.submitted || '').localeCompare(String(b.submitted || ''))],
+        ['funding', 'Funding need', (a, b) => (a.fundingNeed || 0) - (b.fundingNeed || 0)],
+      ],
+      layout: 'table',
+      columns: [
+        { label: 'Project', sort: 'title', cell: p => `<span class="rec-name"><span class="tile t-soft" aria-hidden="true">${ic('folder', 16)}</span><span class="rec-nt"><b>${h(p.title)}</b><span class="cap">${h(p.type)}${p.submitted ? ' · submitted ' + fmt(p.submitted) : ''}</span></span></span>` },
+        { label: 'Status', cell: p => pill(p.status) },
+        { label: 'Stage', cell: p => (p.stage ? pill(stageLabel(p.stage), SC[p.stage]) : '<span class="cap">—</span>') },
+        { label: 'Owner', cell: p => nm(p.owner) },
+        { label: 'Stewards', hideSm: true, cell: p => p.stewards.map(nm).join(', ') || '<span class="cap">—</span>' },
+        { label: 'Areas', hideSm: true, cell: p => ((p.tags || []).length ? `<span class="rec-tags">${p.tags.slice(0, 3).map(x => `<span class="rec-tag">${h(x)}</span>`).join('')}${p.tags.length > 3 ? `<span class="cap">+${p.tags.length - 3}</span>` : ''}</span>` : '<span class="cap">—</span>') },
+        { label: 'Funding need', num: true, sort: 'funding', cell: p => (p.fundingNeed ? `<span class="rec-num">${money('USD', p.fundingNeed)}</span>` : '<span class="cap">—</span>') },
+        { label: '', cell: p => L('Open', 'project', { id: p.id }) },
+      ],
+      empty: r === 'P' ? ['folder', 'You have no projects yet', 'Start one from an idea, need or opportunity.', B(ic('plus', 16) + 'Start a project', 'go', { r: 'newproject' }, 'btn-p btn-sm')] : ['folder', 'No projects.', ''],
+    })
   );
 });
+// Distinct values of a field across a list, as [value, label] options for a Data View filter (sorted by label).
+function dvOpts(list, get, label = x => x) {
+  return [...new Set(list.flatMap(x => [].concat(get(x) ?? [])).filter(v => v != null && v !== ''))]
+    .map(v => [v, label(v)])
+    .sort((a, b) => String(a[1]).localeCompare(String(b[1])));
+}
 route('newproject', 'aireq', () => {
   const f = 'np';
   const pid = UI.p.id;

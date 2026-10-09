@@ -56,38 +56,56 @@ route('circles', 'circles', () => {
     card(
       'Your Circles',
       '',
-      table(
-        ['Circle', 'Purpose', 'Facilitator', 'Members', 'Your role', 'State', ''],
-        mine.map(c => [
-          `<div class="ws-name"><span class="tile t-purple" aria-hidden="true">${ic('users', 16)}</span><div class="ws-name-t"><b>${h(c.name)}</b>${unreadIn(c) && memberOf(c) ? ` <span class="mbadge">${unreadIn(c)}</span>` : ''}</div></div>`,
-          h(c.purpose),
-          nm(c.facilitator),
-          ((act) => `<span class="ws-mem"><span class="avstack">${act.slice(0, 4).map(m => `<span class="av sm" title="${nm(m.pid)}">${ini(m.pid)}</span>`).join('')}</span><span>${act.length}</span></span>`)(c.members.filter(m => m.status === 'Active')),
-          spaceRole('circles', c) ? h(spaceRole('circles', c)) : joinState(c) === 'pending' ? pill('Pending') : joinState(c) === 'invited' ? pill('Invited') : '<span class="cap">Oversight</span>',
-          pill(c.state),
-          joinState(c) === 'invited' ? B('Respond to invite', 'go', { r: 'circle', id: c.id }, 'btn-p btn-sm') : joinState(c) === 'pending' ? B('Withdraw request', 'joinWithdraw', { id: c.id, kind: 'circles' }) : L('Open', 'circle', { id: c.id }),
-        ]),
-        'You are not in a Circle yet. Ask to join one below, or wait for an invitation.',
-      ),
-      '',
-      'ws-listcard',
+      dataView('circles:mine', {
+        label: 'Circles',
+        items: mine,
+        search: c => [c.name, c.purpose, P(c.facilitator).name, wsRoleTxt('circles', c), c.visibility].join(' '),
+        quick: { label: 'State', options: wsOpts(mine, c => c.state), test: (c, v) => c.state === v },
+        filters: [
+          { key: 'role', label: 'Your role', options: wsOpts(mine, c => wsRoleTxt('circles', c)), test: (c, v) => wsRoleTxt('circles', c) === v },
+          { key: 'fac', label: 'Facilitator', options: wsPeople(mine, c => c.facilitator), test: (c, v) => c.facilitator === v },
+          { key: 'vis', label: 'Visibility', options: wsOpts(mine, c => c.visibility), test: (c, v) => c.visibility === v },
+        ],
+        sorts: [
+          ['name', 'Name', (a, b) => a.name.localeCompare(b.name)],
+          ['activity', 'Latest activity', (a, b) => wsLastAt(b).localeCompare(wsLastAt(a))],
+          ['decisions', 'Decisions', (a, b) => (b.decisions || []).length - (a.decisions || []).length],
+          ['members', 'Members', (a, b) => wsActive(b).length - wsActive(a).length],
+        ],
+        defaultSort: 'name',
+        row: c => ({
+          lead: `<span class="tile t-purple" aria-hidden="true">${ic('users', 18)}</span>`,
+          title: L(h(c.name), 'circle', { id: c.id }, 'dv-link') + wsUnread(c),
+          sub: h(c.purpose),
+          meta: ['Facilitator <b>' + nm(c.facilitator) + '</b>', 'Your role <b>' + h(wsRoleTxt('circles', c)) + '</b>', wsMem(c), (c.decisions || []).length + ' decision' + ((c.decisions || []).length === 1 ? '' : 's')],
+          badges: pill(c.state) + (joinState(c) === 'pending' ? pill('Pending') : joinState(c) === 'invited' ? pill('Invited') : ''),
+          primary: joinState(c) === 'invited' ? B('Respond to invite', 'go', { r: 'circle', id: c.id }, 'btn-p btn-sm') : joinState(c) === 'pending' ? B('Withdraw request', 'joinWithdraw', { id: c.id, kind: 'circles' }) : L('Open', 'circle', { id: c.id }, 'btn btn-s btn-sm'),
+        }),
+        empty: ['users', 'You are not in a Circle yet.', 'Ask to join one below, or wait for an invitation.', ''],
+      }),
     ) +
     (others.length && !['A', 'O'].includes(r)
       ? '<div class="section-gap"></div>' +
         card(
           'Other Circles in this programme',
           'You can see what each Circle is for. Content stays with its members until the facilitator or project owner approves your request.',
-          table(
-            ['Circle', 'Purpose', 'Facilitator', 'Visibility', 'State', ''],
-            others.map(c => [
-              `<div class="ws-name"><span class="tile t-purple" aria-hidden="true">${ic('users', 16)}</span><div class="ws-name-t"><b>${h(c.name)}</b></div></div>`,
-              h(c.purpose),
-              nm(c.facilitator),
-              h(c.visibility),
-              pill(c.state),
-              (c.visibility === 'Programme' ? L('Open', 'circle', { id: c.id }) + ' ' : '') + (c.state === 'Active' ? joinBtn(c) : ''),
-            ]),
-          ),
+          dataView('circles:others', {
+            label: 'Circles',
+            items: others,
+            search: c => [c.name, c.purpose, P(c.facilitator).name].join(' '),
+            quick: { label: 'Visibility', options: wsOpts(others, c => c.visibility), test: (c, v) => c.visibility === v },
+            sorts: [['name', 'Name', (a, b) => a.name.localeCompare(b.name)]],
+            defaultSort: 'name',
+            dense: true,
+            row: c => ({
+              lead: `<span class="tile t-purple" aria-hidden="true">${ic('users', 18)}</span>`,
+              title: `<b>${h(c.name)}</b>`,
+              sub: h(c.purpose),
+              meta: ['Facilitator ' + nm(c.facilitator), h(c.visibility)],
+              badges: pill(c.state),
+              primary: (c.visibility === 'Programme' ? L('Open', 'circle', { id: c.id }, 'btn btn-s btn-sm') : '') + (c.state === 'Active' ? joinBtn(c) : ''),
+            }),
+          }),
         )
       : '')
   );
@@ -261,9 +279,10 @@ route('circle', 'circles', () => {
   const paused = c.state === 'Paused/Repair';
   const ro = paused || ['Completed', 'Archived/Closed'].includes(c.state) || (!isMem && !mgr);
   const noRec = ro || !(canRec || mgr);
-  const t = tabs(
+  const t = subnav(
     'ci_' + c.id,
     [
+      ['overview', 'Overview'],
       ['chat', 'Chat', isMem && unreadIn(c) ? unreadIn(c) : null],
       ['sessions', 'Sessions', c.sessions.length],
       ['records', 'Reflections & commitments'],
@@ -273,6 +292,15 @@ route('circle', 'circles', () => {
       ['docs', 'Documents', (c.docs || []).length],
     ],
     UI.p.tab,
+    {
+      label: 'Circle sections',
+      groups: [
+        ['', '', ['overview']],
+        ['Conversation', 'message', ['chat', 'sessions']],
+        ['Decisions', 'vote', ['polls', 'records']],
+        ['People & context', 'users', ['members', 'about', 'docs']],
+      ],
+    },
   );
   let body = '';
   if (t.cur === 'chat')
@@ -385,23 +413,34 @@ route('circle', 'circles', () => {
     body = card(
       'Documents',
       'Documents uploaded for this Circle. Visible to everyone in the Circle.',
-      table(
-        ['Document', 'Size', 'Uploaded by', 'Date'],
-        (c.docs || []).map(x => [`<span class="att">${ic('file', 14)}${h(x.n)}</span>`, x.mb != null ? x.mb + ' MB' : '—', nm(x.by), fmt(x.at)]),
-        'No documents yet.',
-      ),
+      dataView('ci:docs:' + c.id, {
+        label: 'documents',
+        items: c.docs || [],
+        search: x => x.n + ' ' + P(x.by).name,
+        filters: [{ key: 'by', label: 'Uploaded by', options: wsPeople(c.docs || [], x => x.by), test: (x, v) => x.by === v }],
+        sorts: [['at', 'Newest', (a, b) => String(b.at || '').localeCompare(String(a.at || ''))], ['n', 'Name', (a, b) => a.n.localeCompare(b.n)], ['mb', 'Size', (a, b) => (b.mb || 0) - (a.mb || 0)]],
+        defaultSort: 'at',
+        dense: true,
+        row: x => ({
+          lead: `<span class="tile t-soft" aria-hidden="true">${ic('file', 16)}</span>`,
+          title: `<b>${h(x.n)}</b>`,
+          meta: [x.mb != null ? x.mb + ' MB' : '—', 'Uploaded by ' + nm(x.by), fmt(x.at)],
+        }),
+        empty: ['file', 'No documents yet.', '', ''],
+      }),
       !ro && (isMem || mgr) ? `<form data-f="cdoc" class="row wrap ws-upform" novalidate><input type="hidden" name="c" value="${c.id}"><input type="file" name="f" class="input ws-file" multiple aria-label="Choose documents"><button class="btn btn-p btn-sm" type="submit">${ic('upload', 14)}Upload</button></form>` : '',
     );
   const prj = byId('projects', c.project);
+  const acts = !isMem && !mgr && c.state === 'Active' ? joinBtn(c) : isMem ? L(ic('message', 16) + 'Open in Messages', 'messages', { c: c.id, k: 'circles' }, 'btn btn-s') : '';
+  // the space header, its facts and the project journey live in Overview; other sections get a one-line context bar
+  if (t.cur === 'overview') body = spaceHead('circles', c, h(c.purpose), null, acts) + roleNote('circles', c) + (prj ? stageTrack(prj, 'circles') : '');
+  else body = wsBar('circles', c, acts) + body;
   return (
-    spaceHead('circles', c, h(c.purpose), [['Circles', 'circles'], [h(c.name)]], !isMem && !mgr && c.state === 'Active' ? joinBtn(c) : isMem ? L(ic('message', 16) + 'Open in Messages', 'messages', { c: c.id, k: 'circles' }, 'btn btn-s') : '') +
-    roleNote('circles', c) +
+    crumbsHtml([['Circles', 'circles'], [h(c.name)]]) +
     (paused
       ? banner('warn', 'Paused for repair', h(c.pause.reason) + ' — members can read but not add records.')
       : '') +
-    (prj ? stageTrack(prj, 'circles') : '') +
-    t.html +
-    body
+    withSubnav(t, body)
   );
 });
 A.noop = () => {};

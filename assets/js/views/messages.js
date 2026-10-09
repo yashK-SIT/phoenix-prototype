@@ -93,20 +93,15 @@ function convList(sel) {
     .map(x => ({ ...x, last: ((x.o.chat || []).slice(-1)[0] || {}).at || '', un: unreadIn(x.o) }))
     .filter(x => f === 'all' || (f === 'unread' ? x.un > 0 : x.kind === f))
     .filter(x => !q || (x.o.name + ' ' + (x.o.chat || []).map(m => m.t).join(' ')).toLowerCase().includes(q));
-  // Spaces first, then two-person conversations; newest first within each group.
-  const grp = x => (x.kind === 'dms' ? 1 : 0);
-  list.sort((a, b) => grp(a) - grp(b) || b.last.localeCompare(a.last));
-  const split = list.some(x => grp(x)) && list.some(x => !grp(x));
-  const nG = [list.filter(x => !grp(x)).length, list.filter(x => grp(x)).length];
+  list.sort((a, b) => b.last.localeCompare(a.last));
   const unAll = unreadTotal();
   const chip = (k, l) =>
     `<button type="button" class="fchip ${f === k ? 'on' : ''}" data-a="chatFilter" data-v="${k}" aria-pressed="${f === k}">${l}</button>`;
   return `<div class="mlist-h"><div class="mlist-t"><h1 class="h2">Messages</h1>${unAll ? `<span class="mun">${unAll} unread</span>` : ''}</div><p class="cap">Circles, Rope Teams and ${WL()}s you belong to</p><div class="msearch-w">${ic('search', 16)}<input class="input msearch" placeholder="Search conversations" value="${h(UI.chat.q || '')}" data-ch="chatSearch" aria-label="Search conversations"></div><div class="mfilters" role="group" aria-label="Show">${chip('all', 'All')}${chip('unread', 'Unread')}${chip('circles', 'Circles')}${chip('ropes', 'Rope Teams')}${chip('rooms', WL() + 's')}${(S.dms || []).some(x => memberOf(x)) ? chip('dms', 'Direct') : ''}</div></div><div class="mlist" role="list">${
     list
-      .map(({ kind, o, last, un }, i) => {
+      .map(({ kind, o, last, un }) => {
         const on = sel && sel.o.id === o.id;
-        const gh = split && (i === 0 || grp(list[i - 1]) !== grp(list[i])) ? `<div class="mgroup" aria-hidden="true"><span>${grp(list[i]) ? 'Direct messages' : 'Spaces'}</span><span class="cnt">${nG[grp(list[i])]}</span></div>` : '';
-        return `${gh}<button type="button" role="listitem" class="mconv ${on ? 'on' : ''} ${un ? 'un' : ''}" data-a="chatOpen" data-id="${o.id}" data-k="${kind}" ${on ? 'aria-current="true"' : ''}><span class="mav tile ${kind === 'circles' ? 'c t-purple' : kind === 'rooms' ? 'a t-navy' : kind === 'dms' ? 'd t-soft' : 'r t-teal'}" aria-hidden="true">${ic(CHAT_IC[kind], 18)}</span><span class="mconv-b"><span class="mconv-r"><b class="mname">${h(o.name)}</b><span class="mtime">${shortWhen(last)}</span></span><span class="mconv-r"><span class="mprev"><span class="sr">${CHAT_KINDS[kind]}. </span>${chatPreview(o)}</span>${un ? `<span class="mbadge" aria-label="${un} unread">${un}</span>` : o.state !== 'Active' ? `<span class="mstate">${h(o.state)}</span>` : ''}</span></span></button>`;
+        return `<button type="button" role="listitem" class="mconv ${on ? 'on' : ''} ${un ? 'un' : ''}" data-a="chatOpen" data-id="${o.id}" data-k="${kind}" ${on ? 'aria-current="true"' : ''}><span class="mav tile ${kind === 'circles' ? 'c t-purple' : kind === 'rooms' ? 'a t-navy' : kind === 'dms' ? 'd t-soft' : 'r t-teal'}" aria-hidden="true">${ic(CHAT_IC[kind], 18)}</span><span class="mconv-b"><span class="mconv-r"><b class="mname">${h(o.name)}</b><span class="mtime">${shortWhen(last)}</span></span><span class="mconv-r"><span class="mprev"><span class="sr">${CHAT_KINDS[kind]}. </span>${chatPreview(o)}</span>${un ? `<span class="mbadge" aria-label="${un} unread">${un}</span>` : o.state !== 'Active' ? `<span class="mstate">${h(o.state)}</span>` : ''}</span></span></button>`;
       })
       .join('') || `<div class="mlist-empty">${empty('message', f === 'unread' ? 'No unread messages' : 'No conversations', f === 'unread' ? 'You are all caught up.' : 'You join a conversation when you become a member of a Circle, Rope Team or ' + WL() + '.')}</div>`
   }</div>`;

@@ -603,7 +603,8 @@ code,
 }
 .content {
   width: 100%;
-  max-width: calc(var(--content-max) + 2 * var(--gutter));
+  /* content uses the full width beside the sidebar */
+  max-width: none;
   margin: 0 auto;
   padding: var(--s-6) var(--gutter) var(--s-12);
 }
@@ -788,6 +789,12 @@ code,
 }
 .side-close {
   display: none;
+}
+/* the footer only holds "Close menu" for the phone drawer */
+@media (min-width: 1024px) {
+  .side-foot {
+    display: none;
+  }
 }
 .top .menubtn {
   display: none;
@@ -1221,20 +1228,12 @@ button.nav {
 .shead-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 16px;
+  gap: 4px 20px;
   margin-top: var(--s-2);
   color: var(--text-3);
   font-size: var(--fs-sm);
 }
-.shead-meta > * + *::before {
-  content: '';
-  display: inline-block;
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: var(--line-strong);
-  margin: 0 12px 3px -9px;
-}
+/* meta items are separated by space only, so wrapped lines never start with a stray separator */
 @media (max-width: 639px) {
   .phead,
   .shead-main {
@@ -1332,20 +1331,36 @@ button.nav {
   align-items: center;
   justify-content: center;
   gap: var(--s-2);
-  height: var(--h-md);
+  min-height: var(--h-md);
+  max-width: 100%;
   padding: 0 var(--s-4);
   border: 1px solid transparent;
   border-radius: var(--r-md);
   font-weight: 700;
   font-size: var(--fs-body);
-  line-height: 1;
+  line-height: 1.2;
+  /* labels stay on one line, but may break rather than push a narrow column wider */
   white-space: nowrap;
+  text-align: center;
   text-decoration: none;
   cursor: pointer;
   transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast), box-shadow var(--t-fast);
 }
 .btn svg {
   flex: none;
+}
+/* a button squeezed by a narrow column may break between words (never inside one) */
+.card .btn,
+.dv-act .btn,
+.phead-a .btn,
+.shead-a .btn {
+  white-space: normal;
+}
+/* table action cells are as narrow as their content: their labels stay on one line */
+.tbl .act .btn,
+.tbl td.act .btn,
+.dv-tbl td .btn {
+  white-space: nowrap;
 }
 .btn-p {
   background: var(--primary);
@@ -1385,13 +1400,13 @@ button.nav {
   border-color: var(--bad-solid);
 }
 .btn-sm {
-  height: var(--h-sm);
+  min-height: var(--h-sm);
   padding: 0 var(--s-3);
   font-size: var(--fs-sm);
   gap: 6px;
 }
 .btn-lg {
-  height: var(--h-lg);
+  min-height: var(--h-lg);
   padding: 0 var(--s-5);
 }
 .btn-block {
@@ -1432,10 +1447,10 @@ button.nav {
 }
 @media (max-width: 639px) {
   .btn {
-    height: var(--h-lg);
+    min-height: var(--h-lg);
   }
   .btn-sm {
-    height: 36px;
+    min-height: 36px;
   }
 }
 
@@ -1724,8 +1739,13 @@ select.input {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: var(--s-3);
   margin: calc(-1 * var(--s-1)) 0 var(--s-4);
+}
+.card-h > :first-child {
+  flex: 1 1 220px;
+  min-width: 0;
 }
 .card-h .h2 {
   font-size: 16px;
@@ -1822,6 +1842,7 @@ select.input {
   overflow: hidden;
 }
 .progress .bar {
+  display: block;
   height: 100%;
   border-radius: inherit;
   background: var(--primary);
@@ -1849,6 +1870,10 @@ select.input {
 }
 .card > .tblwrap:last-child {
   margin-bottom: calc(-1 * var(--s-5));
+}
+.card.flush .tblwrap,
+.card.flush > .tblwrap:last-child {
+  margin: 0;
 }
 .tbl {
   width: 100%;
@@ -1949,25 +1974,31 @@ select.input {
   .tbl tbody tr:last-child {
     border-bottom: 0;
   }
+  /* label in a fixed left column; the cell keeps normal inline flow (text, badges and links stay on one line) */
   .tbl td,
   .tbl th:first-child,
   .tbl td:first-child,
   .tbl td:last-child {
+    position: relative;
+    display: block;
     height: auto;
-    padding: 4px 0;
+    padding: 4px 0 4px 38%;
     border: 0;
-    display: grid;
-    grid-template-columns: 38% minmax(0, 1fr);
-    gap: var(--s-3);
+    min-height: 26px;
   }
   .tbl td::before {
     content: attr(data-label);
+    position: absolute;
+    left: 0;
+    top: 6px;
+    width: calc(38% - 12px);
     color: var(--text-3);
     font-size: var(--fs-xs);
+    line-height: var(--lh-xs);
     font-weight: 700;
   }
   .tbl td:first-child {
-    grid-template-columns: minmax(0, 1fr);
+    padding-left: 0;
     font-size: 15px;
   }
   .tbl td:first-child::before,
@@ -1975,7 +2006,8 @@ select.input {
     display: none;
   }
   .tbl td.act {
-    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+    padding-left: 0;
     text-align: left;
     padding-top: var(--s-2);
   }
@@ -2494,6 +2526,11 @@ select.input {
 :root[data-theme='dark'] {
   --contour: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 300' fill='none' stroke='%237fcbb0' stroke-opacity='.12' stroke-width='1.2'%3E%3Cpath d='M210 150c0-28 26-46 58-44s56 22 52 48-34 40-62 38-48-14-48-42z'/%3E%3Cpath d='M186 150c0-44 40-72 86-70s84 34 78 74-52 64-94 60-70-22-70-64z'/%3E%3Cpath d='M160 152c2-60 56-98 116-94s112 48 104 104-72 88-128 82-94-32-92-92z'/%3E%3Cpath d='M134 154c4-76 72-124 146-118s140 62 130 132-92 110-160 104-120-42-116-118z'/%3E%3Cpath d='M106 156c6-92 88-150 176-142s168 76 156 160-112 134-194 126-144-52-138-144z'/%3E%3Cpath d='M78 158c8-108 104-176 206-166s196 90 182 188'/%3E%3Cpath d='M50 160c10-124 120-202 236-190'/%3E%3C/svg%3E");
 }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --contour: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 300' fill='none' stroke='%237fcbb0' stroke-opacity='.12' stroke-width='1.2'%3E%3Cpath d='M210 150c0-28 26-46 58-44s56 22 52 48-34 40-62 38-48-14-48-42z'/%3E%3Cpath d='M186 150c0-44 40-72 86-70s84 34 78 74-52 64-94 60-70-22-70-64z'/%3E%3Cpath d='M160 152c2-60 56-98 116-94s112 48 104 104-72 88-128 82-94-32-92-92z'/%3E%3Cpath d='M134 154c4-76 72-124 146-118s140 62 130 132-92 110-160 104-120-42-116-118z'/%3E%3Cpath d='M106 156c6-92 88-150 176-142s168 76 156 160-112 134-194 126-144-52-138-144z'/%3E%3Cpath d='M78 158c8-108 104-176 206-166s196 90 182 188'/%3E%3Cpath d='M50 160c10-124 120-202 236-190'/%3E%3C/svg%3E");
+  }
+}
 .side-plate {
   --contour: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 300' fill='none' stroke='%23b3d9cb' stroke-opacity='.22' stroke-width='1.2'%3E%3Cpath d='M210 150c0-28 26-46 58-44s56 22 52 48-34 40-62 38-48-14-48-42z'/%3E%3Cpath d='M186 150c0-44 40-72 86-70s84 34 78 74-52 64-94 60-70-22-70-64z'/%3E%3Cpath d='M160 152c2-60 56-98 116-94s112 48 104 104-72 88-128 82-94-32-92-92z'/%3E%3Cpath d='M134 154c4-76 72-124 146-118s140 62 130 132-92 110-160 104-120-42-116-118z'/%3E%3C/svg%3E");
 }
@@ -2508,4 +2545,737 @@ select.input {
 @keyframes shimmer { to { background-position: -150% 0; } }
 .enter {
   animation: rise var(--t-slow) var(--ease);
+}
+
+/* ---------- 21. Nested workspace navigation (sub-sidebar) ---------- */
+.snav-layout {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  gap: var(--s-6);
+  align-items: start;
+}
+.snav-main {
+  min-width: 0;
+}
+.snav {
+  position: sticky;
+  top: calc(var(--top-h) + var(--s-4));
+  max-height: calc(100vh - var(--top-h) - var(--s-8));
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.snav-toggle {
+  display: none;
+}
+.snav-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+.snav-list,
+.snav-sub,
+.snav-others ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.snav-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+}
+.snav-g + .snav-g {
+  margin-top: var(--s-2);
+}
+.snav-p {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  width: 100%;
+  height: 34px;
+  padding: 0 var(--s-2);
+  border: 0;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+.snav-p:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+.snav-p .snav-l {
+  flex: 1;
+}
+.snav-chev {
+  display: inline-grid;
+  transition: transform var(--t-fast);
+}
+.snav-p[aria-expanded='false'] .snav-chev {
+  transform: rotate(-90deg);
+}
+.snav-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--signal);
+}
+.snav-sub {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 0 15px;
+  padding-left: var(--s-2);
+  border-left: 1px solid var(--line);
+}
+/* a collapsed group really hides its list (the flex display above would otherwise win over [hidden]) */
+.snav-sub[hidden] {
+  display: none;
+}
+.snav-list > .snav-sub {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.snav-i,
+.snav-o {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  width: 100%;
+  min-height: 34px;
+  padding: 6px var(--s-3);
+  border: 0;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--text-2);
+  font-weight: 600;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.snav-i .snav-l,
+.snav-o .snav-l {
+  flex: 1;
+  min-width: 0;
+}
+.snav-i:hover,
+.snav-o:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+/* current section: canopy tint, bold, and an ember bar on the guide line — not colour alone */
+.snav-i.on {
+  background: var(--primary-soft);
+  color: var(--primary-text);
+  font-weight: 700;
+}
+.snav-i.on::before {
+  content: '';
+  position: absolute;
+  left: calc(-1 * var(--s-2) - 2px);
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--signal);
+}
+.snav-list > .snav-sub .snav-i.on::before {
+  left: -6px;
+}
+.snav-others {
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--line-soft);
+}
+.snav-h {
+  display: block;
+  padding: 0 var(--s-2) var(--s-1);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--text-3);
+}
+/* below 1280px the main sidebar plus a sub-sidebar would squeeze the content: sections fold behind one toggle */
+@media (max-width: 1279px) {
+  .snav-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s-4);
+  }
+  .snav {
+    position: relative;
+    top: 0;
+    max-height: none;
+    overflow: visible;
+    z-index: 5;
+  }
+  .snav-toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    width: 100%;
+    height: 46px;
+    padding: 0 var(--s-4);
+    border: 1px solid var(--line-input);
+    border-radius: var(--r-md);
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    text-align: left;
+  }
+  .snav-toggle b {
+    flex: 1;
+  }
+  .snav-toggle svg {
+    transition: transform var(--t-fast);
+  }
+  .snav-toggle[aria-expanded='true'] svg {
+    transform: rotate(180deg);
+  }
+  .snav-panel {
+    display: none;
+    margin-top: var(--s-2);
+    padding: var(--s-3);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--surface);
+    box-shadow: var(--sh-2);
+  }
+  .snav-panel.open {
+    display: flex;
+  }
+}
+
+/* ---------- 22. PHOENIX Data View ---------- */
+.dv {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  min-width: 0;
+}
+.dv-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+}
+.dv-find,
+.dv-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.dv-find {
+  flex: 1;
+}
+.dv-tools {
+  padding-left: var(--s-3);
+  border-left: 1px solid var(--line);
+}
+.dv-search {
+  position: relative;
+  flex: 1 1 220px;
+  max-width: 340px;
+}
+.dv-search svg {
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-3);
+  pointer-events: none;
+}
+.dv-search .input {
+  height: 36px;
+  padding-left: 34px;
+}
+/* a long quick-filter bar scrolls instead of wrapping or pushing the page wider */
+.dv-quick {
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.dv-quick button {
+  flex: none;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.dv-quick .cnt {
+  height: 18px;
+  min-width: 18px;
+  font-size: 11px;
+}
+.dv-fwrap {
+  position: relative;
+}
+.dv-fwrap .btn.is-on {
+  border-color: var(--primary);
+  color: var(--primary-text);
+  background: var(--primary-soft);
+}
+.dv-fpanel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 40;
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--overlay);
+  box-shadow: var(--sh-2);
+  animation: drop var(--t-med) var(--ease);
+}
+.dv-fpanel-h,
+.dv-fpanel-f {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+}
+.dv-fpanel-f {
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--line-soft);
+}
+.dv-sort {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex: none;
+}
+.dv .dv-sort .input {
+  width: auto;
+  min-width: 0;
+  max-width: 220px;
+}
+.dv-sort .input,
+.dv-size .input {
+  height: 34px;
+  width: auto;
+  padding-right: 32px;
+  background-position: calc(100% - 16px) 15px, calc(100% - 11px) 15px;
+}
+.dv-sort .iconbtn {
+  width: 34px;
+  height: 34px;
+}
+.dv-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+.dv-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 6px 0 10px;
+  border: 1px solid var(--primary-soft-2);
+  border-radius: var(--r-sm);
+  background: var(--primary-soft);
+  color: var(--primary-text);
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.dv-chip:hover {
+  border-color: var(--primary);
+}
+.dv-bulk {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-md);
+  background: var(--inverse);
+  color: var(--on-inverse);
+}
+.dv-bulk b {
+  margin-right: var(--s-2);
+}
+.dv-bulk .btn-g {
+  color: var(--on-inverse);
+  margin-left: auto;
+}
+/* list layout: purpose-built rows */
+.dv-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+/* no overflow clipping (row menus must escape the list); the end rows carry the rounded corners instead */
+.dv-list > .dv-row:first-child {
+  border-top-left-radius: inherit;
+  border-top-right-radius: inherit;
+}
+.dv-list > .dv-row:last-child {
+  border-bottom-left-radius: inherit;
+  border-bottom-right-radius: inherit;
+}
+.dv-menu {
+  z-index: 45;
+}
+.card .dv-list {
+  border-left: 0;
+  border-right: 0;
+  border-radius: 0;
+  margin: 0 calc(-1 * var(--s-5));
+}
+.dv-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  padding: 14px var(--s-5);
+  border-bottom: 1px solid var(--line-soft);
+  transition: background var(--t-fast);
+}
+.dv-row:last-child {
+  border-bottom: 0;
+}
+.dv-row:hover {
+  background: var(--surface-2);
+}
+.dv-row:focus-within {
+  background: var(--surface-2);
+}
+.dv-row.is-sel {
+  background: var(--primary-soft);
+}
+.dv-list.dense .dv-row {
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+.dv-lead {
+  flex: none;
+}
+.dv-main {
+  flex: 1;
+  min-width: 0;
+}
+.dv-title {
+  font-weight: 700;
+  font-size: 14.5px;
+  line-height: 20px;
+}
+.dv-title a {
+  color: var(--text);
+  text-decoration: none;
+}
+.dv-title a:hover {
+  color: var(--primary-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.dv-sub {
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  margin-top: 2px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.dv-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 16px;
+  margin-top: 6px;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.dv-meta > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.dv-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 280px;
+}
+.dv-act {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+.dv-menuwrap {
+  position: relative;
+}
+.dv-menu {
+  min-width: 200px;
+}
+/* menu items built with B()/CB() carry .btn: keep them left-aligned, full-width and borderless */
+.dv-menu .btn.menu-i,
+.menu .btn.menu-i {
+  justify-content: flex-start;
+  width: 100%;
+  height: 38px;
+  padding: 0 var(--s-3);
+  border: 0;
+  background: none;
+  box-shadow: none;
+  font-weight: 600;
+  color: var(--text);
+}
+.dv-menu .btn.menu-i:hover,
+.menu .btn.menu-i:hover {
+  background: var(--sunk);
+}
+.dv-menu .btn.menu-i.danger,
+.menu .btn.menu-i.danger,
+.dv-menu .btn-d.menu-i {
+  color: var(--bad);
+}
+.dv-sel {
+  flex: none;
+}
+/* table layout additions */
+.dv-tblwrap {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+.card .dv-tblwrap {
+  border-left: 0;
+  border-right: 0;
+  border-radius: 0;
+  margin: 0 calc(-1 * var(--s-5));
+}
+.dv-th {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.dv-th:hover {
+  color: var(--text);
+}
+.tbl th[aria-sort] {
+  color: var(--text);
+}
+.dv-selc {
+  width: 1%;
+}
+.dv-more {
+  display: none;
+}
+/* pagination */
+.dv-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+  padding-top: var(--s-1);
+  font-size: var(--fs-sm);
+}
+.dv-range {
+  color: var(--text-2);
+}
+.dv-pages {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+}
+.dv-nums {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.dv-num {
+  min-width: 34px;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--text-2);
+  font-weight: 700;
+  cursor: pointer;
+}
+.dv-num:hover {
+  background: var(--surface);
+  border-color: var(--line);
+}
+/* current page: filled canopy plus underline marker — not colour alone */
+.dv-num.on {
+  background: var(--primary);
+  color: var(--on-primary);
+  border-color: var(--primary);
+  box-shadow: inset 0 -3px 0 var(--signal);
+}
+.dv-gap {
+  padding: 0 4px;
+  color: var(--text-3);
+}
+.dv-pos {
+  display: none;
+  font-weight: 700;
+  padding: 0 var(--s-2);
+}
+.dv-size {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+.dv-go {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-left: var(--s-3);
+}
+.dv-go .input {
+  width: 72px;
+  height: 34px;
+}
+@media (max-width: 1023px) {
+  .dv-tools {
+    padding-left: 0;
+    border-left: 0;
+  }
+  .dv-badges {
+    max-width: 200px;
+  }
+}
+@media (max-width: 639px) {
+  .dv-bar {
+    align-items: stretch;
+  }
+  .dv-find,
+  .dv-tools {
+    width: 100%;
+  }
+  .dv-search {
+    max-width: none;
+    flex-basis: 100%;
+  }
+  .dv-quick {
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .dv-quick button {
+    flex: none;
+  }
+  /* advanced filters become a bottom drawer */
+  .dv-fpanel {
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: auto;
+    bottom: 0;
+    width: auto;
+    z-index: 65;
+    border-radius: var(--r-xl) var(--r-xl) 0 0;
+    padding: var(--s-5) var(--s-4) calc(var(--s-5) + env(safe-area-inset-bottom));
+    box-shadow: var(--sh-3);
+    animation: rise var(--t-slow) var(--ease);
+  }
+  .dv.has-fpanel::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: var(--scrim);
+  }
+  /* phone rows: select, icon and title on one line; badges and actions aligned under the title */
+  .dv-row {
+    display: grid;
+    grid-template-columns: [sel] auto [lead] auto [main] minmax(0, 1fr);
+    column-gap: 0;
+    row-gap: var(--s-2);
+    align-items: start;
+    padding: var(--s-3) var(--s-4);
+  }
+  .dv-row > .dv-sel {
+    grid-column: sel;
+    margin: 2px var(--s-3) 0 0;
+  }
+  .dv-row > .dv-lead {
+    grid-column: lead;
+    margin-right: var(--s-3);
+  }
+  .dv-row > .dv-main,
+  .dv-row > .dv-badges,
+  .dv-row > .dv-act {
+    grid-column: main;
+  }
+  .dv-badges {
+    justify-content: flex-start;
+    max-width: none;
+  }
+  .dv-act {
+    justify-content: space-between;
+  }
+  .card .dv-list,
+  .card .dv-tblwrap {
+    margin: 0 calc(-1 * var(--s-5));
+  }
+  /* table data on phones: record cards keep side padding; secondary columns move into an expandable detail */
+  .dv-tbl tr {
+    padding-left: var(--s-4);
+    padding-right: var(--s-4);
+  }
+  .dv-tbl [data-sm='hide'] {
+    display: none !important;
+  }
+  .dv-more {
+    display: block;
+    margin-top: var(--s-2);
+  }
+  .dv-more summary {
+    cursor: pointer;
+    color: var(--primary-text);
+    font-weight: 700;
+    font-size: var(--fs-sm);
+  }
+  .dv-more .kv2 {
+    margin-top: var(--s-2);
+  }
+  /* pagination: Previous / Page X of Y / Next */
+  .dv-pager {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .dv-pages {
+    justify-content: space-between;
+  }
+  .dv-nums {
+    display: none;
+  }
+  .dv-pos {
+    display: block;
+  }
+  .dv-size {
+    justify-content: space-between;
+  }
+  .dv-go {
+    display: none;
+  }
 }

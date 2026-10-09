@@ -6,6 +6,8 @@
 .tabs:has(.tab-more) {
   overflow: visible;
   position: relative;
+  /* fitTabs measures tab widths only, so an overflowing bar has no gap between tabs */
+  gap: 0;
 }
 .tab[hidden] {
   display: none;
@@ -446,10 +448,19 @@
 .ws-split .ws-main {
   gap: 0;
 }
-@media (max-width: 1279px) {
+/* with the section sub-navigation on the left, the context rail sits beside the content only on very wide screens */
+@media (max-width: 1599px) {
   .ws-ov,
   .ws-split {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .ws-ov-rail {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    align-items: start;
+  }
+  .ws-chat .ws-rail {
+    display: none;
   }
 }
 .ws-stack {
@@ -1612,4 +1623,240 @@
   height: auto;
   max-width: 320px;
   padding: 6px;
+}
+
+/* ---------- 11. Fixes after review ---------- */
+/* progress bars here are spans: make the fill a block so its width applies */
+:is(.ws-facts, .ws-kpis, .ws-prog, .poll-bar) .progress .bar,
+.poll-bar .bar {
+  display: block;
+}
+/* small avatars overlap less so initials stay readable */
+.avstack .av.sm + .av.sm {
+  margin-left: -4px;
+}
+.ws-name-t {
+  display: block;
+}
+.ws-name-t .cap {
+  margin-top: 2px;
+}
+.wf-mem .wf-v {
+  white-space: nowrap;
+}
+.wf-mem .avstack {
+  flex: none;
+}
+.jsteps {
+  padding-top: var(--s-4);
+}
+/* phone record cards: badges keep their own width instead of stretching across the cell */
+@media (max-width: 639px) {
+  .app:is([data-route='room'], [data-route='rope'], [data-route='circle'], [data-route='rooms'], [data-route='ropeteams'], [data-route='circles']) .tbl td > .pill {
+    justify-self: start;
+  }
+}
+.ws-ico {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.wf-mem {
+  flex-basis: 210px;
+}
+.poll-opt.is-lead .bar {
+  background: var(--primary);
+}
+/* list rows in workspace pages: the title is bold, the detail under it is not */
+.app:is([data-route='room'], [data-route='rope'], [data-route='circle']) .lrow .lt .cap {
+  font-weight: 400;
+}
+.jhere {
+  background: color-mix(in srgb, var(--signal) 14%, var(--surface));
+}
+@media (min-width: 761px) {
+  .tk-side {
+    position: sticky;
+    top: 0;
+  }
+}
+@media (min-width: 640px) {
+  .ws-kpis {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+/* phones: a compact rail so the tabs stay near the top; full detail stays on the current and returned stages */
+@media (max-width: 639px) {
+  .jstep {
+    padding: 10px var(--s-3);
+  }
+  .jstep .tile {
+    display: none;
+  }
+  .jstep:not(.is-here):not(.has-ret):not(.is-cur) .jmeta {
+    display: none;
+  }
+  .jsteps {
+    gap: 10px;
+  }
+}
+@media (max-width: 639px) {
+  .rv-t {
+    flex-basis: calc(100% - 48px);
+  }
+  .rv-h > .pill {
+    margin-left: 44px;
+  }
+}
+
+/* ---------- 12. Round 2: Data Views and section sub-navigation in workspaces ---------- */
+.dv-title .mbadge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  margin-left: 6px;
+  border-radius: var(--r-full);
+  background: var(--signal-soft);
+  color: var(--signal-text);
+  font-size: 11px;
+  font-weight: 800;
+  vertical-align: 1px;
+}
+.dv-link {
+  color: var(--text);
+  font-weight: 700;
+  text-decoration: none;
+}
+.dv-link:hover {
+  color: var(--link);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.dv-meta .ws-prog {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+}
+.dv-meta .ws-prog .progress {
+  width: 72px;
+  flex: none;
+}
+.dv-meta .ws-mem .av.sm {
+  width: 20px;
+  height: 20px;
+  font-size: 10px;
+}
+.dv-lead .sess-date {
+  width: 40px;
+  height: 44px;
+}
+.dv-menu .btn.menu-i {
+  justify-content: flex-start;
+  height: 38px;
+  border: 0;
+  box-shadow: none;
+  font-size: var(--fs-body);
+}
+.dv-menu .menu-h {
+  display: block;
+  padding: 6px var(--s-3) 4px;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--text-3);
+}
+.dv-act {
+  flex-wrap: wrap;
+}
+/* the workspace header and journey stay full width above the sub-navigation */
+.snav-main > .card + .card,
+.snav-main > .card + .g12,
+.snav-main > .g12 + .card {
+  margin-top: var(--grid-gap);
+}
+/* row menus must not be clipped by the list (inside a panel the list has square corners, so nothing needs clipping) */
+.app:is([data-route='room'], [data-route='rope'], [data-route='circle'], [data-route='rooms'], [data-route='ropeteams'], [data-route='circles']) .dv-list {
+  overflow: visible;
+}
+.kb {
+  grid-auto-columns: minmax(208px, 1fr);
+}
+@media (max-width: 639px) {
+  .kb {
+    grid-auto-columns: 84%;
+  }
+}
+
+/* ---------- 12. Section context bar and chat height (feedback round) ---------- */
+.ws-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+  padding: var(--s-3) var(--s-4);
+  margin-bottom: var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+.ws-bar-tile {
+  width: 34px;
+  height: 34px;
+}
+.ws-bar-t {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ws-bar-kind {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--text-3);
+}
+.ws-bar.k-circles .ws-bar-kind { color: var(--k-circle); }
+.ws-bar.k-ropes .ws-bar-kind { color: var(--k-rope); }
+.ws-bar.k-rooms .ws-bar-kind { color: var(--k-room); }
+.ws-bar-n {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+}
+.ws-bar-n b {
+  font-family: var(--font-head);
+  font-size: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-bar-a {
+  display: flex;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+}
+/* the page header area above the sections is just the breadcrumb now */
+.app:is([data-route='circle'], [data-route='rope'], [data-route='room']) .content > .crumbs {
+  margin-bottom: var(--s-4);
+}
+/* embedded chat: a fixed panel whose message list scrolls; the composer always stays in view.
+   (In a flex column, flex-basis would override height, so the thread must not flex.) */
+.snav-main .mthread.emb {
+  flex: none;
+  /* top bar + breadcrumb + context bar + chat note + page padding sit around it */
+  height: calc(100dvh - var(--top-h) - 236px);
+  min-height: 440px;
+}
+.snav-main .mthread.emb .msgs {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+@media (max-width: 1023px) {
+  .snav-main .mthread.emb {
+    height: calc(100dvh - var(--top-h) - 300px);
+    min-height: 400px;
+  }
 }

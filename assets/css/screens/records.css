@@ -3,7 +3,9 @@
    Every rule is scoped to a class owned by this area (rec-*, prj-*, np-*, ev-*, repo-*, hv-*, hv2-*, opp-*, mb-*). */
 
 /* ---------- 1. Shared record-list pattern: panel + toolbar + table ---------- */
-.rec-list > .tblwrap {
+.rec-list > .tblwrap,
+.rec-list > .tblwrap:last-child,
+.ev-group > .tblwrap:last-child {
   margin: 0;
 }
 .rec-list > .tbl-empty,
@@ -52,6 +54,8 @@
 .rec-search > svg {
   position: absolute;
   left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
   color: var(--text-3);
   pointer-events: none;
 }
@@ -128,6 +132,10 @@
 }
 .prj-tags {
   margin-top: var(--s-3);
+}
+/* secondary actions first, the primary one rightmost */
+.prj-head .shead-a > .btn-p {
+  order: 1;
 }
 .prj-head .shead-meta b,
 .opp-head .shead-meta b {
@@ -375,6 +383,10 @@
 }
 .np-prog {
   margin: 0 var(--s-2) var(--s-3);
+}
+.np-prog .bar,
+.repo-meter .bar {
+  display: block;
 }
 .np-srail {
   display: flex;
@@ -668,6 +680,21 @@
   font-weight: 600;
 }
 @media (max-width: 1023px) {
+  /* one column: summary, then the submit step, then the rest */
+  .prj-main,
+  .prj-side {
+    display: contents;
+  }
+  .prj-body > * > .card {
+    grid-column: 1 / -1;
+    order: 2;
+  }
+  .prj-body > * > .prj-summary {
+    order: 0;
+  }
+  .prj-body > .prj-side > .accent {
+    order: 1;
+  }
   .prj-steps {
     grid-template-columns: repeat(9, minmax(64px, 1fr));
     overflow-x: auto;
@@ -703,12 +730,21 @@
     width: 24px;
     height: 24px;
   }
+  /* phones: the header tile is decoration; the eyebrow already says what this is */
   .prj-head > .tile,
   .ev-head > .tile,
   .hv-head > .tile,
-  .opp-head > .tile {
-    width: 40px;
-    height: 40px;
+  .opp-head > .tile,
+  .mb-head > .mb-av {
+    display: none;
+  }
+  .prj-ev .lrow {
+    flex-wrap: wrap;
+  }
+  .prj-ev-st {
+    width: 100%;
+    justify-content: flex-start;
+    padding-left: 52px;
   }
 }
 
@@ -862,9 +898,12 @@
   align-items: flex-start;
   flex-wrap: wrap;
 }
+.ev-rr {
+  gap: var(--s-2);
+}
 .ev-rr .lt {
-  flex: 1;
-  min-width: 140px;
+  flex: 1 0 100%;
+  min-width: 0;
 }
 .ev-side .card .btn-block + .banner,
 .ev-side .card .lrow + .btn {
@@ -1133,6 +1172,16 @@ form.hv2 > .hv2-sec:first-of-type {
 .hv2-ro .lbl {
   display: block;
   margin-bottom: 2px;
+}
+/* sections A, C, D, E: the section heading names the field; the label stays for assistive technology */
+.hv2-sec .field > .lbl:has(> .sr),
+.hv2-ro > .lbl:has(> .sr) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 .hv2-learn {
   margin-top: var(--s-4);
@@ -1455,6 +1504,13 @@ form.hv2 > .actions {
   .prj-list .tbl td:nth-child(7) {
     text-align: left;
   }
+  .rec-list .tbl td > .pill,
+  .ev-group .tbl td > .pill,
+  .rec-list .tbl td > .opp-k,
+  .rec-list .tbl td > .ev-lvl,
+  .ev-group .tbl td > .ev-lvl {
+    justify-self: start;
+  }
   .repo-meter {
     width: 100%;
   }
@@ -1541,5 +1597,47 @@ form.hv2 > .actions {
 @media (max-width: 1023px) {
   .mb-flow {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ---------- 10. Data Views in this area (round 2) ---------- */
+[data-dv^='projects:'] .dv-tbl td:first-child {
+  min-width: 260px;
+}
+[data-dv^='projects:'] .dv-tbl td:nth-child(4),
+[data-dv^='projects:'] .dv-tbl td:nth-child(5),
+[data-dv^='evidence:'] .dv-tbl td:nth-child(n + 2) .pill {
+  white-space: nowrap;
+}
+[data-dv^='evidence:'] .dv-tbl td:first-child {
+  min-width: 200px;
+}
+.ev-group > .dv,
+.ev-group > section.dv {
+  margin-top: var(--s-1);
+}
+[data-dv='harvests'] .dv-badges,
+[data-dv^='opps:'] .dv-badges,
+[data-dv='matches'] .dv-badges {
+  gap: 6px;
+}
+[data-dv^='opps:'] .dv-lead .tile,
+[data-dv='repository'] .dv-lead .tile,
+[data-dv='harvests'] .dv-lead .tile {
+  width: 36px;
+  height: 36px;
+}
+[data-dv='matches'] .dv-lead .avstack .av {
+  width: 30px;
+  height: 30px;
+}
+@media (max-width: 639px) {
+  [data-dv^='projects:'] .dv-tbl td:first-child,
+  [data-dv^='evidence:'] .dv-tbl td:first-child {
+    min-width: 0;
+  }
+  [data-dv^='projects:'] .dv-tbl td.num,
+  [data-dv^='evidence:'] .dv-tbl td.num {
+    text-align: left;
   }
 }

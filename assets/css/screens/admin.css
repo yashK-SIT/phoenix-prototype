@@ -1,1 +1,1260 @@
-/* PHOENIX screens: admin. Built on the tokens and components in ../phoenix.css. */
+/* PHOENIX screens: admin. Built on the tokens and components in ../phoenix.css.
+   Covers Programme admin (admin), Organization workspace (org), Metrics & reports (metrics) and the
+   Platform Administrator console (platform, tenants, roles, policies, compassqs) plus their dialogs.
+   Every rule is scoped to an adm-/ops-/tnt-/rol-/pol-/cq- class or to one of these routes. */
+
+/* ---------- 1. Shared building blocks ---------- */
+.adm-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--grid-gap);
+  min-width: 0;
+}
+/* count next to a panel title: round, neutral (round pills are for counts only) */
+.adm-n {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 7px;
+  margin-left: 6px;
+  border-radius: var(--r-full);
+  background: var(--neutral-bg);
+  color: var(--text-2);
+  font-family: var(--font);
+  font-size: 11.5px;
+  font-weight: 700;
+  font-feature-settings: 'tnum' 1;
+  vertical-align: 2px;
+}
+.adm-id,
+.adm-mono {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-3);
+  background: none;
+  padding: 0;
+}
+div.adm-id {
+  margin-top: 2px;
+}
+.adm-mono {
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.adm-date {
+  white-space: nowrap;
+  color: var(--text-2);
+}
+.adm-sub {
+  color: var(--text-2);
+}
+.adm-role {
+  font-weight: 600;
+}
+.adm-who {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.adm-who-t {
+  min-width: 0;
+}
+.adm-who .av.sm {
+  background: var(--neutral-bg);
+  color: var(--text-3);
+}
+.adm-em {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.adm-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.adm-steps {
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+.adm-flows {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-2);
+  letter-spacing: 0.02em;
+}
+.adm-def {
+  display: block;
+  max-width: 56ch;
+  margin-top: 2px;
+}
+.adm-chan {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  background: var(--sunk);
+  border: 1px solid var(--line-soft);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.adm-form {
+  gap: var(--s-4);
+}
+.adm-chkfield {
+  justify-content: flex-end;
+}
+
+/* Panels holding a table: tighter header, title + count, actions right */
+.adm-panel > .card-h {
+  align-items: center;
+}
+.adm-panel > .card-h .h2 {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.adm-panel > .tbl-empty {
+  margin-top: var(--s-1);
+}
+.adm-panel .tbl td b a.lnk {
+  font-weight: 700;
+}
+/* the primary name inside a cell is a quiet link: reads as a name, behaves as a link */
+.ops-name {
+  color: var(--text);
+  font-weight: 700;
+  text-decoration: none;
+}
+.ops-name:hover {
+  color: var(--link);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.ops-num {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* list rows inside a panel (initiatives) */
+.adm-lrows .lrow .lt {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---------- 2. Organization marks (squares: organizations are not people) ---------- */
+.orgmark.om-sm,
+.orgmark.om-md,
+.orgmark.om-lg {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  background: var(--primary);
+  color: var(--on-primary);
+  font-family: var(--font-head);
+  font-feature-settings: normal;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+.orgmark.om-sm {
+  width: 24px;
+  height: 24px;
+  font-size: 9px;
+  border-radius: var(--r-sm);
+}
+.orgmark.om-md {
+  width: 32px;
+  height: 32px;
+  font-size: 11px;
+}
+.orgmark.om-lg {
+  width: 48px;
+  height: 48px;
+  font-size: 16px;
+  border-radius: var(--r-lg);
+}
+.ops-org {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+.ops-org-lg {
+  gap: 12px;
+}
+.ops-org-t {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* ---------- 4. Programme admin & organization workspace ---------- */
+/* user dialog: identity, facts, then one section per decision */
+.adm-dlg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+.adm-dlg-who {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+.adm-dlg-who b {
+  font-size: 16px;
+}
+.adm-sec {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--line-soft);
+  margin: 0;
+}
+.adm-sec-t {
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  font-weight: 700;
+  color: var(--text);
+}
+.adm-sec .actions {
+  border-top: 0;
+  padding-top: 0;
+}
+.adm-chks {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.adm-chk {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  min-height: 42px;
+  padding: 8px var(--s-3);
+  border-bottom: 1px solid var(--line-soft);
+  cursor: pointer;
+}
+.adm-chk:last-child {
+  border-bottom: 0;
+}
+.adm-chk:hover {
+  background: var(--surface-2);
+}
+.adm-chk:has(.chk:disabled) {
+  cursor: not-allowed;
+  color: var(--text-3);
+}
+.adm-chk-t {
+  font-weight: 600;
+}
+
+/* locked items inside the configuration form */
+.adm-locked {
+  display: flex;
+  gap: var(--s-3);
+  align-items: flex-start;
+  padding: var(--s-3) var(--s-4);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--sunk);
+}
+.adm-locked-ic {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-sm);
+  background: var(--neutral-bg);
+  color: var(--text-2);
+}
+.adm-locked .cap {
+  margin-top: 2px;
+}
+
+/* organization workspace header */
+.adm-ws .shead-main {
+  align-items: center;
+}
+@media (max-width: 639px) {
+  .adm-ws .shead-main {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+  .adm-ws .orgmark.om-lg {
+    width: 40px;
+    height: 40px;
+    font-size: 14px;
+  }
+}
+
+/* ---------- 5. Metrics & reports: a reporting layout ---------- */
+.adm-report {
+  display: flex;
+  flex-direction: column;
+  gap: var(--grid-gap);
+}
+.adm-rmeta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+.adm-rmeta > div {
+  padding: var(--s-3) var(--s-5);
+  border-left: 1px solid var(--line-soft);
+  min-width: 0;
+}
+.adm-rmeta > div:first-child {
+  border-left: 0;
+}
+.adm-rmeta dt {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--text-3);
+}
+.adm-rmeta dd {
+  margin: 2px 0 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 1023px) {
+  .adm-rmeta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .adm-rmeta > div:nth-child(3) {
+    border-left: 0;
+  }
+  .adm-rmeta > div:nth-child(n + 3) {
+    border-top: 1px solid var(--line-soft);
+  }
+}
+@media (max-width: 639px) {
+  .adm-rmeta > div {
+    padding: var(--s-3) var(--s-4);
+  }
+}
+.adm-metrics .tbl th:last-child,
+.adm-metrics .tbl td:last-child {
+  text-align: right;
+}
+.adm-metrics .tbl td:first-child {
+  min-width: 260px;
+}
+.adm-val {
+  font-family: var(--font-head);
+  font-feature-settings: normal;
+  font-variant-numeric: tabular-nums;
+  font-size: 16px;
+  white-space: nowrap;
+}
+.adm-xlist {
+  display: flex;
+  flex-direction: column;
+  margin: 0 calc(-1 * var(--s-5)) calc(-1 * var(--s-5));
+  border-top: 1px solid var(--line);
+}
+.btn.adm-x {
+  display: flex;
+  justify-content: flex-start;
+  gap: var(--s-3);
+  width: 100%;
+  height: auto;
+  min-height: 52px;
+  padding: 10px var(--s-5);
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  font-weight: 600;
+  line-height: var(--lh-sm);
+  text-align: left;
+  white-space: normal;
+}
+.btn.adm-x:last-child {
+  border-bottom: 0;
+  border-radius: 0 0 var(--r-lg) var(--r-lg);
+}
+.btn.adm-x:hover {
+  background: var(--surface-2);
+}
+.btn.adm-x > svg {
+  color: var(--primary-text);
+}
+.adm-x-ic {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-md);
+  background: var(--primary-soft);
+  color: var(--primary-text);
+}
+.adm-x-t {
+  flex: 1;
+  min-width: 0;
+}
+.adm-x-f {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-3);
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-xs);
+}
+@media (max-width: 639px) {
+  .adm-xlist {
+    margin: 0;
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+  }
+  .btn.adm-x {
+    padding: 10px var(--s-3);
+  }
+  .btn.adm-x:last-child {
+    border-radius: 0 0 var(--r-md) var(--r-md);
+  }
+}
+
+/* ---------- 6. Platform operations console ---------- */
+/* status list (integrations) */
+.ops-list {
+  list-style: none;
+  margin: 0 calc(-1 * var(--s-5));
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+.ops-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 120px minmax(0, 220px);
+  align-items: center;
+  gap: var(--s-3);
+  min-height: 56px;
+  padding: 8px var(--s-5);
+  border-bottom: 1px solid var(--line-soft);
+}
+.ops-item .tile {
+  width: 32px;
+  height: 32px;
+}
+.ops-item-s {
+  min-width: 104px;
+}
+.ops-item-a {
+  display: flex;
+  justify-content: flex-end;
+}
+@media (max-width: 639px) {
+  .ops-list {
+    margin: 0;
+    border-top: 0;
+  }
+  .ops-item {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    padding: 10px 0;
+  }
+  .ops-item-s {
+    min-width: 0;
+  }
+  .ops-item-a {
+    grid-column: 2 / -1;
+    justify-content: flex-start;
+  }
+  .ops-item-a:empty {
+    display: none;
+  }
+}
+.ops-quota {
+  padding-top: var(--s-3);
+}
+.ops-quota .kv2 {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.ops-quota .kv2 dt,
+.ops-quota .kv2 dd {
+  border-bottom: 0;
+  padding-bottom: 4px;
+}
+.ops-quota .kv2 dd {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+.ops-quota .progress {
+  margin-top: var(--s-1);
+}
+
+/* availability strip */
+.ops-avail .kpis {
+  margin: 0 calc(-1 * var(--s-5)) calc(-1 * var(--s-5));
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 var(--r-lg) var(--r-lg);
+  background: none;
+}
+.ops-avail .kpi {
+  gap: 4px;
+}
+.ops-avail .statnum {
+  font-size: 24px;
+  line-height: 30px;
+}
+.ops-stat {
+  display: flex;
+  align-items: center;
+  min-height: 30px;
+}
+@media (max-width: 639px) {
+  .ops-avail .kpi {
+    border-right: 0;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .ops-avail .kpi:last-child {
+    border-bottom: 0;
+  }
+}
+
+/* switch (alert rules) */
+.ops-switch {
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 24px;
+  padding: 0;
+  border: 1.5px solid var(--line-input);
+  border-radius: var(--r-full);
+  background: var(--neutral-bg);
+  cursor: pointer;
+  transition: background var(--t-fast), border-color var(--t-fast);
+}
+.ops-switch::after {
+  content: '';
+  position: absolute;
+  top: 2.5px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-3);
+  transition: transform var(--t-fast) var(--ease), background var(--t-fast);
+}
+.ops-switch.on {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+.ops-switch.on::after {
+  transform: translateX(15px);
+  background: var(--on-primary);
+}
+.ops-switch:hover {
+  border-color: var(--text-2);
+}
+.ops-switch.on:hover {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+
+/* danger zone */
+.card.ops-danger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  border-color: var(--bad-bd);
+}
+.ops-danger-t .cap {
+  margin-top: 2px;
+}
+
+/* contexts table */
+.ops-ctx .tbl td:first-child {
+  min-width: 200px;
+}
+
+/* ---------- 7. Organizations (tenants) ---------- */
+.ops-tenants .tbl td:first-child {
+  min-width: 240px;
+}
+.shead-title {
+  gap: 10px;
+}
+.tnt-details .kv2 dd {
+  overflow-wrap: anywhere;
+}
+@media (min-width: 1024px) {
+  .tnt-details .kv2 {
+    grid-template-columns: minmax(120px, 18%) minmax(0, 1fr) minmax(120px, 18%) minmax(0, 1fr);
+    column-gap: var(--s-4);
+  }
+  .tnt-details .kv2 dt:nth-last-of-type(-n + 2),
+  .tnt-details .kv2 dd:nth-last-of-type(-n + 2) {
+    border-bottom: 0;
+  }
+}
+.tnt-doms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.tnt-dom {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: var(--r-sm);
+  background: var(--sunk);
+  border: 1px solid var(--line-soft);
+  color: var(--text-2);
+}
+.tnt-admin {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding-bottom: var(--s-3);
+  margin-bottom: var(--s-1);
+  border-bottom: 1px solid var(--line-soft);
+}
+.tnt-admin .adm-who-t {
+  flex: 1;
+}
+.tnt-holders {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.tnt-holders .tnt-admin {
+  padding: var(--s-3) 0;
+  margin: 0;
+  align-items: flex-start;
+}
+.tnt-holders .tnt-admin:first-child {
+  padding-top: 0;
+}
+.tnt-holders .tnt-admin:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.tnt-admincard .kv2 {
+  grid-template-columns: minmax(70px, 32%) minmax(0, 1fr);
+}
+.tnt-admincard .kv2 dd {
+  overflow-wrap: anywhere;
+}
+.tnt-life {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s-2);
+}
+
+/* create / edit organization dialog: fixed footer, sections as rows */
+.tnt-form {
+  gap: var(--s-5);
+}
+.tnt-form .fs {
+  padding-bottom: var(--s-5);
+}
+.tnt-form .fs legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tnt-form .fs legend::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 1px 3px 3px 3px;
+  background: var(--primary);
+}
+.tnt-note {
+  margin: calc(-1 * var(--s-2)) 0 0;
+  max-width: 72ch;
+}
+.tnt-form > .actions,
+.pol-form > .actions {
+  position: sticky;
+  bottom: calc(-1 * var(--s-6));
+  z-index: 2;
+  margin: 0 calc(-1 * var(--s-6)) calc(-1 * var(--s-6));
+  padding: var(--s-4) var(--s-6);
+  background: var(--overlay);
+  border-top: 1px solid var(--line);
+}
+@media (max-width: 639px) {
+  .tnt-form > .actions,
+  .pol-form > .actions {
+    bottom: calc(-1 * (var(--s-5) + env(safe-area-inset-bottom)));
+    margin: 0 calc(-1 * var(--s-4)) calc(-1 * (var(--s-5) + env(safe-area-inset-bottom)));
+    padding: var(--s-3) var(--s-4) calc(var(--s-3) + env(safe-area-inset-bottom));
+  }
+}
+
+/* ---------- 8. Role management ---------- */
+.rol-name {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  min-width: 240px;
+}
+.rol-name-t {
+  min-width: 0;
+}
+.rol-name-t .cap {
+  max-width: 48ch;
+}
+.rol-code,
+.pv {
+  display: inline-grid;
+  place-items: center;
+  min-width: 26px;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: var(--r-sm);
+  background: var(--primary-soft);
+  color: var(--primary-text);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.rol-code {
+  flex: none;
+  margin-top: 1px;
+  border: 1px solid var(--primary-soft-2);
+}
+.pv.none {
+  background: none;
+  color: var(--text-dis);
+}
+.rol-tile {
+  background: var(--primary-soft);
+  color: var(--primary-text);
+}
+/* role x module matrix */
+.rmx th,
+.rmx td {
+  text-align: center;
+}
+.rmx th:first-child,
+.rmx td:first-child {
+  text-align: left;
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface);
+  white-space: nowrap;
+}
+.rmx th:first-child {
+  z-index: 2;
+  background: var(--surface-2);
+}
+.rmx td {
+  height: 36px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+.rmx tbody tr:hover td:first-child {
+  background: var(--surface-2);
+}
+.rmx abbr {
+  text-decoration: none;
+  font-family: var(--mono);
+}
+.rmx-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: var(--s-4);
+}
+.rmx-key span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.rmx-key .pv {
+  min-width: 22px;
+  height: 20px;
+  font-size: 11px;
+}
+/* phones: the matrix stays a matrix and scrolls inside its panel */
+@media (max-width: 639px) {
+  .rmx-wrap {
+    overflow-x: auto;
+    margin: 0 calc(-1 * var(--s-5));
+    border-top: 1px solid var(--line);
+  }
+  .rmx-card .rmx {
+    display: table;
+    width: max-content;
+    min-width: 100%;
+  }
+  .rmx-card .rmx thead {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip: auto;
+  }
+  .rmx-card .rmx tbody {
+    display: table-row-group;
+  }
+  .rmx-card .rmx tr {
+    display: table-row;
+    padding: 0;
+  }
+  .rmx-card .rmx td,
+  .rmx-card .rmx th,
+  .rmx-card .rmx td:first-child,
+  .rmx-card .rmx td:last-child {
+    display: table-cell;
+    width: auto;
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .rmx-card .rmx th:first-child,
+  .rmx-card .rmx td:first-child {
+    padding-left: var(--s-4);
+    font-size: var(--fs-sm);
+  }
+  .rmx-card .rmx td::before {
+    display: none;
+  }
+}
+/* module permissions: compact toggle chips, one per permission */
+.permtbl td:first-child {
+  min-width: 200px;
+  width: 28%;
+}
+.permtbl tr.changed td:first-child {
+  box-shadow: inset 3px 0 0 var(--warn-solid);
+}
+.permset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.perm-chip {
+  position: relative;
+  display: inline-flex;
+  cursor: pointer;
+}
+.perm-chip input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.perm-chip > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px 0 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast);
+}
+.perm-k {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-sm);
+  background: var(--neutral-bg);
+  color: var(--text-3);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.perm-chip:hover > span {
+  border-color: var(--text-3);
+  color: var(--text);
+}
+.perm-chip input:checked + span {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+  color: var(--primary-text);
+}
+.perm-chip input:checked + span .perm-k {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+.perm-chip input:focus-visible + span {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.perm-chip input:disabled + span {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.pvcell {
+  white-space: nowrap;
+}
+.pvcell .cap {
+  margin-top: 4px;
+  color: var(--warn);
+  font-weight: 600;
+}
+@media (max-width: 639px) {
+  .permtbl td:first-child {
+    width: 100%;
+    min-width: 0;
+  }
+  .permtbl tr.changed td:first-child {
+    box-shadow: none;
+  }
+  .permtbl tr.changed {
+    box-shadow: inset 3px 0 0 var(--warn-solid);
+    padding-left: var(--s-3);
+  }
+  .perm-chip > span {
+    height: 36px;
+  }
+}
+
+/* ---------- 9. Policies & agreements ---------- */
+.pol-name {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+.pol-name .tile {
+  width: 32px;
+  height: 32px;
+}
+.pol-ver {
+  display: inline-grid;
+  place-items: center;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: var(--sunk);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+}
+.pol-acc {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 84px;
+}
+.pol-acc .progress {
+  display: block;
+  height: 4px;
+  max-width: 96px;
+}
+.pol-acc .progress .bar {
+  display: block;
+}
+.pol-del {
+  color: var(--bad);
+}
+.pol-del:hover {
+  background: var(--bad-bg);
+}
+.pol-read .card-h {
+  padding-bottom: var(--s-3);
+  border-bottom: 1px solid var(--line-soft);
+}
+.pol-doc {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 72ch;
+}
+.pol-doc .h3 {
+  margin-top: var(--s-3);
+}
+.pol-doc .h3:first-child {
+  margin-top: 0;
+}
+.pol-doc .muted {
+  color: var(--text);
+  line-height: 22px;
+}
+.pol-vers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.pol-v {
+  position: relative;
+  padding: var(--s-3) 0 var(--s-3) var(--s-5);
+  border-bottom: 1px solid var(--line-soft);
+}
+.pol-v:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.pol-v::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 19px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid var(--line-strong);
+  background: var(--surface);
+}
+.pol-v.is-shown::before {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+.pol-v-h {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.pol-v-d {
+  margin-left: auto;
+  white-space: nowrap;
+}
+.pol-v-s {
+  margin-top: 6px;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.pol-v-a {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: var(--s-2);
+}
+.pol-v-a > .cap {
+  font-weight: 600;
+  color: var(--primary-text);
+}
+@media (min-width: 1024px) {
+  .pol-hist {
+    position: sticky;
+    top: calc(var(--top-h) + var(--s-4));
+    align-self: start;
+  }
+}
+.pol-form textarea[name='text'] {
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+/* ---------- 10. Purpose Compass questions ---------- */
+.cq-n {
+  display: inline-grid;
+  place-items: center;
+  min-width: 26px;
+  height: 24px;
+  border-radius: var(--r-sm);
+  background: var(--sunk);
+  border: 1px solid var(--line-soft);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-2);
+}
+.cq-card .tbl td:nth-child(2) {
+  min-width: 280px;
+}
+.cq-set {
+  display: inline-block;
+  font-weight: 600;
+}
+.cq-set.is-same {
+  color: var(--text-3);
+  font-weight: 400;
+}
+.cq-acts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+}
+.cq-move {
+  display: inline-flex;
+}
+.cq-move .btn {
+  width: 32px;
+  padding: 0;
+}
+.cq-move .btn + .btn {
+  margin-left: -1px;
+}
+.cq-move .cq-up {
+  border-radius: var(--r-md) 0 0 var(--r-md);
+}
+.cq-move .cq-dn {
+  border-radius: 0 var(--r-md) var(--r-md) 0;
+}
+.cq-up svg {
+  transform: rotate(180deg);
+}
+.cq-move .btn.is-off,
+.cq-move .btn:disabled {
+  opacity: 0.4;
+}
+.cq-del {
+  color: var(--bad);
+}
+.cq-del:hover {
+  background: var(--bad-bg);
+}
+.cq-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: var(--s-3);
+  max-width: 90ch;
+}
+.cq-note svg {
+  flex: none;
+  margin-top: 2px;
+}
+@media (max-width: 639px) {
+  .cq-card .tbl td:nth-child(2) {
+    min-width: 0;
+  }
+  .cq-acts {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+  .cq-move .btn {
+    width: 44px;
+  }
+}
+
+/* ---------- 11. Page-level alignment ---------- */
+/* side-by-side panels keep their own height instead of stretching to the tallest one */
+.app[data-route='admin'] .g12,
+.app[data-route='org'] .g12,
+.app[data-route='metrics'] .g12,
+.app[data-route='platform'] .g12,
+.app[data-route='tenants'] .g12,
+.app[data-route='policies'] .g12 {
+  align-items: start;
+}
+.cq-card .tbl td:nth-child(4) .cap,
+.cq-card .tbl td:nth-child(6) .cap {
+  white-space: nowrap;
+}
+
+/* row actions: always a small gap between adjacent buttons */
+.adm-panel .tbl td.act .btn + .btn,
+.adm-panel .tbl td.act .btn + .lnk {
+  margin-left: 6px;
+}
+.adm-panel .tbl td:first-child .adm-who {
+  min-width: 200px;
+}
+.adm-metrics .tbl td:nth-child(3) {
+  white-space: nowrap;
+}
+@media (max-width: 639px) {
+  .adm-panel .tbl td:first-child .adm-who {
+    min-width: 0;
+  }
+  .adm-who-t .cap {
+    overflow-wrap: anywhere;
+  }
+  .adm-metrics .tbl td:first-child {
+    min-width: 0;
+  }
+  .adm-metrics .tbl td:last-child {
+    text-align: left;
+  }
+  .ops-tenants .tbl td:first-child,
+  .ops-ctx .tbl td:first-child,
+  .rol-name {
+    min-width: 0;
+  }
+}
+@media (max-width: 639px) {
+  /* the permission matrix has no data labels: module, chips and effective value stack */
+  .permtbl td,
+  .permtbl td:last-child {
+    padding-left: 0;
+  }
+  .permtbl td::before {
+    display: none;
+  }
+  .permtbl td.pvcell {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+  }
+  .permtbl td.pvcell::after {
+    content: 'Effective';
+    order: -1;
+    color: var(--text-3);
+    font-size: var(--fs-xs);
+    font-weight: 700;
+  }
+  .permtbl td.pvcell .cap {
+    margin-top: 0;
+  }
+}
+@media (max-width: 639px) {
+  /* no bundles, mandate or expiry: drop the empty labelled line from the record card */
+  .adm-panel .tbl td:has(> .adm-tags:empty) {
+    display: none;
+  }
+}
+
+/* ---------- 12. Data Views in this area ---------- */
+/* menu items rendered with B()/CB() carry .btn: keep them left-aligned like other menu items */
+.dv-menu .btn.menu-i {
+  justify-content: flex-start;
+  height: 38px;
+  font-size: var(--fs-body);
+}
+.adm-inv-av {
+  background: var(--neutral-bg);
+  color: var(--text-3);
+}
+.dv-row .rol-code {
+  min-width: 32px;
+  height: 32px;
+  font-size: 13px;
+  margin-top: 0;
+}
+.dv-row .adm-steps {
+  font-size: inherit;
+}
+.dv-meta .pol-acc {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.dv-meta .pol-ver {
+  height: 18px;
+  font-size: 11px;
+  margin-right: 4px;
+}
+.adm-panel > .dv:first-child,
+.adm-panel > .card-h + .dv {
+  margin-top: 0;
+}

@@ -1,7 +1,7 @@
 // ---------- PUBLIC: F01 access ----------
 const PUB = {};
 const authWrap = (inner, wide) =>
-  `<div class="auth"><aside class="auth-side"><div class="brand" style="padding:0"><span class="mark">P</span><span class="wm"><b>PHOENIX</b><span>Foundation Alpha</span></span></div><div class="col" style="gap:18px;max-width:460px"><p class="auth-lead">From purpose to <em>collaboration</em>, action, evidence and learning.</p><p class="auth-copy">One account across every programme you take part in. You decide what is shared, with whom, and for what purpose.</p><ol class="auth-path" aria-label="How a project moves through PHOENIX"><li><span class="n">1</span><b>Circle</b><span>Agree the problem and the scope together.</span></li><li><span class="n">2</span><b>Rope Team</b><span>A mentor helps the team get the requirements right.</span></li><li><span class="n">3</span><b>Action Room</b><span>Plan the work, deliver it and record the evidence.</span></li></ol></div><div class="col auth-notes"><div class="row">${ic('shield', 16)}<span>No personal information is public by default.</span></div><div class="row">${ic('lock', 16)}<span>AI, research and sharing permissions are separate and optional.</span></div></div></aside><main class="auth-main"><div class="mhead" style="align-items:center;gap:10px"><span class="mark">P</span><span class="wm"><b>PHOENIX</b><span>Foundation Alpha</span></span></div><section class="auth-card ${wide ? 'wide' : ''}">${inner}</section><p class="cap">Prototype · data is stored only in this browser · <a href="#" class="cap" data-a="resetDemo">Reset demo data</a></p></main></div>`;
+  `<div class="auth"><aside class="auth-side"><div class="brand"><span class="mark">${MARK(22)}</span><span class="wm"><b>PHOENIX</b><span>Foundation Alpha</span></span></div><div class="col auth-story"><p class="auth-lead">From purpose to <em>collaboration</em>, action, evidence and learning.</p><p class="auth-copy">One account across every programme you take part in. You decide what is shared, with whom, and for what purpose.</p><ol class="auth-path" aria-label="How a project moves through PHOENIX"><li class="k-circle"><span class="n">1</span><b>Circle</b><span>Agree the problem and the scope together.</span></li><li class="k-rope"><span class="n">2</span><b>Rope Team</b><span>A mentor helps the team get the requirements right.</span></li><li class="k-room"><span class="n">3</span><b>Action Room</b><span>Plan the work, deliver it and record the evidence.</span></li></ol></div><div class="col auth-notes"><div class="row">${ic('shield', 16)}<span>No personal information is public by default.</span></div><div class="row">${ic('lock', 16)}<span>AI, research and sharing permissions are separate and optional.</span></div></div></aside><main class="auth-main"><div class="mhead"><span class="mark">${MARK(20)}</span><span class="wm"><b>PHOENIX</b><span>Foundation Alpha</span></span></div><section class="auth-card ${wide ? 'wide' : ''}">${inner}</section><p class="cap auth-foot">Prototype · data is stored only in this browser · <a href="#" class="cap" data-a="resetDemo">Reset demo data</a></p></main></div>`;
 const DEMO = [
   ['p1', 'a1', 'Participant (2 contexts)'],
   ['p2', 'a2', 'Facilitator / Steward + Reviewer'],
@@ -18,19 +18,19 @@ PUB.login = () => {
   const f = 'login';
   const st = UI.p.state;
   return authWrap(`
- <div class="col" style="gap:4px"><h1 class="h1">Sign in</h1><p class="sub">One account for every PHOENIX programme you belong to.</p></div>
+ <div class="col auth-h"><h1 class="h1">Sign in</h1><p class="sub">One account for every PHOENIX programme you belong to.</p></div>
  ${UI.pre?.addRole ? banner('info', 'Sign in to add your new role', 'We will add the ' + ROLE[UI.pre.addRole.role] + ' role to your existing record. No second account is created.') : ''}
  ${st === 'failed' ? banner('err', 'Email or password is incorrect', 'Check your details and try again, or reset your password.') : ''}
  ${st === 'locked' ? banner('err', 'Account temporarily locked', 'Too many failed attempts. Try again in 15 minutes or reset your password.') : ''}
  ${st === 'deactivated' ? banner('err', 'This account is deactivated', 'Contact your programme administrator.') : ''}
- <form data-f="login" class="col" style="gap:16px" novalidate>
+ <form data-f="login" class="col auth-form" novalidate>
  ${fi(f, 'email', 'Email address', { type: 'email', req: true, ph: 'name@organisation.org', auto: 'email' })}
  ${fi(f, 'pw', 'Password', { type: 'password', req: true, auto: 'current-password' })}
- <div class="row" style="justify-content:space-between"><label class="row"><input class="chk" type="checkbox" name="keep">Keep me signed in</label>${L('Forgot password?', 'forgot', {}, 'cap lnk')}</div>
+ <div class="row auth-keep"><label class="row"><input class="chk" type="checkbox" name="keep">Keep me signed in</label>${L('Forgot password?', 'forgot', {}, 'cap lnk')}</div>
  <button class="btn btn-p btn-block" type="submit">Sign in</button></form>
  <div class="divider">or</div>
- <div class="col" style="gap:8px"><p>New to PHOENIX? ${L('Create an account', 'register')}</p><p class="cap">Participants and Sponsors can register directly. Every other role joins by invitation.</p>${B(ic('mail', 16) + 'I have an invitation link', 'go', { r: 'invite' }, 'btn-s')}</div>
- ${B(ic('link', 16) + 'Arrive from the LMS (demo deep link)', 'go', { r: 'lms' }, 'btn-g btn-sm')}<details class="card" style="padding:16px"><summary style="cursor:pointer;font-weight:700">Demo accounts (password: demo1234)</summary><p class="cap" style="margin-top:8px">One-click demo sign-in skips two-step verification. Signing in with email and password as an administrator asks for a code (use 123456).</p><div class="col" style="gap:8px;margin-top:12px">${DEMO.map(([pid, aid, l]) => `<button type="button" class="demo-acc" data-a="demoLogin" data-pid="${pid}"><span class="av">${ini(pid)}</span><span class="col" style="flex:1"><b>${nm(pid)}</b><span class="cap">${l}</span></span>${ic('chevr', 16)}</button>`).join('')}</div></details>`);
+ <div class="col auth-alt"><p>New to PHOENIX? ${L('Create an account', 'register')}</p><p class="cap">Participants and Sponsors can register directly. Every other role joins by invitation.</p>${B(ic('mail', 16) + 'I have an invitation link', 'go', { r: 'invite' }, 'btn-s')}</div>
+ ${B(ic('link', 16) + 'Arrive from the LMS (demo deep link)', 'go', { r: 'lms' }, 'btn-g btn-sm')}<details class="auth-demo"><summary>Demo accounts (password: demo1234)</summary><p class="cap">One-click demo sign-in skips two-step verification. Signing in with email and password as an administrator asks for a code (use 123456).</p><div class="col auth-demo-l">${DEMO.map(([pid, aid, l]) => `<button type="button" class="demo-acc" data-a="demoLogin" data-pid="${pid}"><span class="av">${ini(pid)}</span><span class="col demo-acc-t"><b>${nm(pid)}</b><span class="cap">${l}</span></span>${ic('chevr', 16)}</button>`).join('')}</div></details>`);
 };
 let fails = {};
 function startSession(p, mfaDone) {
@@ -112,7 +112,7 @@ PUB.forgot = () =>
   authWrap(
     UI.p.sent
       ? `<h1 class="h1">Check your email</h1><p class="muted">If an account exists for that address, we have sent a reset link. It expires in 30 minutes.</p>${B('Back to sign in', 'go', { r: 'login' }, 'btn-s')}`
-      : `<h1 class="h1">Reset your password</h1><form data-f="forgot" class="col" style="gap:16px" novalidate>${fi('forgot', 'email', 'Email address', { type: 'email', req: true })}<button class="btn btn-p btn-block" type="submit">Send reset link</button></form>${L('Back to sign in', 'login')}`,
+      : `<h1 class="h1">Reset your password</h1><form data-f="forgot" class="col auth-form" novalidate>${fi('forgot', 'email', 'Email address', { type: 'email', req: true })}<button class="btn btn-p btn-block" type="submit">Send reset link</button></form>${L('Back to sign in', 'login')}`,
   );
 F.forgot = d => {
   if (!validate('forgot', d, { email: ['req', 'email'] })) return render();
@@ -128,21 +128,21 @@ PUB.register = () => {
   const r = fv(f, 'role', inv ? inv.role : 'P');
   const exists = UI.p.exists;
   return authWrap(
-    `<div class="col" style="gap:4px"><p class="over">Step 1 · Account</p><h1 class="h1">Create your account</h1><p class="sub">We only ask for what is needed to start. Everything else is asked later, in context.</p></div>
+    `<div class="col auth-h"><p class="over">Step 1 · Account</p><h1 class="h1">Create your account</h1><p class="sub">We only ask for what is needed to start. Everything else is asked later, in context.</p></div>
  ${inv ? banner('ok', 'Invitation verified', `You are joining as <b>${ROLE[inv.role]}</b>. Your email comes from the invitation and cannot be changed here.`) : ''}
  ${exists ? banner('info', 'This email already has a PHOENIX account', 'Sign in and we will add this role to your existing record. No second account is created.') + B('Sign in to continue', 'go', { r: 'login' }, 'btn-p btn-sm') : ''}
  ${errSum(f)}
- <form data-f="reg" class="col" style="gap:16px" novalidate>
+ <form data-f="reg" class="col auth-form" novalidate>
  ${
    inv
      ? `<input type="hidden" name="role" value="${inv.role}">`
-     : `<fieldset class="col" style="gap:10px;border:0;padding:0;margin:0"><legend class="lbl" style="margin-bottom:10px">I am joining as <span class="req">*</span></legend><div class="f2">${[
+     : `<fieldset class="col auth-fs"><legend class="lbl">I am joining as <span class="req">*</span></legend><div class="f2">${[
          ['P', 'Participant', 'Learner or practitioner. Set your purpose, join Circles, work on projects.'],
          ['S', 'Sponsor / Funder', 'Fund projects stage by stage, sponsor seats or donate.'],
        ]
          .map(
            ([v, t, dsc]) =>
-             `<label class="choice ${r === v ? 'sel' : ''}"><input type="radio" name="role" value="${v}" ${r === v ? 'checked' : ''} style="position:absolute;opacity:0" data-ch="regRole"><span class="rad"></span><span class="col" style="gap:2px"><b>${t}</b><span class="cap">${dsc}</span></span></label>`,
+             `<label class="choice ${r === v ? 'sel' : ''}"><input type="radio" name="role" value="${v}" ${r === v ? 'checked' : ''} style="position:absolute;opacity:0" data-ch="regRole"><span class="rad"></span><span class="col choice-t"><b>${t}</b><span class="cap">${dsc}</span></span></label>`,
          )
          .join(
            '',
@@ -151,7 +151,7 @@ PUB.register = () => {
  <div class="f2">${fi(f, 'name', 'Full name', { req: true, auto: 'name', vis: 'You and authorised administration' })}${fi(f, 'display', 'Display name', { req: true, vis: 'Your collaboration contexts' })}</div>
  ${inv ? fi(f, 'email', 'Email address', { value: inv.email, ro: true, help: 'From your invitation' }) : fi(f, 'email', 'Email address', { type: 'email', req: true, auto: 'email', help: 'We will send a verification link to this address.' })}
  <div class="f2">${fi(f, 'pw', 'Password', { type: 'password', req: true, auto: 'new-password' })}${fi(f, 'pw2', 'Confirm password', { type: 'password', req: true, auto: 'new-password' })}</div>
- <p class="help" style="margin-top:-8px">At least 10 characters, including a number. ${assumed('policy for Technical Operator to confirm')}</p>
+ <p class="help auth-pwhelp">At least 10 characters, including a number. ${assumed('policy for Technical Operator to confirm')}</p>
  <button class="btn btn-p btn-block" type="submit">Create account</button></form>
  <p class="cap">Already have an account? ${L('Sign in', 'login')}</p>`,
     true,
@@ -229,7 +229,7 @@ PUB.invite = () => {
   const inv = tok ? S.invites.find(i => i.token === tok.trim()) : null;
   if (!tok)
     return authWrap(
-      `<h1 class="h1">Open your invitation</h1><p class="muted">Paste the code from your invitation email, or open the link in the email directly.</p><form data-f="tok" class="col" style="gap:16px" novalidate>${fi('tok', 'token', 'Invitation code', { req: true, ph: 'TKN-…' })}<button class="btn btn-p btn-block" type="submit">Continue</button></form><div class="col" style="gap:6px"><span class="cap">Demo codes:</span><div class="row wrap">${S.invites.map(i => `<button class="chip" type="button" data-a="go" data-r="invite" data-token="${i.token}" style="border:0;cursor:pointer">${i.token}</button>`).join('')}<button class="chip" type="button" data-a="go" data-r="invite" data-token="TKN-UNKNOWN" style="border:0;cursor:pointer">TKN-UNKNOWN</button></div></div>${L('Back to sign in', 'login')}`,
+      `<h1 class="h1">Open your invitation</h1><p class="muted">Paste the code from your invitation email, or open the link in the email directly.</p><form data-f="tok" class="col auth-form" novalidate>${fi('tok', 'token', 'Invitation code', { req: true, ph: 'TKN-…' })}<button class="btn btn-p btn-block" type="submit">Continue</button></form><div class="col auth-codes"><span class="cap">Demo codes:</span><div class="row wrap">${S.invites.map(i => `<button class="chip auth-chip" type="button" data-a="go" data-r="invite" data-token="${i.token}">${i.token}</button>`).join('')}<button class="chip auth-chip" type="button" data-a="go" data-r="invite" data-token="TKN-UNKNOWN">TKN-UNKNOWN</button></div></div>${L('Back to sign in', 'login')}`,
     );
   const bad = !inv
     ? 'This link is not valid'
@@ -248,16 +248,16 @@ PUB.invite = () => {
     }
     if (UI.p.requested)
       return authWrap(
-        `<span class="tile t-teal" style="width:48px;height:48px">${ic('check', 22)}</span><h1 class="h1">Request sent</h1><p class="muted">We have asked the administrator for this context to send you a new invitation.</p>${B('Back to sign in', 'go', { r: 'login' }, 'btn-s')}`,
+        `<span class="tile t-teal auth-ic" aria-hidden="true">${ic('check', 22)}</span><h1 class="h1">Request sent</h1><p class="muted">We have asked the administrator for this context to send you a new invitation.</p>${B('Back to sign in', 'go', { r: 'login' }, 'btn-s')}`,
       );
     return authWrap(
-      `<h1 class="h1">Invitation link not valid</h1>${banner('err', bad, inv?.status === 'Accepted' ? 'Each invitation link works once. If it was you, sign in instead.' : 'Ask for a new invitation below. For your security, this attempt has been recorded.')}${inv?.status === 'Accepted' ? B('Sign in', 'go', { r: 'login' }, 'btn-s') : ''}<form data-f="reinv" class="col" style="gap:12px" novalidate>${fi('reinv', 'email', 'Your email address', { type: 'email', req: true, value: inv?.email })}${fi('reinv', 'msg', 'Message to the administrator', { type: 'textarea', rows: 3 })}<button class="btn btn-p btn-block" type="submit">Request a new invitation</button></form>`,
+      `<h1 class="h1">Invitation link not valid</h1>${banner('err', bad, inv?.status === 'Accepted' ? 'Each invitation link works once. If it was you, sign in instead.' : 'Ask for a new invitation below. For your security, this attempt has been recorded.')}${inv?.status === 'Accepted' ? B('Sign in', 'go', { r: 'login' }, 'btn-s') : ''}<form data-f="reinv" class="col auth-form" novalidate>${fi('reinv', 'email', 'Your email address', { type: 'email', req: true, value: inv?.email })}${fi('reinv', 'msg', 'Message to the administrator', { type: 'textarea', rows: 3 })}<button class="btn btn-p btn-block" type="submit">Request a new invitation</button></form>`,
     );
   }
   const c = S.contexts.find(x => x.id === inv.ctx);
   const exists = S.people.find(p => p.email === inv.email);
-  return authWrap(`<span class="tile t-teal" style="width:48px;height:48px">${ic('mail', 22)}</span><div class="col" style="gap:4px"><h1 class="h1">You have been invited</h1><p class="sub">Review the details, then continue.</p></div>
- <div class="card" style="background:#F7F8FB;padding:16px">${dl([
+  return authWrap(`<span class="tile t-teal auth-ic" aria-hidden="true">${ic('mail', 22)}</span><div class="col auth-h"><h1 class="h1">You have been invited</h1><p class="sub">Review the details, then continue.</p></div>
+ <div class="auth-box">${dl([
    ['Context', h(c.name)],
    ['Role', pill(ROLE[inv.role], 'p-purple')],
    ['Invited by', nm(inv.by)],
@@ -302,9 +302,9 @@ PUB.verify = () => {
     return authWrap(
       `<h1 class="h1">Verification link expired</h1>${banner('warn', 'This link is no longer valid', 'Send yourself a new one. Your details are saved.')}${B('Send a new link', 'resendVer', {}, 'btn-p btn-block')}`,
     );
-  return authWrap(`<span class="tile t-navy" style="width:48px;height:48px">${ic('mail', 22)}</span><div class="col" style="gap:4px"><h1 class="h1">Check your email</h1><p class="sub">We sent a verification link to <b>${h(p.email)}</b>.</p></div>
+  return authWrap(`<span class="tile t-navy auth-ic" aria-hidden="true">${ic('mail', 22)}</span><div class="col auth-h"><h1 class="h1">Check your email</h1><p class="sub">We sent a verification link to <b>${h(p.email)}</b>.</p></div>
  ${UI.p.resent ? banner('ok', 'New link sent', 'Earlier links no longer work.') : ''}
- <div class="card col" style="gap:10px;background:#F7F8FB;padding:16px"><span class="over">Prototype — simulate the email</span><div class="row wrap">${B('Open verification link', 'doVerify', {}, 'btn-p btn-sm')}${B('Open an expired link', 'go', { r: 'verify', state: 'expired' }, 'btn-s btn-sm')}</div></div>
+ <div class="auth-box col"><span class="over">Prototype — simulate the email</span><div class="row wrap">${B('Open verification link', 'doVerify', {}, 'btn-p btn-sm')}${B('Open an expired link', 'go', { r: 'verify', state: 'expired' }, 'btn-s btn-sm')}</div></div>
  ${B('Resend verification email', 'resendVer', {}, 'btn-s btn-block')}${L('Back to sign in', 'login')}`);
 };
 A.resendVer = () => {
@@ -349,7 +349,7 @@ PUB.pending = () => {
       `<h1 class="h1">Access deactivated</h1>${banner('err', 'Your ' + ROLE[a.role] + ' access in ' + h(ctx().name) + ' is deactivated', 'Contact your programme administrator. Your consent, correction and export rights continue.')}${S.assign.filter(x => x.pid === myId()).length > 1 ? B('Switch to another role', 'switcher', {}, 'btn-s btn-block') : ''}${B('Sign out', 'logout', {}, 'btn-s btn-block')}`,
     );
   const declined = a.status === 'Role not activated';
-  return `<div class="auth" style="grid-template-columns:minmax(0,1fr)"><main class="auth-main"><section class="auth-card">${declined ? `<h1 class="h1">Role not activated</h1>${banner('err', `The approver did not approve the ${ROLE[a.role]} role`, h(a.approval?.slice(-1)[0]?.note || '') + ' Your account still exists; other roles are unaffected.')}` : `<span class="tile t-purple" style="width:48px;height:48px">${ic('clock', 22)}</span><h1 class="h1">Your role is awaiting approval</h1><p class="sub">The <b>${ROLE[a.role]}</b> role in <b>${h(ctx().name)}</b> needs approval from an authorised approver before it becomes active.</p><div class="timeline"><div class="tl done"><span class="td">${ic('check', 14)}</span>Registered</div><div class="tl done"><span class="td">${ic('check', 14)}</span>Email verified</div><div class="tl cur"><span class="td">3</span>Role approval</div><div class="tl"><span class="td">4</span>Agreement</div></div>${banner('info', '', 'We will notify you when a decision is made.')}`}
+  return `<div class="auth solo"><main class="auth-main"><section class="auth-card">${declined ? `<h1 class="h1">Role not activated</h1>${banner('err', `The approver did not approve the ${ROLE[a.role]} role`, h(a.approval?.slice(-1)[0]?.note || '') + ' Your account still exists; other roles are unaffected.')}` : `<span class="tile t-purple auth-ic" aria-hidden="true">${ic('clock', 22)}</span><h1 class="h1">Your role is awaiting approval</h1><p class="sub">The <b>${ROLE[a.role]}</b> role in <b>${h(ctx().name)}</b> needs approval from an authorised approver before it becomes active.</p><div class="timeline"><div class="tl done"><span class="td">${ic('check', 14)}</span>Registered</div><div class="tl done"><span class="td">${ic('check', 14)}</span>Email verified</div><div class="tl cur"><span class="td">3</span>Role approval</div><div class="tl"><span class="td">4</span>Agreement</div></div>${banner('info', '', 'We will notify you when a decision is made.')}`}
  ${S.assign.filter(x => x.pid === myId()).length > 1 ? B('Switch to another role', 'switcher', {}, 'btn-s btn-block') : ''}${B('Sign out', 'logout', {}, 'btn-s btn-block')}</section></main></div>`;
 };
 // LMS deep-link entry (7.13)

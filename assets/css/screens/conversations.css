@@ -244,7 +244,7 @@
   padding: 0 6px;
   border-radius: var(--r-full);
   background: var(--signal);
-  color: #fff;
+  color: var(--mist-0);
   font-size: 11px;
   font-weight: 800;
 }
@@ -1602,5 +1602,738 @@
   }
   .assist-comp {
     padding-bottom: calc(var(--s-3) + env(safe-area-inset-bottom));
+  }
+}
+
+/* ==========================================================================
+   4. Forms and small helpers used by these views
+   ========================================================================== */
+.fgap {
+  gap: var(--s-3);
+}
+.pre-line {
+  white-space: pre-line;
+}
+.mfa-tile {
+  width: 48px;
+  height: 48px;
+}
+.mfa-h {
+  gap: var(--s-1);
+}
+.mfa-f {
+  gap: var(--s-4);
+}
+.res-file {
+  padding: 7px var(--s-2);
+}
+.ini-acts {
+  margin-top: var(--s-3);
+}
+.chk-sum {
+  padding: var(--s-2) var(--s-4);
+}
+.fig,
+.fig-l {
+  display: block;
+}
+.fig-l {
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-weight: 700;
+  color: var(--text-3);
+}
+.fig {
+  font-family: var(--font-head);
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 700;
+  font-feature-settings: normal;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  white-space: nowrap;
+}
+.fig-of {
+  font-size: 14px;
+  color: var(--text-3);
+  font-weight: 600;
+}
+
+/* ==========================================================================
+   5. Resources & guidance — content library
+   ========================================================================== */
+.reslib {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: var(--grid-gap);
+  align-items: start;
+}
+.reslib-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-6);
+  min-width: 0;
+}
+.reslib-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--grid-gap);
+  position: sticky;
+  top: calc(var(--top-h) + var(--s-4));
+}
+.resgrp-h {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin: 0 0 var(--s-2);
+  font-family: var(--font-head);
+  font-feature-settings: normal;
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 700;
+}
+.reslist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  overflow: hidden;
+}
+.resitem {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--s-2) var(--s-4);
+  padding: var(--s-3) var(--s-4);
+  border-bottom: 1px solid var(--line-soft);
+}
+.resitem:last-child {
+  border-bottom: 0;
+}
+.resitem:hover {
+  background: var(--surface-2);
+}
+.resitem-b {
+  min-width: 0;
+}
+.resitem-t {
+  display: block;
+  font-weight: 700;
+}
+.resitem-b .cap {
+  margin-top: 1px;
+}
+.resitem-m {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 6px;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-weight: 600;
+  color: var(--text-2);
+}
+.resitem-m span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.resitem-m svg {
+  color: var(--text-3);
+}
+.resitem-m .resitem-k {
+  display: none;
+}
+.resitem-a {
+  display: flex;
+  gap: var(--s-2);
+  justify-content: flex-end;
+}
+.res-sum {
+  margin: 0;
+}
+.res-sum > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.res-sum > div:first-child {
+  padding-top: 0;
+}
+.res-sum dt {
+  color: var(--text-2);
+}
+.res-sum dd {
+  margin: 0;
+  font-weight: 700;
+}
+.res-note {
+  display: flex;
+  gap: 6px;
+  margin-top: var(--s-3);
+}
+.res-note svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--signal-text);
+}
+.res-pack .kv2 {
+  grid-template-columns: minmax(0, 1fr);
+}
+.res-pack .kv2 dt {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+@media (max-width: 1023px) {
+  .reslib {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .reslib-side {
+    position: static;
+  }
+}
+@media (max-width: 639px) {
+  .resitem {
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    align-items: center;
+  }
+  .resitem-ic {
+    align-self: start;
+  }
+  .resitem-b {
+    grid-column: 2 / -1;
+  }
+  .resitem-s {
+    grid-column: 2;
+  }
+  .resitem-a {
+    grid-column: 3;
+  }
+}
+
+/* ==========================================================================
+   6. Incidents — case list and case detail
+   ========================================================================== */
+.inc-n b {
+  display: block;
+}
+.inc-id {
+  display: inline-block;
+  margin-top: 2px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.inc-st {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.inc-list .tbl td:nth-child(3) {
+  white-space: nowrap;
+}
+.inc-head .shead-kind .mono {
+  font-weight: 600;
+}
+.inc-title {
+  gap: 10px;
+}
+@media (max-width: 639px) {
+  .inc-head > .tile {
+    display: none;
+  }
+  .inc-head .shead-meta {
+    flex-direction: column;
+    gap: 2px;
+  }
+  .inc-head .shead-meta > * + *::before {
+    display: none;
+  }
+}
+.inc-main,
+.inc-side {
+  gap: var(--grid-gap);
+}
+.inc-acts {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--s-2);
+}
+.inc-acts .btn {
+  width: 100%;
+}
+.inc-tl .tl {
+  display: flex;
+  flex-direction: column;
+}
+.inc-tl .tl:last-child::before {
+  background: var(--primary);
+}
+
+/* ==========================================================================
+   7. Audit log — dense, filterable
+   ========================================================================== */
+.audbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3);
+  margin: calc(-1 * var(--s-1)) 0 var(--s-4);
+}
+.aud-search {
+  position: relative;
+  flex: 0 1 340px;
+  min-width: 200px;
+}
+.aud-search > svg {
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-3);
+  pointer-events: none;
+}
+.aud-search .input {
+  height: 36px;
+  padding-left: 34px;
+}
+.aud-count {
+  margin-left: auto;
+}
+.audlog .tbl td {
+  height: 36px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  vertical-align: top;
+}
+.audlog .tbl td .pill {
+  height: 20px;
+}
+.aud-when {
+  white-space: nowrap;
+  color: var(--text-2);
+}
+.aud-a {
+  font-weight: 700;
+}
+.aud-o {
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.aud-d {
+  color: var(--text-2);
+}
+@media (max-width: 639px) {
+  .aud-search {
+    flex: 1 1 100%;
+  }
+  .aud-count {
+    margin-left: 0;
+  }
+  .audlog .tbl td {
+    height: auto;
+  }
+}
+
+/* ==========================================================================
+   8. Funding and billing — money reads clearly
+   ========================================================================== */
+.fund-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+.fund-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+}
+.fund-sel {
+  width: auto;
+  height: 36px;
+  background-position: calc(100% - 18px) 15px, calc(100% - 13px) 15px;
+}
+.fund-count {
+  margin-left: auto;
+}
+.fund-ints {
+  margin-top: calc(-1 * var(--s-2));
+}
+/* sponsor discovery: one scannable row per project */
+.fdisc {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  overflow: hidden;
+}
+.fdisc-i {
+  padding: var(--s-4) var(--s-5);
+  border-bottom: 1px solid var(--line-soft);
+}
+.fdisc-i:last-child {
+  border-bottom: 0;
+}
+.fdisc-top {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: var(--s-4);
+  align-items: start;
+}
+.fdisc-t {
+  margin: 0;
+  font-family: var(--font-head);
+  font-feature-settings: normal;
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 700;
+}
+.fdisc-prog {
+  color: var(--text-2);
+}
+.fdisc-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: var(--s-2);
+}
+.fdisc-need,
+.fpitch-amt {
+  text-align: right;
+}
+.fdisc-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-3);
+  margin-top: var(--s-3);
+  padding-left: 56px;
+}
+.fdisc-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  margin-left: auto;
+}
+.fdisc-more {
+  min-width: 0;
+}
+.fdisc-more > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 var(--s-2);
+  margin-left: calc(-1 * var(--s-2));
+  border-radius: var(--r-md);
+  color: var(--primary-text);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+}
+.fdisc-more > summary::-webkit-details-marker {
+  display: none;
+}
+.fdisc-more > summary::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  margin-left: 2px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform var(--t-fast);
+}
+.fdisc-more[open] > summary::after {
+  transform: translateY(1px) rotate(-135deg);
+}
+.fdisc-more > summary:hover {
+  background: var(--primary-soft);
+}
+.fdisc-i .fdisc-more[open] {
+  flex-basis: 100%;
+  order: 2;
+}
+.fdisc-brief {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  margin-top: var(--s-2);
+  padding: var(--s-2) var(--s-4) var(--s-4);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+/* pitches */
+.fpitch {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--s-4);
+  align-items: start;
+  margin-bottom: var(--s-3);
+}
+.fpitch-q {
+  margin: 0;
+  padding: var(--s-1) 0 var(--s-1) var(--s-4);
+  border-left: 3px solid var(--line-strong);
+  color: var(--text);
+}
+.fpitch-card .card-h .row {
+  justify-content: flex-end;
+}
+/* funding agreements */
+.fsum {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.fsum-i {
+  padding: var(--s-3) var(--s-4);
+  border-right: 1px solid var(--line-soft);
+  text-align: right;
+}
+.fsum-i:last-child {
+  border-right: 0;
+}
+.ftr-w {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: var(--s-5);
+}
+.ftr-h {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+.ftr {
+  display: flex;
+  gap: 3px;
+}
+.ftr-s {
+  flex-basis: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ftr-s i {
+  display: block;
+  height: 8px;
+  border-radius: var(--r-xs);
+  background: var(--neutral-bg);
+  border: 1px solid var(--neutral-bd);
+}
+.ftr-s.is-r i {
+  background: var(--primary-soft-2);
+  border-color: var(--primary);
+}
+.ftr-s.is-a i {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+.ftr-s.is-h i {
+  background: var(--warn-bg);
+  border-color: var(--warn-solid);
+}
+.ftr-l {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-weight: 600;
+  color: var(--text-3);
+}
+.fsetup {
+  gap: var(--s-2);
+  margin-bottom: var(--s-4);
+}
+.fund-note {
+  margin-top: var(--s-3);
+}
+.fund-card > .tblwrap:last-child,
+.fund-card .tblwrap {
+  margin-bottom: 0;
+}
+.fund-kpis .fig {
+  margin-top: 2px;
+}
+.fund-kpis .kpi {
+  align-items: flex-end;
+  text-align: right;
+}
+.fund-kpis .kpi:first-child {
+  align-items: flex-start;
+  text-align: left;
+}
+/* right-aligned money and counts in tables */
+.fund-card .tbl :is(th, td):nth-child(3),
+.fund-pitches .tbl :is(th, td):nth-child(3),
+.bill-price .tbl :is(th, td):nth-child(3),
+.bill-prod .tbl :is(th, td):nth-child(3),
+.bill-seats .tbl :is(th, td):nth-child(3) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.fund-card .tbl td:nth-child(3),
+.fund-pitches .tbl td:nth-child(3) {
+  font-weight: 700;
+}
+.fund-card .tbl td:nth-child(5) {
+  min-width: 200px;
+  color: var(--text-2);
+}
+.bill .tbl .mono {
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.bill-ents .tbl td:nth-child(5),
+.bill-tx .tbl td:nth-child(4) {
+  white-space: nowrap;
+}
+.seat-meter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin-bottom: var(--s-4);
+}
+.seat-meter-h {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+}
+.bill-note {
+  margin-top: var(--s-2);
+}
+@media (max-width: 639px) {
+  .fund-sel {
+    flex: 1 1 calc(50% - 4px);
+    min-width: 0;
+    font-size: 14px;
+  }
+  .fund-count {
+    margin-left: 0;
+  }
+  .fdisc-i {
+    padding: var(--s-4);
+  }
+  .fdisc-top {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s-2);
+  }
+  .fdisc-top > .tile {
+    display: none;
+  }
+  .fdisc-need,
+  .fpitch-amt {
+    text-align: left;
+  }
+  .fdisc-foot {
+    padding-left: 0;
+  }
+  .fdisc-acts {
+    margin-left: 0;
+  }
+  .fpitch {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .fsum {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .fsum-i {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    border-right: 0;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .fsum-i:last-child {
+    border-bottom: 0;
+  }
+  .fund-card .tbl :is(th, td):nth-child(3),
+  .fund-pitches .tbl :is(th, td):nth-child(3),
+  .bill-price .tbl :is(th, td):nth-child(3),
+  .bill-prod .tbl :is(th, td):nth-child(3),
+  .bill-seats .tbl :is(th, td):nth-child(3) {
+    text-align: left;
+  }
+  .fund-card .tbl td:nth-child(5) {
+    min-width: 0;
+  }
+  .fund-kpis .kpi,
+  .fund-kpis .kpi:first-child {
+    align-items: flex-start;
+    text-align: left;
+  }
+}
+
+/* ==========================================================================
+   9. Round 2: Data View details for these screens
+   ========================================================================== */
+.aud-t {
+  display: block;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-3);
+}
+.fund-scope {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px var(--s-2);
+  margin-bottom: var(--s-4);
+}
+.fund-scope .fund-sel {
+  max-width: 260px;
+}
+.fund-scope .fund-ints {
+  flex-basis: 100%;
+  margin: 0;
+}
+.fdv-need {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+  min-width: 120px;
+}
+.dv-meta span:has(> details[open]) {
+  flex-basis: 100%;
+}
+.dv-meta .fdisc-more > summary {
+  height: 24px;
+}
+.dv-meta .fpitch-q {
+  padding: 0;
+  border: 0;
+  color: var(--text-2);
+}
+@media (max-width: 639px) {
+  .fdv-need {
+    align-items: flex-start;
+    text-align: left;
+    min-width: 0;
+  }
+  .fund-scope .fund-sel {
+    max-width: none;
+    flex: 1 1 auto;
   }
 }

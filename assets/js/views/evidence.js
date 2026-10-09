@@ -110,14 +110,14 @@ route('evidence', 'evidence', () => {
               card(
                 p ? h(p.title) : 'Not linked to a project',
                 p ? l.length + ' item' + (l.length > 1 ? 's' : '') + ' · ' + pill(stageLabel(p.stage || p.status)) : 'Personal or portfolio evidence',
-                evTable(l, false),
+                evTable(l, false, 'evidence:' + t.cur + ':' + (p ? p.id : 'none')),
                 p && can('projects') ? L('Open project', 'project', { id: p.id }) : '',
-                'flush ev-group' + (p ? '' : ' ev-none'),
+                'ev-group' + (p ? '' : ' ev-none'),
               ),
             )
             .join('') || table([], [], 'No evidence here yet.')
         }</div>`
-      : `<section class="card flush ev-group ev-flat">${evTable(list, true)}</section>`)
+      : `<section class="card ev-group ev-flat">${evTable(list, true, 'evidence:' + t.cur + ':flat')}</section>`)
   );
 });
 // Evidence Support Level: the code as text, with a four-step meter (E0 = none lit, E4 = all lit).
@@ -127,25 +127,39 @@ function evLevel(l) {
 }
 // File-type glyph for an evidence row, from how it was provided.
 const evGlyph = e => ({ Link: 'link', 'Reflection or written output': 'edit', 'Repository record': 'archive' })[e.format] || 'file';
-function evTable(list, withProject) {
-  return table(
-    ['Evidence', withProject && 'Project', 'Type', 'Claim', 'Owner', 'Linked to', 'Level', 'Review', 'Release', ''].filter(c => c !== false),
-    list.map(e =>
-      [
-        `<span class="rec-name"><span class="tile t-soft" aria-hidden="true">${ic(evGlyph(e), 16)}</span><span class="rec-nt"><b>${h(e.title)}</b><span class="cap">${h(e.format || 'File upload')}</span></span></span>`,
-        withProject && (evProjectName(e) || '<span class="cap">—</span>'),
-        `<span class="ev-type">${h(e.type)}</span>`,
-        `<span class="ev-claim">${h(e.claim)}</span>`,
-        nm(e.owner),
-        (e.linked || []).map(cName).join(', ') || '—',
-        evLevel(e.level),
-        pill(e.review),
-        `<span class="ev-rel ${e.release === 'Not released' ? 'is-no' : ''}">${h(e.release)}</span>`,
-        L('Open', 'evidence', { id: e.id }),
-      ].filter(c => c !== false),
-    ),
-    'No evidence here yet.',
-  );
+// One evidence collection as a Data View (one per project group, or one flat list). `key` keeps its filters apart.
+function evTable(list, withProject, key = 'evidence') {
+  const lvl = e => +String(e.level || 'E0').slice(1) || 0;
+  return dataView(key, {
+    label: 'evidence items',
+    items: list,
+    search: e => [e.title, e.type, e.claim, P(e.owner).name, ...(e.linked || []).map(l => String(cName(l)).replace(/<[^>]+>/g, '')), withProject ? evProjects(e).map(p => p.title).join(' ') : ''].join(' '),
+    quick: dvOpts(list, e => e.review).length > 1 ? { label: 'Review status', options: REVIEW.filter(s => list.some(e => e.review === s)).map(s => [s, s]), test: (e, v) => e.review === v } : null,
+    filters: [
+      { key: 'type', label: 'Evidence type', options: EV_TYPES.filter(x => list.some(e => e.type === x)).map(x => [x, x]), test: (e, v) => e.type === v },
+      { key: 'level', label: 'Evidence Support Level', options: LEVELS.map(([k, v]) => [k, k + ' — ' + v]), test: (e, v) => e.level === v },
+      { key: 'release', label: 'Release', options: dvOpts(list, e => e.release), test: (e, v) => e.release === v },
+    ],
+    sorts: [
+      ['title', 'Title', (a, b) => a.title.localeCompare(b.title)],
+      ['level', 'Support level', (a, b) => lvl(a) - lvl(b)],
+      ['review', 'Review status', (a, b) => REVIEW.indexOf(a.review) - REVIEW.indexOf(b.review)],
+    ],
+    layout: 'table',
+    columns: [
+      { label: 'Evidence', sort: 'title', cell: e => `<span class="rec-name"><span class="tile t-soft" aria-hidden="true">${ic(evGlyph(e), 16)}</span><span class="rec-nt"><b>${h(e.title)}</b><span class="cap">${h(e.format || 'File upload')}</span></span></span>` },
+      withProject && { label: 'Project', cell: e => evProjectName(e) || '<span class="cap">—</span>' },
+      { label: 'Type', hideSm: true, cell: e => `<span class="ev-type">${h(e.type)}</span>` },
+      { label: 'Claim', hideSm: true, cell: e => `<span class="ev-claim">${h(e.claim)}</span>` },
+      { label: 'Owner', cell: e => nm(e.owner) },
+      { label: 'Linked to', hideSm: true, cell: e => (e.linked || []).map(cName).join(', ') || '—' },
+      { label: 'Level', sort: 'level', cell: e => evLevel(e.level) },
+      { label: 'Review', sort: 'review', cell: e => pill(e.review) },
+      { label: 'Release', cell: e => `<span class="ev-rel ${e.release === 'Not released' ? 'is-no' : ''}">${h(e.release)}</span>` },
+      { label: '', cell: e => L('Open', 'evidence', { id: e.id }) },
+    ].filter(Boolean),
+    empty: ['award', 'No evidence here yet.', ''],
+  });
 }
 // How the evidence was provided. Older records are files.
 function evFormatRow(e) {
@@ -488,12 +502,13 @@ F.ne = (d, form) => {
 // ---------- REPOSITORY (E08) ----------
 route('repository', 'repository', () => {
   const r = role();
-  // arriving from a link to one record (e.g. from a Learning Harvest) filters to it
+  // arriving from a link to one record (e.g. from a Learning Harvest) searches the library for it
   if (UI.p.rec && byId('records', UI.p.rec)) {
-    UI.q.repo = byId('records', UI.p.rec).title;
+    const st = (UI.dv.repository = UI.dv.repository || {});
+    st.q = byId('records', UI.p.rec).title;
+    st.page = 1;
     delete UI.p.rec;
   }
-  const q = UI.q.repo || '';
   const vis = S.records.filter(
     x =>
       r === 'A' ||
@@ -503,13 +518,7 @@ route('repository', 'repository', () => {
         return o && (memberOf(o) || r === 'O');
       }),
   );
-  const list = vis.filter(
-    x =>
-      !q ||
-      (x.title + ' ' + x.kind + ' ' + x.tags + ' ' + x.linked.map(cName).join(' '))
-        .toLowerCase()
-        .includes(q.toLowerCase()),
-  );
+  const plain = s => String(s).replace(/<[^>]+>/g, '');
   const used = S.records.reduce((a, x) => a + x.sizeMB, 0);
   return (
     head(
@@ -520,20 +529,30 @@ route('repository', 'repository', () => {
     (r === 'A'
       ? `<div class="repo-store" role="status">${ic('archive', 18)}<div class="grow"><div class="bt">Storage</div><p class="cap">${used.toFixed(1)} MB used of the 50 GB quota (${((used / 51200) * 100).toFixed(2)}%). Warning at 80%.</p></div><div class="progress repo-meter" aria-hidden="true"><span class="bar" style="width:${Math.max(1, Math.min(100, (used / 51200) * 100))}%"></span></div></div>`
       : '') +
-    `<section class="card flush rec-list repo-lib"><div class="rec-toolbar repo-bar"><div class="rec-tf rec-search">${ic('search', 16)}<input class="input" placeholder="Search by title, type, people or space" value="${h(q)}" data-ch="repoQ" aria-label="Search records"></div><span class="rec-count"><b>${list.length}</b> of ${vis.length} record${vis.length === 1 ? '' : 's'}</span></div>` +
-    table(
-      ['Record', 'Type', 'Linked to', 'Owner', 'State', ''],
-      list.map(x => [
-        `<span class="rec-name"><span class="tile t-soft" aria-hidden="true">${ic(/link/i.test(x.kind) ? 'link' : /decision|commitment/i.test(x.kind) ? 'checks' : /chat|transcript/i.test(x.kind) ? 'message' : 'file', 16)}</span><span class="rec-nt"><b>${h(x.title)}</b><span class="cap">v${x.ver}${x.note ? ' · ' + h(x.note) : ''}</span></span></span>`,
-        h(x.kind),
-        x.linked.map(cName).join(', ') || '—',
-        nm(x.owner),
-        pill(x.state),
-        x.state !== 'Quarantined' ? B('Details', 'repoView', { id: x.id }) : '',
-      ]),
-      'No records.',
-    ) +
-    `</section>`
+    dataView('repository', {
+      label: 'records',
+      items: vis,
+      search: x => x.title + ' ' + x.kind + ' ' + x.tags + ' ' + x.linked.map(l => plain(cName(l))).join(' ') + ' ' + P(x.owner).name,
+      searchLabel: 'Search by title, type, people or space',
+      quick: dvOpts(vis, x => x.state).length > 1 ? { label: 'State', options: dvOpts(vis, x => x.state), test: (x, v) => x.state === v } : null,
+      filters: [
+        { key: 'kind', label: 'Type', options: dvOpts(vis, x => x.kind), test: (x, v) => x.kind === v },
+        { key: 'space', label: 'Linked to', options: dvOpts(vis, x => x.linked, l => plain(cName(l))), test: (x, v) => x.linked.includes(v) },
+      ],
+      sorts: [
+        ['date', 'Date', (a, b) => String(a.date || '').localeCompare(String(b.date || ''))],
+        ['title', 'Title', (a, b) => a.title.localeCompare(b.title)],
+      ],
+      row: x => ({
+        lead: `<span class="tile t-soft" aria-hidden="true">${ic(/link/i.test(x.kind) ? 'link' : /decision|commitment/i.test(x.kind) ? 'checks' : /chat|transcript/i.test(x.kind) ? 'message' : 'file', 18)}</span>`,
+        title: h(x.title),
+        sub: `v${x.ver}${x.note ? ' · ' + h(x.note) : ''}`,
+        meta: [h(x.kind), x.linked.map(cName).join(', ') || '—', nm(x.owner), x.date ? fmt(x.date) : ''],
+        badges: pill(x.state),
+        primary: x.state !== 'Quarantined' ? B('Details', 'repoView', { id: x.id }) : '',
+      }),
+      empty: ['archive', 'No records.', ''],
+    })
   );
 });
 A.repoQ = (d, el) => {
@@ -661,20 +680,31 @@ route('harvests', 'harvest', () => {
       'Source records → AI draft → human review → edit → approve/reject → release. Previous versions are kept.',
       r !== 'S' && r !== 'O' ? B(ic('plus', 16) + 'Start a Harvest', 'newHarvest', {}, 'btn-p') : '',
     ) +
-    `<section class="card flush rec-list hv-list"><div class="rec-bar"><span class="rec-count"><b>${list.length}</b> Harvest${list.length === 1 ? '' : 's'}</span><span class="cap hide-sm">Previous versions are kept for every Harvest</span></div>` +
-    table(
-      ['Harvest', 'Trigger', 'State', 'AI', 'Release', ''],
-      list.map(x => [
-        `<span class="rec-name"><span class="tile t-soft" aria-hidden="true">${ic('sparkle', 16)}</span><span class="rec-nt"><b>${h(x.scopeName)}</b><span class="cap">${x.tpl === 2 ? WL() + ' template' : 'Template v1.0'} · v${x.ver}</span></span></span>`,
-        h(x.trigger),
-        pill(x.state),
-        x.ai ? aiTag('AI-assisted') : '—',
-        h(x.release),
-        L('Open', 'harvest', { id: x.id }),
-      ]),
-      'No Harvests yet.',
-    ) +
-    `</section>`
+    dataView('harvests', {
+      label: 'Harvests',
+      items: list,
+      search: x => x.scopeName + ' ' + x.trigger + ' ' + x.state + ' ' + x.release,
+      quick: dvOpts(list, x => x.state).length > 1 ? { label: 'State', options: ['Draft', 'Review', 'Approved', 'Rejected'].filter(s => list.some(x => x.state === s)).map(s => [s, s]), test: (x, v) => x.state === v } : null,
+      filters: [
+        { key: 'trigger', label: 'Trigger', options: dvOpts(list, x => x.trigger), test: (x, v) => x.trigger === v },
+        { key: 'release', label: 'Release', options: dvOpts(list, x => x.release), test: (x, v) => x.release === v },
+        { key: 'ai', label: 'AI', options: [['yes', 'AI-assisted'], ['no', 'Written by people']], test: (x, v) => (v === 'yes' ? !!x.ai : !x.ai) },
+      ],
+      sorts: [
+        ['title', 'Title', (a, b) => a.scopeName.localeCompare(b.scopeName)],
+        ['state', 'State', (a, b) => a.state.localeCompare(b.state)],
+        ['version', 'Version', (a, b) => (a.ver || 0) - (b.ver || 0)],
+      ],
+      row: x => ({
+        lead: `<span class="tile t-soft" aria-hidden="true">${ic('sparkle', 18)}</span>`,
+        title: h(x.scopeName),
+        sub: h(x.trigger),
+        meta: [`${x.tpl === 2 ? WL() + ' template' : 'Template v1.0'} · v${x.ver}`, h(x.release)],
+        badges: pill(x.state) + (x.ai ? aiTag('AI-assisted') : ''),
+        primary: L('Open', 'harvest', { id: x.id }),
+      }),
+      empty: ['sparkle', 'No Harvests yet.', ''],
+    })
   );
 });
 A.newHarvest = d => {
@@ -1055,11 +1085,11 @@ function hv2View(x, mem, comp, edit) {
   const allEvo = S.evolution.filter(e => e.hv === x.id);
   const cp = S.compass[x.subject] || {};
   const main = `<form data-f="hv2" class="card c8 col hv2" novalidate>${errSum(f)}<input type="hidden" name="id" value="${x.id}">
-  ${sec('what', HV2[0][1], HV2[0][2], ta('what', '', { rows: 8, req: true, help: edit ? 'Compiled from the completed deliverables, evidence, milestones, wins and records. Edit freely.' : '' }) + refs(['Deliverable', 'Evidence', 'Milestone', 'Record']))}
+  ${sec('what', HV2[0][1], HV2[0][2], ta('what', '<span class="sr">' + HV2[0][1] + '</span>', { rows: 8, req: true, help: edit ? 'Compiled from the completed deliverables, evidence, milestones, wins and records. Edit freely.' : '' }) + refs(['Deliverable', 'Evidence', 'Milestone', 'Record']))}
   ${sec('learning', HV2[1][1], HV2[1][2], ta('learning', 'What was learned', { rows: 3, req: true }) + `<div class="g2 hv2-learn">${HV2_LEARN.map(([k, l]) => ta(k, l, { rows: 2, help: edit && ['skillsDem', 'skillsDev', 'interests'].includes(k) ? 'Comma-separated. Used to suggest profile changes, which the person reviews.' : '' })).join('')}</div>`)}
-  ${sec('negative', HV2[2][1] + ' <span class="req">*</span>', HV2[2][2], ta('negative', '', { rows: 6, req: true, help: edit ? (x.detected ? `Pre-filled with ${x.detected} item${x.detected > 1 ? 's' : ''} found in the records (open risks, blocked dependencies, late or declined deliverables, reworked contributions, evidence not approved). Confirm, edit and add what did not work.` : 'Nothing was flagged in the records. Record what did not work as expected, or explain why there was nothing.') : '' }))}
-  ${sec('resources', HV2[3][1], HV2[3][2], ta('resources', '', { rows: 5, req: true, help: edit ? 'Add how each resource contributed, or remove ones that did not.' : '' }) + refs(['Resource']))}
-  ${sec('partners', HV2[4][1], HV2[4][2], ta('partners', '', { rows: 5, req: true, help: edit ? 'Add how each contribution affected the outcome.' : '' }) + refs(['Partner', 'Contribution']))}
+  ${sec('negative', HV2[2][1] + ' <span class="req">*</span>', HV2[2][2], ta('negative', '<span class="sr">' + HV2[2][1] + '</span>', { rows: 6, req: true, help: edit ? (x.detected ? `Pre-filled with ${x.detected} item${x.detected > 1 ? 's' : ''} found in the records (open risks, blocked dependencies, late or declined deliverables, reworked contributions, evidence not approved). Confirm, edit and add what did not work.` : 'Nothing was flagged in the records. Record what did not work as expected, or explain why there was nothing.') : '' }))}
+  ${sec('resources', HV2[3][1], HV2[3][2], ta('resources', '<span class="sr">' + HV2[3][1] + '</span>', { rows: 5, req: true, help: edit ? 'Add how each resource contributed, or remove ones that did not.' : '' }) + refs(['Resource']))}
+  ${sec('partners', HV2[4][1], HV2[4][2], ta('partners', '<span class="sr">' + HV2[4][1] + '</span>', { rows: 5, req: true, help: edit ? 'Add how each contribution affected the outcome.' : '' }) + refs(['Partner', 'Contribution']))}
   ${sec('decisions', 'F. Continue / Change / Stop / Test', 'The Harvest concludes with four decisions. All four are required.', `<div class="hv2-dec">${HV2_DEC.map(([k, l, q]) => `<div class="hv2-d hv2-d-${k}${fe(f, k) ? ' err' : ''}"><label class="hv2-dl" for="hv2_${k}"><b>${l}</b><span class="cap">${q}</span></label>${edit ? `<textarea id="hv2_${k}" name="${k}" class="input${fe(f, k) ? ' err' : ''}" rows="4" aria-invalid="${!!fe(f, k)}">${h(fv(f, k, s[k] || ''))}</textarea>${fe(f, k) ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe(f, k)}</span>` : ''}` : `<p class="hv2-x">${h(s[k] || '—')}</p>`}</div>`).join('')}</div>`)}
   ${sec('links', 'G. Links to records', 'Every source record this Harvest draws on. Each link opens the underlying record, which keeps its own permissions.', groups.length ? `<div class="hv2-links">${groups.map(g => `<div class="hv2-lg"><span class="lbl">${g === 'Baseline' ? 'Purpose Compass Baseline (only you)' : g + 's'}</span><div class="hv2-refs">${links.filter(l => l.type === g).map(chip).join('')}</div></div>`).join('')}</div>` : '<p class="cap">No linked records.</p>')}
   ${edit ? `<div class="actions"><span class="cap">Every save keeps the previous version.</span><div class="row wrap"><button class="btn btn-s" type="submit" name="act" value="save">Save edits</button>${x.state === 'Draft' ? '<button class="btn btn-s" type="submit" name="act" value="review">Send for review</button>' : ''}${comp && !subj ? '<button class="btn btn-s" type="submit" name="act" value="reject">Reject</button><button class="btn btn-p" type="submit" name="act" value="approve">Approve</button>' : ''}</div></div>` : ''}</form>`;
