@@ -4,21 +4,40 @@ function inviteTable(scopeCtx) {
   inv.forEach(i => {
     if (['Pending', 'Resent'].includes(i.status) && i.expires < today()) i.status = 'Expired';
   });
-  return table(
-    ['Email', 'Role', 'Context', 'Status', 'Valid until', 'Invited by', ''],
-    inv.map(i => [
-      h(i.email),
-      ROLE[i.role],
-      h(S.contexts.find(c => c.id === i.ctx).name),
-      pill(i.status),
-      fmt(i.expires),
-      nm(i.by),
-      ['Pending', 'Resent', 'Expired'].includes(i.status)
-        ? B('Resend', 'invAct', { id: i.id, v: 'Resent' }) +
-          (i.status !== 'Expired' ? CB('Revoke', 'invAct', { id: i.id, v: 'Revoked' }, 'Revoke the invitation for ' + i.email + '? The link stops working immediately.') : '')
-        : '',
-    ]),
-  );
+  const cn = i => S.contexts.find(c => c.id === i.ctx).name;
+  const uniq = xs => [...new Set(xs)].filter(Boolean);
+  const canResend = i => ['Pending', 'Resent', 'Expired'].includes(i.status);
+  const canRevoke = i => ['Pending', 'Resent'].includes(i.status);
+  return dataView('adm:inv:' + (scopeCtx || 'all'), {
+    label: 'invitations',
+    items: inv,
+    search: i => i.email + ' ' + ROLE[i.role] + ' ' + cn(i) + ' ' + P(i.by).name,
+    quick: { label: 'Status', options: uniq(inv.map(i => i.status)).map(x => [x, x]), test: (i, v) => i.status === v },
+    filters: [
+      { key: 'role', label: 'Role', options: uniq(inv.map(i => i.role)).map(r => [r, ROLE[r] || r]), test: (i, v) => i.role === v },
+      ...(scopeCtx ? [] : [{ key: 'ctx', label: 'Context', options: uniq(inv.map(i => i.ctx)).map(c => [c, S.contexts.find(x => x.id === c).name]), test: (i, v) => i.ctx === v }]),
+    ],
+    sorts: [
+      ['until', 'Valid until', (a, b) => String(a.expires).localeCompare(String(b.expires))],
+      ['email', 'Email', (a, b) => a.email.localeCompare(b.email)],
+      ['status', 'Status', (a, b) => a.status.localeCompare(b.status)],
+    ],
+    rowId: i => i.id,
+    row: i => ({
+      lead: `<span class="av adm-inv-av" aria-hidden="true">${ic('mail', 14)}</span>`,
+      title: `<span class="adm-em">${h(i.email)}</span>`,
+      sub: `${ROLE[i.role]} · ${h(cn(i))}`,
+      meta: [`Valid until ${fmt(i.expires)}`, `Invited by ${nm(i.by)}`],
+      badges: pill(i.status),
+      primary: canResend(i) ? B('Resend', 'invAct', { id: i.id, v: 'Resent' }) : '',
+      menu: canRevoke(i) ? CB(ic('x', 16) + 'Revoke', 'invAct', { id: i.id, v: 'Revoked' }, 'Revoke the invitation for ' + i.email + '? The link stops working immediately.', 'menu-i danger', 'Revoke') : '',
+    }),
+    bulk: [
+      { label: 'Resend', icon: 'refresh', run: ids => ids.map(id => byId('invites', id)).filter(i => i && canResend(i)).forEach(i => A.invAct({ id: i.id, v: 'Resent' })) },
+      { label: 'Revoke', icon: 'x', danger: true, confirm: 'Revoke the selected pending invitations? Their links stop working immediately. Accepted, expired and already revoked invitations are left as they are.', run: ids => ids.map(id => byId('invites', id)).filter(i => i && canRevoke(i)).forEach(i => A.invAct({ id: i.id, v: 'Revoked' })) },
+    ],
+    empty: ['mail', 'No invitations yet', 'Invite people to give them a role in this context.', ''],
+  });
 }
 A.invAct = d => {
   const i = byId('invites', d.id);
@@ -39,7 +58,7 @@ A.invNew = d => {
   modal(
     'Create invitations',
     () =>
-      `<form data-f="inv" class="col" style="gap:14px" novalidate>${fi('inv', 'emails', 'Email addresses (one per line, or paste a CSV column — up to 1,000)', { type: 'textarea', rows: 5, req: true })}<div class="f2">${fi('inv', 'role', 'Nominated role', { type: 'select', req: true, opts: invitableRoles(allowed).map(r => [r.id, r.name + (r.system ? '' : ' (custom)')]) })}${fi('inv', 'days', 'Valid for (days)', { type: 'number', req: true, min: 1, value: S.settings.inviteValidityDays })}</div>${fi('inv', 'until', 'Role assignment expires (optional)', { type: 'date', help: 'After this date the role stops working until an administrator renews it. Leave empty for no expiry.' })}${fi('inv', 'ctx', 'Context', { type: 'select', req: true, opts: S.contexts.filter(c => c.kind !== 'Platform' && (role() !== 'O' || c.id === ctxId())).map(c => [c.id, c.name]), value: ctxId() })}${banner('info', '', 'Single-use links are sent by transactional email. Sensitive roles need approval after registration. An existing PHOENIX email gets the role added to their record.')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send invitations</button></div></form>`,
+      `<form data-f="inv" class="col adm-form" novalidate>${fi('inv', 'emails', 'Email addresses (one per line, or paste a CSV column — up to 1,000)', { type: 'textarea', rows: 5, req: true })}<div class="f2">${fi('inv', 'role', 'Nominated role', { type: 'select', req: true, opts: invitableRoles(allowed).map(r => [r.id, r.name + (r.system ? '' : ' (custom)')]) })}${fi('inv', 'days', 'Valid for (days)', { type: 'number', req: true, min: 1, value: S.settings.inviteValidityDays })}</div>${fi('inv', 'until', 'Role assignment expires (optional)', { type: 'date', help: 'After this date the role stops working until an administrator renews it. Leave empty for no expiry.' })}${fi('inv', 'ctx', 'Context', { type: 'select', req: true, opts: S.contexts.filter(c => c.kind !== 'Platform' && (role() !== 'O' || c.id === ctxId())).map(c => [c.id, c.name]), value: ctxId() })}${banner('info', '', 'Single-use links are sent by transactional email. Sensitive roles need approval after registration. An existing PHOENIX email gets the role added to their record.')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send invitations</button></div></form>`,
   );
 };
 F.inv = d => {
@@ -93,20 +112,38 @@ function usersTable(ctxFilter, canEdit, crud) {
   const as = S.assign
     .filter(a => !ctxFilter || a.ctx === ctxFilter)
     .sort((x, y) => (y.status === 'Pending role approval') - (x.status === 'Pending role approval'));
-  return table(
-    ['Person', 'Role and context', 'Status', 'Bundles and mandate', ''],
-    as.map(a => [
-      `<div class="row" style="gap:10px"><span class="av">${ini(a.pid)}</span><div><b>${nm(a.pid)}</b><div class="cap">${h(P(a.pid).email)}</div></div></div>`,
-      `<b style="font-weight:600">${ROLE[a.role]}</b><div class="cap">${h(S.contexts.find(c => c.id === a.ctx).name)}</div>`,
-      pill(a.status),
-      `<div class="row wrap" style="gap:4px">${a.bundles.map(b => pill(b, 'p-grey')).join('')}${a.mandate ? pill(a.mandate.valid ? 'Mandate to ' + fmt(a.mandate.until) : 'Mandate expired', a.mandate.valid ? 'p-teal' : 'p-red') : ''}${a.until ? pill((a.status === 'Expired' ? 'Role expired ' : 'Role expires ') + fmt(a.until), a.status === 'Expired' ? 'p-red' : 'p-grey') : ''}</div>`,
-      crud
-        ? `<div class="row wrap" style="gap:6px;justify-content:flex-end">${B('View', 'userView', { id: a.id })}${userEditable(a.pid) ? B(ic('edit', 14) + 'Edit', 'userEdit', { id: a.id }) + B('Manage', 'userManage', { id: a.id }) + CB('Delete', 'userDel', { pid: a.pid }, 'Delete the account of ' + P(a.pid).name + '? All of their roles are removed and they can no longer sign in. Their past contributions stay on record under their name.', 'btn-d btn-sm') : ''}</div>`
+  const cn = a => S.contexts.find(c => c.id === a.ctx).name;
+  const uniq = xs => [...new Set(xs)].filter(Boolean);
+  return dataView('adm:users:' + (ctxFilter || 'all'), {
+    label: 'role assignments',
+    searchLabel: 'Search people, emails or roles',
+    items: as,
+    search: a => P(a.pid).name + ' ' + (P(a.pid).email || '') + ' ' + ROLE[a.role] + ' ' + cn(a) + ' ' + a.bundles.join(' '),
+    quick: { label: 'Status', options: uniq(as.map(a => a.status)).map(x => [x, x]), test: (a, v) => a.status === v },
+    filters: [
+      { key: 'role', label: 'Role', options: uniq(as.map(a => a.role)).map(r => [r, ROLE[r] || r]), test: (a, v) => a.role === v },
+      { key: 'bundle', label: 'Permission bundle', options: S.bundles.map(b => [b.name, b.name]), test: (a, v) => a.bundles.includes(v) },
+      ...(ctxFilter ? [] : [{ key: 'ctx', label: 'Context', options: uniq(as.map(a => a.ctx)).map(c => [c, S.contexts.find(x => x.id === c).name]), test: (a, v) => a.ctx === v }]),
+    ],
+    sorts: [
+      ['name', 'Name', (a, b) => P(a.pid).name.localeCompare(P(b.pid).name)],
+      ['role', 'Role', (a, b) => String(ROLE[a.role]).localeCompare(String(ROLE[b.role]))],
+      ['status', 'Status', (a, b) => a.status.localeCompare(b.status)],
+    ],
+    row: a => ({
+      lead: `<span class="av">${ini(a.pid)}</span>`,
+      title: nm(a.pid),
+      sub: h(P(a.pid).email),
+      meta: [`<span class="adm-role">${ROLE[a.role]}</span>`, h(cn(a))],
+      badges: pill(a.status) + a.bundles.map(b => pill(b, 'p-grey')).join('') + (a.mandate ? pill(a.mandate.valid ? 'Mandate to ' + fmt(a.mandate.until) : 'Mandate expired', a.mandate.valid ? 'p-teal' : 'p-red') : '') + (a.until ? pill((a.status === 'Expired' ? 'Role expired ' : 'Role expires ') + fmt(a.until), a.status === 'Expired' ? 'p-red' : 'p-grey') : ''),
+      primary: crud
+        ? B('View', 'userView', { id: a.id }) + (userEditable(a.pid) ? B(ic('edit', 14) + 'Edit', 'userEdit', { id: a.id }) + B('Manage', 'userManage', { id: a.id }) + CB('Delete', 'userDel', { pid: a.pid }, 'Delete the account of ' + P(a.pid).name + '? All of their roles are removed and they can no longer sign in. Their past contributions stay on record under their name.', 'btn-d btn-sm') : '')
         : canEdit && a.pid !== myId()
           ? B('Manage', 'userManage', { id: a.id })
           : '',
-    ]),
-  );
+    }),
+    empty: ['users', 'No users in this context yet', 'Invite people to give them a role.', ''],
+  });
 }
 // ---- user accounts (Programme Administrator): create, read, update, delete
 // Not your own account, and never a Platform Administrator's account.
@@ -227,16 +264,16 @@ A.userManage = d => {
   const isO = role() === 'O';
   modal(
     'Manage ' + nm(a.pid),
-    () => `<div class="col" style="gap:14px">${dl([
+    () => `<div class="adm-dlg"><div class="adm-dlg-who"><span class="av lg">${ini(a.pid)}</span><div class="adm-who-t"><b>${nm(a.pid)}</b><div class="cap">${h(P(a.pid).email)}</div></div></div>${dl([
       ['Role', ROLE[a.role]],
       ['Context', h(S.contexts.find(c => c.id === a.ctx).name)],
       ['Status', pill(a.status)],
       ['Assignment expires', a.until ? fmt(a.until) : 'No expiry set'],
     ])}
- ${a.pid !== myId() ? `<form data-f="aexp" class="col" style="gap:8px" novalidate><input type="hidden" name="id" value="${a.id}">${fi('aexp', 'until', 'Role assignment expires', { type: 'date', value: a.until || '', help: 'Leave empty for no expiry. On the day after this date the role stops working until it is renewed.' })}<div class="actions"><span></span><button class="btn btn-s" type="submit">Save expiry</button></div></form>` : ''}
- <div class="row wrap">${a.status === 'Pending role approval' ? B('Approve role', 'roleDecide', { id: a.id, v: 'Active' }, 'btn-p btn-sm') + B('Decline role', 'roleDecide', { id: a.id, v: 'Role not activated' }) : a.status === 'Active' ? CB('Deactivate', 'userStatus', { id: a.id, v: 'Deactivated' }, 'Deactivate this ' + ROLE[a.role] + ' access? The person keeps their account, consent, correction and export rights.') : B('Activate', 'userStatus', { id: a.id, v: 'Active' }, 'btn-p btn-sm')}</div>
- <form data-f="bund" class="col" style="gap:8px"><input type="hidden" name="id" value="${a.id}"><span class="lbl">Specialist permission bundles</span>${S.bundles.map(b => `<label class="row"><input class="chk" type="checkbox" name="b" value="${b.name}" ${a.bundles.includes(b.name) ? 'checked' : ''} ${isO && ['Finance Owner', 'AI Owner', 'Trust/Data Steward', 'Incident/Safety Owner'].includes(b.name) ? 'disabled' : ''}>${b.name}<span class="cap">· ${h(b.approval)}</span></label>`).join('')}<span class="help">Higher-trust bundles need Programme/Organization Administrator approval and are not delegated at workspace level.</span><div class="actions"><span></span><button class="btn btn-s" type="submit">Save bundles</button></div></form>
- ${['O', 'C'].includes(roleBase(a.role)) ? `<form data-f="mand" class="col" style="gap:8px"><input type="hidden" name="id" value="${a.id}"><span class="lbl">Mandate (authority to bind the organization)</span>${fi('mand', 'scope', 'Scope', { value: a.mandate?.scope, req: true })}${fi('mand', 'until', 'Valid until', { type: 'date', req: true, value: a.mandate?.until })}<div class="actions">${a.mandate ? CB('Revoke mandate', 'mandRevoke', { id: a.id }, 'Revoke this mandate? Elevated access is removed; ordinary access continues.') : '<span></span>'}<button class="btn btn-s" type="submit">Grant / update mandate</button></div></form>` : ''}</div>`,
+ <section class="adm-sec"><h3 class="adm-sec-t">Access</h3><div class="row wrap adm-sec-a">${a.status === 'Pending role approval' ? B('Approve role', 'roleDecide', { id: a.id, v: 'Active' }, 'btn-p btn-sm') + B('Decline role', 'roleDecide', { id: a.id, v: 'Role not activated' }) : a.status === 'Active' ? CB('Deactivate', 'userStatus', { id: a.id, v: 'Deactivated' }, 'Deactivate this ' + ROLE[a.role] + ' access? The person keeps their account, consent, correction and export rights.', 'btn-d btn-sm') : B('Activate', 'userStatus', { id: a.id, v: 'Active' }, 'btn-p btn-sm')}</div></section>
+ ${a.pid !== myId() ? `<form data-f="aexp" class="adm-sec" novalidate><input type="hidden" name="id" value="${a.id}">${fi('aexp', 'until', 'Role assignment expires', { type: 'date', value: a.until || '', help: 'Leave empty for no expiry. On the day after this date the role stops working until it is renewed.' })}<div class="actions"><span></span><button class="btn btn-s btn-sm" type="submit">Save expiry</button></div></form>` : ''}
+ <form data-f="bund" class="adm-sec"><input type="hidden" name="id" value="${a.id}"><span class="lbl adm-sec-t">Specialist permission bundles</span><div class="adm-chks">${S.bundles.map(b => `<label class="adm-chk"><input class="chk" type="checkbox" name="b" value="${b.name}" ${a.bundles.includes(b.name) ? 'checked' : ''} ${isO && ['Finance Owner', 'AI Owner', 'Trust/Data Steward', 'Incident/Safety Owner'].includes(b.name) ? 'disabled' : ''}><span class="adm-chk-t">${b.name}</span><span class="cap">· ${h(b.approval)}</span></label>`).join('')}</div><span class="help">Higher-trust bundles need Programme/Organization Administrator approval and are not delegated at workspace level.</span><div class="actions"><span></span><button class="btn btn-s btn-sm" type="submit">Save bundles</button></div></form>
+ ${['O', 'C'].includes(roleBase(a.role)) ? `<form data-f="mand" class="adm-sec"><input type="hidden" name="id" value="${a.id}"><span class="lbl adm-sec-t">Mandate (authority to bind the organization)</span><div class="f2">${fi('mand', 'scope', 'Scope', { value: a.mandate?.scope, req: true })}${fi('mand', 'until', 'Valid until', { type: 'date', req: true, value: a.mandate?.until })}</div><div class="actions">${a.mandate ? CB('Revoke mandate', 'mandRevoke', { id: a.id }, 'Revoke this mandate? Elevated access is removed; ordinary access continues.', 'btn-d btn-sm') : '<span></span>'}<button class="btn btn-s btn-sm" type="submit">Grant / update mandate</button></div></form>` : ''}</div>`,
   );
 };
 A.userStatus = d => {
@@ -319,67 +356,66 @@ route('org', 'admin', () => {
   let body = '';
   if (t.cur === 'invites')
     body = card(
-      'Invitation lifecycle',
+      `Invitation lifecycle <span class="adm-n">${S.invites.filter(i => i.ctx === c).length}</span>`,
       'Pending · Accepted · Expired · Revoked · Resent',
       inviteTable(c),
       B(ic('plus', 14) + 'Invite users', 'invNew', {}, 'btn-p btn-sm'),
+      'adm-panel',
     );
   if (t.cur === 'users')
     body = card(
-      'Users in your organisation’s context',
+      `Users in your organisation’s context <span class="adm-n">${S.assign.filter(a => a.ctx === c).length}</span>`,
       'Assign roles, grant or revoke mandates within your organisation.',
       usersTable(c, true),
+      '',
+      'adm-panel',
     );
   if (t.cur === 'config')
     body =
-      cfgForm(true) +
-      '<div class="section-gap"></div>' +
-      tplForm() +
-      '<div class="section-gap"></div>' +
-      card(
+      `<div class="adm-stack">${cfgForm(true)}${tplForm()}${card(
         'Grow your programme',
         'Launch a new cohort, initiative or use-case pack.',
-        B(ic('plus', 14) + 'Request a new cohort', 'cohortNew', {}, 'btn-p btn-sm') +
-          table(
-            ['Request', 'Pack', 'Start', 'Status'],
-            S.cohortReqs
-              .filter(r => r.by === myId())
-              .map(r => [
-                h(r.name),
-                h(S.packs.find(p => p.id === r.pack)?.name),
-                fmt(r.start),
-                pill(r.status === 'Created' ? 'Completed' : r.status),
-              ]),
-            'No requests yet.',
-          ),
-      );
+        table(
+          ['Request', 'Pack', 'Start', 'Status'],
+          S.cohortReqs
+            .filter(r => r.by === myId())
+            .map(r => [
+              `<b>${h(r.name)}</b>`,
+              h(S.packs.find(p => p.id === r.pack)?.name),
+              `<span class="adm-date">${fmt(r.start)}</span>`,
+              pill(r.status === 'Created' ? 'Completed' : r.status),
+            ]),
+          'No requests yet.',
+        ),
+        B(ic('plus', 14) + 'Request a new cohort', 'cohortNew', {}, 'btn-p btn-sm'),
+        'adm-panel',
+      )}</div>`;
   if (t.cur === 'projects')
     body = card(
       'Projects and spaces',
       'Create projects and their structure; aggregate view only.',
-      table(
-        ['Project', 'Owner', 'Stage', 'Status'],
-        S.projects
-          .filter(p => p.ctx === c && p.status !== 'Draft')
-          .map(p => [
-            h(p.title),
-            nm(p.owner),
-            p.stage ? pill(p.stage === 'Room' ? WL() : p.stage, SC[p.stage]) : '—',
-            pill(p.status),
-          ]),
-      ),
+      (ps =>
+        dataView('org:projects', {
+          label: 'projects',
+          items: ps,
+          search: p => p.title + ' ' + P(p.owner).name,
+          quick: { label: 'Stage', options: [...new Set(ps.map(p => p.stage).filter(Boolean))].map(x => [x, x === 'Room' ? WL() : x]), test: (p, v) => p.stage === v },
+          filters: [{ key: 'status', label: 'Status', options: [...new Set(ps.map(p => p.status))].map(x => [x, x]), test: (p, v) => p.status === v }],
+          sorts: [['title', 'Title', (a, b) => a.title.localeCompare(b.title)], ['owner', 'Owner', (a, b) => P(a.owner).name.localeCompare(P(b.owner).name)]],
+          row: p => ({ lead: `<span class="tile t-soft">${ic('folder', 18)}</span>`, title: h(p.title), sub: 'Owner: ' + nm(p.owner), badges: (p.stage ? pill(p.stage === 'Room' ? WL() : p.stage, SC[p.stage]) : '') + pill(p.status) }),
+          empty: ['folder', 'No projects yet', 'Projects in this context appear here once they are submitted.', ''],
+        }))(S.projects.filter(p => p.ctx === c && p.status !== 'Draft')),
       B(
         ic('plus', 14) + 'Create institutional ' + WL(),
         'newRoom',
         { origin: 'Institutional project' },
         'btn-p btn-sm',
       ),
+      'adm-panel',
     );
   if (t.cur === 'reports')
     body =
-      reportsView(true) +
-      '<div class="section-gap"></div>' +
-      card(
+      `<div class="adm-stack">${reportsView(true)}${card(
         'Cross-organization sharing',
         'Needs Programme Administrator approval.',
         table(
@@ -388,12 +424,11 @@ route('org', 'admin', () => {
           'No requests.',
         ),
         B('Request sharing', 'xoNew', {}, 'btn-s btn-sm'),
-      );
+        'adm-panel',
+      )}</div>`;
+  const org = S.orgs.find(o => o.id === me().org);
   return (
-    head(
-      'Organization workspace',
-      h(S.orgs.find(o => o.id === me().org)?.name || '') + ' · ' + h(ctx().name) + ' · pack: ' + h(pk.name),
-    ) +
+    `<header class="shead adm-ws"><div class="shead-main">${org ? orgMark(org, 48) : `<span class="tile">${ic('building', 22)}</span>`}<div class="shead-t"><div class="shead-kind">Organization workspace</div><h1 class="h1">${h(org?.name || '') || 'Organization workspace'}</h1><div class="shead-meta"><span>${h(ctx().name)}</span><span>pack: ${h(pk.name)}</span></div></div></div></header>` +
     t.html +
     body
   );
@@ -403,8 +438,8 @@ function cfgForm(isOrg) {
   return card(
     isOrg ? 'Configure within the pack envelope' : 'Use-case pack: ' + h(pk.name),
     'Platform-controlled items cannot be changed by a tenant.',
-    `<form data-f="cfg" class="col" style="gap:14px" novalidate><div class="g3">${fi('cfg', 'workspace', 'Label for workspaces', { value: 'Action Room', ro: true, help: 'Fixed across PHOENIX so every role sees the same name.' })}${fi('cfg', 'circle', 'Label for Circles', { value: pk.labels.circle, req: true })}${fi('cfg', 'rope', 'Label for Rope Teams', { value: pk.labels.rope, req: true })}</div>${fi('cfg', 'compassOpt', 'Ask optional Purpose Compass questions PC7–PC12 in context', { type: 'checkbox', value: pk.compassOptional ? 'yes' : '' })}${fi('cfg', 'propose', 'Participants may propose a ' + pk.labels.workspace, { type: 'checkbox', value: S.settings.participantCanProposeWorkspace ? 'yes' : '' })}
- <div class="card" style="background:#F7F8FB;padding:14px"><b>Platform-controlled (locked)</b><p class="cap" style="margin-top:4px">${ic('lock', 12)} Consent framework · trust controls · security rules · audit model · core data semantics · Evidence Support Level definitions</p></div>${assumed('OI-09 — final split of configurable vs locked items')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save configuration</button></div></form>`,
+    `<form data-f="cfg" class="col adm-form" novalidate><div class="g3">${fi('cfg', 'workspace', 'Label for workspaces', { value: 'Action Room', ro: true, help: 'Fixed across PHOENIX so every role sees the same name.' })}${fi('cfg', 'circle', 'Label for Circles', { value: pk.labels.circle, req: true })}${fi('cfg', 'rope', 'Label for Rope Teams', { value: pk.labels.rope, req: true })}</div>${fi('cfg', 'compassOpt', 'Ask optional Purpose Compass questions PC7–PC12 in context', { type: 'checkbox', value: pk.compassOptional ? 'yes' : '' })}${fi('cfg', 'propose', 'Participants may propose a ' + pk.labels.workspace, { type: 'checkbox', value: S.settings.participantCanProposeWorkspace ? 'yes' : '' })}
+ <div class="adm-locked"><span class="adm-locked-ic" aria-hidden="true">${ic('lock', 16)}</span><div><b>Platform-controlled (locked)</b><p class="cap">Consent framework · trust controls · security rules · audit model · core data semantics · Evidence Support Level definitions</p></div></div>${assumed('OI-09 — final split of configurable vs locked items')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save configuration</button></div></form>`,
   );
 }
 F.cfg = d => {
@@ -420,19 +455,34 @@ F.cfg = d => {
 };
 function reportsView(isOrg) {
   const c = ctxId();
-  return `<div class="g12">${card(
-    'Starter metrics',
+  const rows = S.metrics.filter(m => m.status === 'Active');
+  const xs = ['Participation summary (aggregate)', 'Evidence summary (approved)', 'Learning Harvests (released)', ...(isOrg ? [] : ['Audit log', 'Payments & entitlements', 'Full configuration'])];
+  return `<div class="adm-report"><dl class="adm-rmeta"><div><dt>Context</dt><dd>${h(ctx().name)}</dd></div><div><dt>Period</dt><dd>Programme to date · as of ${fmt(today())}</dd></div><div><dt>Metrics shown</dt><dd>${rows.length}</dd></div><div><dt>Exports</dt><dd>${xs.length} authorised</dd></div></dl><div class="g12">${card(
+    `Starter metrics <span class="adm-n">${rows.length}</span>`,
     'Aggregate only. Metrics never determine trustworthiness, deservingness or fundability.',
-    table(
-      ['Metric', 'Category', 'Value', 'Gate'],
-      S.metrics
-        .filter(m => m.status === 'Active')
-        .map(m => [h(m.name), h(m.cat), '<b>' + metric(m.id) + '</b>', h(m.gate)]),
-    ),
+    dataView('rep:metrics:' + (isOrg ? 'agg' : 'all'), {
+      label: 'metrics',
+      items: rows,
+      layout: 'table',
+      search: m => m.name + ' ' + (m.def || '') + ' ' + m.cat,
+      filters: [
+        { key: 'cat', label: 'Category', options: [...new Set(rows.map(m => m.cat))].map(v => [v, v]), test: (m, v) => m.cat === v },
+        { key: 'gate', label: 'Gate', options: [...new Set(rows.map(m => m.gate))].map(v => [v, v]), test: (m, v) => m.gate === v },
+      ],
+      sorts: [['name', 'Metric', (a, b) => a.name.localeCompare(b.name)], ['cat', 'Category', (a, b) => a.cat.localeCompare(b.cat)]],
+      columns: [
+        { label: 'Metric', sort: 'name', cell: m => `<b>${h(m.name)}</b>${m.def ? `<div class="cap adm-def">${h(m.def)}</div>` : ''}` },
+        { label: 'Category', sort: 'cat', cell: m => h(m.cat) },
+        { label: 'Gate', cell: m => (m.gate === 'None' ? '<span class="cap">None</span>' : h(m.gate)) },
+        { label: 'Value', num: true, cell: m => '<b class="adm-val">' + metric(m.id) + '</b>' },
+      ],
+      pageSize: 25,
+      empty: ['chart', 'No metrics are visible', 'A Programme Administrator chooses which metrics are shown.', ''],
+    }),
     '',
-    'c12',
+    'c8 adm-panel adm-metrics',
   )}
- ${card('Authorised exports', 'Machine-readable; relationships and governance metadata kept. Small groups are suppressed.', `<div class="row wrap">${['Participation summary (aggregate)', 'Evidence summary (approved)', 'Learning Harvests (released)', ...(isOrg ? [] : ['Audit log', 'Payments & entitlements', 'Full configuration'])].map(x => B(ic('download', 14) + x, 'doExport', { n: x })).join('')}</div>`, '', 'c12')}</div>`;
+ ${card('Authorised exports', 'Machine-readable; relationships and governance metadata kept. Small groups are suppressed.', `<div class="adm-xlist">${xs.map(x => B(`<span class="adm-x-ic" aria-hidden="true">${ic('file', 16)}</span><span class="adm-x-t">${x}</span><span class="adm-x-f">JSON</span>${ic('download', 16)}`, 'doExport', { n: x }, 'adm-x')).join('')}</div>`, '', 'c4 adm-panel adm-exports')}</div></div>`;
 }
 A.doExport = d => {
   const data = {
@@ -478,20 +528,25 @@ route('admin', 'admin', () => {
     UI.p.tab,
   );
   let body = '';
+  const n = k => `<span class="adm-n">${k}</span>`;
   if (t.cur === 'requests')
     body =
-      card(
-        'Projects waiting for a reviewer',
+      `<div class="adm-stack">${card(
+        'Projects waiting for a reviewer ' + n(rqProj.length),
         'Assign a Steward, Faculty member or Facilitator. They review the project and accept it or ask for clarification.',
-        table(
-          ['Project', 'Owner', 'Areas', 'Submitted', ''],
-          rqProj.map(p => [L(h(p.title), 'project', { id: p.id }), nm(p.owner), (p.tags || []).map(h).join(', ') || '—', fmt(p.submitted || ''), B('Assign reviewer', 'assignStewards', { id: p.id }, 'btn-p btn-sm')]),
-          'No projects are waiting for a reviewer.',
-        ),
-      ) +
-      '<div class="section-gap"></div>' +
-      card(
-        'Projects in review',
+        dataView('adm:rqproj', {
+          label: 'projects',
+          items: rqProj,
+          search: p => p.title + ' ' + P(p.owner).name + ' ' + (p.tags || []).join(' '),
+          filters: [{ key: 'area', label: 'Area', options: [...new Set(rqProj.flatMap(p => p.tags || []))].map(x => [x, x]), test: (p, v) => (p.tags || []).includes(v) }],
+          sorts: [['sub', 'Submitted', (a, b) => String(a.submitted || '').localeCompare(String(b.submitted || ''))], ['title', 'Title', (a, b) => a.title.localeCompare(b.title)]],
+          row: p => ({ lead: `<span class="tile t-soft">${ic('folder', 18)}</span>`, title: L(h(p.title), 'project', { id: p.id }), sub: 'Owner: ' + nm(p.owner), meta: [(p.tags || []).map(h).join(', ') || '—', 'Submitted ' + fmt(p.submitted || '')], primary: B('Assign reviewer', 'assignStewards', { id: p.id }, 'btn-p btn-sm') }),
+          empty: ['check', 'No projects are waiting for a reviewer.', '', ''],
+        }),
+        '',
+        'adm-panel',
+      )}${card(
+        'Projects in review ' + n(inProj.length),
         'Projects with an assigned reviewer. Open one to read the conversation and add a comment.',
         table(
           ['Item', 'Submitted by', 'Reviewer', 'Status', 'Messages', ''],
@@ -500,46 +555,51 @@ route('admin', 'admin', () => {
           ],
           'Nothing is in review right now.',
         ),
-      ) +
-      '<div class="section-gap"></div>' +
-      pwAdminCards();
+        '',
+        'adm-panel',
+      )}${pwAdminCards()}</div>`;
   if (t.cur === 'users')
     body =
       (pend.length ? banner('warn', pend.length + ' role' + (pend.length > 1 ? 's' : '') + ' awaiting approval', 'Open Manage on the person to approve or decline the role.') + '<div style="height:12px"></div>' : '') +
       card(
-        'Users and roles',
+        'Users and roles ' + n(S.assign.length),
         'Add, view, edit and delete user accounts. Manage roles, bundles and mandates. No direct database work.',
         usersTable(null, true, true),
         B(ic('plus', 14) + 'Add user', 'userNew', {}, 'btn-p btn-sm'),
+        'adm-panel',
       );
   if (t.cur === 'invites')
     body = card(
-      'Invitations',
+      'Invitations ' + n(S.invites.length),
       '',
       inviteTable(null),
       B(ic('plus', 14) + 'Create / bulk upload', 'invNew', {}, 'btn-p btn-sm'),
+      'adm-panel',
     );
+
   if (t.cur === 'library')
     body = card(
-      'Approved pathway templates',
+      'Approved pathway templates ' + n(S.templates.length),
       'Mode 1 pathways come from this library.',
-      table(
-        ['Template', 'Steps', 'Status', ''],
-        S.templates.map(x => [
-          h(x.name),
-          x.steps.map(h).join(' → '),
-          pill(x.status),
-          B(x.status === 'Approved' ? 'Retire' : 'Approve', 'tplState', { id: x.id }),
-        ]),
-      ),
+      dataView('adm:library', {
+        label: 'templates',
+        items: S.templates,
+        search: x => x.name + ' ' + x.steps.join(' '),
+        quick: { label: 'Status', options: [...new Set(S.templates.map(x => x.status))].map(v => [v, v]), test: (x, v) => x.status === v },
+        sorts: [['name', 'Name', (a, b) => a.name.localeCompare(b.name)], ['steps', 'Number of steps', (a, b) => a.steps.length - b.steps.length]],
+        row: x => ({ lead: `<span class="tile t-soft">${ic('route', 18)}</span>`, title: h(x.name), sub: `<span class="adm-steps">${x.steps.map(h).join(' → ')}</span>`, meta: [x.steps.length + ' steps'], badges: pill(x.status), primary: B(x.status === 'Approved' ? 'Retire' : 'Approve', 'tplState', { id: x.id }) }),
+        empty: ['route', 'No templates yet', 'Add an approved template for Mode 1 pathways.', ''],
+      }),
       B(ic('plus', 14) + 'Add template', 'tplNew', {}, 'btn-p btn-sm'),
+      'adm-panel',
     );
+
   if (t.cur === 'notify')
     body =
-      card(
+      `<div class="g12">${card(
         'Send an announcement',
         'In-app notification to everyone in this context; transactional email follows the template.',
-        `<form data-f="ann" class="col" style="gap:12px" novalidate>${fi('ann', 'to', 'Audience', {
+        `<form data-f="ann" class="col adm-form" novalidate>${fi('ann', 'to', 'Audience', {
           type: 'select',
           opts: [
             ['all', 'Everyone in this context'],
@@ -547,10 +607,10 @@ route('admin', 'admin', () => {
               .filter(([k]) => k !== 'T')
               .map(([k, v]) => [k, v + 's']),
           ],
-        })}${fi('ann', 't', 'Message', { type: 'textarea', rows: 3, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send</button></div></form>`,
-      ) +
-      '<div style="height:16px"></div>' +
-      card(
+        })}${fi('ann', 't', 'Message', { type: 'textarea', rows: 3, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">${ic('send', 14)}Send</button></div></form>`,
+        '',
+        'c5',
+      )}${card(
         'Notification events',
         'Configured triggers',
         table(
@@ -564,42 +624,49 @@ route('admin', 'admin', () => {
             ['AI review', 'In-app'],
             ['Funding tranches, progress summaries', 'Email + in-app'],
             ['Payment / entitlement changes', 'Email'],
-          ],
+          ].map(([e, ch]) => [e, `<span class="adm-chan">${ch}</span>`]),
         ),
-      );
+        '',
+        'c7 adm-panel',
+      )}</div>`;
   if (t.cur === 'support')
     body =
-      card(
-        'Support queries',
+      `<div class="adm-stack">${card(
+        'Support queries ' + n(S.supportQueries.length),
         '',
-        table(
-          ['From', 'Question', 'Status', ''],
-          S.supportQueries.map(q => [
-            nm(q.by),
-            h(q.t),
-            pill(q.status),
-            q.status === 'Open' ? B('Mark resolved', 'sqDone', { id: q.id }) : '',
-          ]),
-        ),
-      ) +
-      '<div style="height:16px"></div>' +
-      card(
-        'Privacy requests',
+        dataView('adm:support', {
+          label: 'support queries',
+          items: S.supportQueries,
+          search: q => P(q.by).name + ' ' + q.t,
+          quick: { label: 'Status', options: [...new Set(S.supportQueries.map(q => q.status))].map(v => [v, v]), test: (q, v) => q.status === v },
+          sorts: [['from', 'From', (a, b) => P(a.by).name.localeCompare(P(b.by).name)]],
+          rowId: q => q.id,
+          row: q => ({ lead: `<span class="av">${ini(q.by)}</span>`, title: nm(q.by), sub: h(q.t), badges: pill(q.status), primary: q.status === 'Open' ? B('Mark resolved', 'sqDone', { id: q.id }) : '' }),
+          bulk: [{ label: 'Mark resolved', icon: 'check', run: ids => ids.forEach(id => byId('supportQueries', id)?.status === 'Open' && A.sqDone({ id })) }],
+          empty: ['question', 'No support queries', '', ''],
+        }),
+        '',
+        'adm-panel',
+      )}${card(
+        'Privacy requests ' + n((S.requests || []).length),
         'Correction, export and deletion requests.',
-        table(
-          ['From', 'Type', 'Details', 'Status', ''],
-          (S.requests || []).map(r => [
-            nm(r.pid),
-            h(r.kind),
-            h(r.detail),
-            pill(r.status),
-            r.status === 'Open' ? B('Complete', 'rqDone', { id: r.id }) : '',
-          ]),
-        ),
-      );
+        (rs =>
+          dataView('adm:privacy', {
+            label: 'privacy requests',
+            items: rs,
+            search: r => P(r.pid).name + ' ' + r.kind + ' ' + r.detail,
+            quick: { label: 'Status', options: [...new Set(rs.map(r => r.status))].map(v => [v, v]), test: (r, v) => r.status === v },
+            filters: [{ key: 'kind', label: 'Type', options: [...new Set(rs.map(r => r.kind))].map(v => [v, v]), test: (r, v) => r.kind === v }],
+            sorts: [['from', 'From', (a, b) => P(a.pid).name.localeCompare(P(b.pid).name)], ['kind', 'Type', (a, b) => a.kind.localeCompare(b.kind)]],
+            row: r => ({ lead: `<span class="av">${ini(r.pid)}</span>`, title: nm(r.pid), sub: h(r.detail), meta: [h(r.kind)], badges: pill(r.status), primary: r.status === 'Open' ? B('Complete', 'rqDone', { id: r.id }) : '' }),
+            empty: ['lock', 'No privacy requests', '', ''],
+          }))(S.requests || []),
+        '',
+        'adm-panel',
+      )}</div>`;
   if (t.cur === 'initiatives')
     body = card(
-      'Initiative summaries for sponsors',
+      'Initiative summaries for sponsors ' + n(S.initiatives.length),
       'Sponsors see these on their Projects & funding page.',
       S.initiatives
         .map(i =>
@@ -612,6 +679,7 @@ route('admin', 'admin', () => {
         )
         .join('') || '<p class="cap">None yet.</p>',
       B(ic('plus', 14) + 'Publish initiative', 'initNew', {}, 'btn-p btn-sm'),
+      'adm-lrows',
     );
   if (t.cur === 'reports') body = reportsView(false);
   return head('Programme administration', h(ctx().name)) + t.html + body;
@@ -647,7 +715,7 @@ A.tplNew = () => {
   modal(
     'Add pathway template',
     () =>
-      `<form data-f="tpl" class="col" style="gap:12px" novalidate>${fi('tpl', 'name', 'Name', { req: true })}${fi('tpl', 'steps', 'Steps (3–5, one per line)', { type: 'textarea', rows: 5, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Add as approved</button></div></form>`,
+      `<form data-f="tpl" class="col adm-form" novalidate>${fi('tpl', 'name', 'Name', { req: true })}${fi('tpl', 'steps', 'Steps (3–5, one per line)', { type: 'textarea', rows: 5, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Add as approved</button></div></form>`,
   );
 };
 F.tpl = d => {
@@ -699,119 +767,106 @@ route('platform', 'platform', () => {
     UI.p.tab,
   );
   let body = '';
+  const n = k => `<span class="adm-n">${k}</span>`;
   if (t.cur === 'integrations')
     body =
-      card(
-        'External integrations',
+      `<div class="adm-stack">${card(
+        'External integrations ' + n(S.integrations.length),
         'Shared WSS-controlled accounts with tenant separation in configuration and audit.',
-        S.integrations
-          .map((i, n) =>
-            lrow(
-              'link',
-              h(i.name),
-              '',
-              pill(i.status) +
-                (n === 1
+        `<ul class="ops-list">${S.integrations
+          .map(
+            (i, n) =>
+              `<li class="ops-item"><span class="tile t-soft" aria-hidden="true">${ic('link', 16)}</span><div class="ops-item-t"><b>${h(i.name)}</b></div><div class="ops-item-s">${pill(i.status)}</div><div class="ops-item-a">${
+                n === 1
                   ? B(S.settings.aiAvailable ? 'Simulate provider outage' : 'Restore provider', 'aiToggle', {})
-                  : ''),
-            ),
+                  : ''
+              }</div></li>`,
           )
-          .join('') + dl([['AI quota today', S.settings.aiUsed + ' / ' + S.settings.aiQuota]]),
-      ) +
-      '<div class="section-gap"></div>' +
-      card(
+          .join('')}</ul><div class="ops-quota">${dl([['AI quota today', S.settings.aiUsed + ' / ' + S.settings.aiQuota]])}<div class="progress" aria-hidden="true"><div class="bar" style="width:${Math.min(100, Math.round((100 * S.settings.aiUsed) / (S.settings.aiQuota || 1)))}%"></div></div></div>`,
+        '',
+        'adm-panel',
+      )}${card(
         'Provider settings',
         'Credentials are stored in the platform secret store, never in this console.',
-        `<form data-f="prov" class="col" style="gap:12px" novalidate><div class="g3">${fi('prov', 'ai', 'AI provider', { value: S.providers.ai.name, req: true })}${fi('prov', 'aimode', 'AI mode', { type: 'select', opts: ['Production', 'Sandbox'], value: S.providers.ai.mode })}${fi('prov', 'quota', 'Daily AI request quota', { type: 'number', min: 1, value: S.settings.aiQuota, req: true })}</div><div class="g3">${fi('prov', 'pay', 'Payment provider', { value: S.providers.pay.name, req: true })}${fi('prov', 'paymode', 'Payment mode', { type: 'select', opts: ['Sandbox', 'Live'], value: S.providers.pay.mode })}${fi('prov', 'email', 'Email service', { value: S.providers.email.name, req: true })}</div><div class="actions"><span></span><button class="btn btn-p" type="submit">Save provider settings</button></div></form>`,
-      );
+        `<form data-f="prov" class="col adm-form" novalidate><div class="g3">${fi('prov', 'ai', 'AI provider', { value: S.providers.ai.name, req: true })}${fi('prov', 'aimode', 'AI mode', { type: 'select', opts: ['Production', 'Sandbox'], value: S.providers.ai.mode })}${fi('prov', 'quota', 'Daily AI request quota', { type: 'number', min: 1, value: S.settings.aiQuota, req: true })}</div><div class="g3">${fi('prov', 'pay', 'Payment provider', { value: S.providers.pay.name, req: true })}${fi('prov', 'paymode', 'Payment mode', { type: 'select', opts: ['Sandbox', 'Live'], value: S.providers.pay.mode })}${fi('prov', 'email', 'Email service', { value: S.providers.email.name, req: true })}</div><div class="actions"><span></span><button class="btn btn-p" type="submit">Save provider settings</button></div></form>`,
+      )}</div>`;
   if (t.cur === 'health')
-    body = `<div class="g12">${card(
-      'Availability',
-      '',
-      dl([
-        ['Uptime', h(S.health.uptime)],
-        ['p95 response time', h(S.health.p95)],
-        ['Status', pill('Healthy')],
-      ]),
-      '',
-      'c5',
-    )}${card(
-      'Error log',
+    body = `<div class="g12">${card('Availability', '', `<div class="kpis"><div class="kpi"><span class="lt">Uptime</span><span class="statnum">${h(S.health.uptime)}</span></div><div class="kpi"><span class="lt">p95 response time</span><span class="statnum">${h(S.health.p95)}</span></div><div class="kpi"><span class="lt">Status</span><span class="ops-stat">${pill('Healthy')}</span></div></div>`, '', 'c12 ops-avail')}${card(
+      'Error log ' + n(S.health.errors.length),
       'Latest application errors and warnings',
       table(
         ['When', 'Level', 'Message'],
-        S.health.errors.map(e => [fmt(e.at), pill(e.lvl, e.lvl === 'Error' ? 'p-red' : 'p-amber'), h(e.t)]),
+        S.health.errors.map(e => [`<span class="adm-date">${fmt(e.at)}</span>`, pill(e.lvl, e.lvl === 'Error' ? 'p-red' : 'p-amber'), h(e.t)]),
       ),
       '',
-      'c7',
+      'c7 adm-panel',
     )}${card(
       'Alert rules',
       '',
       table(
         ['Rule', 'Notify', 'Enabled'],
         S.health.alerts.map((a, i) => [
-          h(a.rule),
+          `<b>${h(a.rule)}</b>`,
           h(a.to),
-          `<button type="button" class="toggle ${a.on ? 'on' : ''}" role="switch" aria-checked="${a.on}" aria-label="${h(a.rule)}" data-a="alertToggle" data-i="${i}"></button>`,
+          `<button type="button" class="toggle ops-switch ${a.on ? 'on' : ''}" role="switch" aria-checked="${a.on}" aria-label="${h(a.rule)}" data-a="alertToggle" data-i="${i}"></button>`,
         ]),
       ),
       '',
-      'c12',
+      'c5 adm-panel',
     )}</div>`;
   if (t.cur === 'security')
-    body =
-      card(
-        'Security events and access logs',
-        '',
-        table(
-          ['When', 'Event'],
-          S.security.map(s => [fmt(s.at), h(s.t)]),
-        ),
-      ) +
-      '<div style="height:16px"></div>' +
-      card(
-        'Authentication',
-        '',
-        dl([
-          ['MFA', 'Required for Programme and Platform Administrators'],
-          ['Password policy', assumed('min 10 characters incl. a number')],
-          ['Session timeout', '30 minutes idle'],
-          ['Encryption', 'In transit and at rest'],
-        ]) + `<div style="margin-top:12px">${CB('Revoke all sessions', 'revokeSessions', {}, 'Sign every user out of every device now?', 'btn-d btn-sm')}</div>`,
-      );
+    body = `<div class="g12">${card(
+      'Security events and access logs ' + n(S.security.length),
+      '',
+      table(
+        ['When', 'Event'],
+        S.security.map(s => [`<span class="adm-date">${fmt(s.at)}</span>`, h(s.t)]),
+      ),
+      '',
+      'c7 adm-panel',
+    )}<div class="c5 adm-stack">${card(
+      'Authentication',
+      '',
+      dl([
+        ['MFA', 'Required for Programme and Platform Administrators'],
+        ['Password policy', assumed('min 10 characters incl. a number')],
+        ['Session timeout', '30 minutes idle'],
+        ['Encryption', 'In transit and at rest'],
+      ]),
+    )}<section class="card ops-danger"><div class="ops-danger-t"><b>Sessions</b><p class="cap">Sign every user out of every device.</p></div>${CB('Revoke all sessions', 'revokeSessions', {}, 'Sign every user out of every device now?', 'btn-d btn-sm')}</section></div></div>`;
   if (t.cur === 'storage')
-    body =
-      card(
-        'Backups and restore tests',
-        '',
-        table(
-          ['When', 'Status', 'Size'],
-          S.backups.map(b => [fmt(b.at), pill(b.status.includes('passed') ? 'Completed' : b.status), h(b.size)]),
-        ),
-        B('Run backup now', 'backup', {}, 'btn-p btn-sm') + B('Run restore test', 'restoreTest'),
-      ) +
-      '<div style="height:16px"></div>' +
-      card(
-        'Storage',
-        '',
-        dl([
-          [
-            'Used',
-            S.records.reduce((a, x) => a + x.sizeMB, 0).toFixed(1) +
-              ' MB + evidence ' +
-              S.evidence.reduce((a, x) => a + x.sizeMB, 0).toFixed(1) +
-              ' MB',
-          ],
-          ['Default file limit', S.settings.maxFileMB + ' MB'],
-          ['Quarantined files', S.records.filter(r => r.state === 'Quarantined').length],
-          ['Signed URLs', 'Enabled'],
-        ]),
-      );
+    body = `<div class="g12">${card(
+      'Backups and restore tests ' + n(S.backups.length),
+      '',
+      table(
+        ['When', 'Status', 'Size'],
+        S.backups.map(b => [`<span class="adm-date">${fmt(b.at)}</span>`, pill(b.status.includes('passed') ? 'Completed' : b.status), `<span class="ops-num">${h(b.size)}</span>`]),
+      ),
+      B('Run restore test', 'restoreTest') + B('Run backup now', 'backup', {}, 'btn-p btn-sm'),
+      'c7 adm-panel',
+    )}${card(
+      'Storage',
+      '',
+      dl([
+        [
+          'Used',
+          S.records.reduce((a, x) => a + x.sizeMB, 0).toFixed(1) +
+            ' MB + evidence ' +
+            S.evidence.reduce((a, x) => a + x.sizeMB, 0).toFixed(1) +
+            ' MB',
+        ],
+        ['Default file limit', S.settings.maxFileMB + ' MB'],
+        ['Quarantined files', S.records.filter(r => r.state === 'Quarantined').length],
+        ['Signed URLs', 'Enabled'],
+      ]),
+      '',
+      'c5',
+    )}</div>`;
   if (t.cur === 'lms')
     body = card(
       'LMS deep-link layer',
       'Secure links in and out. No LTI 1.3, SSO, roster or grade sync. The LMS is not authoritative for PHOENIX permissions.',
-      `<form data-f="lms" class="col" style="gap:12px" novalidate>${fi('lms', 'returnUrl', 'Return URL', { value: S.settings.lms.returnUrl, req: true })}${fi(
+      `<form data-f="lms" class="col adm-form" novalidate><div class="f2">${fi('lms', 'returnUrl', 'Return URL', { value: S.settings.lms.returnUrl, req: true })}${fi(
         'lms',
         'dest',
         'Default destination',
@@ -824,7 +879,7 @@ route('platform', 'platform', () => {
           ],
           value: S.settings.lms.dest,
         },
-      )}<div class="actions">${B('Test incoming deep link', 'lmsTest')}<button class="btn btn-p" type="submit">Save</button></div></form>`,
+      )}</div><div class="actions">${B('Test incoming deep link', 'lmsTest')}<button class="btn btn-p" type="submit">Save</button></div></form>`,
     );
   return (
     head(
@@ -835,6 +890,7 @@ route('platform', 'platform', () => {
     body
   );
 });
+
 A.aiToggle = () => {
   S.settings.aiAvailable = !S.settings.aiAvailable;
   S.integrations[1].status = S.settings.aiAvailable ? 'Healthy' : 'Unavailable';

@@ -103,40 +103,64 @@ route('evidence', 'evidence', () => {
     ) +
     t.html +
     (t.cur === 'queue' ? msQueueCard() : '') +
-    `<div class="row wrap" style="margin-bottom:16px"><select class="input" style="width:auto" data-ch="qf" data-k="evp" aria-label="Project"><option value="">Project: all</option>${projs.map(p => `<option value="${p.id}" ${pf === p.id ? 'selected' : ''}>${h(p.title)}</option>`).join('')}<option value="none" ${pf === 'none' ? 'selected' : ''}>Not linked to a project</option></select><select class="input" style="width:auto" data-ch="qf" data-k="evg" aria-label="Layout"><option value="project" ${grouped ? 'selected' : ''}>Group by project</option><option value="flat" ${!grouped ? 'selected' : ''}>Single list</option></select></div>` +
+    `<div class="rec-toolbar ev-toolbar"><div class="rec-tf"><select class="input" data-ch="qf" data-k="evp" aria-label="Project"><option value="">Project: all</option>${projs.map(p => `<option value="${p.id}" ${pf === p.id ? 'selected' : ''}>${h(p.title)}</option>`).join('')}<option value="none" ${pf === 'none' ? 'selected' : ''}>Not linked to a project</option></select><select class="input" data-ch="qf" data-k="evg" aria-label="Layout"><option value="project" ${grouped ? 'selected' : ''}>Group by project</option><option value="flat" ${!grouped ? 'selected' : ''}>Single list</option></select></div><span class="rec-count"><b>${list.length}</b> item${list.length === 1 ? '' : 's'}${grouped && groups.length ? ` · ${groups.length} group${groups.length === 1 ? '' : 's'}` : ''}</span></div>` +
     (grouped
-      ? groups
-          .map(([p, l]) =>
-            card(
-              p ? h(p.title) : 'Not linked to a project',
-              p ? l.length + ' item' + (l.length > 1 ? 's' : '') + ' · ' + pill(stageLabel(p.stage || p.status)) : 'Personal or portfolio evidence',
-              evTable(l, false),
-              p && can('projects') ? L('Open project', 'project', { id: p.id }) : '',
-            ),
-          )
-          .join('<div class="section-gap"></div>') || table([], [], 'No evidence here yet.')
-      : evTable(list, true))
+      ? `<div class="ev-groups">${
+          groups
+            .map(([p, l]) =>
+              card(
+                p ? h(p.title) : 'Not linked to a project',
+                p ? l.length + ' item' + (l.length > 1 ? 's' : '') + ' · ' + pill(stageLabel(p.stage || p.status)) : 'Personal or portfolio evidence',
+                evTable(l, false, 'evidence:' + t.cur + ':' + (p ? p.id : 'none')),
+                p && can('projects') ? L('Open project', 'project', { id: p.id }) : '',
+                'ev-group' + (p ? '' : ' ev-none'),
+              ),
+            )
+            .join('') || table([], [], 'No evidence here yet.')
+        }</div>`
+      : `<section class="card ev-group ev-flat">${evTable(list, true, 'evidence:' + t.cur + ':flat')}</section>`)
   );
 });
-function evTable(list, withProject) {
-  return table(
-    ['Evidence', withProject && 'Project', 'Type', 'Claim', 'Owner', 'Linked to', 'Level', 'Review', 'Release', ''].filter(c => c !== false),
-    list.map(e =>
-      [
-        `<b>${h(e.title)}</b>`,
-        withProject && (evProjectName(e) || '<span class="cap">—</span>'),
-        h(e.type),
-        h(e.claim),
-        nm(e.owner),
-        (e.linked || []).map(cName).join(', ') || '—',
-        pill(e.level, 'p-navy'),
-        pill(e.review),
-        h(e.release),
-        L('Open', 'evidence', { id: e.id }),
-      ].filter(c => c !== false),
-    ),
-    'No evidence here yet.',
-  );
+// Evidence Support Level: the code as text, with a four-step meter (E0 = none lit, E4 = all lit).
+function evLevel(l) {
+  const n = +String(l || 'E0').slice(1) || 0;
+  return `<span class="ev-lvl" title="${h((LEVELS.find(x => x[0] === l) || [])[1] || '')}"><span class="ev-lvl-m" aria-hidden="true">${[1, 2, 3, 4].map(i => `<i class="${i <= n ? 'on' : ''}"></i>`).join('')}</span><b>${h(l)}</b></span>`;
+}
+// File-type glyph for an evidence row, from how it was provided.
+const evGlyph = e => ({ Link: 'link', 'Reflection or written output': 'edit', 'Repository record': 'archive' })[e.format] || 'file';
+// One evidence collection as a Data View (one per project group, or one flat list). `key` keeps its filters apart.
+function evTable(list, withProject, key = 'evidence') {
+  const lvl = e => +String(e.level || 'E0').slice(1) || 0;
+  return dataView(key, {
+    label: 'evidence items',
+    items: list,
+    search: e => [e.title, e.type, e.claim, P(e.owner).name, ...(e.linked || []).map(l => String(cName(l)).replace(/<[^>]+>/g, '')), withProject ? evProjects(e).map(p => p.title).join(' ') : ''].join(' '),
+    quick: dvOpts(list, e => e.review).length > 1 ? { label: 'Review status', options: REVIEW.filter(s => list.some(e => e.review === s)).map(s => [s, s]), test: (e, v) => e.review === v } : null,
+    filters: [
+      { key: 'type', label: 'Evidence type', options: EV_TYPES.filter(x => list.some(e => e.type === x)).map(x => [x, x]), test: (e, v) => e.type === v },
+      { key: 'level', label: 'Evidence Support Level', options: LEVELS.map(([k, v]) => [k, k + ' — ' + v]), test: (e, v) => e.level === v },
+      { key: 'release', label: 'Release', options: dvOpts(list, e => e.release), test: (e, v) => e.release === v },
+    ],
+    sorts: [
+      ['title', 'Title', (a, b) => a.title.localeCompare(b.title)],
+      ['level', 'Support level', (a, b) => lvl(a) - lvl(b)],
+      ['review', 'Review status', (a, b) => REVIEW.indexOf(a.review) - REVIEW.indexOf(b.review)],
+    ],
+    layout: 'table',
+    columns: [
+      { label: 'Evidence', sort: 'title', cell: e => `<span class="rec-name"><span class="tile t-soft" aria-hidden="true">${ic(evGlyph(e), 16)}</span><span class="rec-nt"><b>${h(e.title)}</b><span class="cap">${h(e.format || 'File upload')}</span></span></span>` },
+      withProject && { label: 'Project', cell: e => evProjectName(e) || '<span class="cap">—</span>' },
+      { label: 'Type', hideSm: true, cell: e => `<span class="ev-type">${h(e.type)}</span>` },
+      { label: 'Claim', hideSm: true, cell: e => `<span class="ev-claim">${h(e.claim)}</span>` },
+      { label: 'Owner', cell: e => nm(e.owner) },
+      { label: 'Linked to', hideSm: true, cell: e => (e.linked || []).map(cName).join(', ') || '—' },
+      { label: 'Level', sort: 'level', cell: e => evLevel(e.level) },
+      { label: 'Review', sort: 'review', cell: e => pill(e.review) },
+      { label: 'Release', cell: e => `<span class="ev-rel ${e.release === 'Not released' ? 'is-no' : ''}">${h(e.release)}</span>` },
+      { label: '', cell: e => L('Open', 'evidence', { id: e.id }) },
+    ].filter(Boolean),
+    empty: ['award', 'No evidence here yet.', ''],
+  });
 }
 // How the evidence was provided. Older records are files.
 function evFormatRow(e) {
@@ -159,17 +183,30 @@ function evDetail(e) {
   const rev = (role() === 'F' || hasB('Reviewer')) && !own;
   const rr = S.releases.filter(x => x.ev === e.id);
   return (
-    head(h(e.title), h(e.type), pill(e.review) + ' ' + pill(e.level, 'p-navy'), [
+    crumbsHtml([
       ['Evidence', 'evidence'],
       [h(e.title)],
     ]) +
-    `<div class="g12">${card(
+    `<div class="shead-main ev-head"><span class="tile" aria-hidden="true">${ic(evGlyph(e), 20)}</span><div class="shead-t"><div class="shead-kind">Evidence · ${h(e.type)}</div><div class="row wrap ev-ttl"><h1 class="h1">${h(e.title)}</h1>${pill(e.review)}</div><div class="shead-meta"><span>Project · ${evProjects(e).map(p => h(p.title)).join(', ') || 'Not linked to a project'}</span><span>${nm(e.owner)}</span><span>${h(e.format || 'File upload')}</span></div></div></div>` +
+    `<ul class="ev-facts" aria-label="Status">${[
+      ['Review status', pill(e.review)],
+      ['Evidence Support Level', evLevel(e.level) + `<span class="cap">${h((LEVELS.find(l => l[0] === e.level) || [])[1] || '')}</span>`],
+      ['Lifecycle', pill(e.lifecycle)],
+      ['Release permission', `<span class="ev-rel ${e.release === 'Not released' ? 'is-no' : ''}">${h(e.release)}</span>`],
+    ]
+      .map(([k, v]) => `<li><span class="ev-fk">${k}</span><span class="ev-fv">${v}</span></li>`)
+      .join('')}</ul>` +
+    `<div class="g12 ev-body"><div class="c8 col ev-main">${card(
       'Evidence record',
       '',
+      `<p class="ev-claim-lead"><span class="ev-fk">Claim</span>${h(e.claim)}</p>` +
+        dl([evFormatRow(e), evDelivRow(e)]),
+      '',
+      'ev-doc',
+    )}${card(
+      'Record details',
+      '',
       dl([
-        ['Claim', h(e.claim)],
-        evFormatRow(e),
-        evDelivRow(e),
         ['Project', evProjects(e).map(p => (can('projects') && (p.owner === myId() || role() !== 'P') ? L(h(p.title), 'project', { id: p.id }) : h(p.title))).join(', ') || '<span class="cap">Not linked to a project</span>'],
         ['Owner', nm(e.owner)],
         ['Source', h(e.source)],
@@ -177,22 +214,15 @@ function evDetail(e) {
         ['Visibility', h(e.vis)],
         ['Retention', h(e.retention)],
         ['Linked to', e.linked.map(cName).join(', ')],
-        ['Review status', pill(e.review)],
-        [
-          'Evidence Support Level',
-          pill(e.level, 'p-navy') + ' ' + h((LEVELS.find(l => l[0] === e.level) || [])[1] || ''),
-        ],
         ['Reviewer', e.reviewer ? nm(e.reviewer) : '—'],
         ['Limitations / uncertainty', h(e.limits || '—')],
-        ['Lifecycle', pill(e.lifecycle)],
-        ['Release permission', h(e.release)],
       ]),
       '',
-      'c8',
-    )}
- <aside class="c4 col" style="gap:12px">${evMilestonesCard(e)}${rev && ['Submitted', 'Needs Revision'].includes(e.review) ? card('Review', 'You set the status and level. Approval does not release it.', evReviewForm(e)) : ''}
+      'ev-meta',
+    )}</div>
+ <aside class="c4 col ev-side">${evMilestonesCard(e)}${rev && ['Submitted', 'Needs Revision'].includes(e.review) ? card('Review', 'You set the status and level. Approval does not release it.', evReviewForm(e), '', 'accent') : ''}
  ${own && e.review === 'Needs Revision' ? card('Revise and resubmit', 'History is kept.', B('Resubmit', 'evResub', { id: e.id }, 'btn-p btn-block')) : ''}
- ${own && !['Withdrawn'].includes(e.review) ? card('Release to a new audience', 'Moving evidence to a new audience or purpose is a new release decision.', (rr.length ? rr.map(x => `<div class="lrow"><div class="lt"><b>${h(x.audience)}</b><p class="cap">${h(x.status)}</p></div>${x.status === 'Awaiting owner decision' ? B('Decline', 'relDecide', { id: x.id, v: 'Declined by owner' }) + B('Authorise', 'relDecide', { id: x.id, v: 'Owner authorised — disclosure review' }, 'btn-p btn-sm') : ''}</div>`).join('') : '') + (e.review === 'Approved' ? B('Authorise funder / public release', 'relNew', { id: e.id }, 'btn-s btn-block') : '<p class="cap">Only approved evidence can be released.</p>') + (e.sens === 'High' ? banner('warn', '', 'Contains identifiable or sensitive content. Explicit authorisation is required, and a human disclosure review follows.') : '')) : ''}
+ ${own && !['Withdrawn'].includes(e.review) ? card('Release to a new audience', 'Moving evidence to a new audience or purpose is a new release decision.', (rr.length ? rr.map(x => `<div class="lrow ev-rr"><div class="lt"><b>${h(x.audience)}</b><p class="cap">${h(x.status)}</p></div>${x.status === 'Awaiting owner decision' ? B('Decline', 'relDecide', { id: x.id, v: 'Declined by owner' }) + B('Authorise', 'relDecide', { id: x.id, v: 'Owner authorised — disclosure review' }, 'btn-p btn-sm') : ''}</div>`).join('') : '') + (e.review === 'Approved' ? B('Authorise funder / public release', 'relNew', { id: e.id }, 'btn-s btn-block') : '<p class="cap">Only approved evidence can be released.</p>') + (e.sens === 'High' ? banner('warn', '', 'Contains identifiable or sensitive content. Explicit authorisation is required, and a human disclosure review follows.') : '')) : ''}
  ${own && e.review !== 'Withdrawn' ? CB('Withdraw evidence', 'evWithdraw', { id: e.id }, 'Withdraw this evidence? It leaves review and any release stops. History is kept.') : ''}
  ${
    role() === 'A'
@@ -202,13 +232,13 @@ function evDetail(e) {
            card(
              'Disclosure review',
              'Small or distinctive groups and sensitive narratives are suppressed, combined or withheld.',
-             `<b>${h(x.audience)}</b><div class="row" style="margin-top:10px">${B('Withhold', 'relDecide', { id: x.id, v: 'Withheld after disclosure review' })}${B('Release', 'relDecide', { id: x.id, v: 'Released' }, 'btn-p btn-sm')}</div>`,
+             `<b>${h(x.audience)}</b><div class="row ev-dr">${B('Withhold', 'relDecide', { id: x.id, v: 'Withheld after disclosure review' })}${B('Release', 'relDecide', { id: x.id, v: 'Released' }, 'btn-p btn-sm')}</div>`,
            ),
          )
          .join('')
      : ''
  }
- ${card('History', '', e.history.map(x => `<p class="cap" style="margin-bottom:6px">${fmt(x.at)} · ${h(x.t)}</p>`).join(''))}</aside></div>`
+ ${card('History', 'Review and release decisions, newest last', `<ol class="timeline ev-hist">${e.history.map(x => `<li class="tl"><span class="cap">${fmt(x.at)}</span><p>${h(x.t)}</p></li>`).join('')}</ol>`)}</aside></div>`
   );
 }
 // The Steward's queue of milestone evidence, across the Action Rooms they steward.
@@ -256,7 +286,7 @@ function evMilestonesCard(e) {
 }
 // Used on the evidence page and from an Action Room milestone.
 const evReviewForm = e =>
-  `<form data-f="evr" class="col" style="gap:12px" novalidate><input type="hidden" name="id" value="${e.id}">${fi('evr', 'review', 'Review status', { type: 'select', req: true, opts: REVIEW.filter(x => x !== 'Submitted' && x !== 'Withdrawn'), ph: 'Select', help: 'Approved lets the linked milestone be validated as achieved.' })}${fi('evr', 'level', 'Evidence Support Level', { type: 'select', req: true, opts: LEVELS.map(([k, v]) => [k, k + ' — ' + v]), value: e.level })}${fi('evr', 'limits', 'Limitations or uncertainty', { type: 'textarea', rows: 3, req: true, value: e.limits })}${fi('evr', 'comment', 'Comment to submitter', { type: 'textarea', rows: 2 })}<button class="btn btn-p" type="submit">Save review</button></form>`;
+  `<form data-f="evr" class="col ev-form" novalidate><input type="hidden" name="id" value="${e.id}">${fi('evr', 'review', 'Review status', { type: 'select', req: true, opts: REVIEW.filter(x => x !== 'Submitted' && x !== 'Withdrawn'), ph: 'Select', help: 'Approved lets the linked milestone be validated as achieved.' })}${fi('evr', 'level', 'Evidence Support Level', { type: 'select', req: true, opts: LEVELS.map(([k, v]) => [k, k + ' — ' + v]), value: e.level })}${fi('evr', 'limits', 'Limitations or uncertainty', { type: 'textarea', rows: 3, req: true, value: e.limits })}${fi('evr', 'comment', 'Comment to submitter', { type: 'textarea', rows: 2 })}<button class="btn btn-p" type="submit">Save review</button></form>`;
 // Records a review on the evidence itself. Used by the evidence page and by the Steward's milestone review.
 function evApplyReview(e, review, level, limits, comment) {
   e.review = review;
@@ -369,7 +399,7 @@ function neFmtFields(f, fmt, spaces) {
       ? fi(f, 'rec', 'Record', { type: 'select', req: true, ph: 'Select a record', opts: recs.map(r => [r.id, r.title + ' · ' + r.kind]), help: 'Linked by reference. The record keeps its own permissions.' })
       : banner('info', 'No records available', 'Only active records you own or that belong to your spaces can be referenced.');
   }
-  return `<div class="field"><span class="lbl">File <span class="req">*</span></span><label class="dz ${fe(f, 'file') ? 'err' : ''}" style="cursor:pointer;display:block">${ic('upload', 22)}<div><b>Choose a file</b></div><div class="cap">Up to ${S.settings.maxFileMB} MB. Video must be linked externally. Files are scanned; failures are quarantined.</div><input type="file" name="file" class="sr"><span class="fname">No file chosen</span></label>${fe(f, 'file') ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe(f, 'file')}</span>` : ''}</div>`;
+  return `<div class="field"><span class="lbl">File <span class="req">*</span></span><label class="dz ev-dz ${fe(f, 'file') ? 'err' : ''}"><span class="ev-dz-ic" aria-hidden="true">${ic('upload', 22)}</span><div><b>Choose a file</b></div><div class="cap">Up to ${S.settings.maxFileMB} MB. Video must be linked externally. Files are scanned; failures are quarantined.</div><input type="file" name="file" class="sr"><span class="fname">No file chosen</span></label>${fe(f, 'file') ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe(f, 'file')}</span>` : ''}</div>`;
 }
 // Which deliverable the evidence supports (optional). Value "roomId|taskId".
 function neTaskField(f, spaces) {
@@ -395,7 +425,7 @@ const neMs = ms => {
 };
 const neMsBanner = () => {
   const [x, m] = neMs(UI.p.ms);
-  return m ? '<div style="max-width:880px;margin-bottom:16px">' + banner('info', 'Evidence for the milestone “' + h(m.t) + '”', 'After you submit it, it is added to this milestone in ' + h(x.name) + ' and sent to the Steward for review. You return to the ' + WL() + '.') + '</div>' : '';
+  return m ? '<div class="ev-up-note">' + banner('info', 'Evidence for the milestone “' + h(m.t) + '”', 'After you submit it, it is added to this milestone in ' + h(x.name) + ' and sent to the Steward for review. You return to the ' + WL() + '.') + '</div>' : '';
 };
 route('newevidence', 'evidence', () => {
   if (!can('evidence', 'CRM')) return deniedView('evidence');
@@ -408,14 +438,18 @@ route('newevidence', 'evidence', () => {
       '',
       [['Evidence', 'evidence'], ['Upload']],
     ) +
-    `${neMsBanner()}${!UI.p.ms && UI.p.from && byId('rooms', UI.p.from) ? '<div style="max-width:880px;margin-bottom:16px">' + banner('info', 'Evidence for ' + h(byId('rooms', UI.p.from).name), 'This evidence supports the completed deliverables. After you submit it you return to the ' + WL() + ', where you can generate the Learning Harvest.') + '</div>' : ''}<form data-f="ne" class="card col" style="gap:16px;max-width:880px" novalidate>${errSum(f)}<input type="hidden" name="from" value="${h(UI.p.from || '')}"><input type="hidden" name="ms" value="${h(UI.p.ms || '')}">
+    `${neMsBanner()}${!UI.p.ms && UI.p.from && byId('rooms', UI.p.from) ? '<div class="ev-up-note">' + banner('info', 'Evidence for ' + h(byId('rooms', UI.p.from).name), 'This evidence supports the completed deliverables. After you submit it you return to the ' + WL() + ', where you can generate the Learning Harvest.') + '</div>' : ''}<div class="g12 ev-up"><form data-f="ne" class="card c8 col ev-upform" novalidate>${errSum(f)}<input type="hidden" name="from" value="${h(UI.p.from || '')}"><input type="hidden" name="ms" value="${h(UI.p.ms || '')}">
+ <div class="np-sh"><span class="np-n" aria-hidden="true">1</span><h2 class="h3">The evidence</h2></div>
  ${fi(f, 'fmt', 'Evidence format', { type: 'select', req: true, opts: EV_FMTS, value: 'File upload', ch: 'neFmt', help: 'Documents, files, outputs and results can be uploaded or linked. Reflections are written here.' })}
  ${neFmtFields(f, fv(f, 'fmt', 'File upload'), spaces)}
  ${neTaskField(f, spaces)}
+ <div class="np-sh"><span class="np-n" aria-hidden="true">2</span><h2 class="h3">What it shows</h2></div>
  ${fi(f, 'title', 'Title', { req: true })}<div class="f2">${fi(f, 'type', 'Evidence type', { type: 'select', req: true, ph: 'Select', opts: EV_TYPES })}${fi(f, 'claim', 'Claim or metric it supports', { req: true })}</div>
+ <div class="np-sh"><span class="np-n" aria-hidden="true">3</span><h2 class="h3">Where it belongs</h2></div>
  ${spaces.length ? fi(f, 'link', 'Link to', { type: 'select', req: true, ph: 'Select a Circle, Rope Team or ' + WL(), value: UI.p.link || '', opts: spaces.map(s => [s.id, (byId('circles', s.id) ? 'Circle' : byId('ropes', s.id) ? 'Rope Team' : WL()) + ' · ' + s.name + (spaceProject(s.id) ? ' — ' + spaceProject(s.id).title : '')]), help: 'Linked by reference, not copied.' }) : banner('info', '', 'Join a Circle, Rope Team or ' + WL() + ' to link evidence.')}
  <div class="f2">${fi(f, 'source', 'Source', { req: true, ph: 'e.g. Field survey' })}${fi(f, 'purpose', 'Purpose', { type: 'select', req: true, opts: ['Project evidence', 'Milestone evidence', 'Learning evidence', 'Portfolio'], ph: 'Select' })}</div>
- <div class="actions">${L('Cancel', 'evidence', {}, 'btn btn-g')}<button class="btn btn-p" type="submit">Submit for review</button></div></form>`
+ <div class="actions">${L('Cancel', 'evidence', {}, 'btn btn-g')}<button class="btn btn-p" type="submit">Submit for review</button></div></form>
+ <aside class="c4 col ev-up-side">${card('How it is reviewed', 'A reviewer sets the review status and the Evidence Support Level. Approval never implies release.', `<ol class="ev-levels">${LEVELS.map(([k, v]) => `<li>${evLevel(k)}<span>${v}</span></li>`).join('')}</ol>`, '', 'quiet')}</aside></div>`
   );
 });
 F.ne = (d, form) => {
@@ -540,12 +574,13 @@ F.ne = (d, form) => {
 // ---------- REPOSITORY (E08) ----------
 route('repository', 'repository', () => {
   const r = role();
-  // arriving from a link to one record (e.g. from a Learning Harvest) filters to it
+  // arriving from a link to one record (e.g. from a Learning Harvest) searches the library for it
   if (UI.p.rec && byId('records', UI.p.rec)) {
-    UI.q.repo = byId('records', UI.p.rec).title;
+    const st = (UI.dv.repository = UI.dv.repository || {});
+    st.q = byId('records', UI.p.rec).title;
+    st.page = 1;
     delete UI.p.rec;
   }
-  const q = UI.q.repo || '';
   const vis = S.records.filter(
     x =>
       r === 'A' ||
@@ -555,13 +590,7 @@ route('repository', 'repository', () => {
         return o && (memberOf(o) || r === 'O');
       }),
   );
-  const list = vis.filter(
-    x =>
-      !q ||
-      (x.title + ' ' + x.kind + ' ' + x.tags + ' ' + x.linked.map(cName).join(' '))
-        .toLowerCase()
-        .includes(q.toLowerCase()),
-  );
+  const plain = s => String(s).replace(/<[^>]+>/g, '');
   const used = S.records.reduce((a, x) => a + x.sizeMB, 0);
   return (
     head(
@@ -570,25 +599,32 @@ route('repository', 'repository', () => {
       r !== 'O' ? B(ic('upload', 16) + 'Upload record', 'repoUp', {}, 'btn-p') : '',
     ) +
     (r === 'A'
-      ? banner(
-          'info',
-          'Storage',
-          `${used.toFixed(1)} MB used of the 50 GB quota (${((used / 51200) * 100).toFixed(2)}%). Warning at 80%.`,
-        )
+      ? `<div class="repo-store" role="status">${ic('archive', 18)}<div class="grow"><div class="bt">Storage</div><p class="cap">${used.toFixed(1)} MB used of the 50 GB quota (${((used / 51200) * 100).toFixed(2)}%). Warning at 80%.</p></div><div class="progress repo-meter" aria-hidden="true"><span class="bar" style="width:${Math.max(1, Math.min(100, (used / 51200) * 100))}%"></span></div></div>`
       : '') +
-    `<div class="row" style="margin-bottom:16px"><input class="input" style="max-width:360px" placeholder="Search by title, type, people or space" value="${h(q)}" data-ch="repoQ" aria-label="Search records"></div>` +
-    table(
-      ['Record', 'Type', 'Linked to', 'Owner', 'State', ''],
-      list.map(x => [
-        `<b>${h(x.title)}</b><div class="cap">v${x.ver}${x.note ? ' · ' + h(x.note) : ''}</div>`,
-        h(x.kind),
-        x.linked.map(cName).join(', ') || '—',
-        nm(x.owner),
-        pill(x.state),
-        x.state !== 'Quarantined' ? B('Details', 'repoView', { id: x.id }) : '',
-      ]),
-      'No records.',
-    )
+    dataView('repository', {
+      label: 'records',
+      items: vis,
+      search: x => x.title + ' ' + x.kind + ' ' + x.tags + ' ' + x.linked.map(l => plain(cName(l))).join(' ') + ' ' + P(x.owner).name,
+      searchLabel: 'Search by title, type, people or space',
+      quick: dvOpts(vis, x => x.state).length > 1 ? { label: 'State', options: dvOpts(vis, x => x.state), test: (x, v) => x.state === v } : null,
+      filters: [
+        { key: 'kind', label: 'Type', options: dvOpts(vis, x => x.kind), test: (x, v) => x.kind === v },
+        { key: 'space', label: 'Linked to', options: dvOpts(vis, x => x.linked, l => plain(cName(l))), test: (x, v) => x.linked.includes(v) },
+      ],
+      sorts: [
+        ['date', 'Date', (a, b) => String(a.date || '').localeCompare(String(b.date || ''))],
+        ['title', 'Title', (a, b) => a.title.localeCompare(b.title)],
+      ],
+      row: x => ({
+        lead: `<span class="tile t-soft" aria-hidden="true">${ic(/link/i.test(x.kind) ? 'link' : /decision|commitment/i.test(x.kind) ? 'checks' : /chat|transcript/i.test(x.kind) ? 'message' : 'file', 18)}</span>`,
+        title: h(x.title),
+        sub: `v${x.ver}${x.note ? ' · ' + h(x.note) : ''}`,
+        meta: [h(x.kind), x.linked.map(cName).join(', ') || '—', nm(x.owner), x.date ? fmt(x.date) : ''],
+        badges: pill(x.state),
+        primary: x.state !== 'Quarantined' ? B('Details', 'repoView', { id: x.id }) : '',
+      }),
+      empty: ['archive', 'No records.', ''],
+    })
   );
 });
 A.repoQ = (d, el) => {
@@ -614,7 +650,7 @@ A.repoView = d => {
           'Versions',
           (x.versions || [{ ver: 1, note: 'Original' }]).map(v => 'v' + v.ver + ' ' + h(v.note)).join(' · '),
         ],
-      ])}${aiBlock ? banner('warn', 'AI extraction and broader sharing blocked', 'Recording consent is missing for at least one participant.') : ''}<div class="row wrap">${B(ic('download', 14) + 'Export with metadata', 'repoExport', { id: x.id })}${can_ ? B('Upload corrected version', 'repoCorrect', { id: x.id }) : ''}${can_ && x.state !== 'Deletion requested' ? CB(ic('trash', 14) + 'Request deletion', 'repoDel', { id: x.id }, 'Request deletion of this record? A Programme Administrator approves it; the audit entry is preserved.') : ''}${role() === 'A' && x.state === 'Deletion requested' ? B('Approve deletion', 'repoDelOk', { id: x.id }, 'btn-d btn-sm') : ''}</div>`,
+      ])}${aiBlock ? banner('warn', 'AI extraction and broader sharing blocked', 'Recording consent is missing for at least one participant.') : ''}<div class="row wrap repo-acts">${B(ic('download', 14) + 'Export with metadata', 'repoExport', { id: x.id })}${can_ ? B('Upload corrected version', 'repoCorrect', { id: x.id }) : ''}${can_ && x.state !== 'Deletion requested' ? CB(ic('trash', 14) + 'Request deletion', 'repoDel', { id: x.id }, 'Request deletion of this record? A Programme Administrator approves it; the audit entry is preserved.') : ''}${role() === 'A' && x.state === 'Deletion requested' ? B('Approve deletion', 'repoDelOk', { id: x.id }, 'btn-d btn-sm') : ''}</div>`,
   );
 };
 A.repoExport = d => {
@@ -655,7 +691,7 @@ A.repoUp = () => {
   modal(
     'Upload a record',
     () =>
-      `<form data-f="ru" class="col" style="gap:12px" novalidate>${fi('ru', 'title', 'Title', { req: true })}${fi('ru', 'kind', 'Type', { type: 'select', req: true, ph: 'Select', opts: ['Meeting notes', 'Transcript', 'Approved chat export', 'Decision', 'Commitment', 'Document', 'Recording (external link)'] })}<div class="field"><label class="lbl">File</label><input type="file" name="file" class="input" style="padding:8px"></div>${fi('ru', 'link', 'Link to', { type: 'select', req: true, ph: 'Select', opts: sp.map(s => [s.id, s.name]) })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Upload</button></div></form>`,
+      `<form data-f="ru" class="col prj-dlg" novalidate>${fi('ru', 'title', 'Title', { req: true })}${fi('ru', 'kind', 'Type', { type: 'select', req: true, ph: 'Select', opts: ['Meeting notes', 'Transcript', 'Approved chat export', 'Decision', 'Commitment', 'Document', 'Recording (external link)'] })}<div class="field"><label class="lbl" for="ru_file">File</label><input id="ru_file" type="file" name="file" class="input repo-file"></div>${fi('ru', 'link', 'Link to', { type: 'select', req: true, ph: 'Select', opts: sp.map(s => [s.id, s.name]) })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Upload</button></div></form>`,
   );
 };
 F.ru = (d, form) => {
@@ -716,18 +752,31 @@ route('harvests', 'harvest', () => {
       'Source records → AI draft → human review → edit → approve/reject → release. Previous versions are kept.',
       r !== 'S' && r !== 'O' ? B(ic('plus', 16) + 'Start a Harvest', 'newHarvest', {}, 'btn-p') : '',
     ) +
-    table(
-      ['Harvest', 'Trigger', 'State', 'AI', 'Release', ''],
-      list.map(x => [
-        `<b>${h(x.scopeName)}</b>`,
-        h(x.trigger),
-        pill(x.state),
-        x.ai ? aiTag('AI-assisted') : '—',
-        h(x.release),
-        L('Open', 'harvest', { id: x.id }),
-      ]),
-      'No Harvests yet.',
-    )
+    dataView('harvests', {
+      label: 'Harvests',
+      items: list,
+      search: x => x.scopeName + ' ' + x.trigger + ' ' + x.state + ' ' + x.release,
+      quick: dvOpts(list, x => x.state).length > 1 ? { label: 'State', options: ['Draft', 'Review', 'Approved', 'Rejected'].filter(s => list.some(x => x.state === s)).map(s => [s, s]), test: (x, v) => x.state === v } : null,
+      filters: [
+        { key: 'trigger', label: 'Trigger', options: dvOpts(list, x => x.trigger), test: (x, v) => x.trigger === v },
+        { key: 'release', label: 'Release', options: dvOpts(list, x => x.release), test: (x, v) => x.release === v },
+        { key: 'ai', label: 'AI', options: [['yes', 'AI-assisted'], ['no', 'Written by people']], test: (x, v) => (v === 'yes' ? !!x.ai : !x.ai) },
+      ],
+      sorts: [
+        ['title', 'Title', (a, b) => a.scopeName.localeCompare(b.scopeName)],
+        ['state', 'State', (a, b) => a.state.localeCompare(b.state)],
+        ['version', 'Version', (a, b) => (a.ver || 0) - (b.ver || 0)],
+      ],
+      row: x => ({
+        lead: `<span class="tile t-soft" aria-hidden="true">${ic('sparkle', 18)}</span>`,
+        title: h(x.scopeName),
+        sub: h(x.trigger),
+        meta: [`${x.tpl === 2 ? WL() + ' template' : 'Template v1.0'} · v${x.ver}`, h(x.release)],
+        badges: pill(x.state) + (x.ai ? aiTag('AI-assisted') : ''),
+        primary: L('Open', 'harvest', { id: x.id }),
+      }),
+      empty: ['sparkle', 'No Harvests yet.', ''],
+    })
   );
 });
 A.newHarvest = d => {
@@ -737,7 +786,7 @@ A.newHarvest = d => {
   modal(
     'Start a Learning Harvest',
     () =>
-      `<form data-f="hv" class="col" style="gap:14px" novalidate>${fi('hv', 'scope', 'For', { type: 'select', req: true, ph: 'Select', opts: [...pids.map(s => [s.id, s.name]), ['personal', 'My personal Harvest (pathway)']], value: d.scope })}${fi('hv', 'trigger', 'Trigger', { type: 'select', req: true, opts: ['Session completion', 'Milestone', 'Visible win', 'Periodic review', 'Workspace closure', 'Pathway completion'] })}${consent(myId(), 'ai') === 'Granted' && S.settings.aiAvailable ? fi('hv', 'ai', 'Let PHOENIX draft it from authorised source records (Class B)', { type: 'checkbox' }) : banner('info', '', 'AI drafting unavailable — you will write the Harvest manually.')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Start</button></div></form>`,
+      `<form data-f="hv" class="col prj-dlg" novalidate>${fi('hv', 'scope', 'For', { type: 'select', req: true, ph: 'Select', opts: [...pids.map(s => [s.id, s.name]), ['personal', 'My personal Harvest (pathway)']], value: d.scope })}${fi('hv', 'trigger', 'Trigger', { type: 'select', req: true, opts: ['Session completion', 'Milestone', 'Visible win', 'Periodic review', 'Workspace closure', 'Pathway completion'] })}${consent(myId(), 'ai') === 'Granted' && S.settings.aiAvailable ? fi('hv', 'ai', 'Let PHOENIX draft it from authorised source records (Class B)', { type: 'checkbox' }) : banner('info', '', 'AI drafting unavailable — you will write the Harvest manually.')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Start</button></div></form>`,
   );
 };
 F.hv = d => {
@@ -815,18 +864,14 @@ route('harvest', 'harvest', () => {
   const edit = ['Draft', 'Review'].includes(x.state) && (x.by === myId() || comp);
   if (x.tpl === 2) return hv2View(x, mem, comp, edit);
   return (
-    head(
-      h(x.scopeName),
-      'Learning Harvest Template v1.0 · version ' + x.ver,
-      pill(x.state) + (x.ai ? aiTag('AI-assisted') : ''),
-      [['Learning Harvests', 'harvests'], ['Harvest']],
-    ) +
-    `<div class="g12"><form data-f="hve" class="card c8 col" style="gap:14px" novalidate><input type="hidden" name="id" value="${x.id}">${HV_SECTIONS.map(s => (edit ? fi('hve', s, s, { type: 'textarea', rows: 2, value: x.sections[s] }) : `<div><b>${s}</b><p class="muted" style="white-space:pre-line">${h(x.sections[s] || '—')}</p></div>`)).join('')}${edit ? `<div class="actions"><span></span><div class="row wrap"><button class="btn btn-s" type="submit" name="act" value="save">Save edits</button>${x.state === 'Draft' ? `<button class="btn btn-s" type="submit" name="act" value="review">Send for review</button>` : ''}${comp ? `<button class="btn btn-s" type="submit" name="act" value="reject">Reject</button><button class="btn btn-p" type="submit" name="act" value="approve">Approve</button>` : ''}</div></div>` : ''}</form>
- <aside class="c4 col" style="gap:12px">${card('Contributions', 'Reflections, lessons, dissent and questions.', x.contrib.map(c => lrow('message', h(c.t), nm(c.by))).join('') || '<p class="cap">None yet.</p>', mem && ['Draft', 'Review'].includes(x.state) ? B(ic('plus', 14) + 'Contribute', 'hvContrib', { id: x.id }) : '')}
- ${card('Release', 'Separate approval for public or funder release.', `<p>${h(x.release)}</p>${x.state === 'Approved' && comp && x.release === 'Not released' ? B('Request funder release', 'hvRel', { id: x.id, v: 'Funder release requested' }) : ''}${r === 'A' && x.release === 'Funder release requested' ? B('Approve release', 'hvRel', { id: x.id, v: 'Released' }, 'btn-p btn-sm') : ''}`)}
+    crumbsHtml([['Learning Harvests', 'harvests'], ['Harvest']]) +
+    `<div class="shead-main hv-head"><span class="tile" aria-hidden="true">${ic('sparkle', 20)}</span><div class="shead-t"><div class="shead-kind">Learning Harvest · ${h(x.trigger)}</div><div class="row wrap hv-ttl"><h1 class="h1">${h(x.scopeName)}</h1>${pill(x.state)}${x.ai ? aiTag('AI-assisted') : ''}</div><div class="shead-meta"><span>Learning Harvest Template v1.0 · version ${x.ver}</span><span>${h(x.release)}</span></div></div></div>` +
+    `<div class="g12"><form data-f="hve" class="card c8 col hv-doc" novalidate><input type="hidden" name="id" value="${x.id}">${HV_SECTIONS.map(s => (edit ? fi('hve', s, s, { type: 'textarea', rows: 2, value: x.sections[s] }) : `<section class="hv-s"><h2 class="h3">${s}</h2><p class="hv-x">${h(x.sections[s] || '—')}</p></section>`)).join('')}${edit ? `<div class="actions"><span></span><div class="row wrap"><button class="btn btn-s" type="submit" name="act" value="save">Save edits</button>${x.state === 'Draft' ? `<button class="btn btn-s" type="submit" name="act" value="review">Send for review</button>` : ''}${comp ? `<button class="btn btn-s" type="submit" name="act" value="reject">Reject</button><button class="btn btn-p" type="submit" name="act" value="approve">Approve</button>` : ''}</div></div>` : ''}</form>
+ <aside class="c4 col hv-side">${card('Contributions', 'Reflections, lessons, dissent and questions.', x.contrib.map(c => lrow('message', h(c.t), nm(c.by))).join('') || '<p class="cap">None yet.</p>', mem && ['Draft', 'Review'].includes(x.state) ? B(ic('plus', 14) + 'Contribute', 'hvContrib', { id: x.id }) : '')}
+ ${card('Release', 'Separate approval for public or funder release.', `<p class="hv-rel">${h(x.release)}</p>${x.state === 'Approved' && comp && x.release === 'Not released' ? B('Request funder release', 'hvRel', { id: x.id, v: 'Funder release requested' }) : ''}${r === 'A' && x.release === 'Funder release requested' ? B('Approve release', 'hvRel', { id: x.id, v: 'Released' }, 'btn-p btn-sm') : ''}`)}
  ${card('Profile candidates', 'A Harvest cannot write to a profile. Only individual, attributable items are offered.', x.state === 'Approved' && comp ? B('Offer profile candidates to participants', 'hvCand', { id: x.id }) : '<p class="cap">Available after approval.</p>')}
  ${x.state === 'Rejected' && (x.by === myId() || comp) ? card('Rejected', 'Revise contributions and redraft. The rejected version is kept.', B(ic('refresh', 14) + 'Revise and redraft', 'hvRedraft', { id: x.id }, 'btn-p btn-sm')) : ''}
- ${x.versions.length ? card('Previous versions', '', x.versions.map(v => `<p class="cap">v${v.ver} · ${fmt(v.at)} · ${h(v.state)}</p>`).join('')) : ''}</aside></div>`
+ ${x.versions.length ? card('Previous versions', '', `<ol class="hv-vers">${x.versions.map(v => `<li class="cap">v${v.ver} · ${fmt(v.at)} · ${h(v.state)}</li>`).join('')}</ol>`) : ''}</aside></div>`
   );
 });
 F.hve = d => {
@@ -868,7 +913,7 @@ A.hvContrib = d => {
   modal(
     'Contribute',
     () =>
-      `<form data-f="hc" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${d.id}">${fi('hc', 'kind', 'Type', { type: 'select', opts: ['Reflection', 'Lesson', 'Dissent', 'Question', 'Missing voice'] })}${fi('hc', 't', 'Your contribution', { type: 'textarea', rows: 3, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Add</button></div></form>`,
+      `<form data-f="hc" class="col prj-dlg" novalidate><input type="hidden" name="id" value="${d.id}">${fi('hc', 'kind', 'Type', { type: 'select', opts: ['Reflection', 'Lesson', 'Dissent', 'Question', 'Missing voice'] })}${fi('hc', 't', 'Your contribution', { type: 'textarea', rows: 3, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Add</button></div></form>`,
   );
 };
 F.hc = d => {
@@ -1099,7 +1144,7 @@ function hv2View(x, mem, comp, edit) {
   const ta = (k, label, o2 = {}) =>
     edit
       ? fi(f, k, label, { type: 'textarea', rows: o2.rows || 3, value: s[k], req: o2.req, help: o2.help, ph: o2.ph })
-      : `<div class="hv2-ro">${label ? `<span class="lbl">${label}</span>` : ''}<p style="white-space:pre-line">${h(s[k] || '—')}</p></div>`;
+      : `<div class="hv2-ro">${label ? `<span class="lbl">${label}</span>` : ''}<p class="hv2-x">${h(s[k] || '—')}</p></div>`;
   const chip = l => L(ic(LINK_IC[l.type] || 'link', 13) + `<span>${h(l.label)}</span>`, l.r, l.p, 'hv2-chip');
   const links = (x.links || []).filter(l => l.type !== 'Baseline' || subj);
   const refs = types => {
@@ -1111,13 +1156,13 @@ function hv2View(x, mem, comp, edit) {
   const mineEvo = S.evolution.filter(e => e.hv === x.id && e.pid === myId());
   const allEvo = S.evolution.filter(e => e.hv === x.id);
   const cp = S.compass[x.subject] || {};
-  const main = `<form data-f="hv2" class="card c8 col hv2" style="gap:22px" novalidate>${errSum(f)}<input type="hidden" name="id" value="${x.id}">
-  ${sec('what', HV2[0][1], HV2[0][2], ta('what', '', { rows: 8, req: true, help: edit ? 'Compiled from the completed deliverables, evidence, milestones, wins and records. Edit freely.' : '' }) + refs(['Deliverable', 'Evidence', 'Milestone', 'Record']))}
+  const main = `<form data-f="hv2" class="card c8 col hv2" novalidate>${errSum(f)}<input type="hidden" name="id" value="${x.id}">
+  ${sec('what', HV2[0][1], HV2[0][2], ta('what', '<span class="sr">' + HV2[0][1] + '</span>', { rows: 8, req: true, help: edit ? 'Compiled from the completed deliverables, evidence, milestones, wins and records. Edit freely.' : '' }) + refs(['Deliverable', 'Evidence', 'Milestone', 'Record']))}
   ${sec('learning', HV2[1][1], HV2[1][2], ta('learning', 'What was learned', { rows: 3, req: true }) + `<div class="g2 hv2-learn">${HV2_LEARN.map(([k, l]) => ta(k, l, { rows: 2, help: edit && ['skillsDem', 'skillsDev', 'interests'].includes(k) ? 'Comma-separated. Used to suggest profile changes, which the person reviews.' : '' })).join('')}</div>`)}
-  ${sec('negative', HV2[2][1] + ' <span class="req">*</span>', HV2[2][2], ta('negative', '', { rows: 6, req: true, help: edit ? (x.detected ? `Pre-filled with ${x.detected} item${x.detected > 1 ? 's' : ''} found in the records (open risks, blocked dependencies, late or declined deliverables, reworked contributions, evidence not approved). Confirm, edit and add what did not work.` : 'Nothing was flagged in the records. Record what did not work as expected, or explain why there was nothing.') : '' }))}
-  ${sec('resources', HV2[3][1], HV2[3][2], ta('resources', '', { rows: 5, req: true, help: edit ? 'Add how each resource contributed, or remove ones that did not.' : '' }) + refs(['Resource']))}
-  ${sec('partners', HV2[4][1], HV2[4][2], ta('partners', '', { rows: 5, req: true, help: edit ? 'Add how each contribution affected the outcome.' : '' }) + refs(['Partner', 'Contribution']))}
-  ${sec('decisions', 'F. Continue / Change / Stop / Test', 'The Harvest concludes with four decisions. All four are required.', `<div class="hv2-dec">${HV2_DEC.map(([k, l, q]) => `<div class="hv2-d hv2-d-${k}${fe(f, k) ? ' err' : ''}"><label class="hv2-dl" for="hv2_${k}"><b>${l}</b><span class="cap">${q}</span></label>${edit ? `<textarea id="hv2_${k}" name="${k}" class="input${fe(f, k) ? ' err' : ''}" rows="4" aria-invalid="${!!fe(f, k)}">${h(fv(f, k, s[k] || ''))}</textarea>${fe(f, k) ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe(f, k)}</span>` : ''}` : `<p style="white-space:pre-line">${h(s[k] || '—')}</p>`}</div>`).join('')}</div>`)}
+  ${sec('negative', HV2[2][1] + ' <span class="req">*</span>', HV2[2][2], ta('negative', '<span class="sr">' + HV2[2][1] + '</span>', { rows: 6, req: true, help: edit ? (x.detected ? `Pre-filled with ${x.detected} item${x.detected > 1 ? 's' : ''} found in the records (open risks, blocked dependencies, late or declined deliverables, reworked contributions, evidence not approved). Confirm, edit and add what did not work.` : 'Nothing was flagged in the records. Record what did not work as expected, or explain why there was nothing.') : '' }))}
+  ${sec('resources', HV2[3][1], HV2[3][2], ta('resources', '<span class="sr">' + HV2[3][1] + '</span>', { rows: 5, req: true, help: edit ? 'Add how each resource contributed, or remove ones that did not.' : '' }) + refs(['Resource']))}
+  ${sec('partners', HV2[4][1], HV2[4][2], ta('partners', '<span class="sr">' + HV2[4][1] + '</span>', { rows: 5, req: true, help: edit ? 'Add how each contribution affected the outcome.' : '' }) + refs(['Partner', 'Contribution']))}
+  ${sec('decisions', 'F. Continue / Change / Stop / Test', 'The Harvest concludes with four decisions. All four are required.', `<div class="hv2-dec">${HV2_DEC.map(([k, l, q]) => `<div class="hv2-d hv2-d-${k}${fe(f, k) ? ' err' : ''}"><label class="hv2-dl" for="hv2_${k}"><b>${l}</b><span class="cap">${q}</span></label>${edit ? `<textarea id="hv2_${k}" name="${k}" class="input${fe(f, k) ? ' err' : ''}" rows="4" aria-invalid="${!!fe(f, k)}">${h(fv(f, k, s[k] || ''))}</textarea>${fe(f, k) ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe(f, k)}</span>` : ''}` : `<p class="hv2-x">${h(s[k] || '—')}</p>`}</div>`).join('')}</div>`)}
   ${sec('links', 'G. Links to records', 'Every source record this Harvest draws on. Each link opens the underlying record, which keeps its own permissions.', groups.length ? `<div class="hv2-links">${groups.map(g => `<div class="hv2-lg"><span class="lbl">${g === 'Baseline' ? 'Purpose Compass Baseline (only you)' : g + 's'}</span><div class="hv2-refs">${links.filter(l => l.type === g).map(chip).join('')}</div></div>`).join('')}</div>` : '<p class="cap">No linked records.</p>')}
   ${edit ? `<div class="actions"><span class="cap">Every save keeps the previous version.</span><div class="row wrap"><button class="btn btn-s" type="submit" name="act" value="save">Save edits</button>${x.state === 'Draft' ? '<button class="btn btn-s" type="submit" name="act" value="review">Send for review</button>' : ''}${comp && !subj ? '<button class="btn btn-s" type="submit" name="act" value="reject">Reject</button><button class="btn btn-p" type="submit" name="act" value="approve">Approve</button>' : ''}</div></div>` : ''}</form>`;
   const side = `<aside class="c4 col" style="gap:12px">${card(
@@ -1129,17 +1174,21 @@ function hv2View(x, mem, comp, edit) {
       [WL(), o ? L(h(o.name), 'room', { id: o.id }) : '—'],
       ['Version', 'v' + x.ver],
       x.approvedBy && ['Approved by', nm(x.approvedBy)],
-    ]) + (x.state === 'Draft' ? `<p class="cap" style="margin-top:10px">Not complete until it is sent for review and approved by a Faculty/Steward, Reviewer or Project Lead.</p>` : x.state === 'Review' ? '<p class="cap" style="margin-top:10px">Waiting for review and approval.</p>' : ''),
+    ]) + (x.state === 'Draft' ? `<p class="cap hv2-note">Not complete until it is sent for review and approved by a Faculty/Steward, Reviewer or Project Lead.</p>` : x.state === 'Review' ? '<p class="cap hv2-note">Waiting for review and approval.</p>' : ''),
+    '',
+    'hv2-status',
   )}
- ${subj ? card('Your baseline', 'Context from your Purpose Compass. Only you see this panel; nothing here is copied into the Harvest unless you write it in.', dl([['Purpose', h(cp.PC1 || '—')], ['Outcome', h(cp.PC2 || '—')], ['Success looks like', h(cp.PC6 || '—')], ['You bring', h(cp.PC7 || '—')], ['Blockers you expected', h(cp.PC3 || '—')], ['How you learn', h(cp.learnHow || '—')], ['First milestone', h(cp.PC5 || '—')]]) + '<p class="cap" style="margin-top:10px">Did an expected blocker happen? Add it to Negative findings if you want to share it.</p>', L('Open baseline', 'profile', { tab: 'compass' })) : ''}
+ <nav class="card quiet hv2-toc hide-md" aria-label="Harvest sections"><span class="lbl">In this Harvest</span><ol>${[...HV2.map(([k, t]) => [k, t]), ['decisions', 'F. Continue / Change / Stop / Test'], ['links', 'G. Links to records']].map(([k, t]) => `<li><a href="#hv2-${k}">${t}</a></li>`).join('')}</ol></nav>
+ ${subj ? card('Your baseline', 'Context from your Purpose Compass. Only you see this panel; nothing here is copied into the Harvest unless you write it in.', dl([['Purpose', h(cp.PC1 || '—')], ['Outcome', h(cp.PC2 || '—')], ['Success looks like', h(cp.PC6 || '—')], ['You bring', h(cp.PC7 || '—')], ['Blockers you expected', h(cp.PC3 || '—')], ['How you learn', h(cp.learnHow || '—')], ['First milestone', h(cp.PC5 || '—')]]) + '<p class="cap hv2-note">Did an expected blocker happen? Add it to Negative findings if you want to share it.</p>', L('Open baseline', 'profile', { tab: 'compass' })) : ''}
  ${card('Profile evolution', 'Suggested from the approved Harvest. Never applied automatically.', !hvDone(x) ? '<p class="cap">Identified when the Harvest is approved. The person reviews each suggestion and approves or rejects it.</p>' : subj ? (mineEvo.length ? `<p>${pend.length ? `<b>${pend.length}</b> waiting for your review` : 'All reviewed'} · ${mineEvo.filter(e => e.status === 'Approved').length} approved · ${mineEvo.filter(e => e.status === 'Rejected').length} rejected</p>` : '<p class="cap">No profile changes were identified.</p>') : `<p class="cap">${allEvo.length} suggestion${allEvo.length === 1 ? '' : 's'} offered to ${nm(x.subject)} · ${pend.length} awaiting their decision. Only they can approve.</p>`, subj && mineEvo.length ? L(pend.length ? 'Review profile changes' : 'See decisions', 'profile', { tab: 'evo' }, 'btn btn-p btn-sm') : '')}
  ${card('Contributions', 'Reflections, lessons, dissent and questions.', x.contrib.map(c => lrow('message', h(c.t), nm(c.by))).join('') || '<p class="cap">None yet.</p>', mem && ['Draft', 'Review'].includes(x.state) ? B(ic('plus', 14) + 'Contribute', 'hvContrib', { id: x.id }) : '')}
- ${card('Release', 'Separate approval for public or funder release.', `<p>${h(x.release)}</p>${x.state === 'Approved' && comp && x.release === 'Not released' ? B('Request funder release', 'hvRel', { id: x.id, v: 'Funder release requested' }) : ''}${role() === 'A' && x.release === 'Funder release requested' ? B('Approve release', 'hvRel', { id: x.id, v: 'Released' }, 'btn-p btn-sm') : ''}`)}
+ ${card('Release', 'Separate approval for public or funder release.', `<p class="hv-rel">${h(x.release)}</p>${x.state === 'Approved' && comp && x.release === 'Not released' ? B('Request funder release', 'hvRel', { id: x.id, v: 'Funder release requested' }) : ''}${role() === 'A' && x.release === 'Funder release requested' ? B('Approve release', 'hvRel', { id: x.id, v: 'Released' }, 'btn-p btn-sm') : ''}`)}
  ${x.state === 'Rejected' && (x.by === myId() || comp) ? card('Rejected', 'Revise and redraft. The rejected version is kept.', B(ic('refresh', 14) + 'Revise and redraft', 'hvRedraft', { id: x.id }, 'btn-p btn-sm')) : ''}
- ${x.versions.length ? card('Previous versions', '', x.versions.map(v => `<p class="cap">v${v.ver} · ${fmt(v.at)} · ${h(v.state)}</p>`).join('')) : ''}</aside>`;
-  const evoMine = hvDone(x) && subj && pend.length ? `<div class="c12">${banner('warn', pend.length + ' suggested profile change' + (pend.length > 1 ? 's are' : ' is') + ' waiting for your review', 'Identified from this approved Harvest. Nothing has been applied: review each one and approve or reject it.<span class="row wrap" style="display:flex;gap:8px;margin-top:10px">' + L('Review profile changes', 'profile', { tab: 'evo' }, 'btn btn-p btn-sm') + '</span>')}</div>` : '';
+ ${x.versions.length ? card('Previous versions', '', `<ol class="hv-vers">${x.versions.map(v => `<li class="cap">v${v.ver} · ${fmt(v.at)} · ${h(v.state)}</li>`).join('')}</ol>`) : ''}</aside>`;
+  const evoMine = hvDone(x) && subj && pend.length ? `<div class="c12">${banner('warn', pend.length + ' suggested profile change' + (pend.length > 1 ? 's are' : ' is') + ' waiting for your review', 'Identified from this approved Harvest. Nothing has been applied: review each one and approve or reject it.<span class="row wrap hv2-evo-a">' + L('Review profile changes', 'profile', { tab: 'evo' }, 'btn btn-p btn-sm') + '</span>')}</div>` : '';
   return (
-    head(h(x.scopeName), 'Learning Harvest · ' + WL() + ' template · version ' + x.ver, pill(x.state), [['Learning Harvests', 'harvests'], ['Harvest']]) +
+    crumbsHtml([['Learning Harvests', 'harvests'], ['Harvest']]) +
+    `<div class="shead-main hv-head"><span class="tile" aria-hidden="true">${ic('sparkle', 20)}</span><div class="shead-t"><div class="shead-kind">Learning Harvest · ${h(x.trigger)}</div><div class="row wrap hv-ttl"><h1 class="h1">${h(x.scopeName)}</h1>${pill(x.state)}</div><div class="shead-meta"><span>Learning Harvest · ${WL()} template · version ${x.ver}</span>${o ? `<span>${L(h(o.name), 'room', { id: o.id })}</span>` : ''}<span>${h(x.release)}</span></div></div></div>` +
     (o ? `<nav class="hv2-flow" aria-label="Progress">${['Deliverables completed', 'Evidence submitted', 'Learning Harvest', 'Profile evolution'].map((t, i) => `<span class="${i < 2 || (i === 2 && hvDone(x)) || (i === 3 && hvDone(x) && !pend.length) ? 'done' : (i === 2 && !hvDone(x)) || (i === 3 && hvDone(x)) ? 'cur' : ''}">${i < 2 || (i === 2 && hvDone(x)) || (i === 3 && hvDone(x) && !pend.length) ? ic('check', 13) : i + 1} ${t}</span>`).join('')}</nav>` : '') +
     `<div class="g12">${evoMine}${main}${side}</div>`
   );

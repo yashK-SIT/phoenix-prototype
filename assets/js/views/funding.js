@@ -19,7 +19,7 @@ function sponsorBrief(p) {
     dl([
       ['Overview', h(p.title) + ' · ' + h(p.type)],
       ['Problem / need', h(p.sections ? p.sections[0].text : p.desc || '—')],
-      ['Objectives and expected outcomes', `<span style="white-space:pre-line">${h(p.sections ? p.sections[1].text : '—')}</span>`],
+      ['Objectives and expected outcomes', `<span class="pre-line">${h(p.sections ? p.sections[1].text : '—')}</span>`],
       ['Requirements', h(p.sections ? p.sections[2].text.split('\n')[0] : '—')],
       ['Areas', (p.tags || []).map(t => pill(t, 'p-grey')).join(' ') || '—'],
       ['Funding requirement', p.fundingNeed ? money('USD', p.fundingNeed) : 'Not stated'],
@@ -66,59 +66,83 @@ route('funding', 'funding', () => {
           (!q.need || (q.need === 'yes' ? !!p.fundingNeed : !p.fundingNeed)),
       );
       const sel = (k, l, opts) =>
-        `<select class="input" style="width:auto" data-ch="fundQ" data-k="${k}" aria-label="${l}">${opts.map(([v, tt]) => `<option value="${v}" ${(q[k] || '') === v ? 'selected' : ''}>${tt}</option>`).join('')}</select>`;
+        `<select class="input fund-sel" data-ch="fundQ" data-k="${k}" aria-label="${l}">${opts.map(([v, tt]) => `<option value="${v}" ${(q[k] || '') === v ? 'selected' : ''}>${tt}</option>`).join('')}</select>`;
       body =
-        `<div class="row wrap" style="margin-bottom:12px">${sel('scope', 'Show', [['match', 'Matching my interests'], ['all', 'All eligible projects']])}${sel('area', 'Area', [['', 'Area: all'], ...PROJECT_AREAS.map(a => [a, a])])}${sel('stage', 'Stage', [['', 'Stage: all'], ['Circle', 'Circle'], ['Rope Team', 'Rope Team'], ['Room', WL()]])}${sel('need', 'Funding requirement', [['', 'Funding requirement: any'], ['yes', 'States a funding requirement'], ['no', 'No amount stated']])}</div>` +
-        `<p class="cap" style="margin-bottom:12px">Your interests: ${ints.map(h).join(', ') || 'none set'}. Matching is by stated interest only. No automated funding decisions.</p>` +
-          ps
-            .map(p =>
-              card(
-                h(p.title),
-                'Stage: ' + stageLabel(p.stage || '—') + (sponsorMatch(p, ints).length ? ' · matches your interest in ' + sponsorMatch(p, ints).map(h).join(', ') : ''),
-                sponsorBrief(p),
-                (S.saved[myId()] || []).includes(p.id)
-                  ? pill('Saved', 'p-teal')
-                  : B('Save', 'fundSave', { id: p.id }) +
-                      B('Express interest', 'fundInterest', { id: p.id }, 'btn-p btn-sm'),
-                ) +
-                B(ic('message', 14) + 'Message project owner', 'dmOpen', { pid: p.owner, project: p.id }, 'btn-s btn-sm'
-              ),
-            )
-            .join('<div style="height:16px"></div>') ||
-          empty('folder', 'No projects match these filters', q.scope === 'match' ? 'Try “All eligible projects”, or update your funding interests.' : 'Try clearing a filter.');
+        `<div class="fund-scope"><label class="cap" for="fund-scope">Show</label>${sel('scope', 'Show', [['match', 'Matching my interests'], ['all', 'All eligible projects']]).replace('<select ', '<select id="fund-scope" ')}<p class="cap fund-ints">Your interests: ${ints.map(h).join(', ') || 'none set'}. Matching is by stated interest only. No automated funding decisions.</p></div>` +
+        dataView('fund:discover:' + (q.scope === 'all' ? 'all' : 'match'), {
+          label: 'projects',
+          items: ps,
+          search: p => p.title + ' ' + (p.type || '') + ' ' + (p.tags || []).join(' '),
+          filters: [
+            { key: 'area', label: 'Area', options: PROJECT_AREAS.map(a => [a, a]), test: (p, v) => (p.tags || []).includes(v) },
+            { key: 'stage', label: 'Stage', options: [['Circle', 'Circle'], ['Rope Team', 'Rope Team'], ['Room', WL()]], test: (p, v) => p.stage === v },
+            { key: 'need', label: 'Funding requirement', options: [['yes', 'States a funding requirement'], ['no', 'No amount stated']], test: (p, v) => (v === 'yes' ? !!p.fundingNeed : !p.fundingNeed) },
+          ],
+          sorts: [
+            ['need', 'Funding requirement, highest first', (a, b) => (b.fundingNeed || 0) - (a.fundingNeed || 0)],
+            ['match', 'Best interest match', (a, b) => sponsorMatch(b, ints).length - sponsorMatch(a, ints).length],
+            ['stage', 'Furthest stage', (a, b) => STAGE_ORDER.indexOf(b.stage) - STAGE_ORDER.indexOf(a.stage)],
+            ['title', 'Title', (a, b) => a.title.localeCompare(b.title)],
+          ],
+          row: p => {
+            const saved = (S.saved[myId()] || []).includes(p.id);
+            return {
+              lead: `<span class="tile t-soft" aria-hidden="true">${ic('folder', 18)}</span>`,
+              title: h(p.title),
+              sub: 'Stage: ' + stageLabel(p.stage || '—') + (sponsorMatch(p, ints).length ? ' · matches your interest in ' + sponsorMatch(p, ints).map(h).join(', ') : ''),
+              meta: [sponsorProgress(p), (p.tags || []).map(t => pill(t, 'p-grey')).join(' '), `<details class="fdisc-more"><summary>${ic('file', 14)}Sponsor brief</summary><div class="fdisc-brief">${sponsorBrief(p)}</div></details>`],
+              badges: `<span class="fdv-need"><span class="fig-l">Funding requirement</span><span class="fig">${p.fundingNeed ? money('USD', p.fundingNeed) : 'Not stated'}</span></span>`,
+              primary: saved ? pill('Saved', 'p-teal') : B('Express interest', 'fundInterest', { id: p.id }, 'btn-p btn-sm'),
+              menu: (saved ? '' : B(ic('check', 16) + 'Save', 'fundSave', { id: p.id }, 'menu-i')) + B(ic('message', 16) + 'Message project owner', 'dmOpen', { pid: p.owner, project: p.id }, 'menu-i'),
+            };
+          },
+          empty: ['folder', 'No projects match these filters', q.scope === 'match' ? 'Try “All eligible projects”, or update your funding interests.' : 'Try clearing a filter.', ''],
+        });
     }
     if (t.cur === 'pitches')
-      body =
-        S.pitches
-          .filter(p => p.to === myId())
-          .map(pi => {
+      body = (() => {
+        const pis = S.pitches.filter(p => p.to === myId());
+        return dataView('fund:pitches', {
+          label: 'pitches',
+          items: pis,
+          search: pi => byId('projects', pi.project).title + ' ' + P(pi.from).name + ' ' + pi.text,
+          quick: { label: 'Status', options: [...new Set(pis.map(pi => pi.status))].map(v => [v, v]), test: (pi, v) => pi.status === v },
+          sorts: [
+            ['new', 'Newest first', (a, b) => String(b.at).localeCompare(String(a.at))],
+            ['amt', 'Amount, highest first', (a, b) => b.amount - a.amount],
+          ],
+          row: pi => {
             const p = byId('projects', pi.project);
-            return card(
-              'Pitch: ' + h(p.title),
-              'From ' + nm(pi.from) + ' · ' + fmt(pi.at) + ' · requested ' + money('USD', pi.amount),
-              `<p>${h(pi.text)}</p><div style="margin-top:12px">${sponsorBrief(p)}</div>`,
-              pill(pi.status) +
-                B(ic('message', 14) + 'Message', 'dmOpen', { pid: pi.from, project: p.id }) +
-                (pi.status === 'Sent'
-                  ? B('Decline', 'pitchDecide', { id: pi.id, v: 'Declined' }) +
-                    B('Save', 'pitchDecide', { id: pi.id, v: 'Saved' }) +
-                    B(
-                      'Fund this project',
-                      'fundInterest',
-                      { id: p.id, pitch: pi.id, amount: pi.amount },
-                      'btn-p btn-sm',
-                    )
-                  : ''),
-            );
-          })
-          .join('<div style="height:16px"></div>') || empty('send', 'No pitches', '');
+            return {
+              lead: `<span class="tile t-soft" aria-hidden="true">${ic('send', 18)}</span>`,
+              title: 'Pitch: ' + h(p.title),
+              sub: 'From ' + nm(pi.from) + ' · ' + fmt(pi.at) + ' · requested ' + money('USD', pi.amount),
+              meta: [`<span class="fpitch-q">${h(pi.text)}</span>`, `<details class="fdisc-more"><summary>${ic('file', 14)}Sponsor brief</summary><div class="fdisc-brief">${sponsorBrief(p)}</div></details>`],
+              badges: pill(pi.status) + `<span class="fdv-need"><span class="fig-l">Requested</span><span class="fig">${money('USD', pi.amount)}</span></span>`,
+              primary:
+                pi.status === 'Sent'
+                  ? B('Fund this project', 'fundInterest', { id: p.id, pitch: pi.id, amount: pi.amount }, 'btn-p btn-sm')
+                  : B(ic('message', 14) + 'Message', 'dmOpen', { pid: pi.from, project: p.id }),
+              menu:
+                pi.status === 'Sent'
+                  ? B(ic('message', 16) + 'Message', 'dmOpen', { pid: pi.from, project: p.id }, 'menu-i') +
+                    B(ic('check', 16) + 'Save', 'pitchDecide', { id: pi.id, v: 'Saved' }, 'menu-i') +
+                    '<div class="menu-sep"></div>' +
+                    B(ic('x', 16) + 'Decline', 'pitchDecide', { id: pi.id, v: 'Declined' }, 'menu-i danger')
+                  : '',
+            };
+          },
+          empty: ['send', 'No pitches', '', ''],
+        });
+      })();
     if (t.cur === 'initiatives') body = initiativesView();
     if (t.cur === 'funded')
       body =
         S.funding
           .filter(f => f.sponsor === myId())
           .map(f => fundCard(f))
-          .join('<div style="height:16px"></div>') || empty('coin', 'No funding yet', '');
+          .join('') || empty('coin', 'No funding yet', '');
+    body = `<div class="fund-stack">${body}</div>`;
     return (
       head('Projects & funding', 'Funds are released stage by stage, each against the owner’s progress summary.') +
       t.html +
@@ -138,21 +162,36 @@ route('funding', 'funding', () => {
         : 'Stage-wise sponsor funding in this context.',
       r === 'P' && mine.length ? B(ic('send', 16) + 'Pitch a sponsor', 'pitchNew', {}, 'btn-p') : '',
     ) +
-    (fs.map(f => fundCard(f)).join('<div style="height:16px"></div>') ||
-      empty('coin', 'No funding', 'When a sponsor agrees to fund a project, the three tranches appear here.')) +
-    (r === 'P'
-      ? '<div style="height:16px"></div>' +
-        card(
-          'Pitches sent',
-          '',
-          table(
-            ['Project', 'Sponsor', 'Amount', 'Status'],
-            S.pitches
-              .filter(p => p.from === myId())
-              .map(p => [cName(p.project), nm(p.to), money('USD', p.amount), pill(p.status)]),
-          ),
-        )
-      : '')
+    `<div class="fund-stack">${fundTotals(fs)}${
+      fs.map(f => fundCard(f)).join('') ||
+      empty('coin', 'No funding', 'When a sponsor agrees to fund a project, the three tranches appear here.')
+    }${
+      r === 'P'
+        ? card(
+            'Pitches sent',
+            '',
+            dataView('fund:sent', {
+              label: 'pitches',
+              items: S.pitches.filter(p => p.from === myId()),
+              quick: { label: 'Status', options: [...new Set(S.pitches.filter(p => p.from === myId()).map(p => p.status))].map(v => [v, v]), test: (p, v) => p.status === v },
+              sorts: [
+                ['new', 'Newest first', (a, b) => String(b.at).localeCompare(String(a.at))],
+                ['amt', 'Amount', (a, b) => a.amount - b.amount],
+              ],
+              layout: 'table',
+              columns: [
+                { label: 'Project', cell: p => cName(p.project) },
+                { label: 'Sponsor', cell: p => nm(p.to) },
+                { label: 'Amount', num: true, sort: 'amt', cell: p => money('USD', p.amount) },
+                { label: 'Status', cell: p => pill(p.status) },
+              ],
+              empty: ['send', 'No pitches sent yet', 'Use “Pitch a sponsor” to send one.', ''],
+            }),
+            '',
+            'fund-pitches',
+          )
+        : ''
+    }</div>`
   );
 });
 function fundCard(f) {
@@ -167,10 +206,11 @@ function fundCard(f) {
       const rel = f.tranches
         .filter(t => ['Released', 'Summary submitted', 'Summary accepted', 'On hold'].includes(t.state))
         .reduce((a, t) => a + t.amount, 0);
-      return `<div class="col" style="gap:6px;margin-bottom:16px"><div class="row" style="justify-content:space-between"><span class="lbl">Released</span><span class="cap">${money(f.currency, rel)} of ${money(f.currency, f.total)}</span></div><div class="bar"><span style="width:${f.total ? (rel / f.total) * 100 : 0}%"></span></div></div>`;
+      const seg = { Committed: 'is-c', Released: 'is-r', 'Summary submitted': 'is-r', 'Summary accepted': 'is-a', 'On hold': 'is-h' };
+      return `<div class="fsum"><div class="fsum-i"><span class="fig-l">Committed</span><span class="fig">${money(f.currency, f.total)}</span></div><div class="fsum-i"><span class="fig-l">Released</span><span class="fig">${money(f.currency, rel)}</span></div><div class="fsum-i"><span class="fig-l">Still to release</span><span class="fig">${money(f.currency, f.total - rel)}</span></div></div><div class="ftr-w"><div class="ftr-h"><span class="lbl">Released</span><span class="cap">${money(f.currency, rel)} of ${money(f.currency, f.total)}</span></div><div class="ftr" role="img" aria-label="Released ${h(f.currency)} ${rel} of ${h(f.currency)} ${f.total}">${f.tranches.map((t, i) => `<span class="ftr-s ${seg[t.state] || 'is-c'}" style="flex-grow:${t.amount || 1}"><i></i><span class="ftr-l">${i + 1} · ${h(stageLabel(t.stage))}</span></span>`).join('')}</div></div>`;
     })() +
       (f.status !== 'Agreement signed' && f.status !== 'Fully released'
-        ? `<div class="col" style="gap:8px">${banner('info', 'Funding set-up', 'Funding request → required approval → funding agreement. ' + assumed('OI-02 / OI-03: PHOENIX records commitments and releases; money moves through the provider or off-platform'))}${dl(
+        ? `<div class="col fsetup">${banner('info', 'Funding set-up', 'Funding request → required approval → funding agreement. ' + assumed('OI-02 / OI-03: PHOENIX records commitments and releases; money moves through the provider or off-platform'))}${dl(
             [
               ['Request', pill(f.status)],
               ['Approval', f.approvedBy ? nm(f.approvedBy) : 'Programme Administrator (Finance Owner)'],
@@ -202,7 +242,7 @@ function fundCard(f) {
                 B('Accept summary', 'tranche', { f: f.id, i, v: 'Summary accepted' }, 'btn-p btn-sm');
           }
           return [
-            'Tranche ' + (i + 1),
+            `<b>Tranche ${i + 1}</b>`,
             stageLabel(t.stage),
             money(f.currency, t.amount),
             pill(t.state),
@@ -211,8 +251,18 @@ function fundCard(f) {
           ];
         }),
       ) +
-      `<p class="cap" style="margin-top:10px">${assumed('OI-02 tranche split, triggers and hold handling')} Funding decisions are always made by humans.</p>`,
+      `<p class="cap fund-note">${assumed('OI-02 tranche split, triggers and hold handling')} Funding decisions are always made by humans.</p>`,
+    '',
+    'fund-card',
   );
+}
+// Totals across the funding agreements shown on this page (single currency only; mixed currencies are not summed).
+function fundTotals(fs) {
+  if (fs.length < 2 || fs.some(f => f.currency !== fs[0].currency)) return '';
+  const c = fs[0].currency;
+  const rel = fs.reduce((a, f) => a + f.tranches.filter(t => ['Released', 'Summary submitted', 'Summary accepted', 'On hold'].includes(t.state)).reduce((b, t) => b + t.amount, 0), 0);
+  const tot = fs.reduce((a, f) => a + f.total, 0);
+  return `<div class="kpis fund-kpis"><div class="kpi"><span class="lt">Funding agreements</span><span class="fig">${fs.length}</span></div><div class="kpi"><span class="lt">Committed</span><span class="fig">${money(c, tot)}</span></div><div class="kpi"><span class="lt">Released</span><span class="fig">${money(c, rel)}</span></div></div>`;
 }
 A.fundSave = d => {
   (S.saved[myId()] = S.saved[myId()] || []).push(d.id);
@@ -232,7 +282,7 @@ A.fundInterest = d => {
   modal(
     'Funding request',
     () =>
-      `<form data-f="fr" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${d.id}"><input type="hidden" name="pitch" value="${d.pitch || ''}">${fi('fr', 'amount', 'Total commitment (USD)', { type: 'number', req: true, min: 1 })}<div class="g3">${fi('fr', 't1', 'Tranche 1 · Circle', { type: 'number', req: true, min: 0 })}${fi('fr', 't2', 'Tranche 2 · Rope Team', { type: 'number', req: true, min: 0 })}${fi('fr', 't3', 'Tranche 3 · ' + WL(), { type: 'number', req: true, min: 0 })}</div>${fe('fr', 'sum') ? `<span class="emsg">${ic('alert', 14)}${fe('fr', 'sum')}</span>` : ''}${banner('info', '', 'The request needs Programme Administrator / Finance Owner approval, then you sign the funding agreement. PHOENIX never handles card details.')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send funding request</button></div></form>`,
+      `<form data-f="fr" class="col fgap" novalidate><input type="hidden" name="id" value="${d.id}"><input type="hidden" name="pitch" value="${d.pitch || ''}">${fi('fr', 'amount', 'Total commitment (USD)', { type: 'number', req: true, min: 1 })}<div class="g3">${fi('fr', 't1', 'Tranche 1 · Circle', { type: 'number', req: true, min: 0 })}${fi('fr', 't2', 'Tranche 2 · Rope Team', { type: 'number', req: true, min: 0 })}${fi('fr', 't3', 'Tranche 3 · ' + WL(), { type: 'number', req: true, min: 0 })}</div>${fe('fr', 'sum') ? `<span class="emsg">${ic('alert', 14)}${fe('fr', 'sum')}</span>` : ''}${banner('info', '', 'The request needs Programme Administrator / Finance Owner approval, then you sign the funding agreement. PHOENIX never handles card details.')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send funding request</button></div></form>`,
   );
 };
 F.fr = d => {
@@ -301,7 +351,7 @@ A.tranche = d => {
     return modal(
       'Put tranche on hold',
       () =>
-        `<form data-f="hold" class="col" style="gap:14px" novalidate><input type="hidden" name="f" value="${f.id}"><input type="hidden" name="i" value="${d.i}">${fi('hold', 'why', 'What more information do you need?', { type: 'textarea', rows: 3, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Put on hold</button></div></form>`,
+        `<form data-f="hold" class="col fgap" novalidate><input type="hidden" name="f" value="${f.id}"><input type="hidden" name="i" value="${d.i}">${fi('hold', 'why', 'What more information do you need?', { type: 'textarea', rows: 3, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Put on hold</button></div></form>`,
     );
   }
   t.state = d.v;
@@ -333,7 +383,7 @@ A.summary = d => {
   modal(
     `${t.stage === 'Room' ? WL() : t.stage} stage progress summary`,
     () =>
-      `<form data-f="sum" class="col" style="gap:14px" novalidate><input type="hidden" name="f" value="${f.id}"><input type="hidden" name="i" value="${d.i}">${t.hold ? banner('warn', 'Sponsor asked for more information', h(t.hold)) : ''}${fi('sum', 't', 'Progress summary for the sponsor', { type: 'textarea', rows: 5, req: true, help: 'Only include information approved for sponsor visibility. Use only evidence you have released to funders.' })}${+d.i === 2 ? banner('info', 'Final summary', 'Include approved outcomes and evidence.') : ''}<div class="actions"><span></span><button class="btn btn-p" type="submit">Submit to sponsor</button></div></form>`,
+      `<form data-f="sum" class="col fgap" novalidate><input type="hidden" name="f" value="${f.id}"><input type="hidden" name="i" value="${d.i}">${t.hold ? banner('warn', 'Sponsor asked for more information', h(t.hold)) : ''}${fi('sum', 't', 'Progress summary for the sponsor', { type: 'textarea', rows: 5, req: true, help: 'Only include information approved for sponsor visibility. Use only evidence you have released to funders.' })}${+d.i === 2 ? banner('info', 'Final summary', 'Include approved outcomes and evidence.') : ''}<div class="actions"><span></span><button class="btn btn-p" type="submit">Submit to sponsor</button></div></form>`,
   );
 };
 F.sum = d => {
@@ -356,7 +406,7 @@ A.pitchNew = () => {
   modal(
     'Pitch a sponsor',
     () =>
-      `<form data-f="pit" class="col" style="gap:14px" novalidate>${fi('pit', 'project', 'Project', { type: 'select', req: true, ph: 'Select', opts: S.projects.filter(p => p.owner === myId() && p.status === 'Accepted').map(p => [p.id, p.title]) })}${fi('pit', 'to', 'Sponsor', { type: 'select', req: true, ph: 'Select', opts: S.assign.filter(a => a.ctx === ctxId() && roleBase(a.role) === 'S').map(a => [a.pid, P(a.pid).name]) })}${fi('pit', 'amount', 'Funding needed (USD)', { type: 'number', req: true, min: 1 })}${fi('pit', 'text', 'Pitch: problem, proposed solution, expected impact, requirements', { type: 'textarea', rows: 5, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send pitch</button></div></form>`,
+      `<form data-f="pit" class="col fgap" novalidate>${fi('pit', 'project', 'Project', { type: 'select', req: true, ph: 'Select', opts: S.projects.filter(p => p.owner === myId() && p.status === 'Accepted').map(p => [p.id, p.title]) })}${fi('pit', 'to', 'Sponsor', { type: 'select', req: true, ph: 'Select', opts: S.assign.filter(a => a.ctx === ctxId() && roleBase(a.role) === 'S').map(a => [a.pid, P(a.pid).name]) })}${fi('pit', 'amount', 'Funding needed (USD)', { type: 'number', req: true, min: 1 })}${fi('pit', 'text', 'Pitch: problem, proposed solution, expected impact, requirements', { type: 'textarea', rows: 5, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send pitch</button></div></form>`,
   );
 };
 F.pit = d => {
@@ -413,19 +463,29 @@ route('billing', 'payments', () => {
         ]),
       ),
       '',
-      'c12',
+      'c12 bill-ents',
     )}
   ${card(
     'Receipts and transactions',
     'Read-only. Invoices and receipts are held by the payment provider.',
-    table(
-      ['Reference', 'Product', 'Status', 'Date'],
-      S.payments
-        .filter(p => p.pid === myId() && !p.dup)
-        .map(p => [h(p.id), h(byId('products', p.product)?.name || p.product), pill(p.state), fmt(p.at)]),
-    ),
+    dataView('bill:receipts', {
+      label: 'transactions',
+      items: S.payments.filter(p => p.pid === myId() && !p.dup),
+      search: p => p.id + ' ' + (byId('products', p.product)?.name || p.product) + ' ' + p.state,
+      quick: { label: 'Status', options: [...new Set(S.payments.filter(p => p.pid === myId() && !p.dup).map(p => p.state))].map(v => [v, v]), test: (p, v) => p.state === v },
+      sorts: [['new', 'Newest first', (a, b) => String(b.at).localeCompare(String(a.at))], ['old', 'Oldest first', (a, b) => String(a.at).localeCompare(String(b.at))]],
+      layout: 'table',
+      dense: true,
+      columns: [
+        { label: 'Reference', cell: p => `<span class="mono">${h(p.id)}</span>` },
+        { label: 'Product', cell: p => h(byId('products', p.product)?.name || p.product) },
+        { label: 'Status', cell: p => pill(p.state) },
+        { label: 'Date', sort: 'new', cell: p => fmt(p.at) },
+      ],
+      empty: ['inbox', 'No transactions yet', 'Payments, refunds and cancellations appear here once the provider confirms them.', ''],
+    }),
     '',
-    'c12',
+    'c12 bill-tx',
   )}
   ${card(
     'Get access',
@@ -441,7 +501,7 @@ route('billing', 'payments', () => {
       ]),
     ),
     '',
-    'c12',
+    'c12 bill-price',
   )}
   <div class="c12">${banner('info', 'Never dependent on payment', 'Consent controls, withdrawal, correction, appeal, incident reporting, your own records, permitted export and privacy rights. Payment never buys reviewer status, authority, visibility or matching priority.')}</div></div>`;
   }
@@ -453,129 +513,196 @@ route('billing', 'payments', () => {
           card(
             `Seat pool · ${h(S.contexts.find(c => c.id === sp.ctx).name)}`,
             `${sp.assigned.length} of ${sp.total} assigned · until ${fmt(sp.until)} · ${h(sp.status)}`,
-            `<div class="bar" style="margin-bottom:14px"><span style="width:${(sp.assigned.length / sp.total) * 100}%"></span></div>${table(
-              ['Seat holder', 'Entitlement', ''],
-              sp.assigned.map(pid => {
-                const e = S.ents.find(e => e.pid === pid && e.source.includes(sp.id));
-                return [
-                  nm(pid),
-                  pill(e ? e.state : 'Active'),
-                  (e && e.state === 'Suspended'
-                    ? B('Reactivate', 'seat', { sp: sp.id, pid, v: 'Active' })
-                    : CB('Suspend', 'seat', { sp: sp.id, pid, v: 'Suspended' }, 'Suspend the sponsored seat for ' + P(pid).name + '? Sponsored access pauses; consent, correction and export rights continue.')) +
-                    CB('Release seat', 'seat', { sp: sp.id, pid, v: 'release' }, 'Release this seat? ' + P(pid).name + ' loses the sponsored entitlement and the seat returns to the pool.'),
-                ];
-              }),
-            )}`,
+            `<div class="seat-meter"><div class="seat-meter-h"><span class="fig">${sp.assigned.length}<span class="fig-of"> / ${sp.total}</span></span><span class="cap">seats assigned · ${sp.total - sp.assigned.length} available</span></div><div class="progress" role="img" aria-label="${sp.assigned.length} of ${sp.total} seats assigned"><div class="bar" style="width:${(sp.assigned.length / sp.total) * 100}%"></div></div></div>${(() => {
+              const est = pid => (S.ents.find(e => e.pid === pid && e.source.includes(sp.id)) || { state: 'Active' }).state;
+              return dataView('bill:pool:' + sp.id, {
+                label: 'seat holders',
+                items: sp.assigned,
+                search: pid => P(pid).name,
+                quick: { label: 'Entitlement', options: [...new Set(sp.assigned.map(est))].map(v => [v, v]), test: (pid, v) => est(pid) === v },
+                sorts: [['name', 'Name', (a, b) => P(a).name.localeCompare(P(b).name)]],
+                layout: 'table',
+                columns: [
+                  { label: 'Seat holder', sort: 'name', cell: pid => `<b>${nm(pid)}</b>` },
+                  { label: 'Entitlement', cell: pid => pill(est(pid)) },
+                  {
+                    label: '',
+                    cell: pid => {
+                      const e = S.ents.find(e => e.pid === pid && e.source.includes(sp.id));
+                      return (
+                        (e && e.state === 'Suspended'
+                          ? B('Reactivate', 'seat', { sp: sp.id, pid, v: 'Active' })
+                          : CB('Suspend', 'seat', { sp: sp.id, pid, v: 'Suspended' }, 'Suspend the sponsored seat for ' + P(pid).name + '? Sponsored access pauses; consent, correction and export rights continue.')) +
+                        CB('Release seat', 'seat', { sp: sp.id, pid, v: 'release' }, 'Release this seat? ' + P(pid).name + ' loses the sponsored entitlement and the seat returns to the pool.')
+                      );
+                    },
+                  },
+                ],
+                empty: ['users', 'No seats assigned yet', 'Use “Assign seat” to give a participant a sponsored seat.', ''],
+              });
+            })()}`,
             B(ic('plus', 14) + 'Assign seat', 'seatAssign', { sp: sp.id }, 'btn-p btn-sm'),
+            'bill-pool',
           ),
         )
-        .join('<div style="height:16px"></div>') +
-      '<div style="height:16px"></div>' +
+        .join('') +
       (r === 'O'
         ? card(
             'Request an institution-specific package',
             'Products and prices are set by the WSS Finance Owner.',
-            `<form data-f="pkg" class="col" style="gap:12px" novalidate>${fi('pkg', 'seats', 'Seats needed', { type: 'number', req: true, min: 1 })}${fi('pkg', 'note', 'Requirements', { type: 'textarea', rows: 3, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send request</button></div></form>`,
+            `<form data-f="pkg" class="col fgap" novalidate>${fi('pkg', 'seats', 'Seats needed', { type: 'number', req: true, min: 1 })}${fi('pkg', 'note', 'Requirements', { type: 'textarea', rows: 3, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send request</button></div></form>`,
           )
         : card(
             'Sponsor more seats or donate',
             '',
-            `<div class="row wrap">${B('Buy a seat pool (invoice)', 'checkout', { id: 'pd5' })}${B('Donate', 'checkout', { id: 'pd6' })}</div><p class="cap" style="margin-top:8px">A donation grants no entitlement. Sponsors receive only authorised aggregate reporting.</p>`,
+            `<div class="row wrap">${B('Buy a seat pool (invoice)', 'checkout', { id: 'pd5' })}${B('Donate', 'checkout', { id: 'pd6' })}</div><p class="cap bill-note">A donation grants no entitlement. Sponsors receive only authorised aggregate reporting.</p>`,
           )) +
-      '<div style="height:16px"></div>' +
       card(
         'Transactions',
         'Read-only',
-        table(
-          ['Reference', 'Product', 'State', 'Date'],
-          S.payments
-            .filter(p => p.pid === myId())
-            .map(p => [h(p.id), h(byId('products', p.product)?.name || p.product), pill(p.state), fmt(p.at)]),
-        ),
+        dataView('bill:tx', {
+      label: 'transactions',
+      items: S.payments.filter(p => p.pid === myId()),
+      search: p => p.id + ' ' + (byId('products', p.product)?.name || p.product) + ' ' + p.state,
+      quick: { label: 'Status', options: [...new Set(S.payments.filter(p => p.pid === myId()).map(p => p.state))].map(v => [v, v]), test: (p, v) => p.state === v },
+      sorts: [['new', 'Newest first', (a, b) => String(b.at).localeCompare(String(a.at))], ['old', 'Oldest first', (a, b) => String(a.at).localeCompare(String(b.at))]],
+      layout: 'table',
+      dense: true,
+      columns: [
+        { label: 'Reference', cell: p => `<span class="mono">${h(p.id)}</span>` },
+        { label: 'Product', cell: p => h(byId('products', p.product)?.name || p.product) },
+        { label: 'State', cell: p => pill(p.state) },
+        { label: 'Date', sort: 'new', cell: p => fmt(p.at) },
+      ],
+      empty: ['inbox', 'No transactions yet', 'Payments, refunds and cancellations appear here once the provider confirms them.', ''],
+    }),
       );
   }
   if (t.cur === 'products')
     body = card(
       'Product catalogue',
       'Finance Owner approves and releases; Programme Administrator drafts. Pricing policy is WSS’s.',
-      table(
-        ['Product', 'Type', 'Price', 'Cycle', 'Entitlement', 'Status', ''],
-        S.products.map(p => [
-          h(p.name),
-          h(p.kind),
-          h(p.price),
-          h(p.cycle),
-          h(p.ent),
-          pill(p.status),
-          p.status === 'Draft'
-            ? hasB('Finance Owner')
-              ? B('Approve & release', 'prodRel', { id: p.id }, 'btn-p btn-sm')
-              : '<span class="cap">Needs Finance Owner</span>'
-            : p.status === 'Released' && hasB('Finance Owner')
-              ? CB('Retire', 'prodRetire', { id: p.id }, 'Retire ' + p.name + '? It leaves checkout; existing entitlements are not affected.')
-              : '',
-        ]),
-      ),
+      dataView('bill:products', {
+        label: 'products',
+        items: S.products,
+        search: p => p.name + ' ' + p.kind + ' ' + p.ent + ' ' + p.price,
+        quick: { label: 'Status', options: [...new Set(S.products.map(p => p.status))].map(v => [v, v]), test: (p, v) => p.status === v },
+        filters: [
+          { key: 'kind', label: 'Type', options: [...new Set(S.products.map(p => p.kind))].map(v => [v, v]), test: (p, v) => p.kind === v },
+          { key: 'cycle', label: 'Billing cycle', options: [...new Set(S.products.map(p => p.cycle))].map(v => [v, v]), test: (p, v) => p.cycle === v },
+        ],
+        sorts: [['name', 'Name', (a, b) => a.name.localeCompare(b.name)], ['kind', 'Type', (a, b) => a.kind.localeCompare(b.kind)]],
+        layout: 'table',
+        columns: [
+          { label: 'Product', sort: 'name', cell: p => `<b>${h(p.name)}</b>` },
+          { label: 'Type', sort: 'kind', cell: p => h(p.kind) },
+          { label: 'Price', num: true, cell: p => h(p.price) },
+          { label: 'Cycle', hideSm: true, cell: p => h(p.cycle) },
+          { label: 'Entitlement', hideSm: true, cell: p => h(p.ent) },
+          { label: 'Status', cell: p => pill(p.status) },
+          { label: '', cell: p => prodAct(p) },
+        ],
+      }),
       B(ic('plus', 14) + 'Draft product', 'prodNew', {}, 'btn-p btn-sm'),
+      'bill-prod',
     );
   if (t.cur === 'ents')
     body = card(
       'Entitlements',
       'Pending · Active · Grace · Suspended · Cancelled · Expired · Refunded',
-      table(
-        ['Person', 'Product', 'Source', 'State', 'Until', ''],
-        S.ents.map(e => [
-          nm(e.pid),
-          h(byId('products', e.product).name),
-          h(e.source),
-          pill(e.state),
-          fmt(e.until),
-          B('Revoke', 'entRevoke', { id: e.id }),
-        ]),
-      ),
+      dataView('bill:ents', {
+        label: 'entitlements',
+        items: S.ents,
+        search: e => P(e.pid).name + ' ' + byId('products', e.product).name + ' ' + e.source,
+        quick: { label: 'State', options: ['Active', 'Grace', 'Suspended', 'Cancelled', 'Expired', 'Refunded', 'Pending'].filter(v => S.ents.some(e => e.state === v)).map(v => [v, v]), test: (e, v) => e.state === v },
+        filters: [
+          { key: 'prod', label: 'Product', options: [...new Set(S.ents.map(e => e.product))].map(v => [v, byId('products', v).name]), test: (e, v) => e.product === v },
+          { key: 'src', label: 'Source', options: [['Seat pool', 'Seat pool'], ['Card payment', 'Card payment'], ['Admin grant', 'Admin grant']], test: (e, v) => e.source.startsWith(v) },
+        ],
+        sorts: [
+          ['until', 'Ends soonest', (a, b) => String(a.until).localeCompare(String(b.until))],
+          ['person', 'Person', (a, b) => P(a.pid).name.localeCompare(P(b.pid).name)],
+        ],
+        layout: 'table',
+        columns: [
+          { label: 'Person', sort: 'person', cell: e => `<b>${nm(e.pid)}</b>` },
+          { label: 'Product', cell: e => h(byId('products', e.product).name) },
+          { label: 'Source', hideSm: true, cell: e => h(e.source) },
+          { label: 'State', cell: e => pill(e.state) },
+          { label: 'Until', sort: 'until', cell: e => fmt(e.until) },
+          { label: '', cell: e => B('Revoke', 'entRevoke', { id: e.id }) },
+        ],
+      }),
       B(ic('plus', 14) + 'Grant access', 'entGrant', {}, 'btn-p btn-sm'),
+      'bill-ents',
     );
   if (t.cur === 'seats')
     body = card(
       'Seat pools',
       '',
-      table(
-        ['Sponsor', 'Context', 'Seats', 'Until', 'Status', ''],
-        S.seatPools.map(s => [
-          nm(s.sponsor),
-          h(S.contexts.find(c => c.id === s.ctx).name),
-          s.assigned.length + ' / ' + s.total,
-          fmt(s.until),
-          pill(s.status),
-          s.status === 'Pending'
-            ? hasB('Finance Owner')
-              ? B('Confirm invoice paid · activate', 'poolActivate', { id: s.id }, 'btn-p btn-sm')
-              : '<span class="cap">Needs Finance Owner</span>'
-            : '',
-        ]),
-      ),
+      dataView('bill:seats', {
+        label: 'seat pools',
+        items: S.seatPools,
+        search: s => P(s.sponsor).name + ' ' + S.contexts.find(c => c.id === s.ctx).name,
+        quick: { label: 'Status', options: [...new Set(S.seatPools.map(s => s.status))].map(v => [v, v]), test: (s, v) => s.status === v },
+        sorts: [
+          ['until', 'Ends soonest', (a, b) => String(a.until).localeCompare(String(b.until))],
+          ['seats', 'Seats', (a, b) => a.total - b.total],
+          ['sponsor', 'Sponsor', (a, b) => P(a.sponsor).name.localeCompare(P(b.sponsor).name)],
+        ],
+        layout: 'table',
+        columns: [
+          { label: 'Sponsor', sort: 'sponsor', cell: s => `<b>${nm(s.sponsor)}</b>` },
+          { label: 'Context', hideSm: true, cell: s => h(S.contexts.find(c => c.id === s.ctx).name) },
+          { label: 'Seats', num: true, sort: 'seats', cell: s => s.assigned.length + ' / ' + s.total },
+          { label: 'Until', sort: 'until', cell: s => fmt(s.until) },
+          { label: 'Status', cell: s => pill(s.status) },
+          {
+            label: '',
+            cell: s =>
+              s.status === 'Pending'
+                ? hasB('Finance Owner')
+                  ? B('Confirm invoice paid · activate', 'poolActivate', { id: s.id }, 'btn-p btn-sm')
+                  : '<span class="cap">Needs Finance Owner</span>'
+                : '',
+          },
+        ],
+      }),
       B(ic('plus', 14) + 'Create seat pool', 'poolNew', {}, 'btn-p btn-sm'),
+      'bill-seats',
     );
   if (t.cur === 'events')
     body = card(
       'Webhook events',
       'Signature verified; duplicates processed once; out-of-order events reconciled against provider state.',
-      table(
-        ['Event', 'Person', 'Type', 'Resulting state', 'Processed', ''],
-        S.payments.map((p, i) => [
-          h(p.id),
-          nm(p.pid),
-          h(p.type),
-          pill(p.state),
-          p.dup ? pill('Duplicate — ignored', 'p-grey') : p.processed ? pill('Done') : pill('Pending'),
-          !p.processed && !p.dup ? B('Process', 'procEvt', { i }) : '',
-        ]),
-      ),
+      dataView('bill:events', {
+        label: 'events',
+        items: S.payments.map((p, i) => ({ p, i })),
+        search: ({ p }) => p.id + ' ' + P(p.pid).name + ' ' + p.type + ' ' + p.state,
+        quick: {
+          label: 'Processed',
+          options: [['pending', 'Pending'], ['done', 'Done'], ['dup', 'Duplicate']],
+          test: ({ p }, v) => (v === 'dup' ? !!p.dup : v === 'done' ? !p.dup && !!p.processed : !p.dup && !p.processed),
+        },
+        filters: [{ key: 'type', label: 'Type', options: [...new Set(S.payments.map(p => p.type))].map(v => [v, v]), test: ({ p }, v) => p.type === v }],
+        sorts: [['new', 'Newest first', (a, b) => String(b.p.at).localeCompare(String(a.p.at))]],
+        rowId: ({ i }) => String(i),
+        layout: 'table',
+        dense: true,
+        columns: [
+          { label: 'Event', cell: ({ p }) => `<span class="mono">${h(p.id)}</span>` },
+          { label: 'Person', cell: ({ p }) => nm(p.pid) },
+          { label: 'Type', hideSm: true, cell: ({ p }) => h(p.type) },
+          { label: 'Resulting state', cell: ({ p }) => pill(p.state) },
+          { label: 'Processed', cell: ({ p }) => (p.dup ? pill('Duplicate — ignored', 'p-grey') : p.processed ? pill('Done') : pill('Pending')) },
+          { label: '', cell: ({ p, i }) => (!p.processed && !p.dup ? B('Process', 'procEvt', { i }) : '') },
+        ],
+      }),
       hasB('Finance Owner')
         ? B('Reconcile with provider', 'reconcile', {}, 'btn-p btn-sm') +
             B('Simulate renewal failure', 'simRenewFail', {})
         : '',
+      'bill-evt',
     );
   return (
     head(
@@ -583,14 +710,25 @@ route('billing', 'payments', () => {
       'Commercial entitlement never confers authority, trust, visibility or access to restricted records.',
     ) +
     t.html +
-    body
+    '<div class="fund-stack bill">' +
+    body +
+    '</div>'
   );
 });
+function prodAct(p) {
+  return p.status === 'Draft'
+    ? hasB('Finance Owner')
+      ? B('Approve & release', 'prodRel', { id: p.id }, 'btn-p btn-sm')
+      : '<span class="cap">Needs Finance Owner</span>'
+    : p.status === 'Released' && hasB('Finance Owner')
+      ? CB('Retire', 'prodRetire', { id: p.id }, 'Retire ' + p.name + '? It leaves checkout; existing entitlements are not affected.')
+      : '';
+}
 A.checkout = d => {
   const p = byId('products', d.id);
   modal(
     'Provider-hosted checkout (simulated)',
-    `<div class="card" style="background:#F7F8FB">${dl([
+    `<div class="card quiet chk-sum">${dl([
       ['Product', h(p.name)],
       ['Price', h(p.price)],
       ['Billing', h(p.cycle)],
@@ -728,7 +866,7 @@ A.prodNew = () => {
   modal(
     'Draft a product',
     () =>
-      `<form data-f="prod" class="col" style="gap:12px" novalidate>${fi('prod', 'name', 'Name', { req: true })}${fi('prod', 'kind', 'Type', { type: 'select', req: true, opts: ['One-time payment', 'Monthly subscription', 'Annual subscription', 'Donation', 'Sponsored access', 'Invoice'] })}<div class="f2">${fi('prod', 'price', 'Price', { req: true, help: 'Set by the WSS commercial owner' })}${fi('prod', 'cycle', 'Billing cycle', { type: 'select', opts: ['One-time', 'Monthly', 'Annual', '—'] })}</div>${fi('prod', 'ent', 'Entitlement', { req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save draft</button></div></form>`,
+      `<form data-f="prod" class="col fgap" novalidate>${fi('prod', 'name', 'Name', { req: true })}${fi('prod', 'kind', 'Type', { type: 'select', req: true, opts: ['One-time payment', 'Monthly subscription', 'Annual subscription', 'Donation', 'Sponsored access', 'Invoice'] })}<div class="f2">${fi('prod', 'price', 'Price', { req: true, help: 'Set by the WSS commercial owner' })}${fi('prod', 'cycle', 'Billing cycle', { type: 'select', opts: ['One-time', 'Monthly', 'Annual', '—'] })}</div>${fi('prod', 'ent', 'Entitlement', { req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save draft</button></div></form>`,
   );
 };
 F.prod = d => {
@@ -754,7 +892,7 @@ A.entGrant = () => {
   modal(
     'Grant access',
     () =>
-      `<form data-f="eg" class="col" style="gap:12px" novalidate>${fi('eg', 'pid', 'Person', { type: 'select', req: true, ph: 'Select', opts: S.assign.filter(a => a.ctx === ctxId() && a.status === 'Active').map(a => [a.pid, P(a.pid).name]) })}${fi('eg', 'product', 'Product', { type: 'select', req: true, opts: S.products.filter(p => p.status === 'Released').map(p => [p.id, p.name]) })}${fi('eg', 'until', 'Until', { type: 'date', req: true })}${fi('eg', 'why', 'Reason (recorded)', { req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Grant</button></div></form>`,
+      `<form data-f="eg" class="col fgap" novalidate>${fi('eg', 'pid', 'Person', { type: 'select', req: true, ph: 'Select', opts: S.assign.filter(a => a.ctx === ctxId() && a.status === 'Active').map(a => [a.pid, P(a.pid).name]) })}${fi('eg', 'product', 'Product', { type: 'select', req: true, opts: S.products.filter(p => p.status === 'Released').map(p => [p.id, p.name]) })}${fi('eg', 'until', 'Until', { type: 'date', req: true })}${fi('eg', 'why', 'Reason (recorded)', { req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Grant</button></div></form>`,
   );
 };
 F.eg = d => {
@@ -780,7 +918,7 @@ A.entRevoke = d => {
   modal(
     'Revoke entitlement',
     () =>
-      `<form data-f="er" class="col" style="gap:12px" novalidate><input type="hidden" name="id" value="${e.id}">${fi('er', 'why', 'Reason (recorded)', { req: true })}${banner('info', '', 'Consent, correction, appeal and export rights survive revocation.')}<div class="actions"><span></span><button class="btn btn-d" type="submit">Revoke</button></div></form>`,
+      `<form data-f="er" class="col fgap" novalidate><input type="hidden" name="id" value="${e.id}">${fi('er', 'why', 'Reason (recorded)', { req: true })}${banner('info', '', 'Consent, correction, appeal and export rights survive revocation.')}<div class="actions"><span></span><button class="btn btn-d" type="submit">Revoke</button></div></form>`,
   );
 };
 F.er = d => {
@@ -799,7 +937,7 @@ A.poolNew = () => {
   modal(
     'Create seat pool',
     () =>
-      `<form data-f="pool" class="col" style="gap:12px" novalidate>${fi('pool', 'sponsor', 'Sponsor / institution contact', { type: 'select', req: true, opts: S.assign.filter(a => a.ctx === ctxId() && ['S', 'O'].includes(roleBase(a.role))).map(a => [a.pid, P(a.pid).name]) })}${fi('pool', 'total', 'Seats', { type: 'number', req: true, min: 1 })}${fi('pool', 'until', 'Valid until', { type: 'date', req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Create</button></div></form>`,
+      `<form data-f="pool" class="col fgap" novalidate>${fi('pool', 'sponsor', 'Sponsor / institution contact', { type: 'select', req: true, opts: S.assign.filter(a => a.ctx === ctxId() && ['S', 'O'].includes(roleBase(a.role))).map(a => [a.pid, P(a.pid).name]) })}${fi('pool', 'total', 'Seats', { type: 'number', req: true, min: 1 })}${fi('pool', 'until', 'Valid until', { type: 'date', req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Create</button></div></form>`,
   );
 };
 F.pool = d => {
@@ -827,7 +965,7 @@ A.seatAssign = d => {
   );
   modal(
     'Assign a seat',
-    `<form data-f="sa" class="col" style="gap:12px"><input type="hidden" name="sp" value="${sp.id}">${c.length ? fi('sa', 'pid', 'Participant', { type: 'select', opts: c.map(a => [a.pid, P(a.pid).name]) }) : '<p class="cap">No eligible participants without a seat.</p>'}${c.length ? '<div class="actions"><span></span><button class="btn btn-p" type="submit">Assign</button></div>' : ''}</form>`,
+    `<form data-f="sa" class="col fgap"><input type="hidden" name="sp" value="${sp.id}">${c.length ? fi('sa', 'pid', 'Participant', { type: 'select', opts: c.map(a => [a.pid, P(a.pid).name]) }) : '<p class="cap">No eligible participants without a seat.</p>'}${c.length ? '<div class="actions"><span></span><button class="btn btn-p" type="submit">Assign</button></div>' : ''}</form>`,
   );
 };
 F.sa = d => {

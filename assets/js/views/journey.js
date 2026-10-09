@@ -35,16 +35,16 @@ function stageTrack(p, hereKind) {
   const steps = stageSteps(p);
   const rets = openReturns(p);
   const closed = p.stage === 'Closed';
-  return `<section class="journey" aria-label="Project stages"><div class="jhead"><span class="over">Project journey</span><span class="cap">${L(h(p.title), 'project', { id: p.id }, 'lnk')} · ${closed ? 'approved and closed' : p.stage === 'Final review' ? 'final review with the Faculty/Steward' : 'stage ' + h(stageLabel(p.stage))}</span></div><ol class="jsteps">${steps
+  return `<section class="journey" aria-label="Project stages"><div class="jhead"><span class="jtitle">${ic('steps', 15)}Project journey</span><span class="cap jsum">${L(h(p.title), 'project', { id: p.id }, 'lnk')} · ${closed ? 'approved and closed' : p.stage === 'Final review' ? 'final review with the Faculty/Steward' : 'stage ' + h(stageLabel(p.stage))}</span></div><ol class="jsteps">${steps
     .map((s, n) => {
       const here = s.kind === hereKind;
       const route_ = { circles: 'circle', ropes: 'rope', rooms: 'room' }[s.kind];
       const name = s.o ? h(s.o.name) : s.st === 'skip' ? 'Skipped' : 'Not created yet';
       const link = s.o && canOpenSpace(s.kind, s.o) && !here ? L(name, route_, { id: s.o.id }, 'lnk') : name;
       const back = rets.filter(r => r.to.kind === s.kind).length;
-      return `${n ? `<li class="jarrow" aria-hidden="true">${ic('chevr', 18)}</li>` : ''}<li class="jstep ${s.st} ${here ? 'here' : ''}"><span class="tile ${['todo', 'skip'].includes(s.st) ? 't-soft' : s.tile}">${s.st === 'done' ? ic('check', 18) : ic(s.icon, 18)}</span><div class="col" style="min-width:0"><span class="jlabel">${n + 1}. ${s.label}${here ? ' <span class="jhere">You are here</span>' : ''}</span><span class="jname">${link}</span><span class="cap">${s.o ? pill(s.o.state) : s.st === 'skip' ? 'Not used for this project · ' + assumed('OI-12') : h(s.what)}${back ? ' ' + pill(back + ' returned issue' + (back > 1 ? 's' : ''), 'p-amber') : ''}</span></div></li>`;
+      return `<li class="jstep is-${s.st}${here ? ' is-here' : ''}${back ? ' has-ret' : ''}"${here ? ' aria-current="step"' : ''}><span class="tile ${['todo', 'skip'].includes(s.st) ? 't-soft' : s.tile}">${s.st === 'done' ? ic('check', 16) : ic(s.icon, 16)}</span><div class="jbody"><span class="jlabel">${n + 1}. ${s.label}${here ? ' <span class="jhere">You are here</span>' : ''}</span><span class="jname">${link}</span><span class="cap jmeta">${s.o ? pill(s.o.state) : s.st === 'skip' ? 'Not used for this project · ' + assumed('OI-12') : h(s.what)}${back ? ' ' + pill(back + ' returned issue' + (back > 1 ? 's' : ''), 'p-amber') : ''}</span></div></li>`;
     })
-    .join('')}<li class="jarrow" aria-hidden="true">${ic('chevr', 18)}</li><li class="jstep ${closed ? 'done' : p.stage === 'Final review' ? 'cur' : 'todo'}"><span class="tile ${closed ? 't-teal' : p.stage === 'Final review' ? 't-navy' : 't-soft'}">${ic(closed ? 'check' : 'award', 18)}</span><div class="col"><span class="jlabel">Final review</span><span class="jname">${closed ? 'Approved' : p.stage === 'Final review' ? 'In review' : 'After execution'}</span><span class="cap">Faculty/Steward</span></div></li></ol>${rets.length ? `<div class="jret">${ic('refresh', 16)}<div><b>${rets.length} issue${rets.length > 1 ? 's' : ''} returned to an earlier stage.</b> <span class="cap">${rets.map(r => h(r.toName) + ': ' + h(r.why.slice(0, 70))).join(' · ')}</span></div></div>` : ''}</section>`;
+    .join('')}<li class="jstep jfinal is-${closed ? 'done' : p.stage === 'Final review' ? 'cur' : 'todo'}"><span class="tile ${closed ? 't-teal' : p.stage === 'Final review' ? 't-navy' : 't-soft'}">${ic(closed ? 'check' : 'award', 16)}</span><div class="jbody"><span class="jlabel">Final review</span><span class="jname">${closed ? 'Approved' : p.stage === 'Final review' ? 'In review' : 'After execution'}</span><span class="cap jmeta">Faculty/Steward</span></div></li></ol>${rets.length ? `<div class="jret" role="note">${ic('refresh', 16)}<div><b>${rets.length} issue${rets.length > 1 ? 's' : ''} returned to an earlier stage.</b> <span class="cap">${rets.map(r => h(r.toName) + ': ' + h(r.why.slice(0, 70))).join(' · ')}</span></div></div>` : ''}</section>`;
 }
 // ---- what moves the project forward from here, and who can do it
 function stageGate(p, kind, o) {
@@ -97,7 +97,9 @@ function gateCard(title, items, act, p, kind, o) {
   return card(
     title,
     'Forward movement needs these conditions. Backward movement is always possible when something needs guidance or a new decision.',
-    `<ul class="gate">${items.map(([ok_, t]) => `<li class="${ok_ ? 'ok' : ''}">${ic(ok_ ? 'check' : 'clock', 15)}<span>${t}</span></li>`).join('')}</ul>${act ? `<div class="row wrap" style="margin-top:12px">${act}</div>` : ''}${backActions(p, kind, o)}`,
+    `<ul class="gate">${items.map(([ok_, t]) => `<li class="${ok_ ? 'ok' : ''}"><span class="gate-ic">${ic(ok_ ? 'check' : 'clock', 14)}</span><span>${t}</span></li>`).join('')}</ul>${act ? `<div class="row wrap gate-act">${act}</div>` : ''}${backActions(p, kind, o)}`,
+    '',
+    'gate-card',
   );
 }
 function backActions(p, kind, o) {
@@ -108,7 +110,7 @@ function backActions(p, kind, o) {
     btns.push(B(ic('refresh', 14) + 'Return issue to Circle', 'returnTo', { from: 'rooms', id: o.id, to: 'circle' }));
   }
   if (kind === 'ropes') btns.push(B(ic('refresh', 14) + 'Return matter to Circle', 'returnTo', { from: 'ropes', id: o.id, to: 'circle' }));
-  return btns.length ? `<div class="jback"><span class="cap">Backward movement</span><div class="row wrap">${btns.join('')}</div></div>` : '';
+  return btns.length ? `<div class="jback"><span class="jback-k">${ic('refresh', 14)}<span>Backward movement</span></span><div class="row wrap">${btns.join('')}</div></div>` : '';
 }
 // ---- reports along the accountability chain (Section 5.3)
 const REPORT_KIND = { circles: 'Circle progress report', ropes: 'Rope Team guidance report' };
@@ -124,7 +126,7 @@ function reportsCard(p, kind, o) {
   return card(
     'Reports along the chain',
     kind === 'circles' ? 'The Circle Team Owner reports work and progress to the Rope Team Owner.' : kind === 'ropes' ? 'Receives the Circle’s progress report; reports guidance, reviews and work to the ' + WL() + ' Owner.' : 'Guidance, review and work reports from the Rope Team Owner.',
-    rows.map(([dir, r]) => lrow(dir === 'in' ? 'inbox' : 'send', h(r.kind) + ' · ' + (dir === 'in' ? 'from ' + cName(r.from) : 'to ' + cName(r.to)), h(r.t) + `<span class="cap" style="display:block;margin-top:4px">${nm(r.by)} · ${fmt(r.at)}</span>`)).join('') || '<p class="cap">No reports yet.</p>',
+    rows.map(([dir, r]) => lrow(dir === 'in' ? 'inbox' : 'send', h(r.kind) + ' · ' + (dir === 'in' ? 'from ' + cName(r.from) : 'to ' + cName(r.to)), h(r.t) + `<span class="cap lrow-meta">${nm(r.by)} · ${fmt(r.at)}</span>`)).join('') || '<p class="cap">No reports yet.</p>',
     can_ ? B(ic('send', 14) + 'Send report to ' + h(target.name), 'stageReport', { kind, id: o.id }, 'btn-s btn-sm') : '',
   );
 }
@@ -220,7 +222,7 @@ function returnsCard(o) {
     mine
       .slice()
       .reverse()
-      .map(r => lrow('refresh', (r.from.id === o.id ? '→ ' + h(r.toName) : '← from ' + h(r.fromName)), h(r.why) + `<span class="cap" style="display:block;margin-top:4px">${nm(r.by)} · ${fmt(r.at)}${r.status === 'Resolved' ? ' · resolved ' + fmt(r.resolvedAt) + (r.note ? ': ' + h(r.note) : '') : ''}</span>`, pill(r.status === 'Open' ? 'Open' : 'Resolved')))
+      .map(r => lrow('refresh', (r.from.id === o.id ? '→ ' + h(r.toName) : '← from ' + h(r.fromName)), h(r.why) + `<span class="cap lrow-meta">${nm(r.by)} · ${fmt(r.at)}${r.status === 'Resolved' ? ' · resolved ' + fmt(r.resolvedAt) + (r.note ? ': ' + h(r.note) : '') : ''}</span>`, pill(r.status === 'Open' ? 'Open' : 'Resolved')))
       .join(''),
   );
 }

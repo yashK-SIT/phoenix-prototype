@@ -118,10 +118,8 @@ const lumOf = hex => {
 // Brand colour and logo are not used: every organization shows its initials on the primary colour.
 function orgMark(o, size = 28) {
   if (!o) return '';
-  const bg = '#004369';
-  const fg = lumOf(bg) > 0.4 ? '#102330' : '#ffffff';
   const t = (o.short || o.name || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase();
-  return `<span class="orgmark" style="width:${size}px;height:${size}px;background:${bg};color:${fg};font-size:${Math.round(size * 0.36)}px" aria-hidden="true">${h(t)}</span>`;
+  return `<span class="orgmark om-${size >= 48 ? 'lg' : size >= 32 ? 'md' : 'sm'}" aria-hidden="true">${h(t)}</span>`;
 }
 const ctxOrgMark = () => {
   const o = orgOf(ctx()?.org);
@@ -142,24 +140,34 @@ route('tenants', 'platform', () => {
   const ppl = id => S.people.filter(p => p.org === id).length;
   return (
     head('Organizations', 'Tenants on the platform. Each organization owns its contexts; data stays isolated by context.', B(ic('plus', 16) + 'Create organization', 'tenantNew', {}, 'btn-p')) +
-    `<div class="row wrap" style="gap:8px;margin-bottom:16px"><input class="input" style="max-width:300px" placeholder="Search name, domain or email" value="${h(q.tq || '')}" data-ch="qf" data-k="tq" aria-label="Search organizations"><select class="input" style="width:auto" data-ch="qf" data-k="tt" aria-label="Type"><option value="">Type: all</option>${ORG_TYPES.map(t => `<option ${q.tt === t ? 'selected' : ''}>${t}</option>`).join('')}</select><select class="input" style="width:auto" data-ch="qf" data-k="ts" aria-label="Status"><option value="">Status: all</option>${['Active', 'Suspended'].map(t => `<option ${q.ts === t ? 'selected' : ''}>${t}</option>`).join('')}</select></div>` +
     card(
       S.orgs.length + ' organization' + (S.orgs.length === 1 ? '' : 's'),
       list.length !== S.orgs.length ? list.length + ' match the filters' : '',
-      table(
-        ['Organization', 'Type', 'Domain', 'Primary contact', 'Contexts', 'People', 'Status', ''],
-        list.map(o => [
-          `<span class="row" style="gap:10px;flex-wrap:nowrap">${orgMark(o, 32)}<span class="col" style="min-width:0"><b>${h(o.name)}</b><span class="cap">${h(o.short || o.id)}</span></span></span>`,
-          h(o.type),
-          o.domains ? h(o.domains.split(',')[0].trim()) + (o.domains.includes(',') ? ' <span class="cap">+' + (o.domains.split(',').length - 1) + '</span>' : '') : '—',
-          o.email ? `${h(o.contact || '')}<div class="cap">${h(o.email)}</div>` : '—',
-          ctxCount(o.id),
-          ppl(o.id),
-          pill(o.status),
-          L('Open', 'tenants', { id: o.id }),
-        ]),
-        'No organizations match these filters.',
-      ),
+      dataView('plat:orgs', {
+        label: 'organizations',
+        searchLabel: 'Search name, domain or email',
+        items: list,
+        search: o => o.name + ' ' + o.short + ' ' + o.domains + ' ' + o.email + ' ' + (o.contact || ''),
+        quick: { label: 'Status', options: ['Active', 'Suspended'].map(v => [v, v]), test: (o, v) => o.status === v },
+        filters: [{ key: 'type', label: 'Type', options: ORG_TYPES.map(t => [t, t]), test: (o, v) => o.type === v }],
+        sorts: [
+          ['name', 'Name', (x, y) => x.name.localeCompare(y.name)],
+          ['ctx', 'Contexts', (x, y) => ctxCount(x.id) - ctxCount(y.id)],
+          ['ppl', 'People', (x, y) => ppl(x.id) - ppl(y.id)],
+          ['created', 'Created', (x, y) => String(x.created || '').localeCompare(String(y.created || ''))],
+        ],
+        row: o => ({
+          lead: orgMark(o, 32),
+          title: L(h(o.name), 'tenants', { id: o.id }),
+          sub: `<span class="adm-id">${h(o.short || o.id)}</span> · ${h(o.type)}${o.domains ? ' · <span class="adm-mono">' + h(o.domains.split(',')[0].trim()) + '</span>' + (o.domains.includes(',') ? ' <span class="cap">+' + (o.domains.split(',').length - 1) + '</span>' : '') : ''}`,
+          meta: [o.email ? `${h(o.contact || '')} · ${h(o.email)}` : '', ctxCount(o.id) + ' context' + (ctxCount(o.id) === 1 ? '' : 's'), ppl(o.id) + ' ' + (ppl(o.id) === 1 ? 'person' : 'people')],
+          badges: pill(o.status),
+          primary: L('Open', 'tenants', { id: o.id }, 'btn btn-s btn-sm'),
+        }),
+        empty: ['building', 'No organizations yet', 'Create the first organization to give it a programme and an administrator.', ''],
+      }),
+      '',
+      'adm-panel ops-tenants',
     )
   );
 });
@@ -178,18 +186,23 @@ function orgAdminCard(o, cs) {
     return card(
       'Programme Administrator',
       'Named under Admin. They run ' + h(S.contexts.find(c => c.id === o.admin.ctx)?.name || 'the organization’s programme') + '.',
-      dl([
-        ['Name', h(o.admin.name)],
-        ['Email', `<a class="lnk" href="mailto:${h(o.admin.email)}">${h(o.admin.email)}</a>`],
-        ['Phone', h(o.admin.phone || '—')],
-        ['Status', pill(orgAdminState(o.admin))],
-      ]),
+      `<div class="tnt-admin"><span class="av lg" aria-hidden="true">${h((o.admin.name || '?').trim().charAt(0).toUpperCase())}</span><div class="adm-who-t"><b>${h(o.admin.name)}</b><div class="cap">${h(o.admin.email)}</div></div></div>` +
+        dl([
+          ['Name', h(o.admin.name)],
+          ['Email', `<a class="lnk" href="mailto:${h(o.admin.email)}">${h(o.admin.email)}</a>`],
+          ['Phone', h(o.admin.phone || '—')],
+          ['Status', pill(orgAdminState(o.admin))],
+        ]),
+      '',
+      'tnt-admincard',
     );
   const hs = S.assign.filter(a => roleBase(a.role) === 'A' && cs.some(c => c.id === a.ctx));
   return card(
     'Programme Administrator',
     'Edit the organization to name the admin.',
-    hs.length ? table(['Person', 'Email', 'Context', 'Status'], hs.map(a => [`<b>${nm(a.pid)}</b>`, h(P(a.pid).email), h(S.contexts.find(c => c.id === a.ctx)?.name || ''), pill(a.status)]), '') : '<p class="cap">No Programme Administrator yet.</p>',
+    hs.length ? `<ul class="tnt-holders">${hs.map(a => `<li class="tnt-admin"><span class="av" aria-hidden="true">${ini(a.pid)}</span><div class="adm-who-t"><b>${nm(a.pid)}</b><div class="cap">${h(P(a.pid).email)}</div><div class="cap">${h(S.contexts.find(c => c.id === a.ctx)?.name || '')}</div></div>${pill(a.status)}</li>`).join('')}</ul>` : '<p class="cap">No Programme Administrator yet.</p>',
+    '',
+    'tnt-admincard',
   );
 }
 // Form values for the Admin section when editing: the named admin, or the current role holder.
@@ -246,9 +259,9 @@ function tenantDetail(o) {
   const cs = S.contexts.filter(c => c.org === o.id);
   const ppl = S.people.filter(p => p.org === o.id);
   return (
-    `<header class="shead"><nav class="row cap" aria-label="Breadcrumb" style="gap:6px;margin-bottom:14px">${L('Organizations', 'tenants', {}, 'cap')}${ic('chevr', 14)}<span>${h(o.name)}</span></nav><div class="shead-main">${orgMark(o, 48)}<div class="shead-t"><div class="shead-kind">${h(o.type)} · ${h(o.short || o.id)}</div><div class="row wrap"><h1 class="h1">${h(o.name)}</h1>${pill(o.status)}</div>${o.profile ? `<p class="sub">${h(o.profile)}</p>` : ''}<div class="shead-meta"><span>Created ${fmt(o.created)}</span><span>${cs.length} context${cs.length === 1 ? '' : 's'}</span><span>${ppl.length} ${ppl.length === 1 ? 'person' : 'people'}</span></div></div><div class="shead-a">${B(ic('edit', 16) + 'Edit', 'tenantNew', { id: o.id })}${o.status === 'Active' ? B(ic('plus', 16) + 'Create context', 'ctxNew', { org: o.id }, 'btn-p') : ''}</div></div></header>` +
+    `<header class="shead">${crumbsHtml([['Organizations', 'tenants'], [h(o.name)]])}<div class="shead-main">${orgMark(o, 48)}<div class="shead-t"><div class="shead-kind">${h(o.type)} · ${h(o.short || o.id)}</div><div class="row wrap shead-title"><h1 class="h1">${h(o.name)}</h1>${pill(o.status)}</div>${o.profile ? `<p class="sub">${h(o.profile)}</p>` : ''}<div class="shead-meta"><span>Created ${fmt(o.created)}</span><span>${cs.length} context${cs.length === 1 ? '' : 's'}</span><span>${ppl.length} ${ppl.length === 1 ? 'person' : 'people'}</span></div></div><div class="shead-a">${B(ic('edit', 16) + 'Edit', 'tenantNew', { id: o.id }, 'btn-s')}${o.status === 'Active' ? B(ic('plus', 16) + 'Create context', 'ctxNew', { org: o.id }, 'btn-p') : ''}</div></div></header>` +
     (o.status === 'Suspended' ? banner('warn', 'Suspended', 'No new contexts can be created for this organization. Existing contexts and their data are unchanged.') + '<div class="section-gap"></div>' : '') +
-    `<div class="g12">${card(
+    `<div class="g12 tnt-grid"><div class="c8 adm-stack">${card(
       'Organization details',
       '',
       dl([
@@ -260,36 +273,35 @@ function tenantDetail(o) {
         ['Email', o.email ? `<a class="lnk" href="mailto:${h(o.email)}">${h(o.email)}</a>` : '—'],
         ['Phone', h(o.phone || '—')],
         ['Website', o.web ? `<a class="lnk" href="${h(o.web)}" target="_blank" rel="noopener">${h(o.web)}</a>` : '—'],
-        ['Email domains', o.domains ? o.domains.split(',').map(d => `<span class="pill p-grey">${h(d.trim())}</span>`).join(' ') : '—'],
+        ['Email domains', o.domains ? `<span class="tnt-doms">${o.domains.split(',').map(d => `<code class="tnt-dom">${h(d.trim())}</code>`).join('')}</span>` : '—'],
         ['Address', h(o.address || '—')],
         ['Country', h(o.country || '—')],
         ['Default language', h(o.lang || '—')],
         ['Data residency', h(o.region || '—')],
       ]),
       '',
-      'c12',
-    )}
-    <div class="c12">${orgAdminCard(o, cs)}</div>
-    <div class="c12">${card(
-      'Contexts',
+      'tnt-details',
+    )}${card(
+      `Contexts <span class="adm-n">${cs.length}</span>`,
       'Programmes, cohorts and organization spaces owned by this organization.',
       table(
         ['Context', 'Kind', 'Pack', 'Status', 'Members'],
-        cs.map(c => [`<b>${h(c.name)}</b><div class="cap">${c.id}</div>`, h(c.kind), h(S.packs.find(p => p.id === c.pack)?.name || '—'), pill(c.status), S.assign.filter(a => a.ctx === c.id).length]),
+        cs.map(c => [`<b>${h(c.name)}</b><div class="adm-id">${c.id}</div>`, h(c.kind), h(S.packs.find(p => p.id === c.pack)?.name || '—'), pill(c.status), `<span class="ops-num">${S.assign.filter(a => a.ctx === c.id).length}</span>`]),
         'No contexts for this organization.',
       ),
       '',
-    )}</div>
-    <div class="c12">${card(
-      'People',
+      'adm-panel',
+    )}${card(
+      `People <span class="adm-n">${ppl.length}</span>`,
       'Accounts affiliated with this organization.',
       table(
         ['Person', 'Email', 'Roles'],
-        ppl.map(p => [`<b>${h(p.name)}</b>`, h(p.email), S.assign.filter(a => a.pid === p.id).map(a => h(ROLE[a.role] || a.role) + ' <span class="cap">· ' + h(S.contexts.find(c => c.id === a.ctx)?.name || '') + '</span>').join('<br>') || '—']),
+        ppl.map(p => [`<span class="adm-who"><span class="av sm" aria-hidden="true">${h((p.name || '?').charAt(0))}</span><b>${h(p.name)}</b></span>`, h(p.email), S.assign.filter(a => a.pid === p.id).map(a => h(ROLE[a.role] || a.role) + ' <span class="cap">· ' + h(S.contexts.find(c => c.id === a.ctx)?.name || '') + '</span>').join('<br>') || '—']),
         'No people affiliated yet.',
       ),
-    )}</div>
-    <div class="c12">${card('Lifecycle', '', `<div class="row wrap" style="gap:8px">${o.status === 'Active' ? CB(ic('pause', 14) + 'Suspend organization', 'tenantState', { id: o.id, v: 'Suspended' }, 'Suspend ' + o.name + '? No new contexts can be created for it. Existing contexts and their data are not changed.', 'btn-d btn-sm', 'Suspend') : B('Reactivate organization', 'tenantState', { id: o.id, v: 'Active' }, 'btn-p btn-sm')}<span class="cap">Suspension is recorded in the audit log.</span></div>`)}</div></div>`
+      '',
+      'adm-panel',
+    )}</div><aside class="c4 adm-stack tnt-rail">${orgAdminCard(o, cs)}${card('Lifecycle', '', `<div class="tnt-life">${o.status === 'Active' ? CB(ic('pause', 14) + 'Suspend organization', 'tenantState', { id: o.id, v: 'Suspended' }, 'Suspend ' + o.name + '? No new contexts can be created for it. Existing contexts and their data are not changed.', 'btn-d btn-sm', 'Suspend') : B('Reactivate organization', 'tenantState', { id: o.id, v: 'Active' }, 'btn-p btn-sm')}<span class="cap">Suspension is recorded in the audit log.</span></div>`)}</aside></div>`
   );
 }
 // Logo choice is held apart from form state: a data URL (new image), '' (removed), 'bad' (rejected) or undefined (unchanged).
@@ -304,10 +316,10 @@ A.tenantNew = d => {
     () => {
       const f = 'tnt';
       const cur = { ...(UI.form.tnt || {}), logo: tntLogo(o) };
-      return `<form data-f="tnt" class="col tnt-form" style="gap:18px" novalidate><input type="hidden" name="id" value="${o ? o.id : ''}">${errSum(f)}
+      return `<form data-f="tnt" class="col tnt-form" novalidate><input type="hidden" name="id" value="${o ? o.id : ''}">${errSum(f)}
     <fieldset class="fs"><legend>Identity</legend><div class="f2">${fi(f, 'name', 'Organization name', { req: true, max: 120 })}${fi(f, 'short', 'Short name or code', { max: 12, help: 'Used in lists and as initials when there is no logo.' })}</div><div class="f2">${fi(f, 'type', 'Type', { type: 'select', req: true, opts: ORG_TYPES })}${fi(f, 'status', 'Status', { type: 'select', req: true, opts: ['Active', 'Suspended'] })}</div>${fi(f, 'profile', 'About the organization', { type: 'textarea', rows: 2, max: 400 })}</fieldset>
     <fieldset class="fs"><legend>Contact</legend><div class="f2">${fi(f, 'contact', 'Primary contact name', { req: true })}${fi(f, 'email', 'Primary contact email', { type: 'email', req: true, auto: 'email' })}</div><div class="f2">${fi(f, 'phone', 'Phone', { type: 'tel', auto: 'tel' })}${fi(f, 'web', 'Website', { type: 'url', ph: 'https://' })}</div></fieldset>
-    <fieldset class="fs"><legend>Admin</legend><p class="cap" style="margin:0 0 10px">${o ? 'The Programme Administrator for this organization. Changing the email sends a new invitation and withdraws the earlier one if it is still pending; anyone who already holds the role keeps it.' : 'This person becomes the Programme Administrator for this organization. They get an invitation to set up their account. You are appointing them, so the role needs no further approval.'}</p><div class="f2">${fi(f, 'aname', 'Name', { req: true, auto: 'off' })}${fi(f, 'aemail', 'Email', { type: 'email', req: true, auto: 'off' })}</div><div class="f2">${fi(f, 'aphone', 'Phone number', { type: 'tel', auto: 'off' })}</div></fieldset>
+    <fieldset class="fs"><legend>Admin</legend><p class="cap tnt-note">${o ? 'The Programme Administrator for this organization. Changing the email sends a new invitation and withdraws the earlier one if it is still pending; anyone who already holds the role keeps it.' : 'This person becomes the Programme Administrator for this organization. They get an invitation to set up their account. You are appointing them, so the role needs no further approval.'}</p><div class="f2">${fi(f, 'aname', 'Name', { req: true, auto: 'off' })}${fi(f, 'aemail', 'Email', { type: 'email', req: true, auto: 'off' })}</div><div class="f2">${fi(f, 'aphone', 'Phone number', { type: 'tel', auto: 'off' })}</div></fieldset>
     <fieldset class="fs"><legend>Domain</legend>${fi(f, 'domains', 'Email domains', { req: true, ph: 'example.org, mail.example.org', help: 'Comma-separated. People signing up with these domains can be matched to this organization.' })}</fieldset>
     <fieldset class="fs"><legend>Location and data</legend>${fi(f, 'address', 'Address', { type: 'textarea', rows: 2 })}<div class="f2">${fi(f, 'country', 'Country', { req: true })}${fi(f, 'region', 'Data residency region', { type: 'select', req: true, opts: REGIONS, help: 'Where this organization’s data is expected to be stored.' })}</div></fieldset>
     <div class="actions">${B('Cancel', 'closeM', {}, 'btn-g')}<button class="btn btn-p" type="submit">${o ? 'Save changes' : 'Create organization'}</button></div></form>`;
@@ -425,33 +437,48 @@ route('roles', 'platform', () => {
     card(
       'Primary roles',
       'Seeded roles reflect the specification; custom roles follow the workflow rules of the role they behave as.',
-      table(
-        ['Role', 'Behaves as', 'Joins by', 'Approval', 'Modules', 'People', 'Status', ''],
-        S.roles.map(r => [
-          `<b>${h(r.name)}</b> <span class="kb-key">${h(r.id)}</span><div class="cap">${h(r.desc)}</div>`,
-          r.base === r.id ? '<span class="cap">Itself</span>' : h(ROLE[r.base] || r.base),
-          h(r.joins),
-          r.approval ? pill('Approval needed', 'p-amber') : pill('Automatic', 'p-grey'),
-          `<span style="white-space:nowrap">${mods(r)} of ${Object.keys(MODULES).length}</span>`,
-          people(r.id),
-          pill(r.status === 'Active' ? (r.system ? 'Seeded' : 'Custom') : r.status, r.status !== 'Active' ? 'p-grey' : r.system ? 'p-teal' : 'p-purple'),
-          L('Manage', 'roles', { id: r.id }),
-        ]),
-      ),
+      dataView('plat:roles', {
+        label: 'roles',
+        items: S.roles,
+        search: r => r.name + ' ' + r.id + ' ' + r.desc + ' ' + r.joins,
+        quick: { label: 'Kind', options: [['seeded', 'Seeded'], ['custom', 'Custom'], ['archived', 'Archived']], test: (r, v) => (v === 'archived' ? r.status !== 'Active' : r.status === 'Active' && (v === 'seeded' ? r.system : !r.system)) },
+        filters: [
+          { key: 'appr', label: 'Approval', options: [['yes', 'Approval needed'], ['no', 'Automatic']], test: (r, v) => (v === 'yes' ? !!r.approval : !r.approval) },
+          { key: 'base', label: 'Behaves as', options: [...new Set(S.roles.map(r => r.base))].map(x => [x, ROLE[x] || x]), test: (r, v) => r.base === v },
+          { key: 'joins', label: 'Joins by', options: [...new Set(S.roles.map(r => r.joins))].map(x => [x, x]), test: (r, v) => r.joins === v },
+        ],
+        sorts: [
+          ['name', 'Name', (a, b) => a.name.localeCompare(b.name)],
+          ['people', 'People', (a, b) => people(a.id) - people(b.id)],
+          ['mods', 'Modules', (a, b) => mods(a) - mods(b)],
+        ],
+        row: r => ({
+          lead: `<span class="rol-code">${h(r.id)}</span>`,
+          title: L(h(r.name), 'roles', { id: r.id }),
+          sub: h(r.desc),
+          meta: ['Behaves as: ' + (r.base === r.id ? 'itself' : h(ROLE[r.base] || r.base)), 'Joins by: ' + h(r.joins), `${mods(r)} of ${Object.keys(MODULES).length} modules`, people(r.id) + ' active ' + (people(r.id) === 1 ? 'person' : 'people')],
+          badges: (r.approval ? pill('Approval needed', 'p-amber') : pill('Automatic', 'p-grey')) + pill(r.status === 'Active' ? (r.system ? 'Seeded' : 'Custom') : r.status, r.status !== 'Active' ? 'p-grey' : r.system ? 'p-teal' : 'p-purple'),
+          primary: L('Manage', 'roles', { id: r.id }, 'btn btn-s btn-sm'),
+        }),
+      }),
+      '',
+      'adm-panel rol-list',
     ) +
     '<div class="section-gap"></div>' +
     card(
       'Role × module overview',
       'Read-only summary of current permissions. Open a role to change them.',
-      `<div class="tblwrap"><table class="tbl rmx"><thead><tr><th>Module</th>${S.roles
+      `<div class="tblwrap rmx-wrap"><table class="tbl rmx"><thead><tr><th scope="col">Module</th>${S.roles
         .filter(r => r.status === 'Active')
-        .map(r => `<th title="${h(r.name)}">${h(r.id)}</th>`)
+        .map(r => `<th scope="col" title="${h(r.name)}"><abbr title="${h(r.name)}">${h(r.id)}</abbr></th>`)
         .join('')}</tr></thead><tbody>${Object.entries(MODULES)
         .map(([m, [l]]) => `<tr><td>${h(l)}</td>${S.roles.filter(r => r.status === 'Active').map(r => `<td title="${h(r.name)}: ${h(permText(r.perms[m]))}"><span class="pv ${r.perms[m] === '-' ? 'none' : ''}">${h(r.perms[m] || '-')}</span></td>`).join('')}</tr>`)
-        .join('')}</tbody></table></div><p class="cap" style="margin-top:10px">${PERMS.map(([k, , d]) => `<b>${k}</b> ${h(d.toLowerCase())}`).join(' · ')} · <b>-</b> no access</p>`,
+        .join('')}</tbody></table></div><p class="cap rmx-key">${PERMS.map(([k, , d]) => `<span><b class="pv">${k}</b> ${h(d.toLowerCase())}</span>`).join('')}<span><b class="pv none">-</b> no access</span></p>`,
+      '',
+      'adm-panel rmx-card',
     ) +
     '<div class="section-gap"></div>' +
-    card('Specialist permission bundles', 'Added to a role assignment for specific responsibilities.', table(['Bundle', 'Responsibility', 'Approval'], S.bundles.map(b => [`<b>${h(b.name)}</b>`, h(b.desc), h(b.approval)])))
+    card(`Specialist permission bundles <span class="adm-n">${S.bundles.length}</span>`, 'Added to a role assignment for specific responsibilities.', table(['Bundle', 'Responsibility', 'Approval'], S.bundles.map(b => [`<b>${h(b.name)}</b>`, h(b.desc), `<span class="cap">${h(b.approval)}</span>`])), '', 'adm-panel')
   );
 });
 function roleDetail(r) {
@@ -466,30 +493,33 @@ function roleDetail(r) {
       const def = r.system ? normPerm((MX[m] || {})[r.id]) : null;
       return `<tr class="${def && def !== v ? 'changed' : ''}"><td><b>${h(l)}</b><div class="cap">${h(d)}</div></td><td><div class="permset" role="group" aria-label="${h(l)} permissions">${PERMS.map(
         ([k, lab, desc]) =>
-          `<label class="chipchk" title="${h(desc)}"><input type="checkbox" name="p_${m}" value="${k}" ${v.includes(k) ? 'checked' : ''} ${ro ? 'disabled' : ''}><span>${lab}</span></label>`,
+          `<label class="chipchk perm-chip" title="${h(desc)}"><input type="checkbox" name="p_${m}" value="${k}" ${v.includes(k) ? 'checked' : ''} ${ro ? 'disabled' : ''}><span><b class="perm-k" aria-hidden="true">${k}</b>${lab}</span></label>`,
       ).join('')}</div></td><td class="pvcell"><span class="pv ${v === '-' ? 'none' : ''}">${h(v)}</span>${def && def !== v ? `<div class="cap">Default: ${h(def)}</div>` : ''}</td></tr>`;
     })
     .join('');
   return (
-    `<header class="shead"><nav class="row cap" aria-label="Breadcrumb" style="gap:6px;margin-bottom:14px">${L('Role management', 'roles', {}, 'cap')}${ic('chevr', 14)}<span>${h(r.name)}</span></nav><div class="shead-main"><span class="shead-ic k-rooms" style="background:var(--ever-800)">${ic('shield', 22)}</span><div class="shead-t"><div class="shead-kind">${r.system ? 'Seeded role' : 'Custom role'} · ${h(r.id)}</div><div class="row wrap"><h1 class="h1">${h(r.name)}</h1>${pill(r.status)}</div><p class="sub">${h(r.desc)}</p><div class="shead-meta"><span>Behaves as: <b>${h(r.base === r.id ? 'itself' : ROLE[r.base])}</b></span><span>Joins by: <b>${h(r.joins)}</b></span><span>${r.approval ? 'Needs approval when requested' : 'Active on joining'}</span><span>${active} active ${active === 1 ? 'person' : 'people'}</span></div></div><div class="shead-a">${B(ic('edit', 16) + 'Edit details', 'roleEdit', { id: r.id })}${!r.system ? (r.status === 'Active' ? CB('Archive', 'roleState', { id: r.id, v: 'Archived' }, 'Archive the role ' + r.name + '? It can no longer be assigned. People who hold it keep it until reassigned.', 'btn-d', 'Archive') : B('Restore', 'roleState', { id: r.id, v: 'Active' }, 'btn-p')) : ''}</div></div></header>` +
+    `<header class="shead">${crumbsHtml([['Role management', 'roles'], [h(r.name)]])}<div class="shead-main"><span class="tile rol-tile" aria-hidden="true">${ic('shield', 22)}</span><div class="shead-t"><div class="shead-kind">${r.system ? 'Seeded role' : 'Custom role'} · ${h(r.id)}</div><div class="row wrap shead-title"><h1 class="h1">${h(r.name)}</h1>${pill(r.status)}</div><p class="sub">${h(r.desc)}</p><div class="shead-meta"><span>Behaves as: <b>${h(r.base === r.id ? 'itself' : ROLE[r.base])}</b></span><span>Joins by: <b>${h(r.joins)}</b></span><span>${r.approval ? 'Needs approval when requested' : 'Active on joining'}</span><span>${active} active ${active === 1 ? 'person' : 'people'}</span></div></div><div class="shead-a">${B(ic('edit', 16) + 'Edit details', 'roleEdit', { id: r.id }, 'btn-s')}${!r.system ? (r.status === 'Active' ? CB('Archive', 'roleState', { id: r.id, v: 'Archived' }, 'Archive the role ' + r.name + '? It can no longer be assigned. People who hold it keep it until reassigned.', 'btn-d', 'Archive') : B('Restore', 'roleState', { id: r.id, v: 'Active' }, 'btn-p')) : ''}</div></div></header>` +
     (r.id === 'T' ? banner('info', 'Platform Administrator', 'Platform administration access cannot be removed from this role, so the platform always has someone who can manage it.') + '<div class="section-gap"></div>' : '') +
-    `<form data-f="rperm" novalidate><input type="hidden" name="id" value="${r.id}">${card(
+    `<form data-f="rperm" class="rol-form" novalidate><input type="hidden" name="id" value="${r.id}">${card(
       'Module permissions',
       ro ? 'This role is archived. Restore it to change permissions.' : active ? 'Saving applies immediately to the ' + active + ' ' + (active === 1 ? 'person' : 'people') + ' holding this role.' : 'No one holds this role yet.',
-      `<div class="tblwrap"><table class="tbl permtbl"><thead><tr><th>Module</th><th>Permissions</th><th>Effective</th></tr></thead><tbody>${rows}</tbody></table></div>`,
+      `<div class="tblwrap"><table class="tbl permtbl"><thead><tr><th scope="col">Module</th><th scope="col">Permissions</th><th scope="col">Effective</th></tr></thead><tbody>${rows}</tbody></table></div>`,
       ro
         ? ''
-        : `<div class="row wrap" style="gap:8px">${r.system && dirty ? B(ic('refresh', 14) + 'Reset to default', 'roleReset', { id: r.id }) : ''}<button class="btn btn-p btn-sm" type="submit">${ic('check', 14)}Save permissions</button></div>`,
+        : `${r.system && dirty ? B(ic('refresh', 14) + 'Reset to default', 'roleReset', { id: r.id }) : ''}<button class="btn btn-p btn-sm" type="submit">${ic('check', 14)}Save permissions</button>`,
+      'adm-panel',
     )}</form>` +
     '<div class="section-gap"></div>' +
     card(
-      'People holding this role',
+      `People holding this role <span class="adm-n">${holders.length}</span>`,
       '',
       table(
         ['Person', 'Context', 'Status', 'Bundles'],
-        holders.map(a => [`<b>${nm(a.pid)}</b><div class="cap">${h(P(a.pid).email || '')}</div>`, h(S.contexts.find(c => c.id === a.ctx)?.name || a.ctx), pill(a.status), a.bundles.map(b => pill(b, 'p-grey')).join(' ') || '—']),
+        holders.map(a => [`<div class="adm-who"><span class="av">${ini(a.pid)}</span><div class="adm-who-t"><b>${nm(a.pid)}</b><div class="cap">${h(P(a.pid).email || '')}</div></div></div>`, h(S.contexts.find(c => c.id === a.ctx)?.name || a.ctx), pill(a.status), a.bundles.length ? `<div class="adm-tags">${a.bundles.map(b => pill(b, 'p-grey')).join('')}</div>` : '—']),
         'No one holds this role yet. Invite people to it from Programme administration.',
       ),
+      '',
+      'adm-panel',
     )
   );
 }
@@ -526,7 +556,7 @@ A.roleNew = () => {
   clearF('rnew');
   UI.form.rnew = { base: 'P', joins: 'Invitation', copy: 'P' };
   modal('Create a role', () =>
-    `<form data-f="rnew" class="col" style="gap:14px" novalidate>${fi('rnew', 'name', 'Role name', { req: true, max: 60, ph: 'e.g. Teaching Assistant' })}${fi('rnew', 'desc', 'What this role is for', { type: 'textarea', rows: 2, req: true, max: 240 })}<div class="f2">${fi('rnew', 'base', 'Behaves as', { type: 'select', req: true, opts: S.roles.filter(x => x.system && x.id !== 'T').map(x => [x.id, x.name]), help: 'Workflow rules (who can review, approve, steward) follow this role.' })}${fi('rnew', 'copy', 'Start permissions from', { type: 'select', opts: activeRoles().map(x => [x.id, x.name]), help: 'Copied now; edit them after creating.' })}</div><div class="f2">${fi('rnew', 'joins', 'Joins by', { type: 'select', opts: JOIN_ROUTES.filter(j => j !== 'System-provisioned') })}<div class="field" style="justify-content:flex-end">${fi('rnew', 'approval', 'Needs approval before the role becomes active', { type: 'checkbox' })}</div></div><div class="actions">${B('Cancel', 'closeM', {}, 'btn-g')}<button class="btn btn-p" type="submit">Create role</button></div></form>`,
+    `<form data-f="rnew" class="col adm-form" novalidate>${fi('rnew', 'name', 'Role name', { req: true, max: 60, ph: 'e.g. Teaching Assistant' })}${fi('rnew', 'desc', 'What this role is for', { type: 'textarea', rows: 2, req: true, max: 240 })}<div class="f2">${fi('rnew', 'base', 'Behaves as', { type: 'select', req: true, opts: S.roles.filter(x => x.system && x.id !== 'T').map(x => [x.id, x.name]), help: 'Workflow rules (who can review, approve, steward) follow this role.' })}${fi('rnew', 'copy', 'Start permissions from', { type: 'select', opts: activeRoles().map(x => [x.id, x.name]), help: 'Copied now; edit them after creating.' })}</div><div class="f2">${fi('rnew', 'joins', 'Joins by', { type: 'select', opts: JOIN_ROUTES.filter(j => j !== 'System-provisioned') })}<div class="field adm-chkfield">${fi('rnew', 'approval', 'Needs approval before the role becomes active', { type: 'checkbox' })}</div></div><div class="actions">${B('Cancel', 'closeM', {}, 'btn-g')}<button class="btn btn-p" type="submit">Create role</button></div></form>`,
   );
 };
 F.rnew = d => {
@@ -554,7 +584,7 @@ A.roleEdit = d => {
   clearF('redit');
   UI.form.redit = { name: r.name, desc: r.desc, joins: r.joins, approval: r.approval ? 'yes' : '', base: r.base };
   modal('Edit ' + h(r.name), () =>
-    `<form data-f="redit" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${r.id}">${fi('redit', 'name', 'Role name', { req: true, max: 60 })}${fi('redit', 'desc', 'What this role is for', { type: 'textarea', rows: 2, req: true, max: 240 })}${r.system ? `<div class="field"><span class="lbl">Behaves as</span><span>Itself (seeded role)</span></div>` : fi('redit', 'base', 'Behaves as', { type: 'select', req: true, opts: S.roles.filter(x => x.system && x.id !== 'T').map(x => [x.id, x.name]), help: 'Changing this changes which workflow rules apply to everyone holding the role.' })}<div class="f2">${fi('redit', 'joins', 'Joins by', { type: 'select', opts: r.id === 'T' ? ['System-provisioned'] : JOIN_ROUTES })}<div class="field" style="justify-content:flex-end">${fi('redit', 'approval', 'Needs approval before the role becomes active', { type: 'checkbox' })}</div></div><div class="actions">${B('Cancel', 'closeM', {}, 'btn-g')}<button class="btn btn-p" type="submit">Save</button></div></form>`,
+    `<form data-f="redit" class="col adm-form" novalidate><input type="hidden" name="id" value="${r.id}">${fi('redit', 'name', 'Role name', { req: true, max: 60 })}${fi('redit', 'desc', 'What this role is for', { type: 'textarea', rows: 2, req: true, max: 240 })}${r.system ? `<div class="field"><span class="lbl">Behaves as</span><span>Itself (seeded role)</span></div>` : fi('redit', 'base', 'Behaves as', { type: 'select', req: true, opts: S.roles.filter(x => x.system && x.id !== 'T').map(x => [x.id, x.name]), help: 'Changing this changes which workflow rules apply to everyone holding the role.' })}<div class="f2">${fi('redit', 'joins', 'Joins by', { type: 'select', opts: r.id === 'T' ? ['System-provisioned'] : JOIN_ROUTES })}<div class="field adm-chkfield">${fi('redit', 'approval', 'Needs approval before the role becomes active', { type: 'checkbox' })}</div></div><div class="actions">${B('Cancel', 'closeM', {}, 'btn-g')}<button class="btn btn-p" type="submit">Save</button></div></form>`,
   );
 };
 F.redit = d => {
@@ -603,18 +633,39 @@ route('policies', 'platform', () => {
   const gs = polGroups();
   return (
     head('Policies & agreements', 'Each policy has versions. Publishing a new version asks everyone it applies to to review the changes and accept them before they continue.') +
-    table(
-      ['Policy', 'Programme', 'Applies to', 'Current version', 'Accepted', 'Draft', ''],
-      gs.map(x => [
-        `<b>${h(x.type)}</b>`,
-        ctxName(x.ctx),
-        (x.act || x.vs[0]).roles.map(r => h(ROLE[r] || r)).join(', '),
-        x.act ? 'v' + x.act.ver + ` <span class="cap">· ${fmt(x.act.effective)}</span>` : '<span class="cap">None published</span>',
-        x.act ? polAccepted(x.act).length + ' of ' + polAffected(x.act).length : '—',
-        x.draft ? pill('Draft v' + x.draft.ver, 'p-amber') : '—',
-        L('Open', 'policies', { id: (x.act || x.vs[0]).id }, 'btn btn-s btn-sm'),
-      ]),
-      'No policies yet.',
+    card(
+      `Policy groups <span class="adm-n">${gs.length}</span>`,
+      '',
+      dataView('plat:policies', {
+        label: 'policies',
+        items: gs,
+        search: x => x.type + ' ' + ((S.contexts.find(c => c.id === x.ctx) || {}).name || x.ctx) + ' ' + (x.act || x.vs[0]).roles.map(r => ROLE[r] || r).join(' '),
+        quick: { label: 'State', options: [['draft', 'Draft in progress'], ['none', 'Not published']], test: (x, v) => (v === 'draft' ? !!x.draft : !x.act) },
+        filters: [
+          { key: 'ctx', label: 'Programme', options: [...new Set(gs.map(x => x.ctx))].map(c => [c, (S.contexts.find(y => y.id === c) || {}).name || c]), test: (x, v) => x.ctx === v },
+          { key: 'type', label: 'Policy', options: [...new Set(gs.map(x => x.type))].map(t => [t, t]), test: (x, v) => x.type === v },
+          { key: 'role', label: 'Applies to', options: [...new Set(gs.flatMap(x => (x.act || x.vs[0]).roles))].map(r => [r, ROLE[r] || r]), test: (x, v) => (x.act || x.vs[0]).roles.includes(v) },
+        ],
+        sorts: [
+          ['type', 'Policy', (a, b) => a.type.localeCompare(b.type)],
+          ['ctx', 'Programme', (a, b) => String((S.contexts.find(c => c.id === a.ctx) || {}).name || '').localeCompare(String((S.contexts.find(c => c.id === b.ctx) || {}).name || ''))],
+          ['eff', 'Effective date', (a, b) => String(a.act ? a.act.effective : '').localeCompare(String(b.act ? b.act.effective : ''))],
+        ],
+        row: x => ({
+          lead: `<span class="tile t-soft" aria-hidden="true">${ic('file', 18)}</span>`,
+          title: L(h(x.type), 'policies', { id: (x.act || x.vs[0]).id }),
+          sub: ctxName(x.ctx) + ' · applies to ' + (x.act || x.vs[0]).roles.map(r => h(ROLE[r] || r)).join(', '),
+          meta: [
+            x.act ? `<span class="pol-ver">v${x.act.ver}</span> effective ${fmt(x.act.effective)}` : 'None published',
+            x.act ? (a => `<span class="pol-acc"><span class="ops-num">${a[0]} of ${a[1]} accepted</span><span class="progress" aria-hidden="true"><span class="bar" style="width:${a[1] ? Math.round((100 * a[0]) / a[1]) : 0}%"></span></span></span>`)([polAccepted(x.act).length, polAffected(x.act).length]) : '',
+          ],
+          badges: x.draft ? pill('Draft v' + x.draft.ver, 'p-amber') : '',
+          primary: L('Open', 'policies', { id: (x.act || x.vs[0]).id }, 'btn btn-s btn-sm'),
+        }),
+        empty: ['file', 'No policies yet.', '', ''],
+      }),
+      '',
+      'adm-panel',
     )
   );
 });
@@ -631,27 +682,23 @@ function policyPage(g) {
           'Draft v' + draft.ver + ' — not published',
           'Nobody sees this until you publish it. ' + (draft.summary ? 'Change: ' + h(draft.summary) : ''),
           polDiffHtml(act, draft),
-          `<div class="row wrap">${B(ic('edit', 14) + 'Edit draft', 'polEdit', { id: draft.id })}${CB('Delete draft', 'polDel', { id: draft.id }, 'Delete draft v' + draft.ver + '? This cannot be undone.')}${CB(ic('send', 14) + 'Publish v' + draft.ver, 'polPublish', { id: draft.id }, 'Publish ' + h(grp.type) + ' v' + draft.ver + '? Everyone it applies to (' + polAffected(draft).length + ' people) will see the changes and must accept them before they continue.', 'btn-p btn-sm')}</div>`,
+          `${B(ic('edit', 14) + 'Edit draft', 'polEdit', { id: draft.id })}${CB('Delete draft', 'polDel', { id: draft.id }, 'Delete draft v' + draft.ver + '? This cannot be undone.', 'btn-g btn-sm pol-del')}${CB(ic('send', 14) + 'Publish v' + draft.ver, 'polPublish', { id: draft.id }, 'Publish ' + h(grp.type) + ' v' + draft.ver + '? Everyone it applies to (' + polAffected(draft).length + ' people) will see the changes and must accept them before they continue.', 'btn-p btn-sm')}`,
+          'accent pol-draft',
         ) + '<div class="section-gap"></div>'
       : '') +
-    `<div class="g12">${card((shown.status === 'Active' ? 'Current policy · ' : 'Version ') + 'v' + shown.ver, 'Effective ' + fmt(shown.effective) + ' · ' + h(shown.status), `<div class="col" style="gap:10px">${polBody(shown)}</div>`, '', 'c7')}
+    `<div class="g12 pol-grid">${card((shown.status === 'Active' ? 'Current policy · ' : 'Version ') + 'v' + shown.ver, 'Effective ' + fmt(shown.effective) + ' · ' + h(shown.status), `<div class="pol-doc">${polBody(shown)}</div>`, '', 'c8 pol-read')}
  ${card(
    'Version history',
    act ? polAccepted(act).length + ' of ' + polAffected(act).length + ' people have accepted v' + act.ver + '.' : '',
-   table(
-     ['Version', 'Status', 'Effective', 'Change', ''],
-     grp.vs
-       .filter(v => v.status !== 'Draft')
-       .map(v => [
-         'v' + v.ver,
-         pill(v.status),
-         fmt(v.effective),
-         h(v.summary || '—'),
-         `<div class="row wrap" style="gap:6px">${v.id !== shown.id ? L('View', 'policies', { id: g.id, v: v.id }, 'btn btn-g btn-sm') : ''}${polPrev(v) ? B('Compare', 'polCmp', { id: v.id }) : ''}</div>`,
-       ]),
-   ),
+   `<ol class="pol-vers">${grp.vs
+     .filter(v => v.status !== 'Draft')
+     .map(
+       v =>
+         `<li class="pol-v${v.id === shown.id ? ' is-shown' : ''}"><div class="pol-v-h"><span class="pol-ver">v${v.ver}</span>${pill(v.status)}<span class="cap pol-v-d">${fmt(v.effective)}</span></div><p class="pol-v-s">${h(v.summary || '—')}</p><div class="pol-v-a">${v.id !== shown.id ? L('View', 'policies', { id: g.id, v: v.id }, 'btn btn-g btn-sm') : '<span class="cap">Shown</span>'}${polPrev(v) ? B('Compare', 'polCmp', { id: v.id }) : ''}</div></li>`,
+     )
+     .join('')}</ol>`,
    '',
-   'c5',
+   'c4 pol-hist',
  )}</div>`
   );
 }
@@ -661,7 +708,7 @@ function polEditor(base, draft) {
   modal(
     draft ? 'Edit draft v' + draft.ver : 'New version of ' + h(base.type),
     () =>
-      `<form data-f="poled" class="col" style="gap:14px" novalidate><input type="hidden" name="base" value="${base.id}"><input type="hidden" name="draft" value="${draft ? draft.id : ''}">${fi('poled', 'summary', 'What changed', { req: true, help: 'One or two sentences, shown to people together with the comparison.' })}${fi('poled', 'effective', 'Effective date', { type: 'date', req: true })}${fi('poled', 'text', 'Policy text', { type: 'textarea', rows: 16, req: true, help: 'Start each section with “## ” and a heading. Sections are compared heading by heading, word by word.' })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save draft</button></div></form>`,
+      `<form data-f="poled" class="col adm-form pol-form" novalidate><input type="hidden" name="base" value="${base.id}"><input type="hidden" name="draft" value="${draft ? draft.id : ''}">${fi('poled', 'summary', 'What changed', { req: true, help: 'One or two sentences, shown to people together with the comparison.' })}${fi('poled', 'effective', 'Effective date', { type: 'date', req: true })}${fi('poled', 'text', 'Policy text', { type: 'textarea', rows: 16, req: true, help: 'Start each section with “## ” and a heading. Sections are compared heading by heading, word by word.' })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save draft</button></div></form>`,
     true,
   );
 }
@@ -722,21 +769,32 @@ route('compassqs', 'platform', () => {
     card(
       'Active questions',
       qs.length + ' question' + (qs.length === 1 ? '' : 's') + ' in ' + sets.length + ' set' + (sets.length === 1 ? '' : 's') + '. Questions in the same set appear together on one screen.',
-      table(
-        ['#', 'Question', 'Set', 'Type', 'Required', 'Asked', ''],
-        qs.map((q, i) => [
-          String(i + 1),
-          `<b>${h(q.text)}</b>${q.help ? `<div class="cap">${h(q.help)}</div>` : ''}`,
-          h(q.set),
-          h((COMPASS_TYPES.find(t => t[0] === q.type) || [, q.type])[1]),
-          q.req ? pill('Required', 'p-navy') : '<span class="cap">Optional</span>',
-          q.onb ? 'At onboarding' : 'Later, in Profile',
-          `<div class="row" style="gap:4px;flex-wrap:nowrap">${B('↑', 'cqMove', { id: q.id, dir: -1 }, 'btn-g btn-sm' + (i === 0 ? ' is-off' : ''), `aria-label="Move up"${i === 0 ? ' disabled' : ''}`)}${B('↓', 'cqMove', { id: q.id, dir: 1 }, 'btn-g btn-sm' + (i === last ? ' is-off' : ''), `aria-label="Move down"${i === last ? ' disabled' : ''}`)}${B('Edit', 'cqEdit', { id: q.id })}${CB('Delete', 'cqDel', { id: q.id }, 'Delete “' + h(q.text.slice(0, 80)) + '”? People will no longer be asked it. Answers already given are kept.')}</div>`,
-        ]),
-        'No active questions. People skip the Purpose Compass until you add one.',
-      ),
-      '<p class="cap">Answers to the Purpose (PC1), Outcome (PC2) and First milestone (PC5) questions also show on the person’s North Star card. Deleting those questions leaves the card empty for new people.</p>',
-    )
+      dataView('plat:compass', {
+        label: 'questions',
+        items: qs,
+        layout: 'table',
+        pageSize: 50,
+        search: q => q.text + ' ' + (q.help || '') + ' ' + q.set,
+        quick: { label: 'Asked', options: [['onb', 'At onboarding'], ['later', 'Later, in Profile']], test: (q, v) => (v === 'onb' ? !!q.onb : !q.onb) },
+        filters: [
+          { key: 'set', label: 'Set', options: sets.map(x => [x, x]), test: (q, v) => q.set === v },
+          { key: 'type', label: 'Answer type', options: [...new Set(qs.map(q => q.type))].map(t => [t, (COMPASS_TYPES.find(x => x[0] === t) || [, t])[1]]), test: (q, v) => q.type === v },
+          { key: 'req', label: 'Required', options: [['yes', 'Required'], ['no', 'Optional']], test: (q, v) => (v === 'yes' ? !!q.req : !q.req) },
+        ],
+        columns: [
+          { label: '#', cell: q => `<span class="cq-n">${String(qs.indexOf(q) + 1)}</span>` },
+          { label: 'Question', cell: q => `<b>${h(q.text)}</b>${q.help ? `<div class="cap">${h(q.help)}</div>` : ''}` },
+          { label: 'Set', cell: q => (i => `<span class="cq-set${i && qs[i - 1].set === q.set ? ' is-same' : ''}">${h(q.set)}</span>`)(qs.indexOf(q)) },
+          { label: 'Type', hideSm: true, cell: q => `<span class="cap">${h((COMPASS_TYPES.find(t => t[0] === q.type) || [, q.type])[1])}</span>` },
+          { label: 'Required', cell: q => (q.req ? pill('Required', 'p-navy') : '<span class="cap">Optional</span>') },
+          { label: 'Asked', hideSm: true, cell: q => `<span class="cap">${q.onb ? 'At onboarding' : 'Later, in Profile'}</span>` },
+          { label: '', cell: q => (i => `<div class="cq-acts"><span class="cq-move" role="group" aria-label="Reorder">${B(ic('chev', 16), 'cqMove', { id: q.id, dir: -1 }, 'btn-s btn-sm cq-up' + (i === 0 ? ' is-off' : ''), `aria-label="Move up"${i === 0 ? ' disabled' : ''}`)}${B(ic('chev', 16), 'cqMove', { id: q.id, dir: 1 }, 'btn-s btn-sm cq-dn' + (i === last ? ' is-off' : ''), `aria-label="Move down"${i === last ? ' disabled' : ''}`)}</span>${B('Edit', 'cqEdit', { id: q.id })}${CB('Delete', 'cqDel', { id: q.id }, 'Delete “' + h(q.text.slice(0, 80)) + '”? People will no longer be asked it. Answers already given are kept.', 'btn-g btn-sm cq-del')}</div>`)(qs.indexOf(q)) },
+        ],
+        empty: ['target', 'No active questions. People skip the Purpose Compass until you add one.', '', ''],
+      }),
+      '',
+      'adm-panel cq-card',
+    ) + `<p class="cap cq-note">${ic('info', 14)}<span>Answers to the Purpose (PC1), Outcome (PC2) and First milestone (PC5) questions also show on the person’s North Star card. Deleting those questions leaves the card empty for new people.</span></p>`
   );
 });
 function cqEditor(q) {
@@ -748,7 +806,7 @@ function cqEditor(q) {
   modal(
     q ? 'Edit question' : 'Add a question',
     () =>
-      `<form data-f="cq" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${q ? q.id : ''}">${fi('cq', 'text', 'Question', { type: 'textarea', rows: 2, req: true })}<div class="f2"><div class="field"><label class="lbl" for="cq_set">Set <span class="req">*</span></label><input id="cq_set" name="set" class="input${fe('cq', 'set') ? ' err' : ''}" list="cq-sets" value="${h(fv('cq', 'set', ''))}" placeholder="e.g. Blockers"><datalist id="cq-sets">${sets.map(x => `<option value="${h(x)}">`).join('')}</datalist>${fe('cq', 'set') ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe('cq', 'set')}</span>` : ''}<span class="help">Pick an existing set or type a new one.</span></div>${fi('cq', 'type', 'Answer type', { type: 'select', opts: COMPASS_TYPES })}</div>${fi('cq', 'setNote', 'Set description (optional)', { help: 'Shown under the set title.' })}${fi('cq', 'help', 'Help text (optional)')}${fi('cq', 'vis', 'Visibility shown to the person', { type: 'select', opts: COMPASS_VIS })}${fi('cq', 'req', 'Required', { type: 'checkbox' })}${fi('cq', 'onb', 'Ask at onboarding (otherwise asked later, in Profile)', { type: 'checkbox' })}<div class="actions"><span></span><button class="btn btn-p" type="submit">${q ? 'Save changes' : 'Add question'}</button></div></form>`,
+      `<form data-f="cq" class="col adm-form" novalidate><input type="hidden" name="id" value="${q ? q.id : ''}">${fi('cq', 'text', 'Question', { type: 'textarea', rows: 2, req: true })}<div class="f2"><div class="field"><label class="lbl" for="cq_set">Set <span class="req">*</span></label><input id="cq_set" name="set" class="input${fe('cq', 'set') ? ' err' : ''}" list="cq-sets" value="${h(fv('cq', 'set', ''))}" placeholder="e.g. Blockers"><datalist id="cq-sets">${sets.map(x => `<option value="${h(x)}">`).join('')}</datalist>${fe('cq', 'set') ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe('cq', 'set')}</span>` : ''}<span class="help">Pick an existing set or type a new one.</span></div>${fi('cq', 'type', 'Answer type', { type: 'select', opts: COMPASS_TYPES })}</div>${fi('cq', 'setNote', 'Set description (optional)', { help: 'Shown under the set title.' })}${fi('cq', 'help', 'Help text (optional)')}${fi('cq', 'vis', 'Visibility shown to the person', { type: 'select', opts: COMPASS_VIS })}${fi('cq', 'req', 'Required', { type: 'checkbox' })}${fi('cq', 'onb', 'Ask at onboarding (otherwise asked later, in Profile)', { type: 'checkbox' })}<div class="actions"><span></span><button class="btn btn-p" type="submit">${q ? 'Save changes' : 'Add question'}</button></div></form>`,
   );
 }
 A.cqNew = () => cqEditor(null);

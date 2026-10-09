@@ -38,30 +38,48 @@ route("rooms", "rooms", () => {
             )
           : "",
     ) +
-    table(
-      [WL(), "Lead", "Your role", "Origin", "Members", "State", ""],
-      list.map((x) => [
-        `<b>${h(x.name)}</b>${unreadIn(x) && memberOf(x) ? ` <span class="mbadge">${unreadIn(x)}</span>` : ""}`,
-        nm(x.lead),
-        spaceRole("rooms", x)
-          ? h(spaceRole("rooms", x))
-          : (memberRec(x) || {}).status === "Invited"
-            ? pill("Invited")
-            : '<span class="cap">Oversight</span>',
-        h(x.origin.type) + " · " + cName(x.origin.id),
-        x.members.length,
-        pill(x.state),
-        (memberRec(x) || {}).status === "Invited"
-          ? B(
-              "Respond to invite",
-              "go",
-              { r: "room", id: x.id },
-              "btn-p btn-sm",
-            )
-          : L("Open", "room", { id: x.id }),
-      ]),
-      "No " + WL() + "s yet.",
-    )
+    dataView("rooms", {
+      label: WL() + "s",
+      items: list,
+      search: (x) => [x.name, x.purpose, P(x.lead).name, x.origin.type, cName(x.origin.id), wsRoleTxt("rooms", x)].join(" "),
+      searchLabel: "Search " + WL() + "s",
+      quick: { label: "State", options: wsOpts(list, (x) => x.state), test: (x, v) => x.state === v },
+      filters: [
+        { key: "role", label: "Your role", options: wsOpts(list, (x) => wsRoleTxt("rooms", x)), test: (x, v) => wsRoleTxt("rooms", x) === v },
+        { key: "lead", label: "Lead", options: wsPeople(list, (x) => x.lead), test: (x, v) => x.lead === v },
+        { key: "origin", label: "Origin", options: wsOpts(list, (x) => x.origin.type), test: (x, v) => x.origin.type === v },
+      ],
+      sorts: [
+        ["name", "Name", (a, b) => a.name.localeCompare(b.name)],
+        ["activity", "Latest activity", (a, b) => wsLastAt(b).localeCompare(wsLastAt(a))],
+        ["progress", "Progress", (a, b) => wsPct(b) - wsPct(a)],
+        ["members", "Members", (a, b) => wsActive(b).length - wsActive(a).length],
+      ],
+      defaultSort: "name",
+      row: (x) => ({
+        lead: `<span class="tile t-navy" aria-hidden="true">${ic("room", 18)}</span>`,
+        title: L(h(x.name), "room", { id: x.id }, "dv-link") + wsUnread(x),
+        sub: h(x.purpose || ""),
+        meta: [
+          `Lead <b>${nm(x.lead)}</b>`,
+          `Your role <b>${h(wsRoleTxt("rooms", x))}</b>`,
+          h(x.origin.type) + " · " + cName(x.origin.id),
+          wsMem(x),
+          wsProg(x),
+        ],
+        badges: pill(x.state) + ((memberRec(x) || {}).status === "Invited" ? pill("Invited") : ""),
+        primary:
+          (memberRec(x) || {}).status === "Invited"
+            ? B(
+                "Respond to invite",
+                "go",
+                { r: "room", id: x.id },
+                "btn-p btn-sm",
+              )
+            : L("Open", "room", { id: x.id }, "btn btn-s btn-sm"),
+      }),
+      empty: ["room", "No " + WL() + "s yet.", "Execution spaces appear here when you are invited to one or one is created for your project.", ""],
+    })
   );
 });
 // Primary origin: the actual projects this person can start an Action Room for, then the non-project origins.
@@ -278,7 +296,7 @@ route("room", "rooms", () => {
         "",
         `<p>${h(x.charter)}</p>${
           myM.req
-            ? `<div style="margin-top:12px">${dl([
+            ? `<div class="ws-gap">${dl([
                 [
                   "Project",
                   cName(
@@ -290,7 +308,7 @@ route("room", "rooms", () => {
                 ["Lead", nm(x.lead)],
               ])}</div>${banner("info", "", "You can accept or decline without obligation. If you accept, you join with this defined responsibility and submit contributions for Faculty/Steward review.")}`
             : ""
-        }<div class="row" style="margin-top:14px">${B("Decline", "roomInvite", { id: x.id, v: "Removed" })}${B("Accept", "roomInvite", { id: x.id, v: "Active" }, "btn-p btn-sm")}</div>`,
+        }<div class="row ws-acts">${B("Decline", "roomInvite", { id: x.id, v: "Removed" })}${B("Accept", "roomInvite", { id: x.id, v: "Active" }, "btn-p btn-sm")}</div>`,
       )
     );
   const ro = x.state !== "Active";
@@ -300,7 +318,7 @@ route("room", "rooms", () => {
   x.links = x.links || [];
   x.chat = x.chat || [];
   const pendC = x.contribs.filter((c) => c.status === "Submitted").length;
-  const t = tabs(
+  const t = subnav(
     "ar_" + x.id,
     [
       ["overview", "Overview"],
@@ -319,6 +337,16 @@ route("room", "rooms", () => {
       ["about", "Charter & lineage"],
     ],
     UI.p.tab,
+    {
+      label: WL() + " sections",
+      groups: [
+        ["", "", ["overview"]],
+        ["Work", "grid", ["plan", "contribs"]],
+        ["Conversation", "message", ["chat"]],
+        ["Decisions & records", "layers", ["dec", "risk", "change", "ev"]],
+        ["People & charter", "users", ["members", "about"]],
+      ],
+    },
   );
   let body = "";
   const own = (o) => o.owner === myId();
@@ -326,8 +354,9 @@ route("room", "rooms", () => {
   if (t.cur === "contribs") body = roomContribs(x, lead, ro);
   if (t.cur === "chat")
     body =
-      `<div class="row wrap chatbar"><span class="cap">Group chat for members of this ${WL()}. ${isM ? L("Open in Messages", "messages", { c: x.id, k: "rooms" }) : ""}</span></div>` +
-      chatThread("rooms", x, { embedded: true });
+      `<div class="ws-split ws-chat"><div class="ws-main"><div class="row wrap chatbar"><span class="cap">Group chat for members of this ${WL()}. ${isM ? L("Open in Messages", "messages", { c: x.id, k: "rooms" }) : ""}</span></div>` +
+      chatThread("rooms", x, { embedded: true }) +
+      `</div><aside class="ws-rail hide-md" aria-label="Members">${wsTeamCard("rooms", x)}</aside></div>`;
   if (t.cur === "plan")
     body = `<div class="g12">${roomFlowBanner(x)}<div class="c12">${taskBoard(x, lead, ro)}</div>
  <div class="c12">${msCard(x, isM, lead, ro)}</div></div>`;
@@ -335,27 +364,37 @@ route("room", "rooms", () => {
     body = card(
       "Decisions",
       "Draft → Proposed → Approved → Superseded → Closed",
-      table(
-        ["Decision", "Owner", "State", ""],
-        x.decisions.map((k) => [
-          h(k.t),
-          nm(k.owner),
-          pill(k.state),
-          !ro && lead
-            ? ["Proposed", "Approved", "Superseded", "Closed"]
-                .filter((s) => s !== k.state)
-                .map((s) =>
-                  B(s, "itemState", {
-                    r: x.id,
-                    k: "decisions",
-                    id: k.id,
-                    v: s,
-                  }),
-                )
-                .join("")
-            : "",
-        ]),
-      ),
+      dataView("ar:dec:" + x.id, {
+        label: "decisions",
+        items: x.decisions,
+        search: (k) => k.t + " " + P(k.owner).name,
+        quick: { label: "State", options: wsOpts(x.decisions, (k) => k.state), test: (k, v) => k.state === v },
+        filters: [{ key: "owner", label: "Owner", options: wsPeople(x.decisions, (k) => k.owner), test: (k, v) => k.owner === v }],
+        sorts: [["t", "Decision", (a, b) => a.t.localeCompare(b.t)], ["state", "State", (a, b) => a.state.localeCompare(b.state)]],
+        dense: true,
+        row: (k) => ({
+          lead: `<span class="av sm" title="${nm(k.owner)}">${ini(k.owner)}</span>`,
+          title: h(k.t),
+          meta: ["Owner " + nm(k.owner)],
+          badges: pill(k.state),
+          menu:
+            !ro && lead
+              ? `<span class="menu-h">Move to</span>` +
+                ["Proposed", "Approved", "Superseded", "Closed"]
+                  .filter((s) => s !== k.state)
+                  .map((s) =>
+                    B(s, "itemState", {
+                      r: x.id,
+                      k: "decisions",
+                      id: k.id,
+                      v: s,
+                    }, "menu-i", 'role="menuitem"'),
+                  )
+                  .join("")
+              : "",
+        }),
+        empty: ["check", "No decisions recorded yet", "Decisions move from Draft to Proposed, Approved, Superseded and Closed.", ""],
+      }),
       !ro && canPropose
         ? B(
             ic("plus", 14) + "Record decision",
@@ -369,22 +408,32 @@ route("room", "rooms", () => {
     body = `<div class="g12">${card(
       "Risks and issues",
       "Open → Mitigated / Accepted / Escalated → Closed",
-      table(
-        ["Risk", "Owner", "State", ""],
-        x.risks.map((k) => [
-          h(k.t),
-          nm(k.owner),
-          pill(k.state),
-          !ro && (lead || own(k))
-            ? ["Mitigated", "Accepted", "Escalated", "Closed"]
-                .filter((s) => s !== k.state)
-                .map((s) =>
-                  B(s, "itemState", { r: x.id, k: "risks", id: k.id, v: s }),
-                )
-                .join("")
-            : "",
-        ]),
-      ),
+      dataView("ar:risk:" + x.id, {
+        label: "risks",
+        items: x.risks,
+        search: (k) => k.t + " " + P(k.owner).name,
+        quick: { label: "State", options: wsOpts(x.risks, (k) => k.state), test: (k, v) => k.state === v },
+        filters: [{ key: "owner", label: "Owner", options: wsPeople(x.risks, (k) => k.owner), test: (k, v) => k.owner === v }],
+        sorts: [["t", "Risk", (a, b) => a.t.localeCompare(b.t)], ["state", "State", (a, b) => a.state.localeCompare(b.state)]],
+        dense: true,
+        row: (k) => ({
+          lead: `<span class="tile t-soft" aria-hidden="true">${ic("alert", 16)}</span>`,
+          title: h(k.t),
+          meta: ["Owner " + nm(k.owner)],
+          badges: pill(k.state),
+          menu:
+            !ro && (lead || own(k))
+              ? `<span class="menu-h">Move to</span>` +
+                ["Mitigated", "Accepted", "Escalated", "Closed"]
+                  .filter((s) => s !== k.state)
+                  .map((s) =>
+                    B(s, "itemState", { r: x.id, k: "risks", id: k.id, v: s }, "menu-i", 'role="menuitem"'),
+                  )
+                  .join("")
+              : "",
+        }),
+        empty: ["alert", "No risks recorded", "Add a risk or issue so it has an owner and a state.", ""],
+      }),
       !ro && canPropose
         ? B(
             ic("plus", 14) + "Add risk",
@@ -397,22 +446,31 @@ route("room", "rooms", () => {
     )}${card(
       "Dependencies",
       "The dependent activity, resource or party and its status.",
-      table(
-        ["Dependency", "On", "State", ""],
-        x.deps.map((k) => [
-          h(k.t),
-          h(k.on),
-          pill(k.state, { Blocked: "p-red", Resolved: "p-green" }[k.state]),
-          !ro && lead
-            ? ["Open", "Confirmed", "Blocked", "Resolved"]
-                .filter((s) => s !== k.state)
-                .map((s) =>
-                  B(s, "itemState", { r: x.id, k: "deps", id: k.id, v: s }),
-                )
-                .join("")
-            : "",
-        ]),
-      ),
+      dataView("ar:deps:" + x.id, {
+        label: "dependencies",
+        items: x.deps,
+        search: (k) => k.t + " " + k.on,
+        quick: { label: "State", options: wsOpts(x.deps, (k) => k.state), test: (k, v) => k.state === v },
+        sorts: [["t", "Dependency", (a, b) => a.t.localeCompare(b.t)], ["state", "State", (a, b) => a.state.localeCompare(b.state)]],
+        dense: true,
+        row: (k) => ({
+          lead: `<span class="tile t-soft" aria-hidden="true">${ic("link", 16)}</span>`,
+          title: h(k.t),
+          meta: ["On " + h(k.on)],
+          badges: pill(k.state, { Blocked: "p-red", Resolved: "p-green" }[k.state]),
+          menu:
+            !ro && lead
+              ? `<span class="menu-h">Move to</span>` +
+                ["Open", "Confirmed", "Blocked", "Resolved"]
+                  .filter((s) => s !== k.state)
+                  .map((s) =>
+                    B(s, "itemState", { r: x.id, k: "deps", id: k.id, v: s }, "menu-i", 'role="menuitem"'),
+                  )
+                  .join("")
+              : "",
+        }),
+        empty: ["link", "No dependencies recorded", "Record the activities, resources or parties this work depends on.", ""],
+      }),
       !ro && lead
         ? B(
             ic("plus", 14) + "Add dependency",
@@ -430,7 +488,7 @@ route("room", "rooms", () => {
       x.changes
         .map(
           (c) =>
-            `<div class="card" style="margin-bottom:12px;padding:18px"><div class="row wrap" style="justify-content:space-between"><b>${h(c.title)}</b>${pill(c.state)}</div>${dl(
+            `<article class="co-item"><header class="co-h"><span class="tile t-soft" aria-hidden="true">${ic("layers", 16)}</span><b>${h(c.title)}</b>${pill(c.state)}</header>${dl(
               [
                 ["Context", h(c.context)],
                 ["Intended change", h(c.intended)],
@@ -449,7 +507,7 @@ route("room", "rooms", () => {
                       .join(" · "),
                 ],
               ],
-            )}<div class="row wrap" style="margin-top:10px">${!ro ? { Proposed: canReview && B("Mark reviewed", "coState", { r: x.id, id: c.id, v: "Reviewed" }), Reviewed: (r === "F" || r === "A") && B("Approve", "coState", { r: x.id, id: c.id, v: "Approved" }, "btn-p btn-sm"), Approved: lead && B("Start implementation", "coState", { r: x.id, id: c.id, v: "In Implementation" }), "In Implementation": lead && B("Mark completed", "coState", { r: x.id, id: c.id, v: "Completed" }), Completed: lead && B("Close", "coState", { r: x.id, id: c.id, v: "Closed" }) }[c.state] || "" : ""}${!ro && canPropose && !["Completed", "Closed"].includes(c.state) ? B("Revise (new version)", "coRevise", { r: x.id, id: c.id }) : ""}</div></div>`,
+            )}<div class="row wrap co-acts">${!ro ? { Proposed: canReview && B("Mark reviewed", "coState", { r: x.id, id: c.id, v: "Reviewed" }), Reviewed: (r === "F" || r === "A") && B("Approve", "coState", { r: x.id, id: c.id, v: "Approved" }, "btn-p btn-sm"), Approved: lead && B("Start implementation", "coState", { r: x.id, id: c.id, v: "In Implementation" }), "In Implementation": lead && B("Mark completed", "coState", { r: x.id, id: c.id, v: "Completed" }), Completed: lead && B("Close", "coState", { r: x.id, id: c.id, v: "Closed" }) }[c.state] || "" : ""}${!ro && canPropose && !["Completed", "Closed"].includes(c.state) ? B("Revise (new version)", "coRevise", { r: x.id, id: c.id }) : ""}</div></article>`,
         )
         .join("") ||
         empty(
@@ -480,16 +538,24 @@ route("room", "rooms", () => {
     body = card(
       "Evidence linked to this " + WL(),
       "",
-      table(
-        ["Evidence", "Type", "Level", "Review", "Release"],
-        ev.map((e) => [
-          L(h(e.title), "evidence", { id: e.id }),
-          h(e.type),
-          pill(e.level, "p-navy"),
-          pill(e.review),
-          h(e.release),
-        ]),
-      ),
+      dataView("ar:ev:" + x.id, {
+        label: "evidence items",
+        items: ev,
+        search: (e) => [e.title, e.type, e.level, e.review, e.release].join(" "),
+        quick: { label: "Review", options: wsOpts(ev, (e) => e.review), test: (e, v) => e.review === v },
+        filters: [
+          { key: "type", label: "Type", options: wsOpts(ev, (e) => e.type), test: (e, v) => e.type === v },
+          { key: "level", label: "Level", options: wsOpts(ev, (e) => e.level), test: (e, v) => e.level === v },
+        ],
+        sorts: [["title", "Title", (a, b) => a.title.localeCompare(b.title)], ["review", "Review", (a, b) => String(a.review).localeCompare(String(b.review))]],
+        row: (e) => ({
+          lead: `<span class="tile t-soft" aria-hidden="true">${ic("file", 16)}</span>`,
+          title: L(h(e.title), "evidence", { id: e.id }, "dv-link"),
+          meta: [h(e.type), "Release " + h(e.release)],
+          badges: pill(e.level, "p-navy") + pill(e.review),
+        }),
+        empty: ["file", "No evidence linked yet", "Evidence uploaded for this " + WL() + " appears here.", ""],
+      }),
       !ro && canPropose
         ? B(
             ic("upload", 14) + "Upload evidence",
@@ -538,7 +604,7 @@ route("room", "rooms", () => {
           ];
         }),
       ) +
-        `<h3 class="h3" style="margin:18px 0 8px">Join requests</h3>` +
+        `<h3 class="h3 ws-subh">Join requests</h3>` +
         table(
           ["Person", "Join case", "Status", "Note", ""],
           x.joinReqs.map((j) => [
@@ -574,12 +640,7 @@ route("room", "rooms", () => {
     body = `<div class="g12">${card("Charter", "", dl([["Purpose / charter", h(x.charter)], ["Expected outcome", h(x.outcome || "—")], ["Lead", nm(x.lead)], ["State", pill(x.state)], x.flags.length && ["Approval flags", x.flags.map(h).join(", ")], ["Primary origin", h(x.origin.type) + " · " + (x.origin.id ? cName(x.origin.id) : "—")], ["Related objects", x.related.map(cName).join(", ") || "—"], ["Linked learning activities and records", x.links.map((l) => pill(l.type, "p-grey") + " " + h(l.label)).join("<br>") || "—"]]), !ro && isM ? B(ic("link", 14) + "Link by reference", "roomLink", { r: x.id }) : "", "c7")}
  ${card("Lifecycle", "Draft · Proposed · Pending approval · Active · Closed", `<div class="col" style="gap:8px">${x.state === "Proposed" && canCreateRoom() ? B("Activate", "roomState", { r: x.id, v: x.flags.length ? "Pending approval" : "Active" }, "btn-p btn-sm") + B("Decline (back to Draft)", "roomDecline", { r: x.id }) : ""}${x.state === "Proposed" && !canCreateRoom() ? '<p class="cap">Proposed. An authorised Faculty/Steward, Project Lead, Partner, Organization Representative or Programme Administrator activates it.</p>' : ""}${x.state === "Pending approval" && (r === "F" || r === "A") ? B("Approve activation", "roomState", { r: x.id, v: "Active" }, "btn-p btn-sm") + B("Decline (back to Draft)", "roomDecline", { r: x.id }) : ""}${x.state === "Draft" && isM ? B("Re-propose", "roomState", { r: x.id, v: "Proposed" }) : ""}${x.declineReason ? banner("warn", "Approval declined", h(x.declineReason)) : ""}${!ro && isM && !pr ? B(ic("refresh", 14) + "Return issue to Circle", "returnTo", { from: "rooms", id: x.id, to: "circle" }) : ""}${!ro && isM ? B(ic("sparkle", 14) + "Start a Learning Harvest", "newHarvest", { scope: x.id }) : ""}${x.state === "Active" && lead && !pr ? B("Close " + WL(), "roomClose", { r: x.id }) : ""}${pr ? `<p class="cap">Final deliverables are submitted from the Overview tab or the ${L("project", "project", { id: pr.id })}. Backward movement is on the Overview tab.</p>` : ""}</div>`, "", "c5")}
  ${returnsCard(x) ? `<div class="c12">${returnsCard(x)}</div>` : ""}</div>`;
-  return (
-    spaceHead(
-      "rooms",
-      x,
-      h(x.purpose),
-      [[WL() + "s", "rooms"], [h(x.name)]],
+  const acts =
       isM
         ? L(
             ic("message", 16) + "Open in Messages",
@@ -595,10 +656,13 @@ route("room", "rooms", () => {
                   "btn-p",
                 )
               : "")
-        : "",
-    ) +
-    roleNote("rooms", x) +
-    (pr ? stageTrack(pr, "rooms") : "") +
+        : "";
+  // the space header, its facts and the project journey live in Overview; other sections get a one-line context bar
+  if (t.cur === "overview") body = spaceHead("rooms", x, h(x.purpose), null, acts) + roleNote("rooms", x) + (pr ? stageTrack(pr, "rooms") : "") + body;
+  else body = wsBar("rooms", x, acts) + body;
+  // approval / proposal states carry their own actions, so they stay above the sections
+  return (
+    crumbsHtml([[WL() + "s", "rooms"], [h(x.name)]]) +
     (x.state === "Pending approval"
       ? banner(
           "warn",
@@ -609,7 +673,7 @@ route("room", "rooms", () => {
             x.flags.map(h).join(", ") +
             ". " +
             (r === "F" || r === "A"
-              ? 'You can approve or decline activation.<span class="row wrap" style="display:flex;gap:8px;margin-top:10px">' +
+              ? 'You can approve or decline activation.<span class="row wrap ws-banact">' +
                 B(
                   "Approve activation",
                   "roomState",
@@ -630,7 +694,7 @@ route("room", "rooms", () => {
                 (x.flags.length
                   ? " (it then needs Faculty/Steward or Programme Administrator approval)"
                   : "") +
-                ', or decline it back to Draft.<span class="row wrap" style="display:flex;gap:8px;margin-top:10px">' +
+                ', or decline it back to Draft.<span class="row wrap ws-banact">' +
                 B(
                   "Activate",
                   "roomState",
@@ -645,8 +709,7 @@ route("room", "rooms", () => {
             : "An authorised Faculty/Steward, Project Lead, Partner, Organization Representative or Programme Administrator activates it.",
         )
       : "") +
-    t.html +
-    body
+    withSubnav(t, body)
   );
 });
 A.roomInvite = (d) => {
@@ -1309,7 +1372,7 @@ function roomFlow(x) {
   const opt = x.tasks.filter((k) => k.opt && !["Proposed", "Declined"].includes(k.status)).length;
   const others = S.harvests.filter((v) => v.tpl === 2 && v.scope === x.id && v !== hv);
   const step = (n, title, sub, state, btns) =>
-    `<li class="rf-step is-${state}"><span class="rf-n">${state === "done" ? ic("check", 14) : n}</span><div class="rf-b"><b>${title}</b><span class="cap">${sub}</span>${btns ? `<div class="row wrap" style="gap:8px;margin-top:8px">${btns}</div>` : ""}</div></li>`;
+    `<li class="rf-step is-${state}"><span class="rf-n">${state === "done" ? ic("check", 14) : n}</span><div class="rf-b"><b>${title}</b><span class="cap">${sub}</span>${btns ? `<div class="row wrap rf-act">${btns}</div>` : ""}</div></li>`;
   const s1 = st.allDone ? "done" : "cur";
   const s2 = !st.allDone ? "todo" : st.ev.length ? "done" : "cur";
   const s3 = !st.allDone || !st.ev.length ? "todo" : hvDone(hv) ? "done" : "cur";
@@ -1361,7 +1424,7 @@ function roomFlow(x) {
           : `${hv.evoN || 0} suggestion${hv.evoN === 1 ? "" : "s"} identified · all reviewed.`,
       s4,
       pend ? L("Review profile changes", "profile", { tab: "evo" }, "btn btn-p btn-sm") : "",
-    )}</ol>${others.length ? `<p class="cap" style="margin-top:12px">Other members' Learning Harvests for this ${WL()}: ${others.map((v) => L(nm(v.subject), "harvest", { id: v.id }) + " " + pill(v.state)).join(" · ")}</p>` : ""}`,
+    )}</ol>${others.length ? `<p class="cap rf-others">Other members' Learning Harvests for this ${WL()}: ${others.map((v) => L(nm(v.subject), "harvest", { id: v.id }) + " " + pill(v.state)).join(" · ")}</p>` : ""}`,
     "",
     "c12",
   );
@@ -1376,7 +1439,7 @@ function roomFlowBanner(x) {
       ? "Evidence has been submitted. Next step: generate the Learning Harvest."
       : "Next step: upload evidence that supports the completed work.") +
       (memberOf(x) && x.state === "Active"
-        ? `<span class="row wrap" style="display:flex;gap:8px;margin-top:10px">${st.ev.length ? B(ic("sparkle", 14) + "Generate Learning Harvest", "hvGen", { r: x.id }, "btn-p btn-sm") : B(ic("upload", 14) + "Upload evidence", "go", { r: "newevidence", link: x.id, from: x.id }, "btn-p btn-sm")}</span>`
+        ? `<span class="row wrap ws-banact">${st.ev.length ? B(ic("sparkle", 14) + "Generate Learning Harvest", "hvGen", { r: x.id }, "btn-p btn-sm") : B(ic("upload", 14) + "Upload evidence", "go", { r: "newevidence", link: x.id, from: x.id }, "btn-p btn-sm")}</span>`
         : ""),
   )}</div>`;
 }
@@ -1401,13 +1464,13 @@ function roomOverview(x, pr, lead, ro) {
   ].sort((a, b) => (a.due || "9").localeCompare(b.due || "9"))[0];
   const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
   const kpi = (label, val, sub, w) =>
-    `<div class="kpi"><span class="cap">${label}</span><b>${val}</b>${w != null ? `<div class="progress"><span style="width:${w}%"></span></div>` : ""}<span class="cap">${sub}</span></div>`;
-  return `<div class="g12"><section class="card c12"><div class="kpis">${kpi("Tasks done", done + " of " + tasks.length, pct(done, tasks.length) + "% complete", pct(done, tasks.length))}${kpi("Milestones achieved", msDone + " of " + ms.length, "Validated against approved evidence", pct(msDone, ms.length))}${kpi("Open risks", openRisks, openRisks ? "Each has an owner" : "Nothing open")}${kpi("Next due", next ? fmt(next.due) : "—", next ? h(next.kind + ": " + next.t) + dueTag(next.due, false) : "Nothing scheduled")}</div></section>${roomFlow(x)}
-  <div class="c7 col" style="gap:24px">${card(
+    `<div class="kpi"><span class="lt">${label}</span><span class="kpi-v">${val}</span>${w != null ? `<div class="progress" aria-hidden="true"><span class="bar" style="width:${w}%"></span></div>` : ""}<span class="cap">${sub}</span></div>`;
+  return `<div class="ws-ov"><div class="ws-ov-main"><section class="kpis ws-kpis" aria-label="Progress">${kpi("Tasks done", done + " of " + tasks.length, pct(done, tasks.length) + "% complete", pct(done, tasks.length))}${kpi("Milestones achieved", msDone + " of " + ms.length, "Validated against approved evidence", pct(msDone, ms.length))}${kpi("Open risks", openRisks, openRisks ? "Each has an owner" : "Nothing open")}${kpi("Next due", next ? fmt(next.due) : "—", next ? h(next.kind + ": " + next.t) + dueTag(next.due, false) : "Nothing scheduled")}</section>${roomFlow(x)}
+  ${card(
     "Milestone timeline",
     "Key dates and progress. Each milestone is validated by the Steward once all of its evidence is approved.",
     ms.length
-      ? `<ol class="mtl">${ms
+      ? `<ol class="mtl ws-tl">${ms
           .slice()
           .sort((a, b) => a.due.localeCompare(b.due))
           .map(
@@ -1424,7 +1487,7 @@ function roomOverview(x, pr, lead, ro) {
         ),
     L("Tasks & milestones", "room", { id: x.id, tab: "plan" }),
   )}${pr ? reportsCard(pr, "rooms", x) : ""}</div>
-  <div class="c5 col" style="gap:24px">${pr ? stageGate(pr, "rooms", x) : ""}${returnsCard(x)}</div></div>`;
+  <aside class="ws-ov-rail" aria-label="Moving forward">${pr ? stageGate(pr, "rooms", x) : ""}${returnsCard(x)}${wsTeamCard("rooms", x)}</aside></div>`;
 }
 A.taskDecide = (d) => {
   const x = byId("rooms", d.r);
@@ -1471,7 +1534,7 @@ function roomContribs(x, lead, ro) {
       .reverse()
       .map(
         (c) =>
-          `<div class="rvitem"><div class="row wrap" style="justify-content:space-between;gap:8px"><div class="col" style="min-width:0"><b>${h(c.t)}</b><span class="cap">${nm(c.by)} · responsibility: ${h(c.resp)} · ${fmt(c.at)}</span></div>${pill(c.status, CB_STATES[c.status])}</div>${c.desc ? `<p class="muted" style="margin-top:6px">${h(c.desc)}</p>` : ""}${c.att ? `<div style="margin-top:8px">${attCard(c.att)}</div>` : ""}${c.used ? `<div class="rvresp"><span class="cap"><b>How it was used</b></span><p>${h(c.used)}</p></div>` : ""}${c.history && c.history.length > 1 ? `<details style="margin-top:8px"><summary class="cap" style="cursor:pointer">History (${c.history.length})</summary>${c.history.map((hh) => `<p class="cap">${fmt(hh.at)} · ${h(hh.t)}</p>`).join("")}</details>` : ""}<div class="row wrap" style="margin-top:10px">${rev && !ro && c.status === "Submitted" ? B("Review contribution", "cbReview", { r: x.id, id: c.id }, "btn-p btn-sm") : ""}${c.by === myId() && !ro && ["Changes requested", "More evidence requested"].includes(c.status) ? B("Revise and resubmit", "cbNew", { r: x.id, re: c.id }) : ""}</div></div>`,
+          `<article class="rvitem"><div class="rv-h"><span class="av" aria-hidden="true">${ini(c.by)}</span><div class="rv-t"><b>${h(c.t)}</b><span class="cap">${nm(c.by)} · responsibility: ${h(c.resp)} · ${fmt(c.at)}</span></div>${pill(c.status, CB_STATES[c.status])}</div>${c.desc ? `<p class="muted rv-desc">${h(c.desc)}</p>` : ""}${c.att ? `<div class="rv-att">${attCard(c.att)}</div>` : ""}${c.used ? `<div class="rvresp"><span class="cap"><b>How it was used</b></span><p>${h(c.used)}</p></div>` : ""}${c.history && c.history.length > 1 ? `<details class="rv-hist"><summary class="cap">History (${c.history.length})</summary>${c.history.map((hh) => `<p class="cap">${fmt(hh.at)} · ${h(hh.t)}</p>`).join("")}</details>` : ""}<div class="row wrap rv-acts">${rev && !ro && c.status === "Submitted" ? B("Review contribution", "cbReview", { r: x.id, id: c.id }, "btn-p btn-sm") : ""}${c.by === myId() && !ro && ["Changes requested", "More evidence requested"].includes(c.status) ? B("Revise and resubmit", "cbNew", { r: x.id, re: c.id }) : ""}</div></article>`,
       )
       .join("") ||
       empty(

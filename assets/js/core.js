@@ -149,6 +149,7 @@ function go(r, p = {}) {
     return;
   }
   if (UI.panel === 'notif' || UI.panel === 'user') UI.panel = null;
+  if (UI.drawer) UI.drawer = false;
   UI.route = r;
   UI.p = p;
   UI.modal = null;
@@ -290,7 +291,7 @@ const head = (t, sub, right = '', crumbs) => {
     badges.push(m);
     return '';
   });
-  return `${crumbs ? `<nav class="row cap" aria-label="Breadcrumb" style="gap:6px;margin-bottom:10px">${crumbs.map(([l, r, p], i) => (r ? L(l, r, p, 'cap') + ic('chevr', 14) : `<span>${l}</span>`)).join('')}</nav>` : ''}<div class="phead"><div class="phead-t"><div class="row wrap" style="gap:10px"><h1 class="h1">${t}</h1>${badges.join('')}</div>${sub ? `<p class="sub">${sub}</p>` : ''}</div>${right.trim() ? `<div class="phead-a">${right}</div>` : ''}</div>`;
+  return `${crumbs ? crumbsHtml(crumbs) : ''}<div class="phead"><div class="phead-t"><div class="row wrap" style="gap:10px"><h1 class="h1">${t}</h1>${badges.join('')}</div>${sub ? `<p class="sub">${sub}</p>` : ''}</div>${right.trim() ? `<div class="phead-a">${right}</div>` : ''}</div>`;
 };
 const aiTag = t => `<span class="ai-tag">${ic('sparkle', 12)}${t || 'AI draft'}</span>`;
 const assumed = t => `<span class="flag">${ic('flag', 12)}Assumed rule · ${t}</span>`;
@@ -558,24 +559,31 @@ function sidebar() {
       const g = role() === 'T' ? '' : rt === 'metrics' && !['A', 'O'].includes(role()) ? 'Insights' : GROUP[rt] || '';
       let sec = '';
       if (g !== last && g) {
-        sec = `<div class="navsec">${g}</div>`;
+        sec = `<div class="navsec"><span>${g}</span></div>`;
       }
       last = g;
       const n = navCount(rt);
-      return `${sec}<a href="#" class="nav${on}" data-a="go" data-r="${rt}"${tb ? ` data-tab="${tb}"` : ''} title="${h(l)}"${on ? ' aria-current="page"' : ''}>${ic(i)}<span class="t">${h(l)}</span>${n ? `<span class="ncount">${n}</span>` : ''}</a>`;
+      return `${sec}<a href="#" class="nav${on}" data-a="go" data-r="${rt}"${tb ? ` data-tab="${tb}"` : ''} data-tip="${h(l)}"${on ? ' aria-current="page"' : ''}>${ic(i)}<span class="t">${h(l)}</span><span class="ts" aria-hidden="true">${h(SHORT[rt] || l.split(' ')[0])}</span>${n ? `<span class="ncount" aria-label="${n} new">${n}</span>` : ''}</a>`;
     })
     .join('');
-  return `<aside class="side" aria-label="Main navigation"><a href="#" class="brand" data-a="go" data-r="home"><span class="mark">P</span><span class="wm"><b>PHOENIX</b><span>Foundation Alpha</span></span></a><nav class="col" style="gap:2px">${items}</nav></aside>`;
+  const c = ctx();
+  return `<aside class="side" id="side-nav" aria-label="Main navigation"${UI.drawer ? ' role="dialog" aria-modal="true"' : ''}><div class="side-plate"><a href="#" class="brand" data-a="go" data-r="home" aria-label="PHOENIX home"><span class="mark">${MARK()}</span><span class="wm"><b>PHOENIX</b><span>Foundation Alpha</span></span></a>${c && c.kind !== 'Platform' ? `<div class="side-ctx"><small>${h(c.kind || 'Programme')}</small><span title="${h(c.name)}">${h(c.name)}</span></div>` : `<div class="side-ctx"><small>Workspace</small><span>Platform operations</span></div>`}</div><nav class="side-nav" aria-label="Sections">${items}</nav><div class="side-foot"><button type="button" class="nav side-close" data-a="drawerClose">${ic('x')}<span class="t">Close menu</span></button></div></aside>`;
 }
+// The PHOENIX mark: an ember plume rising from a baseline.
+const MARK = (s = 20) =>
+  `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12.6 2.8c2.9 3 4.6 6 4.6 8.8a5.2 5.2 0 0 1-10.4.2c0-2 .9-3.8 2.3-5.2.1 1.9 1 3.2 2.4 3.7-.7-2.6-.3-5.1 1.1-7.5z" fill="currentColor"/><path d="M5 20.5h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".55"/></svg>`;
+// Breadcrumb trail: [[label, route, params], …]; the last item is the current page and is not a link.
+const crumbsHtml = list =>
+  `<ol class="crumbs" aria-label="Breadcrumb">${list.map(([l, r, p], i) => (i < list.length - 1 && r ? `<li>${L(l, r, p, '')}</li>` : `<li><span aria-current="page">${l}</span></li>`)).join('')}</ol>`;
 function topbar() {
   const a = asg(),
     c = ctx();
   const others = roleChoices().length;
   const unread = S.notifs.filter(n => n.pid === myId() && !n.read).length;
-  return `<header class="top"><div class="mbrand" style="align-items:center"><span class="mark" style="width:32px;height:32px;font-size:14px">P</span></div>
+  return `<header class="top"><button class="iconbtn menubtn" type="button" data-a="drawerToggle" aria-label="Open navigation" aria-controls="side-nav" aria-expanded="${!!UI.drawer}">${ic('menu', 20)}</button><a href="#" class="mbrand" data-a="go" data-r="home" aria-label="PHOENIX home"><span class="mark">${MARK(16)}</span></a>
  <button class="ctx" type="button" data-a="switcher" aria-label="${h(me().name)}, ${h(ROLE[a.role])}${others > 1 ? '. Switch role' : ''}" title="${h(me().name)} · ${h(ROLE[a.role])}"><span class="ctxt"><b>${h(me().name)}</b><small>${h(ROLE[a.role])}${a.bundles.length ? ' · +' + a.bundles.length + ' bundle' + (a.bundles.length > 1 ? 's' : '') : ''}</small></span>${others > 1 ? ic('chev', 16) : ''}</button>
  <div class="grow"></div>
- ${can('ai') ? `<button type="button" class="btn btn-s btn-sm askbtn ${UI.panel === 'ask' ? 'on' : ''}" data-a="askToggle" aria-expanded="${UI.panel === 'ask'}" aria-controls="assist" title="Ask PHOENIX">${ic('sparkle', 16)}<span class="hide-md">Ask PHOENIX</span></button>` : ''}
+ ${can('ai') ? `<button type="button" class="btn btn-s btn-sm askbtn ${UI.panel === 'ask' ? 'on' : ''}" data-a="askToggle" aria-label="Ask PHOENIX" aria-expanded="${UI.panel === 'ask'}" aria-controls="assist" title="Ask PHOENIX">${ic('sparkle', 16)}<span class="hide-md">Ask PHOENIX</span></button>` : ''}
  <div class="nwrap"><button class="iconbtn ${UI.panel === 'notif' ? 'on' : ''}" type="button" data-a="notifToggle" aria-haspopup="dialog" aria-expanded="${UI.panel === 'notif'}" aria-label="Notifications, ${unread} unread">${ic('bell')}${unread ? `<span class="badge">${unread}</span>` : ''}</button>${UI.panel === 'notif' ? notifMenu() : ''}</div>
  <div class="uwrap"><button class="who ${UI.panel === 'user' ? 'on' : ''}" type="button" data-a="userToggle" aria-haspopup="menu" aria-expanded="${UI.panel === 'user'}" aria-controls="user-menu" aria-label="Account menu for ${h(me().name)}"><span class="av">${ini(myId())}</span><span class="hide-sm">${h(me().display)}</span><span class="who-chev">${ic('chev', 14)}</span></button>${UI.panel === 'user' ? userMenu() : ''}</div></header>`;
 }
@@ -658,7 +666,7 @@ function render() {
         }
       }
       const pg = reaccept();
-      html = `<div class="ph"${pg ? ' inert' : ''}><div class="app">${sidebar()}<div class="main">${topbar()}<main class="content${enter ? ' enter' : ''}" id="main">${inner}</main>${bottomnav()}</div></div></div>${pg ? policyGate(pg) : ''}`;
+      html = `<div class="ph"${pg ? ' inert' : ''}><a href="#main" class="skip" data-a="skipMain">Skip to content</a><div class="app${UI.compact ? ' is-compact' : ''}${UI.drawer ? ' is-drawer' : ''}" data-route="${h(UI.route)}">${sidebar()}${UI.drawer ? '<div class="scrim" data-a="drawerClose" aria-hidden="true"></div>' : ''}<div class="main">${topbar()}<main class="content${enter ? ' enter' : ''}" id="main" tabindex="-1">${inner}</main>${bottomnav()}</div></div></div>${pg ? policyGate(pg) : ''}`;
     }
   }
   if (UI.modal)
@@ -756,8 +764,61 @@ document.addEventListener('change', e => {
 });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && UI.modal && !(e.target.classList && e.target.classList.contains('msel-q'))) closeM();
+  else if (e.key === 'Escape' && !UI.modal && UI.drawer) A.drawerClose();
   else if (e.key === 'Escape' && !UI.modal && UI.panel) closePanel();
+  else if (e.key === 'Tab' && UI.drawer && !UI.modal) {
+    const f = [...document.querySelectorAll('#side-nav a, #side-nav button')].filter(x => x.offsetParent !== null);
+    if (!f.length) return;
+    const i = f.indexOf(document.activeElement);
+    if (e.shiftKey && i <= 0) {
+      e.preventDefault();
+      f[f.length - 1].focus();
+    } else if (!e.shiftKey && (i === -1 || i === f.length - 1)) {
+      e.preventDefault();
+      f[0].focus();
+    }
+  }
 });
+// ---- shell: drawer (phones and tablets), compact sidebar (desktop, remembered), theme (remembered per viewer)
+A.drawerToggle = () => (UI.drawer ? A.drawerClose() : A.drawerOpen());
+A.drawerOpen = () => {
+  UI.drawer = true;
+  render();
+  setTimeout(() => (document.querySelector('#side-nav .nav.on') || document.querySelector('#side-nav .nav'))?.focus(), 0);
+};
+A.drawerClose = () => {
+  UI.drawer = false;
+  render();
+  setTimeout(() => document.querySelector('.menubtn')?.focus(), 0);
+};
+A.sideCompact = () => {
+  UI.compact = !UI.compact;
+  try {
+    localStorage.setItem('phx-compact', UI.compact ? '1' : '');
+  } catch (e) {}
+  render();
+};
+A.skipMain = () => document.getElementById('main')?.focus();
+const applyTheme = () => {
+  const t = UI.theme || 'light';
+  if (t === 'system') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', t);
+};
+A.setTheme = d => {
+  UI.theme = d.v;
+  try {
+    localStorage.setItem('phx-theme', d.v);
+  } catch (e) {}
+  applyTheme();
+  render();
+};
+try {
+  UI.compact = false; // the sidebar is always full width on desktop
+  UI.theme = localStorage.getItem('phx-theme') || 'light';
+} catch (e) {
+  UI.theme = 'light';
+}
+applyTheme();
 A.go = d => {
   const p = { ...d };
   delete p.a;
@@ -766,6 +827,7 @@ A.go = d => {
 };
 A.tab = d => {
   UI.tab[d.k] = d.v;
+  if (UI.snav && UI.snav[d.k]) UI.snav[d.k].mobile = false; // choosing a section folds the phone panel
   delete UI.p.tab;
   render();
 };
@@ -949,3 +1011,423 @@ function boot() {
   UI.route = S.session ? 'home' : 'login';
   render();
 }
+
+// ---------- Nested workspace navigation (Circles, Rope Teams, Action Rooms) ----------
+// Same contract as tabs(): returns { cur, html } and selects through A.tab, so views keep their logic. Sections are
+// grouped under expandable parents; on phones the whole panel folds behind one "Sections" toggle.
+// opts: { label, groups: [[groupLabel, icon, [ids…]], …], others: [[label, route, params], …] (sibling spaces) }
+UI.snav = UI.snav || {};
+function subnav(k, items, def, opts = {}) {
+  items = items.filter(Boolean);
+  const t = tabs(k, items, def);
+  const cur = t.cur;
+  const byId = Object.fromEntries(items.map(i => [i[0], i]));
+  const used = new Set();
+  const groups = (opts.groups || [])
+    .map(([gl, gi, ids]) => [gl, gi, ids.filter(id => byId[id] && !used.has(id) && used.add(id))])
+    .filter(g => g[2].length);
+  const rest = items.map(i => i[0]).filter(id => !used.has(id));
+  if (rest.length) groups.push([groups.length ? 'More' : '', 'more', rest]);
+  const st = (UI.snav[k] = UI.snav[k] || {});
+  const sid = String(k).replace(/[^\w-]/g, '_');
+  const item = id => {
+    const [, l, c] = byId[id];
+    const on = id === cur;
+    return `<li><button type="button" class="snav-i${on ? ' on' : ''}" data-a="tab" data-k="${h(k)}" data-v="${h(id)}"${on ? ' aria-current="page"' : ''}><span class="snav-l">${l}</span>${c != null ? `<span class="cnt">${c}</span>` : ''}</button></li>`;
+  };
+  const list = groups
+    .map(([gl, gi, ids], n) => {
+      if (!gl) return `<ul class="snav-sub" role="list">${ids.map(item).join('')}</ul>`;
+      const hasCur = ids.includes(cur);
+      const open = st[n] != null ? st[n] : true;
+      const gid = `snav-${sid}-${n}`;
+      return `<li class="snav-g${hasCur ? ' has-cur' : ''}"><button type="button" class="snav-p" data-a="snavGroup" data-k="${h(k)}" data-v="${n}" aria-expanded="${open}" aria-controls="${gid}">${ic(gi, 16)}<span class="snav-l">${h(gl)}</span>${hasCur && !open ? '<span class="snav-dot" aria-hidden="true"></span>' : ''}<span class="snav-chev">${ic('chev', 14)}</span></button><ul class="snav-sub" id="${gid}" role="list"${open ? '' : ' hidden'}>${ids.map(item).join('')}</ul></li>`;
+    })
+    .join('');
+  const others = (opts.others || []).length
+    ? `<div class="snav-others"><span class="snav-h">${h(opts.othersLabel || 'Switch to')}</span><ul role="list">${opts.others.map(([l, r, p]) => `<li>${L(`<span class="snav-l">${l}</span>`, r, p, 'snav-o')}</li>`).join('')}</ul></div>`
+    : '';
+  const open = !!st.mobile;
+  const label = opts.label || 'Sections';
+  return {
+    cur,
+    html: `<nav class="snav" aria-label="${h(label)}"><button type="button" class="snav-toggle" data-a="snavToggle" data-k="${h(k)}" aria-expanded="${open}" aria-controls="snav-${sid}"><span class="cap">${h(label)}</span><b>${byId[cur] ? byId[cur][1] : ''}</b>${ic('chev', 16)}</button><div class="snav-panel${open ? ' open' : ''}" id="snav-${sid}"><ul class="snav-list" role="list">${list}</ul>${others}</div></nav>`,
+  };
+}
+// Lay a section body beside its sub-navigation.
+const withSubnav = (t, body) => `<div class="snav-layout">${t.html}<div class="snav-main">${body}</div></div>`;
+A.snavGroup = d => {
+  const st = (UI.snav[d.k] = UI.snav[d.k] || {});
+  st[d.v] = !(st[d.v] != null ? st[d.v] : true);
+  render();
+  document.querySelector(`.snav-p[data-k="${CSS.escape(d.k)}"][data-v="${d.v}"]`)?.focus();
+};
+A.snavToggle = d => {
+  const st = (UI.snav[d.k] = UI.snav[d.k] || {});
+  st.mobile = !st.mobile;
+  render();
+  document.querySelector(`.snav-toggle[data-k="${CSS.escape(d.k)}"]`)?.focus();
+};
+// ---------- PHOENIX Data View ----------
+// One pattern for every collection: toolbar (search, quick filters, advanced filters, sort, actions), active-filter
+// chips, a purpose-built list (or a table where columns earn it), row menus, optional selection with bulk actions,
+// pagination with range, page numbers, rows per page and go-to-page, and announced results. View state only —
+// it never changes the records it is given.
+// o = {
+//   label: 'projects' (plural noun), items: [...],
+//   search: it => 'text to match', searchLabel?: 'Search projects',
+//   quick: { label, options: [[value, label]], test: (it, v) => bool },            // chips / segmented, '' = all
+//   filters: [{ key, label, options: [[value, label]], test: (it, v) => bool }],   // advanced (popover / drawer)
+//   sorts: [[id, label, (a, b) => number]], defaultSort?: id, defaultDir?: 'asc' | 'desc' (e.g. newest first),
+//   layout: 'list' | 'table',
+//   row: it => ({ lead, title, sub, meta: [html], badges, primary, menu }),         // list layout
+//   columns: [{ label, cell: it => html, sort?: sortId, num?: bool, hideSm?: bool }], // table layout
+//   rowId: it => id, bulk: [{ label, icon?, danger?, confirm?: 'question', run: ids => void }],
+//   actions: 'toolbar html', empty: [icon, title, text, actionsHtml], pageSize: 10, dense?: bool
+// }
+const DV = {};
+UI.dv = UI.dv || {};
+UI.dvOpen = UI.dvOpen || null;
+UI.dvMenu = UI.dvMenu || null;
+try {
+  Object.assign(UI.dv, JSON.parse(sessionStorage.getItem('phx-dv') || '{}'));
+} catch (e) {}
+const dvSave = () => {
+  try {
+    const keep = {};
+    Object.entries(UI.dv).forEach(([k, v]) => (keep[k] = { ...v, sel: [] }));
+    sessionStorage.setItem('phx-dv', JSON.stringify(keep));
+  } catch (e) {}
+};
+const dvState = (k, o) => {
+  const st = (UI.dv[k] = UI.dv[k] || {});
+  if (st.q == null) st.q = '';
+  if (st.quick == null) st.quick = '';
+  st.f = st.f || {};
+  if (st.sort == null) st.sort = o.defaultSort || '';
+  st.dir = st.dir || o.defaultDir || 'asc';
+  st.page = st.page || 1;
+  st.size = st.size || o.pageSize || 10;
+  st.sel = st.sel || [];
+  return st;
+};
+const dvPages = (cur, n) => {
+  if (n <= 7) return Array.from({ length: n }, (_, i) => i + 1);
+  const out = [1];
+  const lo = Math.max(2, cur - 1),
+    hi = Math.min(n - 1, cur + 1);
+  if (lo > 2) out.push('…');
+  for (let i = lo; i <= hi; i++) out.push(i);
+  if (hi < n - 1) out.push('…');
+  out.push(n);
+  return out;
+};
+const dvLive = msg => {
+  let el = document.getElementById('phx-live');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'phx-live';
+    el.className = 'sr';
+    el.setAttribute('aria-live', 'polite');
+    el.setAttribute('role', 'status');
+    document.body.appendChild(el);
+  }
+  el.textContent = '';
+  setTimeout(() => (el.textContent = msg), 60);
+};
+function dataView(k, o) {
+  DV[k] = o;
+  const st = dvState(k, o);
+  const noun = o.label || 'items';
+  const all = o.items || [];
+  const filters = o.filters || [];
+  const qn = st.q.trim().toLowerCase();
+  const fOn = Object.entries(st.f).filter(([fk, v]) => v && filters.some(x => x.key === fk));
+  const quickTest = (it, v) => !v || !o.quick || o.quick.test(it, v);
+  const base = all.filter(it => (!qn || String(o.search ? o.search(it) : '').toLowerCase().includes(qn)) && fOn.every(([fk, v]) => filters.find(x => x.key === fk).test(it, v)));
+  let rows = base.filter(it => quickTest(it, st.quick));
+  const srt = (o.sorts || []).find(x => x[0] === st.sort);
+  if (srt) rows = rows.slice().sort((a, b) => srt[2](a, b) * (st.dir === 'desc' ? -1 : 1));
+  const n = rows.length;
+  const pages = Math.max(1, Math.ceil(n / st.size));
+  if (st.page > pages) st.page = pages;
+  const from = n ? (st.page - 1) * st.size + 1 : 0;
+  const to = Math.min(n, st.page * st.size);
+  const pageRows = rows.slice(from ? from - 1 : 0, to);
+  const ids = o.rowId ? pageRows.map(o.rowId) : [];
+  st.sel = st.sel.filter(id => all.some(it => o.rowId && o.rowId(it) === id));
+  const kk = h(k);
+  // toolbar
+  const search = o.search
+    ? `<div class="dv-search">${ic('search', 16)}<input type="search" class="input" data-dvq="${kk}" value="${h(st.q)}" placeholder="${h(o.searchLabel || 'Search ' + noun)}" aria-label="${h(o.searchLabel || 'Search ' + noun)}"></div>`
+    : '';
+  const quick = o.quick
+    ? `<div class="seg dv-quick" role="group" aria-label="${h(o.quick.label)}">${[['', 'All'], ...o.quick.options]
+        .map(([v, l]) => `<button type="button" data-a="dvQuick" data-k="${kk}" data-v="${h(v)}" aria-pressed="${st.quick === v}">${h(l)}<span class="cnt">${base.filter(it => quickTest(it, v)).length}</span></button>`)
+        .join('')}</div>`
+    : '';
+  const fOpen = UI.dvOpen === k;
+  const fbtn = filters.length
+    ? `<div class="dv-fwrap"><button type="button" class="btn btn-s btn-sm${fOn.length ? ' is-on' : ''}" data-a="dvFilters" data-k="${kk}" aria-expanded="${fOpen}" aria-controls="dvf-${kk}">${ic('panel', 16)}Filters${fOn.length ? `<span class="cnt">${fOn.length}</span>` : ''}</button>${
+        fOpen
+          ? `<div class="dv-fpanel" id="dvf-${kk}" role="dialog" aria-label="Filter ${h(noun)}"><div class="dv-fpanel-h"><b>Filters</b><button type="button" class="iconbtn" data-a="dvFilters" data-k="${kk}" aria-label="Close filters">${ic('x', 16)}</button></div>${filters
+              .map(x => `<label class="field"><span class="lbl">${h(x.label)}</span><select class="input" data-ch="dvFilter" data-k="${kk}" data-f="${h(x.key)}"><option value="">Any</option>${x.options.map(([v, l]) => `<option value="${h(v)}"${st.f[x.key] === v ? ' selected' : ''}>${h(l)}</option>`).join('')}</select></label>`)
+              .join('')}<div class="dv-fpanel-f">${B('Clear all', 'dvClear', { k }, 'btn-g btn-sm')}${B('Show ' + n + ' ' + noun, 'dvFilters', { k }, 'btn-p btn-sm')}</div></div>`
+          : ''
+      }</div>`
+    : '';
+  const sorts = (o.sorts || []).length
+    ? `<div class="dv-sort"><label class="cap" for="dvs-${kk}">Sort</label><select class="input" id="dvs-${kk}" data-ch="dvSort" data-k="${kk}">${o.defaultSort ? '' : '<option value="">Default order</option>'}${o.sorts.map(([v, l]) => `<option value="${h(v)}"${st.sort === v ? ' selected' : ''}>${h(l)}</option>`).join('')}</select>${st.sort ? `<button type="button" class="iconbtn" data-a="dvDir" data-k="${kk}" aria-label="${st.dir === 'asc' ? 'Ascending — switch to descending' : 'Descending — switch to ascending'}">${ic('arrow', 16)}</button>` : ''}</div>`
+    : '';
+  // nothing to search yet: the empty state stands alone (toolbar actions such as 'New …' stay available)
+  const bar = !all.length ? (o.actions ? `<div class="dv-bar"><div class="dv-find"></div><div class="dv-tools">${o.actions}</div></div>` : '') : search || quick || fbtn || sorts || o.actions ? `<div class="dv-bar"><div class="dv-find">${search}${quick}${fbtn}</div><div class="dv-tools">${sorts}${o.actions || ''}</div></div>` : '';
+  const chipList = [
+    ...(st.q.trim() ? [[`“${h(st.q.trim())}”`, 'q']] : []),
+    ...fOn.map(([fk, v]) => {
+      const x = filters.find(y => y.key === fk);
+      return [`${h(x.label)}: ${h((x.options.find(op => op[0] === v) || [v, v])[1])}`, fk];
+    }),
+  ];
+  const chips = chipList.length
+    ? `<div class="dv-chips" role="group" aria-label="Active filters"><span class="cap">Filtered by</span>${chipList.map(([l, fk]) => `<button type="button" class="dv-chip" data-a="dvRemove" data-k="${kk}" data-f="${h(fk)}" aria-label="Remove filter ${l.replace(/<[^>]+>/g, '')}">${l}${ic('x', 14)}</button>`).join('')}${B('Clear all', 'dvClear', { k }, 'btn-g btn-sm')}</div>`
+    : '';
+  const bulkBar =
+    o.bulk && st.sel.length
+      ? `<div class="dv-bulk" role="region" aria-label="Bulk actions"><b>${st.sel.length} selected</b>${o.bulk.map((b, i) => B((b.icon ? ic(b.icon, 14) : '') + h(b.label), 'dvBulk', { k, i }, b.danger ? 'btn-d btn-sm' : 'btn-s btn-sm')).join('')}${B('Clear selection', 'dvSelNone', { k }, 'btn-g btn-sm')}</div>`
+      : '';
+  // body
+  const selBox = it => {
+    if (!o.bulk || !o.rowId) return '';
+    const id = o.rowId(it);
+    return `<input type="checkbox" class="chk dv-sel" data-ch="dvSel" data-k="${kk}" data-id="${h(id)}"${st.sel.includes(id) ? ' checked' : ''} aria-label="Select">`;
+  };
+  const menu = (it, m) => {
+    if (!m) return '';
+    const id = o.rowId ? o.rowId(it) : pageRows.indexOf(it);
+    const on = UI.dvMenu === k + '|' + id;
+    return `<div class="dv-menuwrap"><button type="button" class="iconbtn" data-a="dvMenu" data-k="${kk}" data-id="${h(id)}" aria-haspopup="menu" aria-expanded="${on}" aria-label="More actions">${ic('more')}</button>${on ? `<div class="menu dv-menu" role="menu">${m}</div>` : ''}</div>`;
+  };
+  let body;
+  if (!all.length) {
+    const [ei, et, ex, ea] = o.empty || ['inbox', 'Nothing here yet', '', ''];
+    body = empty(ei, et, ex, ea);
+  } else if (!n) {
+    body = empty('search', `No ${h(noun)} match`, 'Try another search or remove a filter.', B('Clear all', 'dvClear', { k }, 'btn-s btn-sm'));
+  } else if (o.layout === 'table') {
+    const cols = o.columns || [];
+    const sm = cols.filter(c => c.hideSm);
+    const th = cols
+      .map(c => {
+        const sc = c.sort && st.sort === c.sort ? (st.dir === 'asc' ? 'ascending' : 'descending') : null;
+        return `<th scope="col"${c.num ? ' class="num"' : ''}${sc ? ` aria-sort="${sc}"` : ''}${c.hideSm ? ' data-sm="hide"' : ''}>${c.sort ? `<button type="button" class="dv-th" data-a="dvColSort" data-k="${kk}" data-v="${h(c.sort)}">${c.label}${ic(sc === 'descending' ? 'chev' : 'chevr', 12)}</button>` : c.label || '<span class="sr">Actions</span>'}</th>`;
+      })
+      .join('');
+    body = `<div class="tblwrap dv-tblwrap"><table class="tbl dv-tbl${o.dense ? ' compact' : ''}"><thead><tr>${o.bulk ? `<th scope="col" class="dv-selc"><input type="checkbox" class="chk" data-ch="dvSelAll" data-k="${kk}" aria-label="Select all on this page"${ids.length && ids.every(id => st.sel.includes(id)) ? ' checked' : ''}></th>` : ''}${th}</tr></thead><tbody>${pageRows
+      .map(
+        it =>
+          `<tr${o.rowId && st.sel.includes(o.rowId(it)) ? ' class="is-sel"' : ''}>${o.bulk ? `<td class="dv-selc">${selBox(it)}</td>` : ''}${cols
+            .map((c, i) => {
+              const extra = i === 0 && sm.length ? `<details class="dv-more"><summary>More details</summary><dl class="kv2">${sm.map(x => `<dt>${x.label}</dt><dd>${x.cell(it)}</dd>`).join('')}</dl></details>` : '';
+              return `<td data-label="${h(String(c.label || '').replace(/<[^>]+>/g, ''))}"${c.num ? ' class="num"' : c.label ? '' : ' class="act"'}${c.hideSm ? ' data-sm="hide"' : ''}>${c.cell(it)}${extra}</td>`;
+            })
+            .join('')}</tr>`,
+      )
+      .join('')}</tbody></table></div>`;
+  } else {
+    body = `<ul class="dv-list${o.dense ? ' dense' : ''}" role="list">${pageRows
+      .map(it => {
+        const r = o.row(it);
+        const sel = o.rowId && st.sel.includes(o.rowId(it));
+        return `<li class="dv-row${sel ? ' is-sel' : ''}">${selBox(it)}${r.lead ? `<div class="dv-lead">${r.lead}</div>` : ''}<div class="dv-main"><div class="dv-title">${r.title || ''}</div>${r.sub ? `<div class="dv-sub">${r.sub}</div>` : ''}${(r.meta || []).filter(Boolean).length ? `<div class="dv-meta">${r.meta.filter(Boolean).map(m => `<span>${m}</span>`).join('')}</div>` : ''}</div>${r.badges ? `<div class="dv-badges">${r.badges}</div>` : ''}<div class="dv-act">${r.primary || ''}${menu(it, r.menu)}</div></li>`;
+      })
+      .join('')}</ul>`;
+  }
+  // pagination (always visible once there are results)
+  const pg = n
+    ? `<nav class="dv-pager" aria-label="Pagination for ${h(noun)}"><span class="dv-range">Showing <b>${from}–${to}</b> of <b>${n}</b>${n !== all.length ? ` <span class="cap">(${all.length} in total)</span>` : ''}</span><div class="dv-pages"><button type="button" class="btn btn-s btn-sm" data-a="dvPage" data-k="${kk}" data-v="${st.page - 1}"${st.page <= 1 ? ' disabled' : ''} aria-label="Previous page">${ic('chevl', 16)}<span class="hide-sm">Previous</span></button><span class="dv-nums">${dvPages(st.page, pages)
+        .map(p => (p === '…' ? '<span class="dv-gap" aria-hidden="true">…</span>' : `<button type="button" class="dv-num${p === st.page ? ' on' : ''}" data-a="dvPage" data-k="${kk}" data-v="${p}"${p === st.page ? ' aria-current="page"' : ''} aria-label="Page ${p}">${p}</button>`))
+        .join('')}</span><span class="dv-pos">Page ${st.page} of ${pages}</span><button type="button" class="btn btn-s btn-sm" data-a="dvPage" data-k="${kk}" data-v="${st.page + 1}"${st.page >= pages ? ' disabled' : ''} aria-label="Next page"><span class="hide-sm">Next</span>${ic('chevr', 16)}</button></div><div class="dv-size"><label class="cap" for="dvz-${kk}">Rows per page</label><select class="input" id="dvz-${kk}" data-ch="dvSize" data-k="${kk}">${[10, 25, 50, 100].map(z => `<option${z === st.size ? ' selected' : ''}>${z}</option>`).join('')}</select>${pages > 7 ? `<form class="dv-go" data-f="dvgo" novalidate><input type="hidden" name="k" value="${kk}"><label class="cap" for="dvg-${kk}">Go to page</label><input class="input" id="dvg-${kk}" name="p" type="number" min="1" max="${pages}" inputmode="numeric"><button type="submit" class="btn btn-s btn-sm">Go</button></form>` : ''}</div></nav>`
+    : '';
+  st._msg = n ? `Showing ${from} to ${to} of ${n} ${noun}${fOn.length || st.q.trim() || st.quick ? ', filtered' : ''}. Page ${st.page} of ${pages}.` : `No ${noun} match.`;
+  return `<section class="dv${fOpen ? ' has-fpanel' : ''}" data-dv="${kk}" aria-label="${h(o.title || noun)}">${bar}${chips}${bulkBar}${body}${pg}</section>`;
+}
+const dvAfter = (k, focusSel) => {
+  dvSave();
+  render();
+  const st = UI.dv[k];
+  if (st && st._msg) dvLive(st._msg);
+  if (focusSel) document.querySelector(focusSel)?.focus();
+};
+const dvq = k => `[data-dv="${CSS.escape(k)}"]`;
+A.dvQuick = d => {
+  const st = UI.dv[d.k];
+  st.quick = d.v;
+  st.page = 1;
+  dvAfter(d.k, `${dvq(d.k)} [data-a="dvQuick"][data-v="${CSS.escape(d.v)}"]`);
+};
+A.dvFilters = d => {
+  UI.dvOpen = UI.dvOpen === d.k ? null : d.k;
+  render();
+  document.querySelector(UI.dvOpen ? `#dvf-${CSS.escape(d.k)} select` : `${dvq(d.k)} [data-a="dvFilters"]`)?.focus();
+};
+A.dvFilter = (d, el) => {
+  const st = UI.dv[d.k];
+  st.f[d.f] = el.value;
+  st.page = 1;
+  dvAfter(d.k, `#dvf-${CSS.escape(d.k)} [data-f="${CSS.escape(d.f)}"]`);
+};
+A.dvRemove = d => {
+  const st = UI.dv[d.k];
+  if (d.f === 'q') st.q = '';
+  else delete st.f[d.f];
+  st.page = 1;
+  dvAfter(d.k, `${dvq(d.k)} .dv-chip, ${dvq(d.k)} input[data-dvq]`);
+};
+A.dvClear = d => {
+  const st = UI.dv[d.k];
+  st.q = '';
+  st.f = {};
+  st.quick = '';
+  st.page = 1;
+  dvAfter(d.k, `${dvq(d.k)} input[data-dvq], ${dvq(d.k)} [data-a="dvFilters"]`);
+};
+A.dvSort = (d, el) => {
+  const st = UI.dv[d.k];
+  st.sort = el.value;
+  st.page = 1;
+  dvAfter(d.k, `#dvs-${CSS.escape(d.k)}`);
+};
+A.dvColSort = d => {
+  const st = UI.dv[d.k];
+  if (st.sort === d.v) st.dir = st.dir === 'asc' ? 'desc' : 'asc';
+  else {
+    st.sort = d.v;
+    st.dir = 'asc';
+  }
+  st.page = 1;
+  dvAfter(d.k, `${dvq(d.k)} [data-a="dvColSort"][data-v="${CSS.escape(d.v)}"]`);
+};
+A.dvDir = d => {
+  const st = UI.dv[d.k];
+  st.dir = st.dir === 'asc' ? 'desc' : 'asc';
+  dvAfter(d.k, `${dvq(d.k)} [data-a="dvDir"]`);
+};
+A.dvPage = d => {
+  const st = UI.dv[d.k];
+  st.page = Math.max(1, +d.v || 1);
+  dvAfter(d.k, `${dvq(d.k)} .dv-num.on`);
+  document.querySelector(dvq(d.k))?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+};
+A.dvSize = (d, el) => {
+  const st = UI.dv[d.k];
+  st.size = +el.value || 10;
+  st.page = 1;
+  dvAfter(d.k, `#dvz-${CSS.escape(d.k)}`);
+};
+F.dvgo = d => {
+  const st = UI.dv[d.k];
+  if (st) st.page = Math.max(1, Math.floor(+d.p) || 1);
+  dvAfter(d.k, `${dvq(d.k)} .dv-num.on`);
+};
+A.dvMenu = d => {
+  const key = d.k + '|' + d.id;
+  UI.dvMenu = UI.dvMenu === key ? null : key;
+  render();
+  if (UI.dvMenu) document.querySelector(`${dvq(d.k)} .dv-menu .menu-i, ${dvq(d.k)} .dv-menu button`)?.focus();
+};
+A.dvSel = (d, el) => {
+  const st = UI.dv[d.k];
+  st.sel = el.checked ? [...new Set([...st.sel, d.id])] : st.sel.filter(x => x !== d.id);
+  render();
+  dvLive(st.sel.length + ' selected');
+};
+A.dvSelAll = (d, el) => {
+  const st = UI.dv[d.k];
+  const o = DV[d.k];
+  const ids = [...document.querySelectorAll(`${dvq(d.k)} .dv-sel`)].map(x => x.dataset.id);
+  st.sel = el.checked ? [...new Set([...st.sel, ...ids])] : st.sel.filter(x => !ids.includes(x));
+  render();
+  dvLive(st.sel.length + ' selected');
+};
+A.dvSelNone = d => {
+  UI.dv[d.k].sel = [];
+  render();
+  dvLive('Selection cleared');
+};
+A.dvBulk = d => {
+  const o = DV[d.k],
+    b = o && o.bulk && o.bulk[+d.i];
+  if (!b) return;
+  const ids = UI.dv[d.k].sel.slice();
+  if (b.confirm) {
+    modal(
+      h(b.label),
+      `<p>${h(b.confirm)}</p><p class="cap">${ids.length} selected.</p><div class="actions">${B('Cancel', 'closeM', {}, 'btn-g')}${B(h(b.label), 'dvBulkYes', { k: d.k, i: d.i }, b.danger ? 'btn-d' : 'btn-p')}</div>`,
+    );
+    return;
+  }
+  A.dvBulkYes(d);
+};
+A.dvBulkYes = d => {
+  const o = DV[d.k],
+    b = o.bulk[+d.i];
+  const ids = UI.dv[d.k].sel.slice();
+  UI.modal = null;
+  UI.dv[d.k].sel = [];
+  b.run(ids);
+  render();
+};
+// search: debounced, focus and caret kept across the re-render
+let dvT = null;
+document.addEventListener('input', e => {
+  const el = e.target;
+  if (!el.dataset || !el.dataset.dvq) return;
+  const k = el.dataset.dvq;
+  clearTimeout(dvT);
+  dvT = setTimeout(() => {
+    const st = UI.dv[k];
+    if (!st) return;
+    st.q = el.value;
+    st.page = 1;
+    dvSave();
+    render();
+    const n = document.querySelector(`input[data-dvq="${CSS.escape(k)}"]`);
+    if (n) {
+      n.focus();
+      n.setSelectionRange(n.value.length, n.value.length);
+    }
+    if (st._msg) dvLive(st._msg);
+  }, 220);
+});
+// menus and the filter popover close on outside click and Escape
+document.addEventListener('mousedown', e => {
+  const t = e.target;
+  if (UI.dvMenu && !(t.closest && t.closest('.dv-menuwrap'))) {
+    UI.dvMenu = null;
+    render();
+  }
+  if (UI.dvOpen && !(t.closest && t.closest('.dv-fwrap'))) {
+    UI.dvOpen = null;
+    render();
+  }
+});
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || UI.modal) return;
+  if (UI.dvMenu) {
+    const [k] = UI.dvMenu.split('|');
+    UI.dvMenu = null;
+    render();
+    document.querySelector(`${dvq(k)} [data-a="dvMenu"]`)?.focus();
+  } else if (UI.dvOpen) A.dvFilters({ k: UI.dvOpen });
+});
+// navigating away closes menus and popovers
+(() => {
+  const g0 = go;
+  go = (r, p) => {
+    UI.dvMenu = null;
+    UI.dvOpen = null;
+    return g0(r, p);
+  };
+})();
+// a loading placeholder in the shape of the list it replaces
+const dvSkeleton = (n = 4) => `<ul class="dv-list" aria-busy="true" aria-label="Loading">${Array.from({ length: n }, () => '<li class="dv-row"><span class="skel av"></span><div class="dv-main col" style="gap:6px"><span class="skel" style="width:46%"></span><span class="skel" style="width:28%"></span></div></li>').join('')}</ul>`;

@@ -202,7 +202,7 @@ function blField(f, q, a) {
   const k = q.id;
   if (q.type === 'hours') {
     const [n, u] = String(fv(f, k + 'n', '') || a[k] || '').split('|');
-    return `<div class="field"><label class="lbl" for="${f}_${k}n">${h(q.text)}${q.req ? ' <span class="req">*</span>' : ''}</label><div class="row wrap"><input id="${f}_${k}n" name="${k}n" type="number" min="1" class="input ${fe(f, k + 'n') ? 'err' : ''}" style="width:140px" value="${h(n || '')}"><select name="${k}u" class="input" style="width:200px" aria-label="Unit"><option ${!u || String(u).includes('week') ? 'selected' : ''}>hours per week</option><option ${String(u || '').includes('month') ? 'selected' : ''}>hours per month</option></select></div>${fe(f, k + 'n') ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe(f, k + 'n')}</span>` : ''}${q.help ? `<span class="help">${h(q.help)}</span>` : ''}<span class="vis">${ic('lock', 14)}${h(q.vis || 'Private')}</span></div>`;
+    return `<div class="field"><label class="lbl" for="${f}_${k}n">${h(q.text)}${q.req ? ' <span class="req">*</span>' : ''}</label><div class="row wrap"><input id="${f}_${k}n" name="${k}n" type="number" min="1" class="input pc-hrs-n ${fe(f, k + 'n') ? 'err' : ''}" value="${h(n || '')}"><select name="${k}u" class="input pc-hrs-u" aria-label="Unit"><option ${!u || String(u).includes('week') ? 'selected' : ''}>hours per week</option><option ${String(u || '').includes('month') ? 'selected' : ''}>hours per month</option></select></div>${fe(f, k + 'n') ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe(f, k + 'n')}</span>` : ''}${q.help ? `<span class="help">${h(q.help)}</span>` : ''}<span class="vis">${ic('lock', 14)}${h(q.vis || 'Private')}</span></div>`;
   }
   return fi(f, k, h(q.text), { type: q.type === 'text' ? 'text' : 'textarea', rows: 2, req: !!q.req, value: a[k] || '', help: q.help ? h(q.help) : '', vis: h(q.vis || 'Private'), ph: q.type === 'text' ? 'If relevant' : 'Write in your own words' });
 }
@@ -250,7 +250,7 @@ function blRoles(pid) {
   return list
     .map(a => {
       const exp = a.until ? (a.status === 'Expired' ? pill('Expired ' + fmt(a.until), 'p-red') : pill('Expires ' + fmt(a.until), a.until <= addDays(today(), 30) ? 'p-amber' : 'p-grey')) : '<span class="cap">No expiry set</span>';
-      return `<div class="row wrap" style="gap:8px;justify-content:space-between"><b style="font-weight:600">${h(ROLE[a.role] || a.role)}</b><span class="row wrap" style="gap:6px">${a.status !== 'Active' && a.status !== 'Expired' ? pill(a.status) : ''}${exp}</span></div>`;
+      return `<div class="row wrap onb-role"><b>${h(ROLE[a.role] || a.role)}</b><span class="row wrap onb-pills">${a.status !== 'Active' && a.status !== 'Expired' ? pill(a.status) : ''}${exp}</span></div>`;
     })
     .join('');
 }
@@ -261,7 +261,7 @@ function blSummary(pid) {
     ['Skills', h(claimVals(pid, 'Skills') || a.skills || '—')],
     ['Interests', h(claimVals(pid, 'Interests') || '—')],
     ['Goals', a.PC2 ? h(a.PC2) + (a.PC5 ? `<div class="cap">First milestone: ${h(a.PC5)}</div>` : '') : '—'],
-    ['Role assignments', `<div class="col" style="gap:6px">${blRoles(pid) || '—'}</div>`],
+    ['Role assignments', `<div class="col onb-roles">${blRoles(pid) || '—'}</div>`],
   ]);
 }
 function addDays(d, n) {
@@ -288,7 +288,7 @@ function polSections(g) {
 }
 const polBody = g =>
   polSections(g)
-    .map(s => `${s.h ? `<p class="h3">${h(s.h)}</p>` : ''}<p class="muted" style="white-space:pre-line">${h(s.t)}</p>`)
+    .map(s => `${s.h ? `<p class="h3">${h(s.h)}</p>` : ''}<p class="muted pol-t">${h(s.t)}</p>`)
     .join('') || '<p class="cap">No text.</p>';
 // Word-level difference: removed words struck through, added words highlighted.
 function wordDiff(a, b) {
@@ -344,7 +344,7 @@ function polDiffHtml(prev, cur) {
     rows
       .map(
         r =>
-          `<section class="poldiff-s"><div class="row wrap" style="gap:8px;justify-content:space-between"><b>${h(r.h || 'Introduction')}</b>${pill(r.kind, { Added: 'p-green', Changed: 'p-amber', Removed: 'p-red' }[r.kind])}</div><p class="poldiff-t">${r.html.replace(/\n/g, '<br>')}</p></section>`,
+          `<section class="poldiff-s"><div class="row wrap poldiff-sh"><b>${h(r.h || 'Introduction')}</b>${pill(r.kind, { Added: 'p-green', Changed: 'p-amber', Removed: 'p-red' }[r.kind])}</div><p class="poldiff-t">${r.html.replace(/\n/g, '<br>')}</p></section>`,
       )
       .join('') || '<p class="cap">The wording is unchanged.</p>'
   }${same > 0 && rows.length ? `<p class="cap">${same} section${same > 1 ? 's' : ''} unchanged.</p>` : ''}</div>`;
@@ -384,11 +384,11 @@ function policyGate(g) {
   <div class="pgate-b"><div class="col" style="gap:16px"><div class="kv"><div class="col"><span class="cap">Policy</span><b>${h(g.type)}</b></div><div class="col"><span class="cap">Version</span><b>v${g.ver}</b></div><div class="col"><span class="cap">Effective</span><b>${fmt(g.effective)}</b></div></div>
   <div class="row wrap" style="gap:8px">${B(ic('download', 16) + 'Download policy', 'polDownload', { id: g.id })}${prev ? B(ic('eye', 16) + (cmp ? 'Hide differences' : 'Compare with previous policy'), 'agrCmp', { id: g.id }, 'btn-s btn-sm', `aria-expanded="${cmp}"`) : ''}</div>
   ${cmp ? `<section class="col" style="gap:8px"><h3 class="h3">What changed since v${prev.ver}</h3>${g.summary ? `<p class="muted">${h(g.summary)}</p>` : ''}${polDiffHtml(prev, g)}</section>` : ''}
-  <section class="col" style="gap:10px"><h3 class="h3">Current policy</h3>${polBody(g)}</section></div></div>
+  <section class="col pgate-pol"><h3 class="h3">Current policy</h3>${polBody(g)}</section></div></div>
   <form data-f="agr" class="pgate-f" novalidate><input type="hidden" name="g" value="${g.id}"><input type="hidden" name="mode" value="update">${fi('agr', 'a1', `I have read and accept <b>${h(g.type)} v${g.ver}</b>.`, { type: 'checkbox', req: true })}<div class="actions">${B('Sign out', 'logout', {}, 'btn-s')}<button class="btn btn-p" type="submit">Accept and continue</button></div></form></div></div>`;
 }
 function onbTop(cur, steps) {
-  return `<header class="onb-top"><div class="row" style="gap:10px"><span class="mark">P</span><span class="wm hide-sm"><b>PHOENIX</b><span>Foundation Alpha</span></span></div><nav class="steps" aria-label="Onboarding progress">${steps.map((l, i) => `${i ? '<span class="sline"></span>' : ''}<div class="step ${i < cur ? 'done' : i === cur ? 'cur' : ''}"><span class="n">${i < cur ? ic('check', 14) : i + 1}</span><span class="st">${l}</span></div>`).join('')}</nav><div class="row">${roleChoices().length > 1 ? B('Switch role', 'switcher', {}, 'btn-g btn-sm') : ''}${B('Save and exit', 'logout', {}, 'btn-g btn-sm hide-sm')}</div></header>`;
+  return `<header class="onb-top"><div class="row onb-brand"><span class="mark">${MARK(20)}</span><span class="wm hide-sm"><b>PHOENIX</b><span>Foundation Alpha</span></span></div><nav class="steps" aria-label="Onboarding progress">${steps.map((l, i) => `${i ? '<span class="sline"></span>' : ''}<div class="step ${i < cur ? 'done' : i === cur ? 'cur' : ''}"><span class="n">${i < cur ? ic('check', 14) : i + 1}</span><span class="st">${l}</span></div>`).join('')}</nav><div class="row">${roleChoices().length > 1 ? B('Switch role', 'switcher', {}, 'btn-g btn-sm') : ''}${B('Save and exit', 'logout', {}, 'btn-g btn-sm hide-sm')}</div></header>`;
 }
 function ONB() {
   const a = asg();
@@ -408,18 +408,18 @@ function ONB() {
     const prev = polPrev(g);
     const f = 'agr';
     body = `${UI.p.notnow ? banner('info', 'You can come back to this later', 'Access starts once you accept. Until then this is the only screen available.') : ''}
-  <div class="col" style="gap:4px"><p class="over">Step 2 of ${steps.length}</p><h1 class="h1">Review your agreement</h1><p class="sub">This agreement applies to your role. It also covers how PHOENIX may process your information.</p></div>
-  <section class="card col" style="gap:20px"><div class="kv"><div class="col"><span class="cap">Agreement</span><b>${h(g.type)}</b></div><div class="col"><span class="cap">Version</span><b>v${g.ver}</b></div><div class="col"><span class="cap">Effective</span><b>${fmt(g.effective)}</b></div></div>
-  <div class="scrollbox" tabindex="0" aria-label="Agreement text"><div class="col" style="gap:12px">${polBody(g)}<p class="cap">Approved wording is published by the Platform Administrator after WSS Trust/Data Steward and legal review.</p></div></div>
-  <div class="row wrap" style="gap:8px">${B(ic('download', 16) + 'Download policy', 'polDownload', { id: g.id })}${B(ic('eye', 16) + (UI.tab.agrCmp === g.id ? 'Hide comparison' : 'Compare policy with prior'), 'agrCmp', { id: g.id }, 'btn-s btn-sm', `aria-expanded="${UI.tab.agrCmp === g.id}"`)}</div>
-  ${UI.tab.agrCmp === g.id ? `<div class="col" style="gap:8px">${prev ? `<h2 class="h3">What changed since v${prev.ver}</h2>${g.summary ? `<p class="muted">${h(g.summary)}</p>` : ''}` : ''}${polDiffHtml(prev, g)}</div>` : ''}
-  <form data-f="agr" class="col" style="gap:12px" id="agrf" novalidate>${fi(f, 'a1', `I have read and accept <b>${h(g.type)} v${g.ver}</b>.`, { type: 'checkbox', req: true })}${fi(f, 'a2', 'I accept the PHOENIX service terms.', { type: 'checkbox', req: true })}<input type="hidden" name="g" value="${g.id}"><span class="help">A dated receipt of your acceptance is stored in Privacy & agreements.</span>
+  <div class="col onb-h"><p class="over">Step 2 of ${steps.length}</p><h1 class="h1">Review your agreement</h1><p class="sub">This agreement applies to your role. It also covers how PHOENIX may process your information.</p></div>
+  <section class="card col onb-card"><div class="kv onb-meta"><div class="col"><span class="cap">Agreement</span><b>${h(g.type)}</b></div><div class="col"><span class="cap">Version</span><b>v${g.ver}</b></div><div class="col"><span class="cap">Effective</span><b>${fmt(g.effective)}</b></div></div>
+  <div class="scrollbox" tabindex="0" aria-label="Agreement text"><div class="col onb-pol">${polBody(g)}<p class="cap">Approved wording is published by the Platform Administrator after WSS Trust/Data Steward and legal review.</p></div></div>
+  <div class="row wrap onb-tools">${B(ic('download', 16) + 'Download policy', 'polDownload', { id: g.id })}${B(ic('eye', 16) + (UI.tab.agrCmp === g.id ? 'Hide comparison' : 'Compare policy with prior'), 'agrCmp', { id: g.id }, 'btn-s btn-sm', `aria-expanded="${UI.tab.agrCmp === g.id}"`)}</div>
+  ${UI.tab.agrCmp === g.id ? `<div class="col onb-cmp">${prev ? `<h2 class="h3">What changed since v${prev.ver}</h2>${g.summary ? `<p class="muted">${h(g.summary)}</p>` : ''}` : ''}${polDiffHtml(prev, g)}</div>` : ''}
+  <form data-f="agr" class="col onb-agr" id="agrf" novalidate>${fi(f, 'a1', `I have read and accept <b>${h(g.type)} v${g.ver}</b>.`, { type: 'checkbox', req: true })}${fi(f, 'a2', 'I accept the PHOENIX service terms.', { type: 'checkbox', req: true })}<input type="hidden" name="g" value="${g.id}"><span class="help">A dated receipt of your acceptance is stored in Privacy & agreements.</span>
   <div class="actions">${B('Not now', 'agrNotNow', {}, 'btn-s')}<button class="btn btn-p" type="submit">Accept and continue</button></div></form></section>`;
   } else if (cur === 2) {
     const f = 'prof';
     const pr = S.profiles[myId()] || {};
-    body = `<div class="col" style="gap:4px"><p class="over">Step 3 of ${steps.length}</p><h1 class="h1">Your minimum profile</h1><p class="sub">Just the basics. Each field shows who can see it. Every save creates a version.</p></div>${errSum(f)}
-  <form data-f="prof" class="card col" style="gap:18px" novalidate><div class="f2">${fi(f, 'name', 'Full name', { value: me().name, ro: true, vis: 'You and authorised administration' })}${fi(f, 'display', 'Display name', { req: true, value: me().display, vis: 'Your collaboration contexts' })}</div>
+    body = `<div class="col onb-h"><p class="over">Step 3 of ${steps.length}</p><h1 class="h1">Your minimum profile</h1><p class="sub">Just the basics. Each field shows who can see it. Every save creates a version.</p></div>${errSum(f)}
+  <form data-f="prof" class="card col onb-card" novalidate><div class="f2">${fi(f, 'name', 'Full name', { value: me().name, ro: true, vis: 'You and authorised administration' })}${fi(f, 'display', 'Display name', { req: true, value: me().display, vis: 'Your collaboration contexts' })}</div>
   <div class="f2">${dobField(f, me().dob || '')}<span></span></div>
   ${me().org ? fi(f, 'aff', 'Organisation / affiliation', { value: S.orgs.find(o => o.id === me().org).name, ro: true, vis: 'Context-visible' }) : ''}
   ${fi(f, 'bio', 'Short biography', { type: 'textarea', rows: 3, max: 400, value: pr.bio, help: 'Optional · up to 400 characters', vis: 'Your choice — default: your collaboration contexts' })}
@@ -444,11 +444,11 @@ function ONB() {
     }
     const st = Math.max(0, Math.min(UI.tab.pcStep || 0, n - 1));
     const set = sets[st];
-    body = `<div class="col" style="gap:4px"><p class="over">Step 4 of 4 · Purpose Compass Baseline</p><h1 class="h1">Set your starting point</h1><p class="sub">A few short question sets. Nothing here is scored, and nothing is used to infer sensitive traits. Your answers become the context for your ${WL()}s and Learning Harvests.</p></div>
-  <div class="col" style="gap:8px"><div class="row" style="justify-content:space-between"><span class="lbl">Set ${st + 1} of ${n}</span><span class="cap">${Math.round((st / n) * 100)}% complete</span></div><div class="progress"><span style="width:${(st / n) * 100}%"></span></div></div>
-  ${errSum(f)}<form data-f="pc" class="card col" style="gap:16px" novalidate><input type="hidden" name="set" value="${st}"><div class="col" style="gap:4px"><span class="over">Question set ${st + 1}</span><h2 class="h3" style="font-size:var(--fs-18)">${h(set.n)}</h2>${set.d ? `<p class="cap">${h(set.d)}</p>` : ''}</div>
+    body = `<div class="col onb-h"><p class="over">Step 4 of 4 · Purpose Compass Baseline</p><h1 class="h1">Set your starting point</h1><p class="sub">A few short question sets. Nothing here is scored, and nothing is used to infer sensitive traits. Your answers become the context for your ${WL()}s and Learning Harvests.</p></div>
+  <div class="col onb-prog"><div class="row onb-prog-h"><span class="lbl">Set ${st + 1} of ${n}</span><span class="cap">${Math.round((st / n) * 100)}% complete</span></div><div class="progress"><span class="bar" style="width:${(st / n) * 100}%"></span></div></div>
+  ${errSum(f)}<form data-f="pc" class="card col onb-card" novalidate><input type="hidden" name="set" value="${st}"><div class="col onb-h"><span class="over">Question set ${st + 1}</span><h2 class="h2">${h(set.n)}</h2>${set.d ? `<p class="cap">${h(set.d)}</p>` : ''}</div>
   ${set.q.map(q => blField(f, q, ans)).join('')}
-  ${st === 0 ? `<div class="col" style="gap:10px"><span class="lbl">Already in your profile</span>${dl([['Interests', h(claimVals(myId(), 'Interests') || '—')], ['Role assignments', `<div class="col" style="gap:6px">${blRoles(myId())}</div>`]])}<span class="help">Role assignments and their expiry are set by your administrator.</span></div>` : ''}
+  ${st === 0 ? `<div class="col onb-have"><span class="lbl">Already in your profile</span>${dl([['Interests', h(claimVals(myId(), 'Interests') || '—')], ['Role assignments', `<div class="col onb-roles">${blRoles(myId())}</div>`]])}<span class="help">Role assignments and their expiry are set by your administrator.</span></div>` : ''}
   ${st === n - 1 ? banner('ok', '', 'Your North Star appears on My PHOENIX as your self-declared direction. You can review and change the whole baseline any time in Profile → Purpose Compass.') : ''}
   <div class="actions">${st ? B(ic('chevl', 16) + 'Previous', 'pcPrev', {}, 'btn-g') : B(ic('chevl', 16) + 'Back', 'onbBack', { s: 'profile' }, 'btn-g')}<div class="row wrap">${B('Save and finish later', 'logout', {}, 'btn-s')}<button class="btn btn-p" type="submit">${st === n - 1 ? 'Finish and go to My PHOENIX' : 'Next'}</button></div></div></form>`;
   }

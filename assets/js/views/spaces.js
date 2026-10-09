@@ -135,7 +135,7 @@ const INVITE_ROLES = ["Member", "Facilitator", "Mentor"];
 const roleLabel = (r) => (r === "Member" ? "Participant" : r);
 // Role selector used in the Members tabs (a person who already holds another role keeps it as an option).
 const roleSelect = (act, data, cur, label) =>
-  `<select class="input" style="min-height:36px;font-size:12px;width:auto" data-ch="${act}"${attr(data)} aria-label="${h(label || "Role in this space")}">${[...INVITE_ROLES, ...(INVITE_ROLES.includes(normRole(cur)) ? [] : [normRole(cur)])].map((x) => `<option value="${x}" ${x === normRole(cur) ? "selected" : ""}>${roleLabel(x)}</option>`).join("")}</select>`;
+  `<select class="input role-sel" data-ch="${act}"${attr(data)} aria-label="${h(label || "Role in this space")}">${[...INVITE_ROLES, ...(INVITE_ROLES.includes(normRole(cur)) ? [] : [normRole(cur)])].map((x) => `<option value="${x}" ${x === normRole(cur) ? "selected" : ""}>${roleLabel(x)}</option>`).join("")}</select>`;
 // Everyone in this context who could be added to a space, with their platform role.
 const eligiblePeople = (exclude = [], roles = ["P", "F", "M", "C", "O"]) =>
   S.assign
@@ -181,11 +181,11 @@ function msel(form, name, label, people, def = [], o = {}) {
       ? people
           .map(
             (p) =>
-              `<label class="msel-opt" data-s="${h((P(p.pid).name + " " + p.sub).toLowerCase())}"><input class="chk" type="checkbox" name="${name}" value="${p.pid}" ${sel.includes(p.pid) ? "checked" : ""} data-msel-k="${key}"><span class="av">${ini(p.pid)}</span><span class="col" style="min-width:0"><b>${nm(p.pid)}</b><span class="cap">${h(p.sub)}</span></span></label>`,
+              `<label class="msel-opt" data-s="${h((P(p.pid).name + " " + p.sub).toLowerCase())}"><input class="chk" type="checkbox" name="${name}" value="${p.pid}" ${sel.includes(p.pid) ? "checked" : ""} data-msel-k="${key}"><span class="av">${ini(p.pid)}</span><span class="col msel-who"><b>${nm(p.pid)}</b><span class="cap">${h(p.sub)}</span></span></label>`,
           )
           .join("") +
         `<p class="cap msel-none" hidden>No one matches that search.</p>`
-      : `<p class="cap" style="padding:10px">${h(o.none || "Everyone eligible is already included.")}</p>`
+      : `<p class="cap msel-empty">${h(o.none || "Everyone eligible is already included.")}</p>`
   }</div>
   <span class="help"><span class="msel-n">${sel.length}</span> selected${o.help ? " · " + o.help : ""}</span>${fe(form, name) ? `<span class="emsg" role="alert">${ic("alert", 14)}${fe(form, name)}</span>` : ""}</div>`;
 }
@@ -285,28 +285,86 @@ A.reRender = () => {
 };
 
 // ---------- Workspace header for Circles, Rope Teams and Action Rooms ----------
-// Icon tile, kind, name and state, purpose, then a meta line: your role, members, who leads, linked project.
+// Breadcrumb, then icon tile (space-kind hue), kind eyebrow, name and state, purpose and actions; then a facts strip:
+// your role, members, who leads, the linked project and progress counted from what the space already records.
 function spaceHead(kind, o, sub, crumbs, actions = '') {
   const icon = { circles: 'users', ropes: 'route', rooms: 'room' }[kind];
+  const tile = { circles: 't-purple', ropes: 't-teal', rooms: 't-navy' }[kind];
   const act = o.members.filter(m => !m.status || m.status === 'Active');
-  const avs = act
-    .slice(0, 5)
-    .map(m => `<span class="av" title="${nm(m.pid)}${spaceRole(kind, o, m.pid) ? ' · ' + h(spaceRole(kind, o, m.pid)) : ''}">${ini(m.pid)}</span>`)
-    .join('');
+  const avs =
+    act
+      .slice(0, 5)
+      .map(m => `<span class="av sm" title="${nm(m.pid)}${spaceRole(kind, o, m.pid) ? ' · ' + h(spaceRole(kind, o, m.pid)) : ''}">${ini(m.pid)}</span>`)
+      .join('') + (act.length > 5 ? `<span class="av sm av-more" title="${act.length - 5} more">+${act.length - 5}</span>` : '');
   const [leadLabel, leadPid] = kind === 'circles' ? ['Facilitator', o.facilitator] : kind === 'ropes' ? ['Mentor', o.mentor] : ['Project owner', o.lead];
   const pr = byId('projects', o.project) || S.projects.find(p => p.room === o.id);
   const prHtml = pr ? (can('projects') && (pr.owner === myId() || role() !== 'P') ? L(h(pr.title), 'project', { id: pr.id }) : h(pr.title)) : '';
-  const meta = [
-    roleTag(kind, o),
-    `<span class="row" style="gap:8px"><span class="avstack">${avs}</span><span>${act.length} member${act.length === 1 ? '' : 's'}</span></span>`,
-    leadPid ? `<span>${leadLabel}: <b>${nm(leadPid)}</b></span>` : `<span>${leadLabel}: <b>not yet</b></span>`,
-    prHtml && `<span>Project: ${prHtml}</span>`,
+  const fact = (k, v, cls = '') => `<div class="wf ${cls}"><span class="wf-k">${k}</span><span class="wf-v">${v}</span></div>`;
+  const frac = (k, a, b) =>
+    `<div class="wf wf-prog"><span class="wf-k">${k}</span><span class="wf-v">${b ? `<b>${a}</b> of ${b}` : '<span class="cap">None yet</span>'}</span><span class="progress" aria-hidden="true"><span class="bar" style="width:${b ? Math.round((a / b) * 100) : 0}%"></span></span></div>`;
+  const prog = [];
+  if (kind === 'rooms') {
+    const req = (o.tasks || []).filter(k => !['Proposed', 'Declined'].includes(k.status) && !k.opt);
+    const ms = o.milestones || [];
+    prog.push(frac('Deliverables done', req.filter(k => k.status === 'Done').length, req.length), frac('Milestones achieved', ms.filter(m => m.status === 'Achieved').length, ms.length));
+  }
+  if (kind === 'ropes') {
+    const rv = o.reviews || [];
+    prog.push(frac('Work reviewed', rv.filter(v => v.status !== 'Awaiting review').length, rv.length), fact('Requirements', o.reqFinal ? pill('Finalised', 'p-green') : pill('Not finalised', 'p-grey')));
+  }
+  if (kind === 'circles') {
+    const open = (o.polls || []).filter(p => p.status === 'Open').length;
+    prog.push(fact('Sessions', `<b>${(o.sessions || []).length}</b>`), fact('Decisions', `<b>${(o.decisions || []).length}</b>${open ? ` <span class="cap">· ${open} open vote${open > 1 ? 's' : ''}</span>` : ''}`));
+  }
+  const rt = roleTag(kind, o);
+  const facts = [
+    rt && `<div class="wf wf-role">${rt}</div>`,
+    fact('Members', `<span class="avstack">${avs}</span><span>${act.length} member${act.length === 1 ? '' : 's'}</span>`, 'wf-mem'),
+    fact(leadLabel, leadPid ? `<b>${nm(leadPid)}</b>` : '<b>not yet</b>'),
+    prHtml && fact('Project', prHtml, 'wf-proj'),
+    ...prog,
   ].filter(Boolean);
-  const nav = crumbs
-    ? `<nav class="row cap" aria-label="Breadcrumb" style="gap:6px;margin-bottom:14px">${crumbs.map(([l, r, p]) => (r ? L(l, r, p, 'cap') + ic('chevr', 14) : `<span>${l}</span>`)).join('')}</nav>`
-    : '';
-  return `<header class="shead">${nav}<div class="shead-main"><span class="shead-ic k-${kind}">${ic(icon, 26)}</span><div class="shead-t"><div class="shead-kind">${h(SPACE_KIND_LABEL(kind))}</div><div class="row wrap"><h1 class="h1">${h(o.name)}</h1>${pill(o.state)}</div>${sub ? `<p class="sub">${sub}</p>` : ''}<div class="shead-meta">${meta.join('')}</div></div>${actions ? `<div class="shead-a">${actions}</div>` : ''}</div></header>`;
+  return `<header class="shead ws-head k-${kind}">${crumbs ? crumbsHtml(crumbs) : ''}<div class="shead-main"><span class="tile ws-tile ${tile}">${ic(icon, 22)}</span><div class="shead-t"><div class="shead-kind ws-kind">${h(SPACE_KIND_LABEL(kind))}</div><div class="ws-title"><h1 class="h1">${h(o.name)}</h1>${pill(o.state)}</div>${sub ? `<p class="sub">${sub}</p>` : ''}</div>${actions ? `<div class="shead-a">${actions}</div>` : ''}</div><div class="ws-facts">${facts.join('')}</div></header>`;
 }
+
+// One-line context for every section except Overview: which space this is, its state, and the same actions.
+function wsBar(kind, o, actions = '') {
+  const icon = { circles: 'users', ropes: 'route', rooms: 'room' }[kind];
+  const tile = { circles: 't-purple', ropes: 't-teal', rooms: 't-navy' }[kind];
+  return `<div class="ws-bar k-${kind}"><span class="tile ws-bar-tile ${tile}" aria-hidden="true">${ic(icon, 18)}</span><div class="ws-bar-t"><span class="ws-bar-kind">${h(SPACE_KIND_LABEL(kind))}</span><span class="ws-bar-n"><b>${h(o.name)}</b>${o.state ? pill(o.state) : ''}</span></div>${actions ? `<div class="ws-bar-a">${actions}</div>` : ''}</div>`;
+}
+// Context rail: the people in this space and the role each holds here. Read-only; the Members tab manages them.
+function wsTeamCard(kind, o) {
+  const act = o.members.filter(m => !m.status || m.status === 'Active');
+  const route_ = { circles: 'circle', ropes: 'rope', rooms: 'room' }[kind];
+  return card(
+    'Members',
+    act.length + ' active',
+    `<ul class="ws-team">${act.map(m => `<li><span class="av sm">${ini(m.pid)}</span><span class="ws-team-n">${nm(m.pid)}</span><span class="cap">${h(roleLabel(spaceRole(kind, o, m.pid) || normRole(m.role)))}</span></li>`).join('')}</ul>`,
+    L('All members', route_, { id: o.id, tab: 'members' }),
+    'ws-team-card',
+  );
+}
+
+// ---------- Data View helpers for space lists (display only; they read what the space already records) ----------
+const wsOpts = (list, f) => [...new Set(list.map(f).filter(Boolean))].sort().map(v => [v, v]);
+const wsPeople = (list, f) => [...new Set(list.map(f).filter(Boolean))].map(p => [p, P(p).name]).sort((a, b) => a[1].localeCompare(b[1]));
+const wsActive = o => (o.members || []).filter(m => !m.status || m.status === 'Active');
+const wsAvs = (ms, n = 4) => `<span class="avstack">${ms.slice(0, n).map(m => `<span class="av sm" title="${nm(m.pid)}">${ini(m.pid)}</span>`).join('')}</span>`;
+const wsMem = o => `<span class="ws-mem">${wsAvs(wsActive(o))}<span>${wsActive(o).length} member${wsActive(o).length === 1 ? '' : 's'}</span></span>`;
+const wsLastAt = o => ((o.chat || []).slice(-1)[0] || {}).at || '';
+const wsReq = x => (x.tasks || []).filter(k => !['Proposed', 'Declined'].includes(k.status) && !k.opt);
+const wsPct = x => (wsReq(x).length ? wsReq(x).filter(k => k.status === 'Done').length / wsReq(x).length : -1);
+const wsProg = x =>
+  `<span class="ws-prog"><span class="progress" aria-hidden="true"><span class="bar" style="width:${Math.max(0, Math.round(wsPct(x) * 100))}%"></span></span><span>${wsReq(x).length ? wsReq(x).filter(k => k.status === 'Done').length + ' of ' + wsReq(x).length + ' deliverables done' : 'No deliverables yet'}</span></span>`;
+const wsRoleTxt = (kind, o) => (spaceRole(kind, o) ? roleLabel(spaceRole(kind, o)) : { Invited: 'Invited', Requested: 'Pending' }[(memberRec(o) || {}).status] || 'Oversight');
+const wsUnread = o => (unreadIn(o) && memberOf(o) ? ` <span class="mbadge" title="Unread messages">${unreadIn(o)}</span>` : '');
+// The person's other spaces of the same kind, for the sub-navigation's "switch to" list.
+const wsOthers = (kind, o) =>
+  (S[kind] || [])
+    .filter(y => y !== o && inCtx(y) && memberOf(y))
+    .slice(0, 8)
+    .map(y => [h(y.name), { circles: 'circle', ropes: 'rope', rooms: 'room' }[kind], { id: y.id }]);
 
 // ---------- Tab bar overflow ----------
 // Tabs that do not fit on one line move into a "More" menu. The active tab always stays visible.
@@ -333,6 +391,15 @@ function fitTabs(root) {
     if (!hidden.length) return more.remove();
     const n = hidden.reduce((a, t) => a + (+(t.querySelector('.cnt') || {}).textContent || 0), 0);
     if (n) more.innerHTML = `More<span class="cnt">${n}</span>` + ic('chev', 14);
+    // the count makes the More button wider: hide more tabs until the bar fits again
+    for (let i = tabs.length - 1; i >= 0 && bar.scrollWidth > bar.clientWidth + 1; i--) {
+      if (tabs[i].hidden || tabs[i].classList.contains('on')) continue;
+      tabs[i].hidden = true;
+      hidden.unshift(tabs[i]);
+    }
+    hidden.sort((x, y) => tabs.indexOf(x) - tabs.indexOf(y));
+    const n2 = hidden.reduce((a, t) => a + (+(t.querySelector('.cnt') || {}).textContent || 0), 0);
+    if (n2 !== n) more.innerHTML = `More<span class="cnt">${n2}</span>` + ic('chev', 14);
     const menu = document.createElement('div');
     menu.className = 'tab-menu';
     menu.setAttribute('role', 'menu');

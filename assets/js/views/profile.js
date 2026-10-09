@@ -6,6 +6,9 @@ const VIS = [
   "Matching/pathway roles only",
   "Named users",
 ];
+// Data View filter options from the values the records already carry.
+const pfOpts = (list, f) =>
+  [...new Set(list.map(f).filter(Boolean))].sort().map((v) => [v, v]);
 route("profile", "any", () => {
   const pid = myId();
   const pr = S.profiles[pid] || { ver: 0, history: [] };
@@ -32,8 +35,50 @@ route("profile", "any", () => {
     UI.p.tab,
   );
   let body = "";
-  if (t.cur === "claims")
+  if (t.cur === "claims") {
+    const cp = S.compass[pid] || {};
+    const live = cl.filter((c) => c.state === "Current");
     body =
+      `<div class="pf-cols"><div class="pf-main">` +
+      card(
+        "Basic information",
+        "Each saved change creates an immutable version.",
+        dl([
+          ["Full name", h(me().name) + " " + pill("Self-declared", "p-grey")],
+          ["Display name", h(me().display)],
+          [
+            "Date of birth",
+            (me().dob ? fmt(me().dob) : "Not recorded") +
+              ' · <span class="cap">Private; you and authorised administration</span>',
+          ],
+          [
+            "Email",
+            h(me().email) +
+              ' · <span class="cap">Private; released only for an approved introduction</span>',
+          ],
+          ["Biography", h(pr.bio || "—")],
+          ["Active role", ROLE[role()] + " · " + h(ctx().name)],
+        ]),
+        B(ic("edit", 14) + "Edit basics", "editBasics"),
+        "pf-basic",
+      ) +
+      card(
+        "Recent changes",
+        "The latest versions of your profile.",
+        pr.history.length
+          ? `<ol class="pf-hist">${pr.history
+              .slice(-3)
+              .reverse()
+              .map((v) => `<li><span class="pf-ver">v${v.ver}</span><div class="lt"><b>${h(v.what)}</b><p class="cap">${fmt(v.at)} · ${h(v.by)} · ${h(v.why)}</p></div></li>`)
+              .join("")}</ol>`
+          : `<p class="cap">No versions yet.</p>`,
+        L("Versions", "profile", { tab: "versions" }),
+        "pf-recent",
+      ) +
+      `</div><div class="pf-rail">` +
+      (role() === "P"
+        ? `<section class="card pf-ns" aria-labelledby="pf-ns-t"><div class="row pf-ns-h"><span class="over" id="pf-ns-t">North Star</span><span class="vis">${ic("lock", 14)}Only you</span></div><p class="pf-ns-q${cp.PC2 ? "" : " is-unset"}">${cp.PC2 ? "“" + h(cp.PC2) + "”" : "Set your goal in the Purpose Compass."}</p>${cp.PC5 ? `<p class="cap">First milestone: ${h(cp.PC5)}</p>` : ""}<div class="pf-ns-a">${L("Purpose Compass" + ic("chevr", 14), "profile", { tab: "compass" }, "lnk pf-lnk")}</div></section>`
+        : "") +
       (["C", "O"].includes(role()) && me().org
         ? card(
             "Organization profile",
@@ -54,64 +99,90 @@ route("profile", "any", () => {
               ["Website", h(S.orgs.find((o) => o.id === me().org).web || "—")],
             ]),
             B(ic("edit", 14) + "Edit organization profile", "orgEdit"),
-          ) + '<div class="section-gap"></div>'
+            "pf-org",
+          )
         : "") +
-      card(
-        "Basic information",
-        "Each saved change creates an immutable version.",
-        dl([
-          ["Full name", h(me().name) + " " + pill("Self-declared", "p-grey")],
-          ["Display name", h(me().display)],
-          [
-            "Date of birth",
-            (me().dob ? fmt(me().dob) : "Not recorded") +
-              ' · <span class="cap">Private; you and authorised administration</span>',
-          ],
-          [
-            "Email",
-            h(me().email) +
-              ' · <span class="cap">Private; released only for an approved introduction</span>',
-          ],
-          ["Biography", h(pr.bio || "—")],
-          ["Active role", ROLE[role()] + " · " + h(ctx().name)],
-        ]) +
-          `<div style="margin-top:12px">${B(ic("edit", 14) + "Edit basics", "editBasics")}</div>`,
-      ) +
-      `<div style="height:16px"></div>` +
+      `<section class="card pf-vis" aria-labelledby="pf-vis-t"><div class="card-h"><div><h2 class="h2" id="pf-vis-t">Who can see your claims</h2><p class="cap">Current claims by visibility. Change it per claim below.</p></div></div><ul class="pf-vis-l">${VIS.map((v) => `<li class="${live.some((c) => c.vis === v) ? "" : "is-zero"}"><span>${v}</span><b>${live.filter((c) => c.vis === v).length}</b></li>`).join("")}</ul></section>` +
+      `</div></div>` +
       card(
         "Profile claims",
         "Each item is a separate claim with provenance. Provenance is not a trust score.",
-        table(
-          ["Field", "Value", "Provenance", "Visibility", "Actions"],
-          cl.map((c) => [
-            h(c.field),
-            h(c.value),
-            pill(
-              c.prov,
-              c.prov.includes("verified")
-                ? "p-green"
-                : c.prov.includes("Evidence")
-                  ? "p-navy"
-                  : c.prov.includes("AI")
-                    ? "p-ai"
-                    : "p-grey",
-            ),
-            `<select class="input" style="min-height:36px;font-size:12px" data-ch="claimVis" data-id="${c.id}" aria-label="Visibility">${VIS.map((v) => `<option ${v === c.vis ? "selected" : ""}>${v}</option>`).join("")}</select>`,
-            B("Correct", "correctClaim", { id: c.id }) +
-              CB(
-                "Revoke",
-                "revokeClaim",
-                { id: c.id },
-                "Revoke “" +
-                  c.field +
-                  ": " +
-                  c.value +
-                  "”? It stops being shown anywhere; the version history keeps a record.",
-              ),
-          ]),
-        ),
-        B(ic("plus", 14) + "Add claim", "addClaim"),
+        dataView("profile:claims", {
+          label: "claims",
+          items: cl,
+          search: (c) => c.field + " " + c.value + " " + c.prov + " " + c.vis,
+          quick: {
+            label: "Provenance",
+            options: pfOpts(cl, (c) => c.prov),
+            test: (c, v) => c.prov === v,
+          },
+          filters: [
+            { key: "field", label: "Field", options: pfOpts(cl, (c) => c.field), test: (c, v) => c.field === v },
+            { key: "vis", label: "Visibility", options: VIS.map((v) => [v, v]), test: (c, v) => c.vis === v },
+          ],
+          sorts: [
+            ["field", "Field", (a, b) => a.field.localeCompare(b.field)],
+            ["value", "Value", (a, b) => a.value.localeCompare(b.value)],
+            ["vis", "Visibility", (a, b) => VIS.indexOf(a.vis) - VIS.indexOf(b.vis)],
+          ],
+          layout: "table",
+          columns: [
+            { label: "Field", sort: "field", cell: (c) => `<b>${h(c.field)}</b>` },
+            { label: "Value", sort: "value", cell: (c) => h(c.value) },
+            {
+              label: "Provenance",
+              hideSm: true,
+              cell: (c) =>
+                pill(
+                  c.prov,
+                  c.prov.includes("verified")
+                    ? "p-green"
+                    : c.prov.includes("Evidence")
+                      ? "p-navy"
+                      : c.prov.includes("AI")
+                        ? "p-ai"
+                        : "p-grey",
+                ),
+            },
+            {
+              label: "Visibility",
+              sort: "vis",
+              cell: (c) =>
+                `<select class="input pf-visel" data-ch="claimVis" data-id="${c.id}" aria-label="Visibility of ${h(c.field)}: ${h(c.value)}">${VIS.map((v) => `<option ${v === c.vis ? "selected" : ""}>${v}</option>`).join("")}</select>`,
+            },
+            {
+              label: "",
+              cell: (c) =>
+                `<span class="row pf-acts">${B("Correct", "correctClaim", { id: c.id }) +
+                  CB(
+                    "Revoke",
+                    "revokeClaim",
+                    { id: c.id },
+                    "Revoke “" +
+                      c.field +
+                      ": " +
+                      c.value +
+                      "”? It stops being shown anywhere; the version history keeps a record.",
+                  )}</span>`,
+            },
+          ],
+          rowId: (c) => c.id,
+          bulk: [
+            {
+              label: "Revoke",
+              icon: "trash",
+              danger: true,
+              confirm: "Revoke the selected claims? They stop being shown anywhere; the version history keeps a record.",
+              run: (ids) => ids.forEach((id) => A.revokeClaim({ id })),
+            },
+          ],
+          actions: B(ic("plus", 14) + "Add claim", "addClaim"),
+          empty: ["user", "No profile claims yet", "Add a claim, or accept a change candidate.", ""],
+        }),
+        "",
+        "pf-claims",
       );
+  }
   if (t.cur === "compass") {
     const a = S.compass[pid] || {};
     const miss = blMissing(pid);
@@ -127,38 +198,71 @@ route("profile", "any", () => {
               "s and Learning Harvests use the baseline as context.",
           )
         : "") +
-      `<div class="g12">${card(
+      `<div class="pf-cols pf-cc"><div class="pf-rail">${card(
         "Purpose Compass Baseline",
         "Your starting point. Used as context for your " +
           WL() +
           "s and Learning Harvests. Private by default.",
         blSummary(pid),
         "",
-        "c12",
-      )}</div><div class="section-gap"></div>` +
-      `<form data-f="compass" class="col" style="gap:24px" novalidate>${errSum("compass")}${blSets(false).map((s, i) =>
+        "pf-sum",
+      )}</div><div class="pf-main">` +
+      `<form data-f="compass" class="col pf-cform" novalidate>${errSum("compass")}${blSets(false).map((s, i) =>
         card(
           h(s.n),
           h(s.d || ""),
-          `<div class="col" style="gap:14px">${s.q.map((q) => blField("compass", q, a)).join("")}</div>`,
+          `<div class="col pf-form">${s.q.map((q) => blField("compass", q, a)).join("")}</div>`,
+          "",
+          "pf-set",
         ),
-      ).join("")}<div class="actions"><span class="cap">${a._at ? "Baseline set " + fmt(a._at) + ". " : ""}Each save creates a new profile version.</span><button class="btn btn-p" type="submit">Save new version</button></div></form>`;
+      ).join("")}<div class="actions pf-save"><span class="cap">${a._at ? "Baseline set " + fmt(a._at) + ". " : ""}Each save creates a new profile version.</span><button class="btn btn-p" type="submit">Save new version</button></div></form></div></div>`;
   }
   if (t.cur === "cand")
     body = card(
       "Profile change candidates",
       "Nothing becomes current without your decision.",
-      cands
-        .map(
-          (c) =>
-            `<div class="lrow" style="align-items:flex-start"><span class="tile t-soft">${ic("sparkle", 18)}</span><div class="lt"><b>${h(c.field)}: ${h(c.value)}</b><p class="cap">Source: ${h(c.source)}</p><div style="margin-top:6px">${c.prov === "AI-proposed" ? aiTag("AI-proposed") : pill(c.prov, "p-grey")} ${pill(c.status)}</div></div>${c.status === "Pending" ? `<div class="row wrap">${B("Reject", "cand", { id: c.id, v: "Rejected" })}${B("Defer", "cand", { id: c.id, v: "Deferred" })}${B("Edit", "candEdit", { id: c.id })}${B("Accept", "cand", { id: c.id, v: "Accepted" }, "btn-p btn-sm")}</div>` : ""}</div>`,
-        )
-        .join("") ||
-        empty(
+      dataView("profile:cand", {
+        label: "candidates",
+        items: cands,
+        search: (c) => c.field + " " + c.value + " " + c.source,
+        quick: {
+          label: "Status",
+          options: pfOpts(cands, (c) => c.status),
+          test: (c, v) => c.status === v,
+        },
+        filters: [
+          { key: "field", label: "Field", options: pfOpts(cands, (c) => c.field), test: (c, v) => c.field === v },
+          { key: "prov", label: "Provenance", options: pfOpts(cands, (c) => c.prov), test: (c, v) => c.prov === v },
+        ],
+        sorts: [
+          ["field", "Field", (a, b) => a.field.localeCompare(b.field)],
+          ["status", "Status", (a, b) => (a.status === "Pending" ? 0 : 1) - (b.status === "Pending" ? 0 : 1) || a.status.localeCompare(b.status)],
+        ],
+        row: (c) => ({
+          lead: `<span class="tile t-soft" aria-hidden="true">${ic("sparkle", 16)}</span>`,
+          title: `${h(c.field)}: ${h(c.value)}`,
+          sub: "Source: " + h(c.source),
+          badges: `${c.prov === "AI-proposed" ? aiTag("AI-proposed") : pill(c.prov, "p-grey")} ${pill(c.status)}`,
+          primary:
+            c.status === "Pending"
+              ? `<span class="row pf-acts">${B("Edit", "candEdit", { id: c.id })}${B("Accept", "cand", { id: c.id, v: "Accepted" }, "btn-p btn-sm")}</span>`
+              : "",
+          menu:
+            c.status === "Pending"
+              ? B(ic("clock", 16) + "Defer", "cand", { id: c.id, v: "Deferred" }, "menu-i", 'role="menuitem"') +
+                '<div class="menu-sep"></div>' +
+                B(ic("x", 16) + "Reject", "cand", { id: c.id, v: "Rejected" }, "menu-i danger", 'role="menuitem"')
+              : "",
+        }),
+        empty: [
           "sparkle",
           "No candidates",
           "Candidates come from AI (only when you ask, or after approved evidence), completed milestones or Learning Harvests.",
-        ),
+          "",
+        ],
+      }),
+      "",
+      "pf-dv",
     );
   if (t.cur === "evo") {
     const ev = S.evolution.filter((s) => s.pid === pid);
@@ -171,34 +275,49 @@ route("profile", "any", () => {
         "After a Learning Harvest is approved, PHOENIX identifies possible profile changes from it. Each one shows what would change, why, and the finding and records behind it. Approving updates your profile and saves a new version; rejecting leaves it unchanged. Both are recorded.",
       ) +
       (pend.length
-        ? `<h2 class="h3" style="margin:18px 0 10px">Awaiting your review (${pend.length})</h2><div class="col" style="gap:16px">${pend.map((s) => evoCard(s, true)).join("")}</div>`
+        ? `<h2 class="h3 pf-sec">Awaiting your review (${pend.length})</h2><div class="pf-evo">${pend.map((s) => evoCard(s, true)).join("")}</div>`
         : empty(
             "sparkle",
             "Nothing to review",
             "Suggestions appear here after a Learning Harvest about your work is approved.",
           )) +
       (done.length
-        ? `<h2 class="h3" style="margin:24px 0 10px">Decided</h2><div class="col" style="gap:16px">${done.map((s) => evoCard(s, false)).join("")}</div>`
+        ? `<h2 class="h3 pf-sec">Decided</h2><div class="pf-evo">${done.map((s) => evoCard(s, false)).join("")}</div>`
         : "");
   }
   if (t.cur === "versions")
     body = card(
       "Version history",
       "Who changed what, when, why and from which source.",
-      table(
-        ["Version", "Date", "What changed", "By", "Why", "Source"],
-        pr.history
-          .slice()
-          .reverse()
-          .map((v) => [
-            "v" + v.ver,
-            fmt(v.at),
-            h(v.what),
-            h(v.by),
-            h(v.why),
-            pill(v.source, "p-grey"),
-          ]),
-      ),
+      dataView("profile:versions", {
+        label: "versions",
+        items: pr.history.slice().reverse(),
+        search: (v) => "v" + v.ver + " " + v.what + " " + v.by + " " + v.why + " " + v.source,
+        quick: {
+          label: "Source",
+          options: pfOpts(pr.history, (v) => v.source),
+          test: (v, x) => v.source === x,
+        },
+        filters: [{ key: "by", label: "Changed by", options: pfOpts(pr.history, (v) => v.by), test: (v, x) => v.by === x }],
+        sorts: [
+          ["ver", "Newest first", (a, b) => b.ver - a.ver],
+          ["date", "Date", (a, b) => String(a.at).localeCompare(String(b.at))],
+        ],
+        defaultSort: "ver",
+        layout: "table",
+        dense: true,
+        columns: [
+          { label: "Version", cell: (v) => `<span class="pf-ver">v${v.ver}</span>` },
+          { label: "Date", sort: "date", cell: (v) => fmt(v.at) },
+          { label: "What changed", cell: (v) => h(v.what) },
+          { label: "By", hideSm: true, cell: (v) => h(v.by) },
+          { label: "Why", hideSm: true, cell: (v) => h(v.why) },
+          { label: "Source", hideSm: true, cell: (v) => pill(v.source, "p-grey") },
+        ],
+        empty: ["clock", "No versions yet", "Every saved change to your profile creates a version.", ""],
+      }),
+      "",
+      "pf-dv",
     );
   if (t.cur === "collab") {
     const rows = [
@@ -227,17 +346,39 @@ route("profile", "any", () => {
           pill(c.state),
         ]),
     ];
+    const txt = (x) => String(x).replace(/<[^>]+>/g, "");
     body = card(
       "Collaboration history",
       "Authorised summary only. Private discussions, Rope Team notes and restricted evidence are never copied here.",
-      table(["Space", "Type", "Role", "Status"], rows),
+      dataView("profile:collab", {
+        label: "spaces",
+        items: rows,
+        search: (r) => txt(r.join(" ")),
+        quick: {
+          label: "Type",
+          options: pfOpts(rows, (r) => r[1]),
+          test: (r, v) => r[1] === v,
+        },
+        filters: [
+          { key: "role", label: "Role", options: pfOpts(rows, (r) => txt(r[2])), test: (r, v) => txt(r[2]) === v },
+          { key: "state", label: "Status", options: pfOpts(rows, (r) => txt(r[3])), test: (r, v) => txt(r[3]) === v },
+        ],
+        sorts: [["name", "Name", (a, b) => txt(a[0]).localeCompare(txt(b[0]))]],
+        row: (r) => ({
+          lead: `<span class="tile ${{ Circle: "t-purple", "Rope Team": "t-teal" }[r[1]] || "t-navy"}" aria-hidden="true">${ic({ Circle: "users", "Rope Team": "route" }[r[1]] || "room", 16)}</span>`,
+          title: r[0],
+          sub: r[1] + " · " + r[2],
+          badges: r[3],
+        }),
+        empty: ["users", "No collaborations yet", "Circles, Rope Teams and " + WL() + "s you join appear here.", ""],
+      }),
+      "",
+      "pf-dv",
     );
   }
+  const org = me().org && S.orgs.find((o) => o.id === me().org);
   return (
-    head(
-      "Profile",
-      "Your versioned profile. You can correct any claim and compare versions.",
-    ) +
+    `<header class="shead-main pf-head"><span class="av lg pf-av" aria-hidden="true">${ini(pid)}</span><div class="shead-t"><p class="shead-kind">Profile</p><div class="row wrap pf-title"><h1 class="h1">${h(me().name)}</h1>${pill(ROLE[role()], "p-teal")}</div><div class="shead-meta"><span>${h(ctx().name)}</span>${org ? `<span>${h(org.name)}</span>` : ""}<span>Profile v${pr.ver}</span><span>${cl.length} claim${cl.length === 1 ? "" : "s"}</span></div><p class="pf-sub">Your versioned profile. You can correct any claim and compare versions.</p></div></header>` +
     t.html +
     body
   );
@@ -278,7 +419,7 @@ A.addClaim = () => {
   modal(
     "Add a profile claim",
     () =>
-      `<form data-f="claim" class="col" style="gap:14px" novalidate>${fi("claim", "field", "Field", { type: "select", req: true, opts: ["Skills", "Skill proficiency", "Experience", "Knowledge", "Capability", "Interests", "Languages", "Availability", "Relationships / resources", "Preferences", "Goals", "Contributions", "Constraints"], ph: "Select" })}${fi("claim", "value", "Value", { req: true })}${fi("claim", "vis", "Visibility", { type: "select", opts: VIS, value: "Only me" })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save claim</button></div></form>`,
+      `<form data-f="claim" class="col pf-form" novalidate>${fi("claim", "field", "Field", { type: "select", req: true, opts: ["Skills", "Skill proficiency", "Experience", "Knowledge", "Capability", "Interests", "Languages", "Availability", "Relationships / resources", "Preferences", "Goals", "Contributions", "Constraints"], ph: "Select" })}${fi("claim", "value", "Value", { req: true })}${fi("claim", "vis", "Visibility", { type: "select", opts: VIS, value: "Only me" })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save claim</button></div></form>`,
   );
 };
 F.claim = (d) => {
@@ -305,7 +446,7 @@ A.correctClaim = (d) => {
   modal(
     "Correct claim",
     () =>
-      `<form data-f="corr" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${c.id}">${fi("corr", "value", h(c.field), { req: true })}${fi("corr", "why", "Reason for correction", { req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save correction</button></div></form>`,
+      `<form data-f="corr" class="col pf-form" novalidate><input type="hidden" name="id" value="${c.id}">${fi("corr", "value", h(c.field), { req: true })}${fi("corr", "why", "Reason for correction", { req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save correction</button></div></form>`,
   );
 };
 F.corr = (d) => {
@@ -333,7 +474,7 @@ A.editBasics = () => {
   modal(
     "Edit basics",
     () =>
-      `<form data-f="basics" class="col" style="gap:14px" novalidate>${fi("basics", "display", "Display name", { req: true })}${dobField("basics", me().dob || "")}${fi("basics", "bio", "Short biography", { type: "textarea", rows: 3, max: 400 })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save new version</button></div></form>`,
+      `<form data-f="basics" class="col pf-form" novalidate>${fi("basics", "display", "Display name", { req: true })}${dobField("basics", me().dob || "")}${fi("basics", "bio", "Short biography", { type: "textarea", rows: 3, max: 400 })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save new version</button></div></form>`,
   );
 };
 F.basics = (d) => {
@@ -386,7 +527,7 @@ A.candEdit = (d) => {
   modal(
     "Edit before accepting",
     () =>
-      `<form data-f="ce" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${c.id}">${fi("ce", "value", h(c.field), { req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Accept edited version</button></div></form>`,
+      `<form data-f="ce" class="col pf-form" novalidate><input type="hidden" name="id" value="${c.id}">${fi("ce", "value", h(c.field), { req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Accept edited version</button></div></form>`,
   );
 };
 F.ce = (d) => {
@@ -555,7 +696,7 @@ function evoCard(s, act) {
     ["Suggested", evoSuggestedHtml(s)],
     ["Why this was suggested", h(s.reason)],
     ["Supporting Harvest finding", `<span class="cap">${h(s.finding.sec)}</span><blockquote class="evo-q">${h(s.finding.text || "—")}</blockquote>`],
-    ["Supporting evidence and records", `<div class="row wrap" style="gap:6px">${links || '<span class="cap">None linked</span>'}</div>`],
+    ["Supporting evidence and records", `<div class="row wrap pf-links">${links || '<span class="cap">None linked</span>'}</div>`],
   ])}${
     s.status === "Pending"
       ? act
@@ -699,93 +840,148 @@ route("privacy", "agreements", () => {
       card(
         "Accepted agreements",
         "A person may hold several active agreements, each with its own history.",
-        table(
-          ["Agreement", "Version", "Context", "Status", "Accepted", "Receipt"],
-          acc.map((x) => {
+        dataView("privacy:accepts", {
+          label: "agreements",
+          items: acc,
+          search: (x) => {
             const g = byId("agreements", x.ag);
-            return [
-              h(g.type),
-              "v" + g.ver,
-              h(S.contexts.find((c) => c.id === g.ctx).name),
-              pill(g.status === "Active" ? "Accepted" : g.status),
-              fmt(x.at),
-              B(h(x.receipt), "fakeDl", { n: x.receipt }),
-            ];
-          }),
-        ),
+            return g.type + " v" + g.ver + " " + S.contexts.find((c) => c.id === g.ctx).name + " " + x.receipt;
+          },
+          quick: {
+            label: "Status",
+            options: pfOpts(acc, (x) => (byId("agreements", x.ag).status === "Active" ? "Accepted" : byId("agreements", x.ag).status)),
+            test: (x, v) => (byId("agreements", x.ag).status === "Active" ? "Accepted" : byId("agreements", x.ag).status) === v,
+          },
+          filters: [
+            {
+              key: "ctx",
+              label: "Context",
+              options: pfOpts(acc, (x) => S.contexts.find((c) => c.id === byId("agreements", x.ag).ctx).name),
+              test: (x, v) => S.contexts.find((c) => c.id === byId("agreements", x.ag).ctx).name === v,
+            },
+          ],
+          sorts: [
+            ["at", "Accepted (newest)", (a, b) => String(b.at).localeCompare(String(a.at))],
+            ["type", "Agreement", (a, b) => byId("agreements", a.ag).type.localeCompare(byId("agreements", b.ag).type)],
+          ],
+          layout: "table",
+          columns: [
+            { label: "Agreement", sort: "type", cell: (x) => `<b>${h(byId("agreements", x.ag).type)}</b>` },
+            { label: "Version", cell: (x) => "v" + byId("agreements", x.ag).ver },
+            { label: "Context", hideSm: true, cell: (x) => h(S.contexts.find((c) => c.id === byId("agreements", x.ag).ctx).name) },
+            { label: "Status", cell: (x) => pill(byId("agreements", x.ag).status === "Active" ? "Accepted" : byId("agreements", x.ag).status) },
+            { label: "Accepted", sort: "at", cell: (x) => fmt(x.at) },
+            { label: "Receipt", cell: (x) => B(h(x.receipt), "fakeDl", { n: x.receipt }) },
+          ],
+          empty: ["file", "No accepted agreements", "Agreements you accept appear here with a dated receipt.", ""],
+        }),
+        "",
+        "pf-dv",
       );
   }
   if (t.cur === "data") {
     const cl = S.claims.filter((x) => x.pid === pid);
+    const held = [
+      [
+        "Name, email, sign-in",
+        "Self-declared",
+        "You + authorised administration",
+        "Service operation",
+      ],
+      [
+        "Role and context",
+        "Assigned",
+        "Context members (role only)",
+        "Authorised operation",
+      ],
+      ...cl.map((x) => [
+        h(x.field + ": " + x.value),
+        pill(x.prov, "p-grey"),
+        h(x.vis),
+        "Profile",
+      ]),
+      [
+        "Purpose Compass",
+        "Self-declared",
+        "Only you (contextual sharing only)",
+        "Orientation",
+      ],
+      [
+        "Evidence (" +
+          S.evidence.filter((e) => e.owner === pid).length +
+          ")",
+        "Self-declared",
+        "Per evidence item",
+        "Evidence of claims",
+      ],
+      [
+        "Consent settings",
+        "Self-declared",
+        "You + Trust/Data Steward",
+        "Governance",
+      ],
+    ];
+    const txt = (x) => String(x).replace(/<[^>]+>/g, "");
     body =
       card(
         "Data held about me",
         "Self-declared or derived, who can see it, and for what purpose.",
-        table(
-          ["Item", "Source", "Audiences", "Purpose"],
-          [
-            [
-              "Name, email, sign-in",
-              "Self-declared",
-              "You + authorised administration",
-              "Service operation",
-            ],
-            [
-              "Role and context",
-              "Assigned",
-              "Context members (role only)",
-              "Authorised operation",
-            ],
-            ...cl.map((x) => [
-              h(x.field + ": " + x.value),
-              pill(x.prov, "p-grey"),
-              h(x.vis),
-              "Profile",
-            ]),
-            [
-              "Purpose Compass",
-              "Self-declared",
-              "Only you (contextual sharing only)",
-              "Orientation",
-            ],
-            [
-              "Evidence (" +
-                S.evidence.filter((e) => e.owner === pid).length +
-                ")",
-              "Self-declared",
-              "Per evidence item",
-              "Evidence of claims",
-            ],
-            [
-              "Consent settings",
-              "Self-declared",
-              "You + Trust/Data Steward",
-              "Governance",
-            ],
+        dataView("privacy:held", {
+          label: "items",
+          items: held,
+          search: (r) => txt(r.join(" ")),
+          filters: [
+            { key: "src", label: "Source", options: pfOpts(held, (r) => txt(r[1])), test: (r, v) => txt(r[1]) === v },
+            { key: "purpose", label: "Purpose", options: pfOpts(held, (r) => r[3]), test: (r, v) => r[3] === v },
           ],
-        ),
-      ) +
-      `<div style="margin-top:12px" class="row wrap">${B(ic("download", 16) + "Export my authorised records (JSON)", "exportMine", {}, "btn-s")}${B("Request a correction", "go", { r: "privacy", tab: "req" })}</div>`;
+          layout: "table",
+          pageSize: 25,
+          columns: [
+            { label: "Item", cell: (r) => `<b>${r[0]}</b>` },
+            { label: "Source", cell: (r) => r[1] },
+            { label: "Audiences", cell: (r) => r[2] },
+            { label: "Purpose", cell: (r) => r[3] },
+          ],
+        }),
+        `<span class="row wrap pf-acts">${B(ic("download", 16) + "Export my authorised records (JSON)", "exportMine", {}, "btn-s btn-sm")}${B("Request a correction", "go", { r: "privacy", tab: "req" })}</span>`,
+        "pf-dv",
+      );
   }
   if (t.cur === "req") {
     const f = "prq";
+    const mine = (S.requests || []).filter((r) => r.pid === pid);
     body =
+      `<div class="pf-cols pf-req"><div class="pf-main">` +
       card(
         "Make a request",
         "Correction, export or deletion requests follow the approved policy and are always free.",
-        `<form data-f="prq" class="col" style="gap:14px" novalidate>${fi(f, "kind", "Request type", { type: "select", req: true, ph: "Select", opts: ["Correction", "Permitted export", "Deletion request", "Withdraw from programme"] })}${fi(f, "detail", "Details", { type: "textarea", rows: 3, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Submit request</button></div></form>`,
+        `<form data-f="prq" class="col pf-form" novalidate>${fi(f, "kind", "Request type", { type: "select", req: true, ph: "Select", opts: ["Correction", "Permitted export", "Deletion request", "Withdraw from programme"] })}${fi(f, "detail", "Details", { type: "textarea", rows: 3, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Submit request</button></div></form>`,
       ) +
-      `<div style="height:16px"></div>` +
+      `</div><div class="pf-rail">` +
       card(
         "My requests",
         "",
-        table(
-          ["Type", "Details", "Status"],
-          (S.requests || [])
-            .filter((r) => r.pid === pid)
-            .map((r) => [h(r.kind), h(r.detail), pill(r.status)]),
-        ),
-      );
+        dataView("privacy:requests", {
+          label: "requests",
+          items: mine,
+          search: (r) => r.kind + " " + r.detail,
+          quick: {
+            label: "Status",
+            options: pfOpts(mine, (r) => r.status),
+            test: (r, v) => r.status === v,
+          },
+          filters: [{ key: "kind", label: "Type", options: pfOpts(mine, (r) => r.kind), test: (r, v) => r.kind === v }],
+          row: (r) => ({
+            title: h(r.kind),
+            sub: h(r.detail),
+            badges: pill(r.status),
+          }),
+          empty: ["inbox", "No requests yet", "Requests you submit appear here with their status.", ""],
+        }),
+        "",
+        "pf-dv",
+      ) +
+      `</div></div>`;
   }
   return (
     head(
@@ -908,11 +1104,11 @@ route("pathway", "pathways", () => {
           card(
             "Proposed: " + h(p.name),
             "Mode " + h(p.mode) + " · by " + nm(p.by),
-            `<ol class="req-list">${p.steps.map((s) => `<li>${h(s.t)}</li>`).join("")}</ol><div class="row wrap" style="margin-top:12px">${B(ic("message", 14) + "Conversation & activity", "pwActivity", { id: p.id })}${B("Request a change", "pwChange", { id: p.id })}${B("Accept pathway", "pwAccept", { id: p.id }, "btn-p btn-sm")}</div>`,
+            `<ol class="req-list pw-list">${p.steps.map((s) => `<li>${h(s.t)}</li>`).join("")}</ol><div class="row wrap pf-after">${B(ic("message", 14) + "Conversation & activity", "pwActivity", { id: p.id })}${B("Request a change", "pwChange", { id: p.id })}${B("Accept pathway", "pwAccept", { id: p.id }, "btn-p btn-sm")}</div>`,
           ),
         )
-        .join('<div style="height:16px"></div>') +
-      (prop.length ? '<div style="height:16px"></div>' : "") +
+        .join('<div class="pf-gap"></div>') +
+      (prop.length ? '<div class="pf-gap"></div>' : "") +
       (cur
         ? card(
             h(cur.name),
@@ -923,25 +1119,14 @@ route("pathway", "pathways", () => {
               " of " +
               cur.steps.length +
               " steps complete",
-            `<div class="progress" style="margin-bottom:12px"><span style="width:${(cur.steps.filter((s) => s.done).length / cur.steps.length) * 100}%"></span></div>` +
+            `<div class="hm-prog"><div class="progress"><span class="bar" style="width:${(cur.steps.filter((s) => s.done).length / cur.steps.length) * 100}%"></span></div><span class="cap">${Math.round((cur.steps.filter((s) => s.done).length / cur.steps.length) * 100)}%</span></div><ol class="hm-steps pw-steps">` +
               cur.steps
-                .map((s, i) =>
-                  lrow(
-                    s.done ? "check" : "route",
-                    `Step ${i + 1}: ${h(s.t)}`,
-                    s.done ? pwStepDone(s) : "",
-                    s.done
-                      ? pill("Done")
-                      : B(
-                          "Mark complete",
-                          "pwStep",
-                          { id: cur.id, i },
-                          "btn-s btn-sm",
-                        ),
-                    s.done ? "t-teal" : "t-soft",
-                  ),
+                .map(
+                  (s, i) =>
+                    `<li class="${s.done ? "done" : i === cur.steps.findIndex((x) => !x.done) ? "cur" : ""}"><span class="hm-step-m" aria-hidden="true">${s.done ? ic("check", 12) : i + 1}</span><div class="hm-step-t"><b>${`Step ${i + 1}: ${h(s.t)}`}</b>${s.done ? `<span class="cap">${pwStepDone(s)}</span>` : ""}</div><div class="pw-step-a">${s.done ? pill("Done") : B("Mark complete", "pwStep", { id: cur.id, i }, "btn-s btn-sm")}</div></li>`,
                 )
-                .join(""),
+                .join("") +
+              `</ol>`,
             B(ic("message", 14) + "Conversation & activity", "pwActivity", { id: cur.id }),
           )
         : empty(
@@ -949,25 +1134,33 @@ route("pathway", "pathways", () => {
             "No current pathway",
             "A facilitator or mentor can propose one, or draft your own (it then needs reviewer approval).",
           )) +
-      `<div style="height:16px"></div>` +
+      `<div class="pf-gap"></div>` +
       card(
         "Pathway history",
         "",
-        table(
-          ["Pathway", "Mode", "Proposed by", "State", ""],
-          list.map((p) => [
-            h(p.name) +
-              (p.changeReq && p.state === "Draft"
-                ? `<div class="cap">You asked for: ${h(p.changeReq)}</div>`
-                : ""),
-            h(p.mode),
-            nm(p.by),
-            pill(
-              p.state === "Draft" && p.changeReq ? "Change requested" : p.state,
-            ),
-            B("Conversation & activity", "pwActivity", { id: p.id }),
-          ]),
-        ),
+        dataView("pathway:mine", {
+          label: "pathways",
+          items: list,
+          search: (p) => p.name + " " + p.mode + " " + nm(p.by) + " " + (p.changeReq || ""),
+          quick: {
+            label: "State",
+            options: pfOpts(list, (p) => (p.state === "Draft" && p.changeReq ? "Change requested" : p.state)),
+            test: (p, v) => (p.state === "Draft" && p.changeReq ? "Change requested" : p.state) === v,
+          },
+          filters: [{ key: "mode", label: "Mode", options: pfOpts(list, (p) => p.mode), test: (p, v) => p.mode === v }],
+          sorts: [["name", "Name", (a, b) => a.name.localeCompare(b.name)]],
+          row: (p) => ({
+            lead: `<span class="tile ${p.state === "Current" ? "t-teal" : "t-soft"}" aria-hidden="true">${ic("route", 16)}</span>`,
+            title: h(p.name),
+            sub: h(p.mode) + " · proposed by " + nm(p.by),
+            meta: [p.changeReq && p.state === "Draft" ? `You asked for: ${h(p.changeReq)}` : ""],
+            badges: pill(p.state === "Draft" && p.changeReq ? "Change requested" : p.state),
+            primary: B("Conversation & activity", "pwActivity", { id: p.id }),
+          }),
+          empty: ["route", "No pathways yet", "Pathways proposed to you, or drafted by you, appear here.", ""],
+        }),
+        "",
+        "pf-dv",
       )
     );
   }
@@ -992,34 +1185,80 @@ route("pathway", "pathways", () => {
     ) +
     (r === "A" ? pwAdminCards() + '<div class="section-gap"></div>' : "") +
     pwToReviewCard() +
-    table(
-      ["Participant", "Current pathway", "Other pathways", "Actions"],
-      parts.map((p) => {
-        const ls = S.pathways.filter((x) => x.pid === p && inCtx(x));
-        const c = ls.find((x) => x.state === "Current");
-        const last =
-          c &&
-          c.steps
-            .filter((s) => s.done && s.doneAt)
-            .sort((a, b) => b.doneAt.localeCompare(a.doneAt))[0];
-        return [
-          nm(p),
-          c
-            ? `${h(c.name)} · ${c.steps.filter((s) => s.done).length}/${c.steps.length}${last ? `<div class="cap">Last step completed ${fmt(last.doneAt)} by ${nm(last.doneBy)}${(last.files || []).length ? " · " + last.files.length + " file" + (last.files.length > 1 ? "s" : "") : ""}</div>` : ""}<div style="margin-top:6px">${pwActBtn(c)}</div>`
-            : "—",
-          ls
-            .filter((x) => x !== c)
-            .map(
-              (x) =>
-                `<div class="row wrap" style="gap:6px;margin-bottom:6px">${h(x.name)} ${pill(x.state === "Draft" && x.changeReq ? "Change requested" : x.state)} ${pwActBtn(x)}${x.state === "Draft" && x.by === myId() ? B("Revise and re-propose", "pwRevise", { id: x.id }, "btn-p btn-sm") : ""}</div>`,
-            )
-            .join("") || "—",
-          ["F", "M"].includes(r)
-            ? B("Propose pathway", "proposePathway", { pid: p })
-            : "",
-        ];
-      }),
-    )
+    (() => {
+      const pwOf = (p) => S.pathways.filter((x) => x.pid === p && inCtx(x));
+      const curOf = (p) => pwOf(p).find((x) => x.state === "Current");
+      const lastOf = (c) =>
+        c &&
+        c.steps
+          .filter((s) => s.done && s.doneAt)
+          .sort((a, b) => b.doneAt.localeCompare(a.doneAt))[0];
+      const frac = (c) => (c ? c.steps.filter((s) => s.done).length / c.steps.length : -1);
+      const label = (x) => (x.state === "Draft" && x.changeReq ? "Change requested" : x.state);
+      const QUICK = [
+        ["current", "Current", (ls) => ls.some((x) => x.state === "Current")],
+        ["proposed", "Proposed", (ls) => ls.some((x) => x.state === "Proposed to participant")],
+        ["review", "In review", (ls) => ls.some((x) => ["In review", "Awaiting reviewer"].includes(x.state))],
+        ["changes", "Clarification", (ls) => ls.some((x) => x.state === "Clarification requested" || (x.state === "Draft" && x.changeReq))],
+        ["none", "No pathway", (ls) => !ls.length],
+      ];
+      const PROG = [
+        ["0", "Not started", (f) => f === 0],
+        ["mid", "In progress", (f) => f > 0 && f < 1],
+        ["done", "Complete", (f) => f === 1],
+        ["none", "No current pathway", (f) => f < 0],
+      ];
+      const actMenu = (x, cur) =>
+        pwCanView(x) ? B(ic("message", 16) + "Conversation & activity: " + h(x.name) + (cur ? " (current)" : ""), "pwActivity", { id: x.id }, "menu-i", 'role="menuitem"') : "";
+      return card(
+        "Participants",
+        parts.length + " participant" + (parts.length === 1 ? "" : "s"),
+        dataView("pathway:participants", {
+          label: "participants",
+          items: parts,
+          rowId: (p) => p,
+          search: (p) => P(p).name + " " + pwOf(p).map((x) => x.name + " " + label(x)).join(" "),
+          quick: {
+            label: "Pathway state",
+            options: QUICK.map(([v, l]) => [v, l]),
+            test: (p, v) => QUICK.find((q) => q[0] === v)[2](pwOf(p)),
+          },
+          filters: [
+            { key: "prog", label: "Progress on current pathway", options: PROG.map(([v, l]) => [v, l]), test: (p, v) => PROG.find((q) => q[0] === v)[2](frac(curOf(p))) },
+            { key: "mode", label: "Current pathway mode", options: pfOpts(parts.map(curOf).filter(Boolean), (c) => c.mode), test: (p, v) => (curOf(p) || {}).mode === v },
+          ],
+          sorts: [
+            ["name", "Name", (a, b) => P(a).name.localeCompare(P(b).name)],
+            ["prog", "Progress (most first)", (a, b) => frac(curOf(b)) - frac(curOf(a))],
+            ["last", "Last step completed", (a, b) => String((lastOf(curOf(b)) || {}).doneAt || "").localeCompare(String((lastOf(curOf(a)) || {}).doneAt || ""))],
+          ],
+          row: (p) => {
+            const ls = pwOf(p);
+            const c = curOf(p);
+            const last = lastOf(c);
+            const others = ls.filter((x) => x !== c);
+            const revise = others.filter((x) => x.state === "Draft" && x.by === myId());
+            return {
+              lead: `<span class="av" aria-hidden="true">${ini(p)}</span>`,
+              title: nm(p),
+              sub: c ? `${h(c.name)} · ${c.steps.filter((s) => s.done).length}/${c.steps.length}` : "No current pathway",
+              meta: [
+                last ? `Last step completed ${fmt(last.doneAt)} by ${nm(last.doneBy)}${(last.files || []).length ? " · " + last.files.length + " file" + (last.files.length > 1 ? "s" : "") : ""}` : "",
+                ...others.map((x) => `${h(x.name)} ${pill(label(x))}`),
+              ],
+              badges: c ? `<span class="pw-mini" title="${Math.round(frac(c) * 100)}% complete"><span class="progress"><span class="bar" style="width:${frac(c) * 100}%"></span></span></span>` : "",
+              primary:
+                revise.map((x) => B("Revise and re-propose", "pwRevise", { id: x.id }, "btn-p btn-sm")).join("") +
+                (["F", "M"].includes(r) ? B("Propose pathway", "proposePathway", { pid: p }) : c ? pwActBtn(c) : ""),
+              menu: [["F", "M"].includes(r) && c ? actMenu(c, true) : "", ...others.map((x) => actMenu(x))].filter(Boolean).join(""),
+            };
+          },
+          empty: ["users", "No participants yet", "Participants in this context appear here.", ""],
+        }),
+        "",
+        "pf-dv",
+      );
+    })()
   );
 });
 A.proposePathway = (d) => {
@@ -1028,7 +1267,7 @@ A.proposePathway = (d) => {
   modal("Propose a pathway for " + nm(d.pid), () => {
     const m = fv("pp", "mode", "1");
     const tpl = byId("templates", fv("pp", "tpl"));
-    return `<form data-f="pp" class="col" style="gap:14px" novalidate><input type="hidden" name="pid" value="${d.pid}">${fi(
+    return `<form data-f="pp" class="col pf-form" novalidate><input type="hidden" name="pid" value="${d.pid}">${fi(
       "pp",
       "mode",
       "Mode",
@@ -1056,10 +1295,10 @@ const pwLog = (p, t) =>
   (p.activity = p.activity || []).push({ at: now(), by: myId(), t });
 const pwFiles = (files) =>
   (files || []).length
-    ? `<div class="row wrap" style="gap:6px;margin-top:6px">${files.map((f) => attCard(f)).join("")}</div>`
+    ? `<div class="row wrap pw-files">${files.map((f) => attCard(f)).join("")}</div>`
     : "";
 const pwStepDone = (s) =>
-  `Completed ${s.doneAt ? fmt(s.doneAt) : ""}${s.doneBy ? " by " + nm(s.doneBy) : ""}${s.note ? `<span style="display:block;margin-top:4px">“${h(s.note)}”</span>` : ""}${pwFiles(s.files)}`;
+  `Completed ${s.doneAt ? fmt(s.doneAt) : ""}${s.doneBy ? " by " + nm(s.doneBy) : ""}${s.note ? `<span class="pw-note-q">“${h(s.note)}”</span>` : ""}${pwFiles(s.files)}`;
 const pwActBtn = (p) => (pwCanView(p) ? B("Conversation & activity", "pwActivity", { id: p.id }) : "");
 // ---- review conversation between the pathway creator and the approver (assigned reviewer or Reviewer bundle)
 const pwParty = (p) =>
@@ -1188,7 +1427,7 @@ A.draftPathway = (d) => {
   modal(
     "Draft your own pathway",
     () =>
-      `<form data-f="pp" class="col" style="gap:14px" novalidate><input type="hidden" name="pid" value="${d.pid}"><input type="hidden" name="mode" value="3">${fi("pp", "name", "Pathway name", { req: true })}${fi("pp", "steps", "Steps (one per line, 3–5)", { type: "textarea", rows: 5, req: true })}${banner("info", "", "Custom pathways are approved by a Steward, assigned by the Programme Administrator.")}<div class="actions"><span></span><button class="btn btn-p" type="submit">Submit for review</button></div></form>`,
+      `<form data-f="pp" class="col pf-form" novalidate><input type="hidden" name="pid" value="${d.pid}"><input type="hidden" name="mode" value="3">${fi("pp", "name", "Pathway name", { req: true })}${fi("pp", "steps", "Steps (one per line, 3–5)", { type: "textarea", rows: 5, req: true })}${banner("info", "", "Custom pathways are approved by a Steward, assigned by the Programme Administrator.")}<div class="actions"><span></span><button class="btn btn-p" type="submit">Submit for review</button></div></form>`,
   );
 };
 // ---- A participant creates and submits a pathway; the Programme Administrator assigns a reviewer (Steward or
@@ -1217,10 +1456,10 @@ function pwMineCard(list) {
       mine
         .map(
           (p) =>
-            `<div class="lrow" style="align-items:flex-start"><span class="tile t-soft">${ic("route", 18)}</span><div class="lt"><b>${h(p.name)}</b><p class="cap">${p.steps.map((s) => h(s.t)).join(" → ")}</p><p class="cap" style="margin-top:4px">${p.state === "Awaiting reviewer" ? "Waiting for the Programme Administrator to assign a Steward" : p.state === "In review" ? "With " + nm(p.reviewer) + " for review" : p.state === "Clarification requested" ? "Clarification requested by " + nm(p.reviewer) + " — reply in the conversation, or update and resubmit" : "Rejected by " + nm(p.reviewer)}</p>${p.reviewNote && ["Clarification requested", "Rejected"].includes(p.state) ? `<p class="pw-note">${h(p.reviewNote)}</p>` : ""}</div><div class="row wrap" style="gap:6px">${pill(p.state, { "Clarification requested": "p-amber", Rejected: "p-red" }[p.state])}${B(ic("message", 14) + "Conversation & activity" + (convoN(p) ? " (" + convoN(p) + ")" : ""), "pwActivity", { id: p.id })}${p.state === "Clarification requested" ? B("Update and resubmit", "pwUpd", { id: p.id }, "btn-p btn-sm") : ""}</div></div>`,
+            `<div class="lrow hm-row pw-row"><span class="tile t-soft" aria-hidden="true">${ic("route", 16)}</span><div class="lt"><b>${h(p.name)}</b><p class="cap">${p.steps.map((s) => h(s.t)).join(" → ")}</p><p class="cap pw-state">${p.state === "Awaiting reviewer" ? "Waiting for the Programme Administrator to assign a Steward" : p.state === "In review" ? "With " + nm(p.reviewer) + " for review" : p.state === "Clarification requested" ? "Clarification requested by " + nm(p.reviewer) + " — reply in the conversation, or update and resubmit" : "Rejected by " + nm(p.reviewer)}</p>${p.reviewNote && ["Clarification requested", "Rejected"].includes(p.state) ? `<p class="pw-note">${h(p.reviewNote)}</p>` : ""}</div><div class="hm-row-r">${pill(p.state, { "Clarification requested": "p-amber", Rejected: "p-red" }[p.state])}${B(ic("message", 14) + "Conversation & activity" + (convoN(p) ? " (" + convoN(p) + ")" : ""), "pwActivity", { id: p.id })}${p.state === "Clarification requested" ? B("Update and resubmit", "pwUpd", { id: p.id }, "btn-p btn-sm") : ""}</div></div>`,
         )
         .join(""),
-    ) + '<div style="height:16px"></div>'
+    ) + '<div class="pf-gap"></div>'
   );
 }
 function pwToReviewCard() {
@@ -1233,17 +1472,17 @@ function pwToReviewCard() {
       mine
         .map(
           (p) =>
-            `<div class="lrow" style="align-items:flex-start"><span class="tile t-soft">${ic("route", 18)}</span><div class="lt"><b>${h(p.name)}</b><p class="cap">For ${nm(p.pid)} · ${h(p.mode)}${p.resubmitted ? " · resubmitted " + fmt(p.resubmitted) : ""}</p><ol class="req-list" style="margin-top:6px">${p.steps.map((s) => `<li>${h(s.t)}</li>`).join("")}</ol>${p.note ? `<p class="cap">Creator’s note: ${h(p.note)}</p>` : ""}</div><div class="row wrap" style="gap:6px">${p.state === "Clarification requested" ? pill("Waiting for the creator", "p-amber") : ""}${B(ic("message", 14) + "Conversation & activity" + (convoN(p) ? " (" + convoN(p) + ")" : ""), "pwActivity", { id: p.id })}${B("Reject", "pwDec", { id: p.id, v: "Rejected" })}${p.state === "In review" ? B("Request clarification", "pwDec", { id: p.id, v: "Clarification requested" }) + B("Approve", "pwDec", { id: p.id, v: "Current" }, "btn-p btn-sm") : ""}</div></div>`,
+            `<div class="lrow hm-row pw-row"><span class="tile t-soft" aria-hidden="true">${ic("route", 16)}</span><div class="lt"><b>${h(p.name)}</b><p class="cap">For ${nm(p.pid)} · ${h(p.mode)}${p.resubmitted ? " · resubmitted " + fmt(p.resubmitted) : ""}</p><ol class="req-list pw-list">${p.steps.map((s) => `<li>${h(s.t)}</li>`).join("")}</ol>${p.note ? `<p class="cap">Creator’s note: ${h(p.note)}</p>` : ""}</div><div class="hm-row-r">${p.state === "Clarification requested" ? pill("Waiting for the creator", "p-amber") : ""}${B(ic("message", 14) + "Conversation & activity" + (convoN(p) ? " (" + convoN(p) + ")" : ""), "pwActivity", { id: p.id })}${B("Reject", "pwDec", { id: p.id, v: "Rejected" })}${p.state === "In review" ? B("Request clarification", "pwDec", { id: p.id, v: "Clarification requested" }) + B("Approve", "pwDec", { id: p.id, v: "Current" }, "btn-p btn-sm") : ""}</div></div>`,
         )
         .join("") || empty("check", "Nothing to review", "Pathways the Programme Administrator assigns to you appear here."),
-    ) + '<div style="height:16px"></div>'
+    ) + '<div class="pf-gap"></div>'
   );
 }
 function pwForm(p) {
   const tpls = S.templates.filter((t) => t.status === "Approved");
   const src = fv("pwn", "src", p ? p.tpl || "custom" : "custom");
   const tpl = byId("templates", src);
-  return `<form data-f="pwn" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${p ? p.id : ""}">${p && p.reviewNote ? banner("warn", "Clarification requested by " + nm(p.reviewer), h(p.reviewNote)) : ""}${p ? "" : fi("pwn", "src", "Start from", { type: "select", opts: [["custom", "My own steps"], ...tpls.map((t) => [t.id, "Template: " + t.name])], ch: "pwnSrc" })}${fi("pwn", "name", "Pathway name", { req: true, value: p ? p.name : tpl ? tpl.name : "" })}${fi("pwn", "steps", "Steps (one per line, 3–5)", { type: "textarea", rows: 5, req: true, value: p ? p.steps.map((s) => s.t).join("\n") : tpl ? tpl.steps.join("\n") : "" })}${fi("pwn", "note", p ? "Your response and what you changed" : "Note for the reviewer (optional)", { type: "textarea", rows: 2, req: !!p, help: p ? "Added to the review conversation." : "" })}${banner("info", "", "The Programme Administrator assigns a Steward or Faculty member to review your pathway. It becomes current when they approve it.")}<div class="actions"><span></span><button class="btn btn-p" type="submit">${p ? "Resubmit for review" : "Submit for review"}</button></div></form>`;
+  return `<form data-f="pwn" class="col pf-form" novalidate><input type="hidden" name="id" value="${p ? p.id : ""}">${p && p.reviewNote ? banner("warn", "Clarification requested by " + nm(p.reviewer), h(p.reviewNote)) : ""}${p ? "" : fi("pwn", "src", "Start from", { type: "select", opts: [["custom", "My own steps"], ...tpls.map((t) => [t.id, "Template: " + t.name])], ch: "pwnSrc" })}${fi("pwn", "name", "Pathway name", { req: true, value: p ? p.name : tpl ? tpl.name : "" })}${fi("pwn", "steps", "Steps (one per line, 3–5)", { type: "textarea", rows: 5, req: true, value: p ? p.steps.map((s) => s.t).join("\n") : tpl ? tpl.steps.join("\n") : "" })}${fi("pwn", "note", p ? "Your response and what you changed" : "Note for the reviewer (optional)", { type: "textarea", rows: 2, req: !!p, help: p ? "Added to the review conversation." : "" })}${banner("info", "", "The Programme Administrator assigns a Steward or Faculty member to review your pathway. It becomes current when they approve it.")}<div class="actions"><span></span><button class="btn btn-p" type="submit">${p ? "Resubmit for review" : "Submit for review"}</button></div></form>`;
 }
 A.pwNew = () => {
   clearF("pwn");
@@ -1317,7 +1556,7 @@ A.pwAssign = (d) => {
   modal(
     p.reviewer ? "Change the Steward" : "Assign a Steward",
     () =>
-      `<form data-f="pwas" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${p.id}">${dl([["Pathway", h(p.name)], ["Created by", nm(p.by)], ["For", nm(p.pid)], ["Steps", p.steps.map((s) => h(s.t)).join(" → ")], p.reviewer && ["Current Steward", nm(p.reviewer)]])}${
+      `<form data-f="pwas" class="col pf-form" novalidate><input type="hidden" name="id" value="${p.id}">${dl([["Pathway", h(p.name)], ["Created by", nm(p.by)], ["For", nm(p.pid)], ["Steps", p.steps.map((s) => h(s.t)).join(" → ")], p.reviewer && ["Current Steward", nm(p.reviewer)]])}${
         rv.length
           ? fi("pwas", "rv", "Steward", { type: "select", req: true, ph: "Choose a Steward", value: p.reviewer || "", opts: rv.map((a) => [a.pid, P(a.pid).name + " · " + ROLE[a.role]]), help: "Active Facilitators / Stewards in this programme. The person who created the pathway cannot approve it." })
           : banner("warn", "No Steward available in this programme", "Invite a Facilitator / Steward from " + L("Programme admin → Invitations", "admin", { tab: "invites" }) + ", then assign them here.")
@@ -1407,7 +1646,7 @@ A.pwDec = (d) => {
   modal(
     d.v === "Rejected" ? "Reject pathway" : "Request clarification",
     () =>
-      `<form data-f="pwd" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${p.id}"><input type="hidden" name="v" value="${d.v}">${dl([["Pathway", h(p.name)], ["Created by", nm(p.by)]])}${fi("pwd", "note", d.v === "Rejected" ? "Why it is rejected" : "What needs clarifying or changing?", { type: "textarea", rows: 3, req: true, help: "Added to the review conversation. The creator can reply there and resubmit." })}<div class="actions"><span></span><button class="btn ${d.v === "Rejected" ? "btn-d" : "btn-p"}" type="submit">${d.v === "Rejected" ? "Reject" : "Send to the creator"}</button></div></form>`,
+      `<form data-f="pwd" class="col pf-form" novalidate><input type="hidden" name="id" value="${p.id}"><input type="hidden" name="v" value="${d.v}">${dl([["Pathway", h(p.name)], ["Created by", nm(p.by)]])}${fi("pwd", "note", d.v === "Rejected" ? "Why it is rejected" : "What needs clarifying or changing?", { type: "textarea", rows: 3, req: true, help: "Added to the review conversation. The creator can reply there and resubmit." })}<div class="actions"><span></span><button class="btn ${d.v === "Rejected" ? "btn-d" : "btn-p"}" type="submit">${d.v === "Rejected" ? "Reject" : "Send to the creator"}</button></div></form>`,
   );
 };
 F.pwd = (d) => {
@@ -1433,7 +1672,7 @@ A.pwReview = (d) => {
     return modal(
       "Return pathway to its author",
       () =>
-        `<form data-f="pwr" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${p.id}">${dl(
+        `<form data-f="pwr" class="col pf-form" novalidate><input type="hidden" name="id" value="${p.id}">${dl(
           [
             ["Pathway", h(p.name)],
             ["For", nm(p.pid)],
@@ -1485,7 +1724,7 @@ A.pwChange = (d) => {
   modal(
     "Request a change",
     () =>
-      `<form data-f="pwc" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${d.id}">${fi("pwc", "why", "What would you like changed?", { type: "textarea", rows: 3, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send request</button></div></form>`,
+      `<form data-f="pwc" class="col pf-form" novalidate><input type="hidden" name="id" value="${d.id}">${fi("pwc", "why", "What would you like changed?", { type: "textarea", rows: 3, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send request</button></div></form>`,
   );
 };
 F.pwc = (d) => {
@@ -1512,7 +1751,7 @@ A.pwRevise = (d) => {
   modal(
     "Revise and re-propose",
     () =>
-      `<form data-f="pwv" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${p.id}">${p.changeReq ? banner("warn", "Change requested", h(p.changeReq)) : ""}${fi("pwv", "steps", "Steps (one per line, 3–5)", { type: "textarea", rows: 5, req: true })}${fi("pwv", "note", "What you changed", { req: true })}${banner("info", "", p.mode.startsWith("3") ? "Custom pathways go back to a Reviewer before the participant sees them." : "The revised pathway goes straight back to the participant to accept.")}<div class="actions"><span></span><button class="btn btn-p" type="submit">Re-propose</button></div></form>`,
+      `<form data-f="pwv" class="col pf-form" novalidate><input type="hidden" name="id" value="${p.id}">${p.changeReq ? banner("warn", "Change requested", h(p.changeReq)) : ""}${fi("pwv", "steps", "Steps (one per line, 3–5)", { type: "textarea", rows: 5, req: true })}${fi("pwv", "note", "What you changed", { req: true })}${banner("info", "", p.mode.startsWith("3") ? "Custom pathways go back to a Reviewer before the participant sees them." : "The revised pathway goes straight back to the participant to accept.")}<div class="actions"><span></span><button class="btn btn-p" type="submit">Re-propose</button></div></form>`,
   );
 };
 F.pwv = (d) => {
@@ -1561,7 +1800,7 @@ A.pwStep = (d) => {
   modal(
     "Complete step " + (+d.i + 1),
     () =>
-      `<form data-f="pws" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${p.id}"><input type="hidden" name="i" value="${d.i}">${dl(
+      `<form data-f="pws" class="col pf-form" novalidate><input type="hidden" name="id" value="${p.id}"><input type="hidden" name="i" value="${d.i}">${dl(
         [
           ["Pathway", h(p.name)],
           ["Step", h(s.t)],
@@ -1653,7 +1892,7 @@ A.pwActivity = (d) => {
   clearF("cv");
   // A function body, so a message posted from the dialog shows in place.
   modal("Pathway · " + h(p.name), () =>
-    `<div class="col" style="gap:16px">${dl([
+    `<div class="col pw-act">${dl([
       ["Participant", nm(p.pid)],
       ["Mode", h(p.mode)],
       ["Created by", nm(p.by)],
@@ -1664,7 +1903,7 @@ A.pwActivity = (d) => {
       ],
       p.changeReq &&
         p.state === "Draft" && ["Open change request", h(p.changeReq)],
-    ])}<div><h3 class="h3" style="margin-bottom:8px">Conversation and activity</h3><p class="cap" style="margin-bottom:10px">Messages between the pathway creator and the approver, with every review step. Oldest first.</p>${convoHtml("pathway", p)}</div><div><h3 class="h3" style="margin-bottom:8px">Steps</h3>${table(
+    ])}<div><h3 class="h3 pw-h">Conversation and activity</h3><p class="cap" style="margin-bottom:10px">Messages between the pathway creator and the approver, with every review step. Oldest first.</p>${convoHtml("pathway", p)}</div><div><h3 class="h3" style="margin-bottom:8px">Steps</h3>${table(
       ["Step", "Status", "Completed by", "Completed on", "Note and files"],
       p.steps.map((s, i) => [
         `${i + 1}. ${h(s.t)}`,

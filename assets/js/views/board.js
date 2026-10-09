@@ -35,11 +35,11 @@ function delivBlock(x, k, edit, lead) {
     .filter(m => m.pid !== k.owner)
     .map(m => ({ pid: m.pid, sub: spaceRole('rooms', x, m.pid) || '' }));
   const none = '<span class="cap">None</span>';
-  return `<section class="tk-deliv col" style="gap:14px"><h3 class="h3">Deliverable</h3>
+  return `<section class="tk-deliv"><h3 class="h3">Deliverable</h3>
   ${edit && lead ? fi('tke', 'req', 'Required deliverable — must be done before evidence upload and the Learning Harvest', { type: 'checkbox', value: k.opt ? '' : 'yes' }) : `<div><span class="lbl">Requirement</span>${pill(k.opt ? 'Optional' : 'Required', k.opt ? 'p-grey' : 'p-navy')}</div>`}
   ${edit ? msel('tke', 'partners', 'Partners / contributors', people, k.partners || [], { none: 'No other active members.' }) : `<div><span class="lbl">Partners / contributors</span>${(k.partners || []).map(nm).join(', ') || none}</div>`}
-  <div class="field"><span class="lbl">Supporting records and evidence</span>${edit ? chkGroup('evidence', roomEvidence(x).map(e => [e.id, h(e.title) + ` <span class="cap">· ${h(e.review)}</span>`]), k.evidence || []) : kev.map(e => L(h(e.title), 'evidence', { id: e.id })).join(', ') || '<span class="cap">None attached</span>'}${x.state === 'Active' && memberOf(x) ? `<div style="margin-top:8px">${B(ic('upload', 14) + 'Upload evidence for this deliverable', 'go', { r: 'newevidence', link: x.id, task: k.id })}</div>` : ''}</div>
-  ${k.status === 'Done' ? `<div class="field"><span class="lbl">Completion</span><div class="row wrap" style="gap:8px">${pill('Completed', 'p-green')}<span class="cap">${k.doneAt ? fmt(k.doneAt) : ''}</span></div>${edit ? fi('tke', 'doneNote', 'Completion note', { type: 'textarea', rows: 2, ph: 'What was delivered, and anything others should know' }) : k.doneNote ? `<p class="muted" style="margin-top:6px">${h(k.doneNote)}</p>` : ''}</div>` : ''}
+  <div class="field"><span class="lbl">Supporting records and evidence</span>${edit ? chkGroup('evidence', roomEvidence(x).map(e => [e.id, h(e.title) + ` <span class="cap">· ${h(e.review)}</span>`]), k.evidence || []) : kev.map(e => L(h(e.title), 'evidence', { id: e.id })).join(', ') || '<span class="cap">None attached</span>'}${x.state === 'Active' && memberOf(x) ? `<div class="tk-up">${B(ic('upload', 14) + 'Upload evidence for this deliverable', 'go', { r: 'newevidence', link: x.id, task: k.id })}</div>` : ''}</div>
+  ${k.status === 'Done' ? `<div class="field"><span class="lbl">Completion</span><div class="row wrap" style="gap:8px">${pill('Completed', 'p-green')}<span class="cap">${k.doneAt ? fmt(k.doneAt) : ''}</span></div>${edit ? fi('tke', 'doneNote', 'Completion note', { type: 'textarea', rows: 2, ph: 'What was delivered, and anything others should know' }) : k.doneNote ? `<p class="muted tk-note">${h(k.doneNote)}</p>` : ''}</div>` : ''}
   </section>`;
 }
 // Who may move a card, and where.
@@ -77,7 +77,7 @@ const dueChip = k =>
 function kbCard(x, k) {
   const drag = taskCanMove(x, k);
   return `<article class="kb-card pr-${(k.prio || 'Medium').toLowerCase()} ${k.status === 'Done' ? 'is-done' : ''}" data-a="taskView" data-r="${x.id}" data-id="${k.id}" data-s="${h((k.t + ' ' + (k.desc || '') + ' ' + taskKey(x, k) + ' ' + P(k.owner).name).toLowerCase())}" ${drag ? 'draggable="true"' : ''} tabindex="0" role="button" aria-label="${h(taskKey(x, k) + ': ' + k.t + ', ' + k.status + ', assigned to ' + P(k.owner).name)}">
-  <div class="kb-title">${h(k.t)}</div>${k.status === 'Proposed' && k.by ? `<div class="cap">Proposed by ${nm(k.by)}</div>` : ''}
+  <div class="kb-top">${drag ? '<span class="kb-grip" aria-hidden="true" title="Drag to move, or open the card to change its status"></span>' : ''}<div class="kb-title">${h(k.t)}</div></div>${k.status === 'Proposed' && k.by ? `<div class="cap">Proposed by ${nm(k.by)}</div>` : ''}
   <div class="kb-meta">${prioTag(k.prio)}<span class="kb-key">${h(taskKey(x, k))}</span>${dueChip(k)}${(k.log || []).length > 1 ? `<span class="kb-c" title="${k.log.length} updates">${ic('message', 12)}${k.log.length}</span>` : ''}${(k.evidence || []).length ? `<span class="kb-c" title="${k.evidence.length} supporting evidence">${ic('award', 12)}${k.evidence.length}</span>` : ''}${k.opt ? '<span class="kb-c" title="Optional deliverable">Optional</span>' : ''}<span class="grow"></span><span class="av kb-av" title="Assignee: ${nm(k.owner)}">${ini(k.owner)}</span></div></article>`;
 }
 function taskBoard(x, lead, ro) {
@@ -241,14 +241,14 @@ A.taskView = d => {
   const mem = roomActive(x).map(m => [m.pid, P(m.pid).name + ' · ' + (spaceRole('rooms', x, m.pid) || '')]);
   const stOpts = taskTargets(x, k).length ? taskTargets(x, k) : [k.status];
   modal(
-    `<span class="kb-key" style="font-size:13px;margin-right:8px">${h(taskKey(x, k))}</span>${h(k.t)}`,
+    `<span class="kb-key tk-key">${h(taskKey(x, k))}</span>${h(k.t)}`,
     () =>
       `<form data-f="tke" class="tk-detail" novalidate><input type="hidden" name="r" value="${x.id}"><input type="hidden" name="id" value="${k.id}">
-  <div class="tk-main col" style="gap:14px">${k.status === 'Proposed' ? banner('info', 'Proposed by ' + nm(k.by), lead ? 'Approve it into a column, or decline it.' : 'The project owner or facilitator approves it before it is scheduled.') : ''}${edit && lead ? fi('tke', 't', 'Title', { req: true }) : ''}${edit ? fi('tke', 'desc', 'Description', { type: 'textarea', rows: 5, ph: 'Add detail, acceptance criteria or links' }) : `<div><span class="lbl">Description</span><p class="muted" style="white-space:pre-line">${h(k.desc) || '<span class="cap">No description.</span>'}</p></div>`}
+  <div class="tk-main">${k.status === 'Proposed' ? banner('info', 'Proposed by ' + nm(k.by), lead ? 'Approve it into a column, or decline it.' : 'The project owner or facilitator approves it before it is scheduled.') : ''}${edit && lead ? fi('tke', 't', 'Title', { req: true }) : ''}${edit ? fi('tke', 'desc', 'Description', { type: 'textarea', rows: 5, ph: 'Add detail, acceptance criteria or links' }) : `<div><span class="lbl">Description</span><p class="muted tk-desc">${h(k.desc) || '<span class="cap">No description.</span>'}</p></div>`}
   ${delivBlock(x, k, edit, lead)}
-  <div><h3 class="h3" style="margin-bottom:8px">Activity</h3>${(k.log || []).length ? `<ol class="mtl">${k.log.slice().reverse().map(l => `<li class="done"><span class="mtl-dot">${ic('check', 12)}</span><div class="col"><b>${h(l.t)}</b><span class="cap">${nm(l.by)} · ${fmt(l.at)}</span></div></li>`).join('')}</ol>` : '<p class="cap">No activity recorded yet.</p>'}</div></div>
-  <aside class="tk-side col" style="gap:12px">${edit ? fi('tke', 'status', 'Status', { type: 'select', opts: stOpts }) : `<div><span class="lbl">Status</span>${pill(k.status)}</div>`}${edit && lead ? fi('tke', 'owner', 'Assignee', { type: 'select', opts: mem }) : `<div><span class="lbl">Assignee</span><span class="row" style="gap:6px"><span class="av kb-av">${ini(k.owner)}</span>${nm(k.owner)}</span></div>`}${edit && lead ? fi('tke', 'prio', 'Priority', { type: 'select', opts: TASK_PRIOS }) + fi('tke', 'due', 'Due date', { type: 'date' }) : `<div><span class="lbl">Priority</span>${prioTag(k.prio)}</div><div><span class="lbl">Due</span>${fmt(k.due)}${dueTag(k.due, k.status === 'Done')}</div>`}<div><span class="lbl">${k.status === 'Proposed' ? 'Proposed by' : 'Created by'}</span>${k.by ? nm(k.by) : '—'}</div><div><span class="lbl">${WL()}</span>${h(x.name)}</div>
-  <div class="col" style="gap:8px;margin-top:6px">${edit ? '<button class="btn btn-p btn-sm" type="submit">Save changes</button>' : ''}${act && lead && k.status === 'Proposed' ? B('Decline proposal', 'taskDecide', { r: x.id, id: k.id, v: 'Declined' }) : ''}</div></aside></form>`,
+  <div class="tk-act"><h3 class="h3">Activity</h3>${(k.log || []).length ? `<ol class="mtl ws-tl">${k.log.slice().reverse().map(l => `<li class="done"><span class="mtl-dot">${ic('check', 12)}</span><div class="col"><b>${h(l.t)}</b><span class="cap">${nm(l.by)} · ${fmt(l.at)}</span></div></li>`).join('')}</ol>` : '<p class="cap">No activity recorded yet.</p>'}</div></div>
+  <aside class="tk-side">${edit ? fi('tke', 'status', 'Status', { type: 'select', opts: stOpts }) : `<div><span class="lbl">Status</span>${pill(k.status)}</div>`}${edit && lead ? fi('tke', 'owner', 'Assignee', { type: 'select', opts: mem }) : `<div><span class="lbl">Assignee</span><span class="row" style="gap:6px"><span class="av kb-av">${ini(k.owner)}</span>${nm(k.owner)}</span></div>`}${edit && lead ? fi('tke', 'prio', 'Priority', { type: 'select', opts: TASK_PRIOS }) + fi('tke', 'due', 'Due date', { type: 'date' }) : `<div><span class="lbl">Priority</span>${prioTag(k.prio)}</div><div><span class="lbl">Due</span>${fmt(k.due)}${dueTag(k.due, k.status === 'Done')}</div>`}<div><span class="lbl">${k.status === 'Proposed' ? 'Proposed by' : 'Created by'}</span>${k.by ? nm(k.by) : '—'}</div><div><span class="lbl">${WL()}</span>${h(x.name)}</div>
+  <div class="tk-acts">${edit ? '<button class="btn btn-p btn-sm" type="submit">Save changes</button>' : ''}${act && lead && k.status === 'Proposed' ? B('Decline proposal', 'taskDecide', { r: x.id, id: k.id, v: 'Declined' }) : ''}</div></aside></form>`,
     true,
   );
 };
@@ -331,9 +331,9 @@ function myTasksCard(cls = 'c12') {
   ];
   return card(
     'My tasks',
-    `Assigned to you across all your ${WL()}s · ${open.length} open${late ? ' · <b style="color:#8F1A12">' + late + ' overdue</b>' : ''}`,
+    `Assigned to you across all your ${WL()}s · ${open.length} open${late ? ' · <b class="ws-late">' + late + ' overdue</b>' : ''}`,
     table(['Task', WL(), 'Due', 'Status', ''], open.map(row), 'No open tasks assigned to you.') +
-      (done.length ? `<details style="margin-top:10px"><summary class="cap" style="cursor:pointer">${done.length} completed</summary>${table(['Task', WL(), 'Due', 'Status', ''], done.map(row))}</details>` : ''),
+      (done.length ? `<details class="ws-done"><summary class="cap">${done.length} completed</summary>${table(['Task', WL(), 'Due', 'Status', ''], done.map(row))}</details>` : ''),
     '',
     cls,
   );

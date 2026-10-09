@@ -123,38 +123,63 @@ route('ropeteams', 'ropeteams', () => {
       ? card(
           'Mentor Requests',
           r === 'M' ? 'Accept only where your expertise is relevant. Declining has no consequences.' : 'Requests you raised or received.',
-          table(
-            ['Need', 'Project', 'From', 'To', 'Status', ''],
-            reqs.map(m => [
-              `<b>${h(m.need)}</b>${m.hours ? `<div class="cap">${ic('clock', 12)} ${h(m.hours)}</div>` : ''}`,
-              cName(m.project),
-              nm(m.from),
-              m.open && m.status === 'Pending' ? pill('Open request', 'p-purple') : m.to ? nm(m.to) : '—',
-              pill(m.status),
-              B('Details', 'mrDetails', { id: m.id }) +
+          dataView('ropeteams:reqs', {
+            label: 'Mentor Requests',
+            items: reqs,
+            search: m => [m.need, m.detail, cName(m.project), P(m.from).name, m.to ? P(m.to).name : ''].join(' '),
+            quick: { label: 'Status', options: wsOpts(reqs, m => m.status), test: (m, v) => m.status === v },
+            filters: [
+              { key: 'project', label: 'Project', options: [...new Set(reqs.map(m => m.project))].map(p => [p, cName(p)]), test: (m, v) => m.project === v },
+              { key: 'from', label: 'From', options: wsPeople(reqs, m => m.from), test: (m, v) => m.from === v },
+            ],
+            sorts: [['at', 'Newest', (a, b) => String(b.at || '').localeCompare(String(a.at || ''))], ['need', 'Need', (a, b) => a.need.localeCompare(b.need)]],
+            defaultSort: 'at',
+            row: m => ({
+              lead: `<span class="tile t-teal" aria-hidden="true">${ic('route', 18)}</span>`,
+              title: `<b>${h(m.need)}</b>`,
+              sub: m.hours ? `<span class="ws-ico">${ic('clock', 12)} ${h(m.hours)}</span>` : '',
+              meta: [cName(m.project), 'From ' + nm(m.from), 'To ' + (m.open && m.status === 'Pending' ? 'mentors in this programme' : m.to ? nm(m.to) : '—'), m.at ? fmt(m.at) : ''],
+              badges: (m.open && m.status === 'Pending' ? pill('Open request', 'p-purple') : '') + pill(m.status),
+              primary:
+                B('Details', 'mrDetails', { id: m.id }) +
                 ((m.to === myId() || (m.open && r === 'M')) && m.status === 'Pending'
                   ? B('Decline', 'mentorReq', { id: m.id, v: 'Declined' }) + B('Accept', 'mentorReq', { id: m.id, v: 'Accepted' }, 'btn-p btn-sm')
                   : ''),
-            ]),
-            r === 'M' ? 'No Mentor Requests for you right now.' : 'No requests.',
-          ),
+            }),
+            empty: ['route', r === 'M' ? 'No Mentor Requests for you right now.' : 'No requests.', '', ''],
+          }),
         ) + '<div class="section-gap"></div>'
       : '') +
     card(
       'Rope Teams',
       '',
-      table(
-        ['Rope Team', 'Mentor', 'Linked to', 'Your role', 'State', ''],
-        list.map(x => [
-          `<b>${h(x.name)}</b>${unreadIn(x) && memberOf(x) ? ` <span class="mbadge">${unreadIn(x)}</span>` : ''}`,
-          x.mentor ? nm(x.mentor) : '—',
-          cName(x.circle) + ' · ' + cName(x.project),
-          spaceRole('ropes', x) ? h(spaceRole('ropes', x)) : joinState(x) === 'pending' ? pill('Pending') : joinState(x) === 'invited' ? pill('Invited') : '<span class="cap">Oversight</span>',
-          pill(x.state),
-          joinState(x) === 'pending' ? B('Withdraw request', 'joinWithdraw', { id: x.id, kind: 'ropes' }) : joinState(x) === 'invited' ? B('Respond to invite', 'go', { r: 'rope', id: x.id }, 'btn-p btn-sm') : L('Open', 'rope', { id: x.id }),
-        ]),
-        'No Rope Teams. One is formed when a mentor accepts a Mentor Request.',
-      ),
+      dataView('ropeteams:list', {
+        label: 'Rope Teams',
+        items: list,
+        search: x => [x.name, x.charter, x.mentor ? P(x.mentor).name : '', cName(x.circle), cName(x.project), wsRoleTxt('ropes', x)].join(' '),
+        quick: { label: 'State', options: wsOpts(list, x => x.state), test: (x, v) => x.state === v },
+        filters: [
+          { key: 'role', label: 'Your role', options: wsOpts(list, x => wsRoleTxt('ropes', x)), test: (x, v) => wsRoleTxt('ropes', x) === v },
+          { key: 'mentor', label: 'Mentor', options: wsPeople(list, x => x.mentor), test: (x, v) => x.mentor === v },
+          { key: 'project', label: 'Project', options: [...new Set(list.map(x => x.project).filter(Boolean))].map(p => [p, cName(p)]), test: (x, v) => x.project === v },
+        ],
+        sorts: [
+          ['name', 'Name', (a, b) => a.name.localeCompare(b.name)],
+          ['activity', 'Latest activity', (a, b) => wsLastAt(b).localeCompare(wsLastAt(a))],
+          ['reviews', 'Work reviewed', (a, b) => (b.reviews || []).filter(v => v.status !== 'Awaiting review').length - (a.reviews || []).filter(v => v.status !== 'Awaiting review').length],
+          ['members', 'Members', (a, b) => wsActive(b).length - wsActive(a).length],
+        ],
+        defaultSort: 'name',
+        row: x => ({
+          lead: `<span class="tile t-teal" aria-hidden="true">${ic('route', 18)}</span>`,
+          title: L(h(x.name), 'rope', { id: x.id }, 'dv-link') + wsUnread(x),
+          sub: h(x.charter || ''),
+          meta: ['Mentor <b>' + (x.mentor ? nm(x.mentor) : '—') + '</b>', 'Your role <b>' + h(wsRoleTxt('ropes', x)) + '</b>', cName(x.circle) + ' · ' + cName(x.project), wsMem(x)],
+          badges: pill(x.state) + (joinState(x) === 'pending' ? pill('Pending') : joinState(x) === 'invited' ? pill('Invited') : ''),
+          primary: joinState(x) === 'pending' ? B('Withdraw request', 'joinWithdraw', { id: x.id, kind: 'ropes' }) : joinState(x) === 'invited' ? B('Respond to invite', 'go', { r: 'rope', id: x.id }, 'btn-p btn-sm') : L('Open', 'rope', { id: x.id }, 'btn btn-s btn-sm'),
+        }),
+        empty: ['route', 'No Rope Teams.', 'One is formed when a mentor accepts a Mentor Request.', ''],
+      }),
     ) +
     (joinable.length
       ? '<div class="section-gap"></div>' +
@@ -163,7 +188,7 @@ route('ropeteams', 'ropeteams', () => {
           'You can ask to join. The project owner or the Faculty/Steward approves or declines.',
           table(
             ['Rope Team', 'Circle', 'Mentor', 'State', ''],
-            joinable.map(x => [`<b>${h(x.name)}</b>`, cName(x.circle), x.mentor ? nm(x.mentor) : '—', pill(x.state), joinBtn(x, 'ropes')]),
+            joinable.map(x => [`<div class="ws-name"><span class="tile t-teal" aria-hidden="true">${ic('route', 16)}</span><div class="ws-name-t"><b>${h(x.name)}</b></div></div>`, cName(x.circle), x.mentor ? nm(x.mentor) : '—', pill(x.state), joinBtn(x, 'ropes')]),
           ),
         )
       : '')
@@ -183,18 +208,18 @@ route('rope', 'ropeteams', () => {
     return (
       head(h(x.name), 'Rope Team', pill('Pending'), crumbs) +
       banner('info', 'Your request to join is pending', 'The project owner or the Faculty/Steward will approve or decline it. You will be notified either way.') +
-      card('', '', dl([['Charter', h(x.charter)], ['Mentor', x.mentor ? nm(x.mentor) : '—'], ['Requested', fmt(myM.at || '')]]) + `<div class="row" style="margin-top:12px">${B('Withdraw request', 'joinWithdraw', { id: x.id, kind: 'ropes' })}</div>`)
+      card('', '', dl([['Charter', h(x.charter)], ['Mentor', x.mentor ? nm(x.mentor) : '—'], ['Requested', fmt(myM.at || '')]]) + `<div class="row ws-acts">${B('Withdraw request', 'joinWithdraw', { id: x.id, kind: 'ropes' })}</div>`)
     );
   if (myM && myM.status === 'Invited')
     return (
       head(h(x.name), 'You have been invited to this Rope Team', '', crumbs) +
-      card('', '', `<p>${h(x.charter)}</p>${dl([['Mentor', x.mentor ? nm(x.mentor) : '—'], ['Your role', h(normRole(myM.role))], ['Circle', cName(x.circle)]])}<div class="row" style="margin-top:14px">${B('Decline', 'ropeInvite', { id: x.id, v: 'Declined' })}${B('Accept and join', 'ropeInvite', { id: x.id, v: 'Active' }, 'btn-p btn-sm')}</div>`)
+      card('', '', `<p>${h(x.charter)}</p>${dl([['Mentor', x.mentor ? nm(x.mentor) : '—'], ['Your role', h(normRole(myM.role))], ['Circle', cName(x.circle)]])}<div class="row ws-acts">${B('Decline', 'ropeInvite', { id: x.id, v: 'Declined' })}${B('Accept and join', 'ropeInvite', { id: x.id, v: 'Active' }, 'btn-p btn-sm')}</div>`)
     );
   if (!isMem && !['A', 'O'].includes(r) && !inviter) {
     if (ropeJoinable(x) || (x.circle && memberOf(byId('circles', x.circle) || {})))
       return (
         head(h(x.name), 'Rope Team', pill(x.state), crumbs) +
-        card('Members only', 'Only Rope Team members see its chat, reviews and support.', dl([['Charter', h(x.charter)], ['Mentor', x.mentor ? nm(x.mentor) : '—'], ['Circle', cName(x.circle)]]) + (x.state === 'Active' ? `<div class="row" style="margin-top:14px">${joinBtn(x, 'ropes')}</div>` : ''))
+        card('Members only', 'Only Rope Team members see its chat, reviews and support.', dl([['Charter', h(x.charter)], ['Mentor', x.mentor ? nm(x.mentor) : '—'], ['Circle', cName(x.circle)]]) + (x.state === 'Active' ? `<div class="row ws-acts">${joinBtn(x, 'ropes')}</div>` : ''))
       );
     return deniedView('ropeteams');
   }
@@ -203,9 +228,10 @@ route('rope', 'ropeteams', () => {
   const canAsk = sCan('ropes', x, 'ask');
   const pr = byId('projects', x.project);
   x.reviews = x.reviews || [];
-  const t = tabs(
+  const t = subnav(
     'rt_' + x.id,
     [
+      ['overview', 'Overview'],
       ['chat', 'Chat', isMem && unreadIn(x) ? unreadIn(x) : null],
       ['reviews', 'Work reviews', x.reviews.filter(v => v.status === 'Awaiting review').length || null],
       ['checkins', 'Check-ins & sessions'],
@@ -217,12 +243,23 @@ route('rope', 'ropeteams', () => {
       ['about', 'Charter & stage'],
     ],
     UI.p.tab,
+    {
+      label: 'Rope Team sections',
+      groups: [
+        ['', '', ['overview']],
+        ['Conversation', 'message', ['chat']],
+        ['Guidance', 'route', ['reviews', 'checkins', 'support', 'contrib']],
+        ['Mentor only', 'lock', ['ind', 'notes']],
+        ['People & charter', 'users', ['members', 'about']],
+      ],
+    },
   );
   let body = '';
   if (t.cur === 'chat')
     body =
-      `<div class="row wrap chatbar"><span class="cap">Rope Team chat — members only. ${isMem ? L('Open in Messages', 'messages', { c: x.id, k: 'ropes' }) : ''}</span></div>` +
-      chatThread('ropes', x, { embedded: true });
+      `<div class="ws-split ws-chat"><div class="ws-main"><div class="row wrap chatbar"><span class="cap">Rope Team chat — members only. ${isMem ? L('Open in Messages', 'messages', { c: x.id, k: 'ropes' }) : ''}</span></div>` +
+      chatThread('ropes', x, { embedded: true }) +
+      `</div><aside class="ws-rail hide-md" aria-label="Members">${wsTeamCard('ropes', x)}</aside></div>`;
   if (t.cur === 'reviews')
     body = card(
       'Work for mentor review',
@@ -232,7 +269,7 @@ route('rope', 'ropeteams', () => {
         .reverse()
         .map(
           v =>
-            `<div class="rvitem"><div class="row wrap" style="justify-content:space-between;gap:8px"><div class="col" style="min-width:0"><b>${h(v.title)}</b><span class="cap">${nm(v.by)} · ${fmt(v.at)}</span></div>${pill(v.status, { 'Looks good': 'p-green', 'Changes recommended': 'p-amber', 'Awaiting review': 'p-navy' }[v.status])}</div>${v.desc ? `<p class="muted" style="margin-top:6px">${h(v.desc)}</p>` : ''}${v.att ? `<div style="margin-top:8px">${attCard(v.att)}</div>` : ''}${v.response ? `<div class="rvresp"><span class="cap"><b>${nm(v.reviewer)}</b> · mentor review</span><p>${h(v.response)}</p></div>` : ''}<div class="row wrap" style="margin-top:10px">${isMentor && !ro && v.status === 'Awaiting review' ? B('Review', 'revRespond', { r: x.id, id: v.id }, 'btn-p btn-sm') : ''}${v.by === myId() && !ro && v.status === 'Changes recommended' ? B('Resubmit after changes', 'revNew', { id: x.id, re: v.id }) : ''}</div></div>`,
+            `<article class="rvitem"><div class="rv-h"><span class="av" aria-hidden="true">${ini(v.by)}</span><div class="rv-t"><b>${h(v.title)}</b><span class="cap">${nm(v.by)} · ${fmt(v.at)}</span></div>${pill(v.status, { 'Looks good': 'p-green', 'Changes recommended': 'p-amber', 'Awaiting review': 'p-navy' }[v.status])}</div>${v.desc ? `<p class="muted rv-desc">${h(v.desc)}</p>` : ''}${v.att ? `<div class="rv-att">${attCard(v.att)}</div>` : ''}${v.response ? `<div class="rvresp"><span class="cap"><b>${nm(v.reviewer)}</b> · mentor review</span><p>${h(v.response)}</p></div>` : ''}<div class="row wrap rv-acts">${isMentor && !ro && v.status === 'Awaiting review' ? B('Review', 'revRespond', { r: x.id, id: v.id }, 'btn-p btn-sm') : ''}${v.by === myId() && !ro && v.status === 'Changes recommended' ? B('Resubmit after changes', 'revNew', { id: x.id, re: v.id }) : ''}</div></article>`,
         )
         .join('') || empty('file', 'Nothing shared for review yet', 'Participants share work here when they want the mentor’s view.'),
       !ro && canShare ? B(ic('upload', 14) + 'Share work for review', 'revNew', { id: x.id }, 'btn-p btn-sm') : '',
@@ -241,34 +278,49 @@ route('rope', 'ropeteams', () => {
     body = card(
       'Check-ins and sessions',
       'One-to-one or group guidance and accountability check-ins.',
-      table(
-        ['Date', 'Type', 'By', 'Note', 'Pacing'],
-        x.checkins
-          .slice()
-          .reverse()
-          .map(c => [fmt(c.at), h(c.kind || 'Check-in'), nm(c.by), h(c.t), pill(c.pacing, c.pacing === 'On track' ? 'p-teal' : 'p-amber')]),
-        'No check-ins recorded yet.',
-      ),
+      dataView('rt:ck:' + x.id, {
+        label: 'check-ins and sessions',
+        items: x.checkins.slice().reverse(),
+        search: c => [c.kind || 'Check-in', c.t, P(c.by).name, c.pacing].join(' '),
+        quick: { label: 'Type', options: wsOpts(x.checkins, c => c.kind || 'Check-in'), test: (c, v) => (c.kind || 'Check-in') === v },
+        filters: [{ key: 'pacing', label: 'Pacing', options: wsOpts(x.checkins, c => c.pacing), test: (c, v) => c.pacing === v }],
+        sorts: [['at', 'Newest', (a, b) => String(b.at).localeCompare(String(a.at))], ['oldest', 'Oldest', (a, b) => String(a.at).localeCompare(String(b.at))]],
+        defaultSort: 'at',
+        row: c => ({
+          lead: `<span class="sess-date" aria-hidden="true"><b>${c.at ? new Date(String(c.at).slice(0, 10) + 'T00:00:00').getDate() : '–'}</b><span>${c.at ? new Date(String(c.at).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-GB', { month: 'short' }) : ''}</span></span>`,
+          title: `<b>${h(c.kind || 'Check-in')}</b>`,
+          sub: h(c.t),
+          meta: [fmt(c.at), 'By ' + nm(c.by)],
+          badges: pill(c.pacing, c.pacing === 'On track' ? 'p-teal' : 'p-amber'),
+        }),
+        empty: ['calendar', 'No check-ins recorded yet.', '', ''],
+      }),
       isMentor && !ro ? B(ic('plus', 14) + 'Record check-in or session', 'checkin', { id: x.id }, 'btn-p btn-sm') : '',
     );
   if (t.cur === 'support')
     body = card(
       'Support requests',
       'Create, assign response ownership and track status. Issues returned from the ' + WL() + ' arrive here.',
-      table(
-        ['Request', 'From', 'Owner', 'Status', ''],
-        x.support.map(s => [
-          (s.ret ? pill('Returned', 'p-amber') + ' ' : '') + h(s.t),
-          nm(s.by),
-          s.owner ? nm(s.owner) : '—',
-          pill(s.status),
-          (isMentor || isFac) && s.status !== 'Resolved' && !ro
-            ? (s.status === 'Open' ? B('Take ownership', 'supStatus', { r: x.id, id: s.id, v: 'Assigned' }) : '') +
-              B('Resolve', 'supStatus', { r: x.id, id: s.id, v: 'Resolved' })
-            : '',
-        ]),
-        'No support requests.',
-      ),
+      dataView('rt:sup:' + x.id, {
+        label: 'support requests',
+        items: x.support,
+        search: s => [s.t, P(s.by).name, s.owner ? P(s.owner).name : '', s.status].join(' '),
+        quick: { label: 'Status', options: wsOpts(x.support, s => s.status), test: (s, v) => s.status === v },
+        filters: [{ key: 'ret', label: 'Source', options: [['ret', 'Returned from another space'], ['own', 'Raised in this Rope Team']], test: (s, v) => (v === 'ret' ? !!s.ret : !s.ret) }],
+        sorts: [['t', 'Request', (a, b) => a.t.localeCompare(b.t)], ['status', 'Status', (a, b) => a.status.localeCompare(b.status)]],
+        row: s => ({
+          lead: `<span class="av sm" title="${nm(s.by)}">${ini(s.by)}</span>`,
+          title: h(s.t),
+          meta: ['From ' + nm(s.by), 'Owner ' + (s.owner ? nm(s.owner) : '—')],
+          badges: (s.ret ? pill('Returned', 'p-amber') : '') + pill(s.status),
+          primary:
+            (isMentor || isFac) && s.status !== 'Resolved' && !ro
+              ? (s.status === 'Open' ? B('Take ownership', 'supStatus', { r: x.id, id: s.id, v: 'Assigned' }) : '') +
+                B('Resolve', 'supStatus', { r: x.id, id: s.id, v: 'Resolved' })
+              : '',
+        }),
+        empty: ['inbox', 'No support requests.', '', ''],
+      }),
       !ro && canAsk ? B(ic('plus', 14) + 'Ask for support', 'supNew', { id: x.id }, 'btn-p btn-sm') : '',
     );
   if (t.cur === 'ind')
@@ -356,22 +408,20 @@ route('rope', 'ropeteams', () => {
       ]),
       L('Members', 'rope', { id: x.id, tab: 'members' }),
       'c7',
-    )}${pr ? `<div class="c5 col" style="gap:24px">${stageGate(pr, 'ropes', x)}</div>` : ''}
- ${secs ? card('Authorised project context', 'Only what the Rope Team needs to guide effectively. Purpose Compass, hurdles and private records are never shown here.', dl([[SECTIONS[0], h(secs[0].text)], [SECTIONS[1], `<span style="white-space:pre-line">${h(secs[1].text)}</span>`], [SECTIONS[2], `<span style="white-space:pre-line">${h(secs[2].text)}</span>`], [SECTIONS[3], `<span style="white-space:pre-line">${h(secs[3].text)}</span>`]]), '', 'c7') : ''}
- <div class="${secs ? 'c5' : 'c12'} col" style="gap:24px">${pr ? reportsCard(pr, 'ropes', x) : ''}${card(
+    )}${pr ? `<div class="c5 col ws-stack">${stageGate(pr, 'ropes', x)}</div>` : ''}
+ ${secs ? card('Authorised project context', 'Only what the Rope Team needs to guide effectively. Purpose Compass, hurdles and private records are never shown here.', dl([[SECTIONS[0], h(secs[0].text)], [SECTIONS[1], `<span class="ws-pre">${h(secs[1].text)}</span>`], [SECTIONS[2], `<span class="ws-pre">${h(secs[2].text)}</span>`], [SECTIONS[3], `<span class="ws-pre">${h(secs[3].text)}</span>`]]), '', 'c7') : ''}
+ <div class="${secs ? 'c5' : 'c12'} col ws-stack">${pr ? reportsCard(pr, 'ropes', x) : ''}${card(
    'Mentor engagement',
    'When the need is addressed, the mentor and Faculty/Steward decide whether the engagement continues or ends.',
-   `${eng ? dl([['Decision', pill(eng.status)], ['Need addressed', h(eng.addressed)], ['Note', h(eng.note || '—')], ['Proposed by', nm(eng.by) + ' · ' + fmt(eng.at)]]) : '<p class="cap">Engagement is active.</p>'}<div class="row wrap" style="margin-top:12px">${isMentor && !ro && (!eng || eng.status === 'Continuing') ? B('Review engagement', 'engage', { id: x.id }, 'btn-s btn-sm') : ''}${isFac && eng && eng.status === 'Exit proposed' && !ro ? B('Continue instead', 'engageDecide', { id: x.id, v: 'Continuing' }) + B('Confirm mentor exit', 'engageDecide', { id: x.id, v: 'Exited' }, 'btn-p btn-sm') : ''}${isMentor && !ro ? B('Feedback to facilitator', 'ropeFeedback', { id: x.id }) + B('Suggest an opportunity', 'suggestOpp', { id: x.id }) : ''}${!ro && (isMentor || isFac) ? B(ic('alert', 14) + 'Escalate a concern', 'escalateRope', { id: x.id }) : ''}${(isFac || isMentor) && x.state === 'Active' ? B('Close Rope Team', 'ropeClose', { id: x.id }) : ''}</div>`,
+   `${eng ? dl([['Decision', pill(eng.status)], ['Need addressed', h(eng.addressed)], ['Note', h(eng.note || '—')], ['Proposed by', nm(eng.by) + ' · ' + fmt(eng.at)]]) : '<p class="cap">Engagement is active.</p>'}<div class="row wrap ws-acts">${isMentor && !ro && (!eng || eng.status === 'Continuing') ? B('Review engagement', 'engage', { id: x.id }, 'btn-s btn-sm') : ''}${isFac && eng && eng.status === 'Exit proposed' && !ro ? B('Continue instead', 'engageDecide', { id: x.id, v: 'Continuing' }) + B('Confirm mentor exit', 'engageDecide', { id: x.id, v: 'Exited' }, 'btn-p btn-sm') : ''}${isMentor && !ro ? B('Feedback to facilitator', 'ropeFeedback', { id: x.id }) + B('Suggest an opportunity', 'suggestOpp', { id: x.id }) : ''}${!ro && (isMentor || isFac) ? B(ic('alert', 14) + 'Escalate a concern', 'escalateRope', { id: x.id }) : ''}${(isFac || isMentor) && x.state === 'Active' ? B('Close Rope Team', 'ropeClose', { id: x.id }) : ''}</div>`,
  )}${isFac ? card('Mentor feedback', 'Feedback the mentor sent to the facilitator.', S.feedback.filter(f => f.rope === x.id).map(f => lrow('message', h(f.t), nm(f.by) + ' · ' + fmt(f.at))).join('') || '<p class="cap">No feedback yet.</p>') : ''}</div>
  ${returnsCard(x) ? `<div class="c12">${returnsCard(x)}</div>` : ''}</div>`;
   }
-  return (
-    spaceHead('ropes', x, h(x.charter), crumbs, isMem ? L(ic('message', 16) + 'Open in Messages', 'messages', { c: x.id, k: 'ropes' }, 'btn btn-s') : '') +
-    roleNote('ropes', x) +
-    (pr ? stageTrack(pr, 'ropes') : '') +
-    t.html +
-    body
-  );
+  const acts = isMem ? L(ic('message', 16) + 'Open in Messages', 'messages', { c: x.id, k: 'ropes' }, 'btn btn-s') : '';
+  // the space header, its facts and the project journey live in Overview; other sections get a one-line context bar
+  if (t.cur === 'overview') body = spaceHead('ropes', x, h(x.charter), null, acts) + roleNote('ropes', x) + (pr ? stageTrack(pr, 'ropes') : '');
+  else body = wsBar('ropes', x, acts) + body;
+  return crumbsHtml(crumbs) + withSubnav(t, body);
 });
 A.checkin = d => {
   clearF('ck');

@@ -13,33 +13,54 @@ route("incidents", "governance", () => {
   const list = S.incidents.filter((i) => own || i.by === myId());
   const sel = UI.p.id && byId("incidents", UI.p.id);
   if (sel && (own || sel.by === myId())) return incDetail(sel, own);
+  const uniq = (xs) => [...new Set(xs.filter(Boolean))].sort().map((v) => [v, v]);
+  const rep = (i) => i.timeline[0]?.at || "";
   return (
     head(
       own ? "Incidents & concerns" : "Report a concern",
       "Reports are confidential. No automated sanctions.",
       B(ic("plus", 16) + "Report an incident", "incNew", {}, "btn-p"),
     ) +
-    table(
-      ["Incident", "Where", "Reported", "State", ""],
-      list.map((i) => [
-        h(i.kind) + `<div class="cap">${h(i.desc.slice(0, 80))}</div>`,
-        h(i.where),
-        fmt(i.timeline[0]?.at),
-        pill(i.state) +
-          (i.paused ? " " + pill("Emergency pause", "p-red") : ""),
-        L("Open", "incidents", { id: i.id }),
-      ]),
-      own ? "No incidents." : "You have not reported anything.",
-    )
+    dataView("incidents:" + (own ? "all" : "mine"), {
+      label: own ? "cases" : "reports",
+      items: list,
+      search: (i) => i.kind + " " + i.desc + " " + i.where + " " + i.id,
+      quick: {
+        label: "Status",
+        options: [["open", "Open"], ["closed", "Closed"]],
+        test: (i, v) => (v === "closed" ? i.state === "Closed" : i.state !== "Closed"),
+      },
+      filters: [
+        { key: "kind", label: "Category", options: uniq(list.map((i) => i.kind)), test: (i, v) => i.kind === v },
+        { key: "state", label: "State", options: INC_STATES.filter((s) => list.some((i) => i.state === s)).map((s) => [s, s]), test: (i, v) => i.state === v },
+        { key: "pause", label: "Emergency pause", options: [["yes", "Applied"], ["no", "Not applied"]], test: (i, v) => (v === "yes" ? !!i.paused : !i.paused) },
+      ],
+      sorts: [
+        ["new", "Newest reported", (a, b) => rep(b).localeCompare(rep(a))],
+        ["old", "Oldest reported", (a, b) => rep(a).localeCompare(rep(b))],
+        ["kind", "Category", (a, b) => a.kind.localeCompare(b.kind)],
+        ["state", "State", (a, b) => INC_STATES.indexOf(a.state) - INC_STATES.indexOf(b.state)],
+      ],
+      row: (i) => ({
+        lead: `<span class="tile${i.state === "Closed" ? " t-soft" : ""}" aria-hidden="true">${ic("shield", 18)}</span>`,
+        title: L(h(i.kind), "incidents", { id: i.id }, ""),
+        sub: h(i.desc.slice(0, 80)),
+        meta: [h(i.where), "Reported " + fmt(rep(i)), `<span class="mono">${h(i.id)}</span>`],
+        badges: pill(i.state) + (i.paused ? pill("Emergency pause", "p-red") : ""),
+        primary: L("Open", "incidents", { id: i.id }, "btn btn-s btn-sm"),
+      }),
+      empty: ["shield", own ? "No incidents." : "You have not reported anything.", "", ""],
+    })
   );
 });
 function incDetail(i, own) {
+  const acts = own
+    ? `${i.state === "Reported" ? B("Triage", "incAct", { id: i.id, v: "Triaged" }) : ""}${["Reported", "Triaged"].includes(i.state) && !i.paused ? CB(ic("pause", 14) + "Apply emergency pause", "incPause", { id: i.id }, "Apply an emergency pause? The linked Circle becomes read-only for members until a decision is recorded.", "btn-d btn-sm", "Apply emergency pause") : ""}${["Triaged", "Reopened", "Appealed"].includes(i.state) ? B("Assign to me & review", "incAct", { id: i.id, v: "Under review" }) : ""}${i.state === "Under review" ? B("Record decision / remedy", "incDecide", { id: i.id }, "btn-p btn-sm") : ""}${["Decision recorded"].includes(i.state) ? B("Close case", "incAct", { id: i.id, v: "Closed" }) : ""}${i.state === "Closed" ? B("Reopen", "incAct", { id: i.id, v: "Reopened" }) : ""}`
+    : "";
   return (
-    head(h(i.kind), h(i.where) + " · " + h(i.conf), pill(i.state), [
-      ["Incidents", "incidents"],
-      ["Case"],
-    ]) +
-    `<div class="g12">${card(
+    crumbsHtml([["Incidents", "incidents"], ["Case"]]) +
+    `<div class="shead-main inc-head"><span class="tile" aria-hidden="true">${ic("shield", 20)}</span><div class="shead-t"><div class="shead-kind">Incident case · <span class="mono">${h(i.id)}</span></div><div class="row wrap inc-title"><h1 class="h1">${h(i.kind)}</h1>${pill(i.state)}${i.paused ? pill("Emergency pause", "p-red") : ""}</div><div class="shead-meta"><span>${h(i.where)}</span><span>${h(i.conf)}</span><span>Reported ${fmt(i.timeline[0]?.at)}</span></div></div></div>` +
+    `<div class="g12 inc-body"><div class="c8 col inc-main">${card(
       "Case",
       "",
       dl([
@@ -49,12 +70,10 @@ function incDetail(i, own) {
         ["Emergency pause", i.paused ? "Applied" : "No"],
         ["Decision / remedy", h(i.decision || "—")],
       ]),
-      "",
-      "c7",
-    )}
- ${card("Timeline", "", i.timeline.map((x) => `<p class="cap" style="margin-bottom:6px">${fmt(x.at)} · ${h(x.t)}</p>`).join(""), "", "c5")}
- ${own ? card("Actions", "A human decides every outcome.", `<div class="row wrap">${i.state === "Reported" ? B("Triage", "incAct", { id: i.id, v: "Triaged" }) : ""}${["Reported", "Triaged"].includes(i.state) && !i.paused ? CB(ic("pause", 14) + "Apply emergency pause", "incPause", { id: i.id }, "Apply an emergency pause? The linked Circle becomes read-only for members until a decision is recorded.", "btn-d btn-sm", "Apply emergency pause") : ""}${["Triaged", "Reopened", "Appealed"].includes(i.state) ? B("Assign to me & review", "incAct", { id: i.id, v: "Under review" }) : ""}${i.state === "Under review" ? B("Record decision / remedy", "incDecide", { id: i.id }, "btn-p btn-sm") : ""}${["Decision recorded"].includes(i.state) ? B("Close case", "incAct", { id: i.id, v: "Closed" }) : ""}${i.state === "Closed" ? B("Reopen", "incAct", { id: i.id, v: "Reopened" }) : ""}</div>`, "", "c12") : ""}
- ${!own && i.state === "Decision recorded" ? card("Appeal", "You can appeal or ask for reconsideration.", B("Appeal decision", "incAct", { id: i.id, v: "Appealed" }, "btn-p btn-sm"), "", "c12") : ""}</div>`
+    )}</div>
+ <div class="c4 col inc-side">${own ? card("Actions", "A human decides every outcome.", `<div class="inc-acts">${acts || '<span class="cap">No action is due in this state.</span>'}</div>`, "", "accent") : ""}
+ ${!own && i.state === "Decision recorded" ? card("Appeal", "You can appeal or ask for reconsideration.", B("Appeal decision", "incAct", { id: i.id, v: "Appealed" }, "btn-p btn-sm"), "", "accent") : ""}
+ ${card("Timeline", "", `<ol class="timeline inc-tl">${i.timeline.map((x) => `<li class="tl"><b>${h(x.t)}</b><span class="cap">${fmt(x.at)}</span></li>`).join("")}</ol>`)}</div></div>`
   );
 }
 A.incNew = () => {
@@ -62,7 +81,7 @@ A.incNew = () => {
   modal(
     "Report an incident",
     () =>
-      `<form data-f="inc" class="col" style="gap:12px" novalidate>${fi("inc", "kind", "Type", { type: "select", req: true, ph: "Select", opts: ["Conduct concern", "Safety risk", "Privacy / data concern", "AI output concern", "Rights or access issue", "Other"] })}${fi("inc", "where", "Where did it happen?", { req: true })}${fi("inc", "desc", "What happened?", { type: "textarea", rows: 4, req: true })}${banner("info", "", "Only the Incident/Safety Owner sees this report. Reporting never depends on payment status.")}<div class="actions"><span></span><button class="btn btn-p" type="submit">Submit report</button></div></form>`,
+      `<form data-f="inc" class="col fgap" novalidate>${fi("inc", "kind", "Type", { type: "select", req: true, ph: "Select", opts: ["Conduct concern", "Safety risk", "Privacy / data concern", "AI output concern", "Rights or access issue", "Other"] })}${fi("inc", "where", "Where did it happen?", { req: true })}${fi("inc", "desc", "What happened?", { type: "textarea", rows: 4, req: true })}${banner("info", "", "Only the Incident/Safety Owner sees this report. Reporting never depends on payment status.")}<div class="actions"><span></span><button class="btn btn-p" type="submit">Submit report</button></div></form>`,
   );
 };
 F.inc = (d) => {
@@ -137,7 +156,7 @@ A.incDecide = (d) => {
   modal(
     "Record decision or remedy",
     () =>
-      `<form data-f="icd" class="col" style="gap:12px" novalidate><input type="hidden" name="id" value="${d.id}">${fi("icd", "t", "Decision and remedy", { type: "textarea", rows: 4, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Record</button></div></form>`,
+      `<form data-f="icd" class="col fgap" novalidate><input type="hidden" name="id" value="${d.id}">${fi("icd", "t", "Decision and remedy", { type: "textarea", rows: 4, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Record</button></div></form>`,
   );
 };
 F.icd = (d) => {
@@ -177,6 +196,17 @@ route(
         : "Starter metrics registry",
     ) + reportsView(role() !== "A"),
 );
+// Event type for filtering the audit log, read from the recorded action name (first match wins).
+const AUD_TYPES = [
+  ["Access", /denied|sign|login|log out|logout|mfa|session|access/i],
+  ["Consent & agreements", /consent|agreement|polic/i],
+  ["Roles & invitations", /role|invitation|invite|bundle|assign|member/i],
+  ["AI", /\bAI\b/],
+  ["Payments & funding", /payment|entitlement|seat|webhook|product|funding|tranche|pitch|donation|invoice|refund|reconcil|renewal/i],
+  ["Export & deletion", /export|delet|download|erase|retention/i],
+  ["Records", /./],
+];
+const audType = (a) => (AUD_TYPES.find(([, re]) => re.test(a.a || "")) || ["Records"])[0];
 route("audit", "any", () => {
   if (!["A", "O", "T"].includes(role())) return deniedView("audit");
   const q = UI.q.aud || "";
@@ -191,20 +221,43 @@ route("audit", "any", () => {
       "Access, consent, role, record, AI, payment, export and deletion events.",
       B(ic("download", 14) + "Export", "doExport", { n: "Audit log" }),
     ) +
-    `<div class="row" style="margin-bottom:12px"><input class="input" style="max-width:320px" placeholder="Filter" value="${h(q)}" data-ch="audQ" aria-label="Filter audit log"></div>` +
-    table(
-      ["When", "Who", "Action", "Object", "Detail", "Result"],
-      list
-        .slice(0, 200)
-        .map((a) => [
-          fmt(a.at),
-          a.by ? nm(a.by) : "—",
-          h(a.a),
-          h(a.o),
-          h(a.d),
-          pill(a.r === "denied" ? "Rejected" : "Done"),
-        ]),
-    )
+    `<section class="card audlog">` +
+    dataView("audit", {
+      label: "events",
+      items: list,
+      search: (a) => [a.a, a.o, a.d, a.by ? P(a.by).name : "", fmt(a.at)].join(" "),
+      searchLabel: "Search the audit log",
+      quick: {
+        label: "Result",
+        options: [["done", "Done"], ["rejected", "Rejected"]],
+        test: (a, v) => (v === "rejected" ? a.r === "denied" : a.r !== "denied"),
+      },
+      filters: [
+        { key: "type", label: "Event type", options: AUD_TYPES.map(([l]) => [l, l]), test: (a, v) => audType(a) === v },
+        { key: "act", label: "Action", options: [...new Set(list.map((a) => a.a).filter(Boolean))].sort().map((v) => [v, v]), test: (a, v) => a.a === v },
+        { key: "who", label: "Who", options: [...new Set(list.map((a) => a.by).filter(Boolean))].map((p) => [p, P(p).name]).sort((x, y) => x[1].localeCompare(y[1])), test: (a, v) => a.by === v },
+      ],
+      sorts: [
+        ["new", "Newest first", (a, b) => String(b.at || "").localeCompare(String(a.at || ""))],
+        ["old", "Oldest first", (a, b) => String(a.at || "").localeCompare(String(b.at || ""))],
+        ["act", "Action", (a, b) => String(a.a || "").localeCompare(String(b.a || ""))],
+        ["who", "Who", (a, b) => (a.by ? P(a.by).name : "").localeCompare(b.by ? P(b.by).name : "")],
+      ],
+      defaultSort: "new",
+      layout: "table",
+      dense: true,
+      pageSize: 25,
+      columns: [
+        { label: "When", sort: "new", cell: (a) => `<span class="aud-when">${fmt(a.at)}</span>` },
+        { label: "Who", sort: "who", cell: (a) => (a.by ? nm(a.by) : "—") },
+        { label: "Action", sort: "act", cell: (a) => `<b class="aud-a">${h(a.a)}</b><span class="aud-t">${h(audType(a))}</span>` },
+        { label: "Object", hideSm: true, cell: (a) => `<span class="mono aud-o">${h(a.o)}</span>` },
+        { label: "Detail", hideSm: true, cell: (a) => `<span class="aud-d">${h(a.d)}</span>` },
+        { label: "Result", cell: (a) => pill(a.r === "denied" ? "Rejected" : "Done") },
+      ],
+      empty: ["file", "No audit events yet", "Access, consent, role, record, AI, payment, export and deletion events appear here.", ""],
+    }) +
+    `</section>`
   );
 });
 A.audQ = (d, el) => {
@@ -490,43 +543,63 @@ route("resources", "any", () => {
           )
         : "",
     ) +
-    (r === "F"
-      ? card(
-          "Use-case pack: " + h(pack().name),
-          "Templates you can use in this programme",
-          dl([
-            ["Circle template", h(S.orgTemplates.circle)],
-            [WL() + " template", h(S.orgTemplates.room)],
-            [
-              "Opportunity categories",
-              S.orgTemplates.categories.map(h).join(", "),
-            ],
-          ]),
-        ) + '<div class="section-gap"></div>'
-      : "") +
-    table(
-      ["Resource", "Type", "Audience", "Status", ""],
-      list.map((x) => [
-        `<b>${h(x.title)}</b><div class="cap">${h(x.desc)}</div>`,
-        h(x.kind),
-        h(x.audience),
-        pill(x.status === "Published" ? "Active" : x.status),
-        admin
-          ? x.status === "In review"
-            ? B("Reject", "resState", { id: x.id, v: "Rejected" }) +
-              B(
-                "Publish",
-                "resState",
-                { id: x.id, v: "Published" },
-                "btn-p btn-sm",
-              )
-            : x.status === "Published"
-              ? B("Unpublish", "resState", { id: x.id, v: "Unpublished" })
-              : ""
-          : B("Open", "resOpen", { id: x.id }),
-      ]),
-      "No resources for your role yet.",
-    )
+    `<div class="reslib"><div class="reslib-main">${
+      // Content library: a Data View over the same visible list; type is the quick filter.
+      dataView("resources:" + r, {
+        label: "resources",
+        items: list,
+        search: (x) => x.title + " " + x.desc + " " + x.kind + " " + x.audience,
+        quick: { label: "Type", options: [...new Set(list.map((x) => x.kind))].map((k) => [k, k]), test: (x, v) => x.kind === v },
+        filters: [
+          { key: "aud", label: "Audience", options: [...new Set(list.map((x) => x.audience))].map((v) => [v, v]), test: (x, v) => x.audience === v },
+          { key: "st", label: "Status", options: [...new Set(list.map((x) => x.status))].map((v) => [v, v === "Published" ? "Active" : v]), test: (x, v) => x.status === v },
+        ],
+        sorts: [
+          ["title", "Title", (a, b) => a.title.localeCompare(b.title)],
+          ["kind", "Type", (a, b) => a.kind.localeCompare(b.kind) || a.title.localeCompare(b.title)],
+        ],
+        rowId: admin ? (x) => x.id : undefined,
+        row: (x) => ({
+          lead: `<span class="tile t-soft" aria-hidden="true">${ic({ Guide: "file", "Template guidance": "layers", "Governance guidance": "shield", "Learning resource": "award" }[x.kind] || "file", 18)}</span>`,
+          title: h(x.title),
+          sub: h(x.desc),
+          meta: [ic("users", 13) + h(x.audience), h(x.kind)],
+          badges: pill(x.status === "Published" ? "Active" : x.status),
+          primary: admin
+            ? x.status === "In review"
+              ? B("Publish", "resState", { id: x.id, v: "Published" }, "btn-p btn-sm")
+              : x.status === "Published"
+                ? B("Unpublish", "resState", { id: x.id, v: "Unpublished" })
+                : ""
+            : B("Open", "resOpen", { id: x.id }),
+          menu: admin && x.status === "In review" ? B(ic("x", 16) + "Reject", "resState", { id: x.id, v: "Rejected" }, "menu-i") : "",
+        }),
+        empty: ["file", "No resources for your role yet.", "", ""],
+      })
+    }</div><aside class="reslib-side">${
+      r === "F"
+        ? card(
+            "Use-case pack: " + h(pack().name),
+            "Templates you can use in this programme",
+            dl([
+              ["Circle template", h(S.orgTemplates.circle)],
+              [WL() + " template", h(S.orgTemplates.room)],
+              [
+                "Opportunity categories",
+                S.orgTemplates.categories.map(h).join(", "),
+              ],
+            ]),
+            "",
+            "res-pack",
+          )
+        : ""
+    }${card(
+      "In this library",
+      "",
+      `<dl class="res-sum"><div><dt>Resources</dt><dd>${list.length}</dd></div><div><dt>Active</dt><dd>${list.filter((x) => x.status === "Published").length}</dd></div><div><dt>In review</dt><dd>${list.filter((x) => x.status === "In review").length}</dd></div></dl><p class="cap res-note">${ic("sparkle", 13)}Resources are approved sources for Ask PHOENIX once published.</p>`,
+      "",
+      "quiet",
+    )}</aside></div>`
   );
 });
 A.resOpen = (d) => {
@@ -545,7 +618,7 @@ A.resNew = () => {
   modal(
     role() === "A" ? "Add resource" : "Suggest a resource",
     () =>
-      `<form data-f="res" class="col" style="gap:12px" novalidate>${fi("res", "title", "Title", { req: true })}${fi("res", "kind", "Type", { type: "select", req: true, opts: ["Guide", "Learning resource", "Template guidance", "Governance guidance"] })}${fi("res", "audience", "Audience", { type: "select", req: true, opts: ["All roles", "Participants", "Facilitators", "Mentors", "Partners", "Organization representatives", "Sponsors"] })}${fi("res", "desc", "Description", { type: "textarea", rows: 3, req: true })}<div class="field"><label class="lbl">File or link</label><input type="file" name="f" class="input" style="padding:8px"></div>${role() !== "A" ? banner("info", "", "A Programme Administrator reviews suggestions before they are published.") : ""}<div class="actions"><span></span><button class="btn btn-p" type="submit">${role() === "A" ? "Publish" : "Submit for review"}</button></div></form>`,
+      `<form data-f="res" class="col fgap" novalidate>${fi("res", "title", "Title", { req: true })}${fi("res", "kind", "Type", { type: "select", req: true, opts: ["Guide", "Learning resource", "Template guidance", "Governance guidance"] })}${fi("res", "audience", "Audience", { type: "select", req: true, opts: ["All roles", "Participants", "Facilitators", "Mentors", "Partners", "Organization representatives", "Sponsors"] })}${fi("res", "desc", "Description", { type: "textarea", rows: 3, req: true })}<div class="field"><label class="lbl">File or link</label><input type="file" name="f" class="input res-file"></div>${role() !== "A" ? banner("info", "", "A Programme Administrator reviews suggestions before they are published.") : ""}<div class="actions"><span></span><button class="btn btn-p" type="submit">${role() === "A" ? "Publish" : "Submit for review"}</button></div></form>`,
   );
 };
 F.res = (d) => {
@@ -593,7 +666,7 @@ A.initNew = () => {
   modal(
     "Publish an initiative summary for sponsors",
     () =>
-      `<form data-f="ini" class="col" style="gap:12px" novalidate>${fi("ini", "title", "Title", { req: true })}${fi("ini", "summary", "Summary (approved for sponsor visibility)", { type: "textarea", rows: 4, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Publish</button></div></form>`,
+      `<form data-f="ini" class="col fgap" novalidate>${fi("ini", "title", "Title", { req: true })}${fi("ini", "summary", "Summary (approved for sponsor visibility)", { type: "textarea", rows: 4, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Publish</button></div></form>`,
   );
 };
 F.ini = (d) => {
@@ -626,7 +699,7 @@ const initiativesView = () =>
       card(
         h(i.title),
         "Published " + fmt(i.at) + " by " + nm(i.by),
-        `<p class="muted">${h(i.summary)}</p><div class="row wrap" style="margin-top:12px">${B("Browse projects", "go", { r: "funding", tab: "discover" }, "btn-p btn-sm")}</div>`,
+        `<p class="muted">${h(i.summary)}</p><div class="row wrap ini-acts">${B("Browse projects", "go", { r: "funding", tab: "discover" }, "btn-p btn-sm")}</div>`,
       ),
     )
     .join('<div class="section-gap"></div>') ||
@@ -676,7 +749,7 @@ A.xoNew = () => {
   modal(
     "Request cross-organization sharing",
     () =>
-      `<form data-f="xo" class="col" style="gap:12px" novalidate>${fi("xo", "to", "Share with organization", { type: "select", req: true, opts: S.orgs.filter((o) => o.id !== me().org).map((o) => [o.id, o.name]) })}${fi("xo", "what", "What would be shared, and why", { type: "textarea", rows: 3, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send for approval</button></div></form>`,
+      `<form data-f="xo" class="col fgap" novalidate>${fi("xo", "to", "Share with organization", { type: "select", req: true, opts: S.orgs.filter((o) => o.id !== me().org).map((o) => [o.id, o.name]) })}${fi("xo", "what", "What would be shared, and why", { type: "textarea", rows: 3, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send for approval</button></div></form>`,
   );
 };
 F.xo = (d) => {
@@ -708,7 +781,7 @@ F.xo = (d) => {
 PUB.mfa = () => {
   const f = "mfa";
   return authWrap(
-    `<span class="tile t-navy" style="width:48px;height:48px">${ic("lock", 22)}</span><div class="col" style="gap:4px"><h1 class="h1">Two-step verification</h1><p class="sub">Administrator accounts need a code from your authenticator app.</p></div>${errSum(f)}<form data-f="mfa" class="col" style="gap:16px" novalidate>${fi(f, "code", "6-digit code", { req: true, ph: "123456", auto: "one-time-code", help: "Prototype: use 123456." })}<button class="btn btn-p btn-block" type="submit">Verify and sign in</button></form>${L("Back to sign in", "login")}`,
+    `<span class="tile t-navy mfa-tile">${ic("lock", 22)}</span><div class="col mfa-h"><h1 class="h1">Two-step verification</h1><p class="sub">Administrator accounts need a code from your authenticator app.</p></div>${errSum(f)}<form data-f="mfa" class="col mfa-f" novalidate>${fi(f, "code", "6-digit code", { req: true, ph: "123456", auto: "one-time-code", help: "Prototype: use 123456." })}<button class="btn btn-p btn-block" type="submit">Verify and sign in</button></form>${L("Back to sign in", "login")}`,
   );
 };
 F.mfa = (d) => {
@@ -743,7 +816,7 @@ A.ropeContrib = (d) => {
   modal(
     "Record a contribution",
     () =>
-      `<form data-f="rcb" class="col" style="gap:12px" novalidate><input type="hidden" name="id" value="${d.id}">${fi("rcb", "kind", "Type", { type: "select", req: true, opts: ["Guidance", "Review of deliverable", "Recommendation", "Issue resolved", "Resource shared"] })}${fi("rcb", "t", "What you contributed", { type: "textarea", rows: 3, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save</button></div></form>`,
+      `<form data-f="rcb" class="col fgap" novalidate><input type="hidden" name="id" value="${d.id}">${fi("rcb", "kind", "Type", { type: "select", req: true, opts: ["Guidance", "Review of deliverable", "Recommendation", "Issue resolved", "Resource shared"] })}${fi("rcb", "t", "What you contributed", { type: "textarea", rows: 3, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save</button></div></form>`,
   );
 };
 F.rcb = (d) => {
@@ -761,7 +834,7 @@ A.ropeFeedback = (d) => {
   modal(
     "Feedback to the facilitator",
     () =>
-      `<form data-f="fb" class="col" style="gap:12px" novalidate><input type="hidden" name="id" value="${d.id}">${fi("fb", "t", "Your feedback on outcomes and next steps", { type: "textarea", rows: 4, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send</button></div></form>`,
+      `<form data-f="fb" class="col fgap" novalidate><input type="hidden" name="id" value="${d.id}">${fi("fb", "t", "Your feedback on outcomes and next steps", { type: "textarea", rows: 4, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send</button></div></form>`,
   );
 };
 F.fb = (d) => {
@@ -789,7 +862,7 @@ A.suggestOpp = (d) => {
   const cs = S.cards.filter((c) => c.status === "Active" && inCtx(c));
   modal(
     "Suggest an opportunity",
-    `<form data-f="sgo" class="col" style="gap:12px"><input type="hidden" name="id" value="${x.id}">${fi("sgo", "pid", "Participant", { type: "select", opts: x.members.filter((m) => ["Member", "Project owner"].includes(normRole(m.role))).map((m) => [m.pid, P(m.pid).name]) })}${fi("sgo", "card", "Opportunity", { type: "select", opts: cs.map((c) => [c.id, c.kind + ": " + c.title]) })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send suggestion</button></div></form>`,
+    `<form data-f="sgo" class="col fgap"><input type="hidden" name="id" value="${x.id}">${fi("sgo", "pid", "Participant", { type: "select", opts: x.members.filter((m) => ["Member", "Project owner"].includes(normRole(m.role))).map((m) => [m.pid, P(m.pid).name]) })}${fi("sgo", "card", "Opportunity", { type: "select", opts: cs.map((c) => [c.id, c.kind + ": " + c.title]) })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send suggestion</button></div></form>`,
   );
 };
 F.sgo = (d) => {
@@ -819,7 +892,7 @@ A.orgEdit = () => {
   modal(
     "Organization profile",
     () =>
-      `<form data-f="orgp" class="col" style="gap:12px" novalidate>${fi("orgp", "name", "Organization name", { req: true })}${fi("orgp", "sector", "Sector", {})}${fi("orgp", "profile", "About the organization", { type: "textarea", rows: 4, req: true, help: "Visible to people in your programme context." })}${fi("orgp", "web", "Website", { ph: "https://" })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save</button></div></form>`,
+      `<form data-f="orgp" class="col fgap" novalidate>${fi("orgp", "name", "Organization name", { req: true })}${fi("orgp", "sector", "Sector", {})}${fi("orgp", "profile", "About the organization", { type: "textarea", rows: 4, req: true, help: "Visible to people in your programme context." })}${fi("orgp", "web", "Website", { ph: "https://" })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save</button></div></form>`,
   );
 };
 F.orgp = (d) => {
@@ -861,14 +934,14 @@ const tplForm = () =>
   card(
     "Templates and categories",
     "Circle, " + WL() + " and opportunity templates for this context.",
-    `<form data-f="tplOrg" class="col" style="gap:12px" novalidate>${fi("tplOrg", "circle", "Circle template sections", { value: S.orgTemplates.circle, req: true })}${fi("tplOrg", "room", WL() + " template sections", { value: S.orgTemplates.room, req: true })}${fi("tplOrg", "cats", "Opportunity categories (comma-separated)", { value: S.orgTemplates.categories.join(", "), req: true })}<div class="actions"><span></span><button class="btn btn-s" type="submit">Save templates</button></div></form>`,
+    `<form data-f="tplOrg" class="col fgap" novalidate>${fi("tplOrg", "circle", "Circle template sections", { value: S.orgTemplates.circle, req: true })}${fi("tplOrg", "room", WL() + " template sections", { value: S.orgTemplates.room, req: true })}${fi("tplOrg", "cats", "Opportunity categories (comma-separated)", { value: S.orgTemplates.categories.join(", "), req: true })}<div class="actions"><span></span><button class="btn btn-s" type="submit">Save templates</button></div></form>`,
   );
 A.cohortNew = () => {
   clearF("coh");
   modal(
     "Launch a new cohort or initiative",
     () =>
-      `<form data-f="coh" class="col" style="gap:12px" novalidate>${fi("coh", "name", "Name", { req: true, ph: "e.g. Spring 2027 cohort" })}${fi("coh", "pack", "Use-case pack", { type: "select", opts: S.packs.filter((p) => p.status === "Active").map((p) => [p.id, p.name]) })}${fi("coh", "start", "Start date", { type: "date", req: true })}${banner("info", "", "The Platform Administrator creates the isolated context; you then configure it and invite your cohort.")}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send request</button></div></form>`,
+      `<form data-f="coh" class="col fgap" novalidate>${fi("coh", "name", "Name", { req: true, ph: "e.g. Spring 2027 cohort" })}${fi("coh", "pack", "Use-case pack", { type: "select", opts: S.packs.filter((p) => p.status === "Active").map((p) => [p.id, p.name]) })}${fi("coh", "start", "Start date", { type: "date", req: true })}${banner("info", "", "The Platform Administrator creates the isolated context; you then configure it and invite your cohort.")}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send request</button></div></form>`,
   );
 };
 F.coh = (d) => {
