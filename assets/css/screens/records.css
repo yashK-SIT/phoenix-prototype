@@ -182,26 +182,6 @@
 .prj-path b {
   font-weight: 700;
 }
-.prj-chkgrp {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.prj-chk {
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px var(--s-3);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  cursor: pointer;
-}
-.prj-chk:hover {
-  border-color: var(--line-strong);
-}
-.prj-chk:has(input:checked) {
-  background: var(--primary-soft);
-  border-color: var(--primary);
-}
 
 /* radio cards (project type, collaborator pick) */
 .np-choice {

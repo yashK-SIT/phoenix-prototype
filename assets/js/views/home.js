@@ -34,13 +34,13 @@ function inboxItems() {
     S.projects
       .filter(
         (p) =>
-          inCtx(p) && p.status === "Submitted" && (stewardOf(p) || r === "A"),
+          inCtx(p) && projDecidable(p) && (stewardOf(p) || r === "A"),
       )
       .forEach((p) =>
         out.push([
           "Project review",
           p.title,
-          "Submitted " + fmt(p.submitted),
+          projAnswered(p) ? "Owner replied to your clarification request" : "Submitted " + fmt(p.submitted),
           "project",
           { id: p.id },
         ]),
@@ -929,7 +929,7 @@ function homeF() {
  ${hmCols(
    `${myTasksCard()}
  ${msMine.length ? card("Milestone evidence to review", "Approve every piece before you validate the milestone.", msMine.map(([x, m, it]) => lrow("award", h(byId("evidence", it.ev)?.title || it.ev), "For “" + h(m.t) + "” · " + h(x.name) + " · added by " + nm(it.by), B("Review", "msRev", { r: x.id, id: m.id, i: msItems(m).indexOf(it) }, "btn-p btn-sm"))).join(""), L("Review queue", "evidence", { tab: "queue" }), "hm-list") : ""}
- ${card("Project submissions", "", subs.map((p) => hrow("folder", h(p.title), nm(p.owner) + " · " + pill(p.status), L("Review", "project", { id: p.id }))).join("") || empty("check", "No submissions waiting", ""), subs.length ? `<span class="cnt">${subs.length}</span>` : "", "hm-list")}
+ ${card("Project submissions", "", subs.map((p) => hrow("folder", h(p.title), nm(p.owner) + " · " + pill(p.status) + (projAnswered(p) ? " " + pill("Owner replied", "p-navy") : ""), L("Review", "project", { id: p.id }))).join("") || empty("check", "No submissions waiting", ""), subs.length ? `<span class="cnt">${subs.length}</span>` : "", "hm-list")}
  ${card("Upcoming commitments", "", commits.join("") || empty("calendar", "No open commitments", ""), commits.length ? `<span class="cnt">${commits.length}</span>` : "", "hm-list")}`,
    `${card("Participants needing attention", "From Rope Team support indicators (activity-derived or participant-reported)", attention.join("") || empty("users", "No one flagged", ""), "", "hm-list")}
  ${card("Unresolved concerns", "", concerns.join("") || empty("shield", "No unresolved concerns", ""), concerns.length ? `<span class="cnt">${concerns.length}</span>` : "", "hm-list")}`,

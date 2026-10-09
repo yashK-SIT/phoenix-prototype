@@ -149,16 +149,18 @@ function usersTable(ctxFilter, canEdit, crud) {
 // Not your own account, and never a Platform Administrator's account.
 const userEditable = pid => pid !== myId() && !S.assign.some(a => a.pid === pid && roleBase(a.role) === 'T');
 const USER_ROLES = ['P', 'F', 'M', 'C', 'O', 'S', 'A'];
-const userCtxs = () => S.contexts.filter(c => c.kind !== 'Platform');
+// A new role goes into the administrator's own context; an edited role keeps its context.
+const userCtx = a => (a ? a.ctx : ctxId());
 function userForm(p, a) {
   const f = 'usr';
+  const cx = S.contexts.find(c => c.id === userCtx(a));
   const st = a ? (['Active', 'Deactivated'].includes(a.status) ? ['Active', 'Deactivated'] : [a.status, 'Active', 'Deactivated']) : null;
   return `<form data-f="usr" class="col" style="gap:14px" novalidate>${errSum(f)}<input type="hidden" name="aid" value="${a ? a.id : ''}">
   <h3 class="h3">Account</h3>
   <div class="f2">${fi(f, 'name', 'Full name', { req: true, value: p?.name, auto: 'off' })}${fi(f, 'display', 'Display name', { req: true, value: p?.display, auto: 'off' })}</div>
   <div class="f2">${fi(f, 'email', 'Email address', { type: 'email', req: true, value: p?.email, auto: 'off' })}${dobField(f, p?.dob || '', { req: true, auto: 'off', vis: '' })}</div>
   <h3 class="h3">${a ? 'This role assignment' : 'First role'}</h3>
-  <div class="f2">${fi(f, 'role', 'Role', { type: 'select', req: true, ph: 'Choose a role', value: a?.role, opts: invitableRoles(USER_ROLES).map(r => [r.id, r.name + (r.system ? '' : ' (custom)')]) })}${fi(f, 'ctx', 'Context', { type: 'select', req: true, value: a ? a.ctx : ctxId(), opts: userCtxs().map(c => [c.id, c.name]) })}</div>
+  <div class="f2">${fi(f, 'role', 'Role', { type: 'select', req: true, ph: 'Choose a role', value: a?.role, opts: invitableRoles(USER_ROLES).map(r => [r.id, r.name + (r.system ? '' : ' (custom)')]) })}${fi(f, 'ctxName', 'Context', { value: cx ? cx.name : '', ro: true })}</div>
   ${a ? fi(f, 'status', 'Role status', { type: 'select', value: a.status, opts: st }) : ''}
   ${a && S.assign.filter(x => x.pid === a.pid).length > 1 ? banner('info', '', 'Account details apply to every role this person holds. Role and status apply only to this assignment.') : ''}
   ${a ? '' : banner('info', '', 'The account is created verified and the role is active. On first sign-in the person accepts the agreement for their role and completes their profile. Prototype: they sign in with the demo password demo1234.')}
@@ -203,10 +205,10 @@ F.usr = d => {
     email: ['req', 'email', ['fn', { f: v => { const x = personByEmail(v); return !x || x.id === pid; }, m: 'Another account already uses this email address.' }]],
     dob: dobRules(true),
     role: ['req'],
-    ctx: ['req'],
   });
   if (!okv) return render();
-  if (S.assign.some(x => x !== a && x.pid === pid && pid && x.role === d.role && x.ctx === d.ctx)) {
+  const ctx = userCtx(a);
+  if (S.assign.some(x => x !== a && x.pid === pid && pid && x.role === d.role && x.ctx === ctx)) {
     UI.err.usr = { role: 'This person already holds that role in that context.' };
     return render();
   }
@@ -215,8 +217,8 @@ F.usr = d => {
     const p = P(pid);
     const was = JSON.stringify({ name: p.name, display: p.display, email: p.email, dob: p.dob, role: a.role, ctx: a.ctx, status: a.status });
     Object.assign(p, fields);
-    const roleChanged = a.role !== d.role || a.ctx !== d.ctx;
-    Object.assign(a, { role: d.role, ctx: d.ctx });
+    const roleChanged = a.role !== d.role;
+    a.role = d.role;
     if (d.status && d.status !== a.status) {
       a.status = d.status;
       notify(a.pid, 'Your ' + ROLE[a.role] + ' access is now ' + d.status, 'home');
@@ -233,14 +235,14 @@ F.usr = d => {
       id: uid('a'),
       pid: p.id,
       role: d.role,
-      ctx: d.ctx,
+      ctx,
       status: 'Active',
       bundles: [],
       approval: [{ at: now(), by: myId(), note: 'Account created by ' + me().name }],
       onb: { agreement: false, consents: false, profile: false, compass: roleBase(d.role) !== 'P' },
     });
     notify(p.id, 'An account was created for you as ' + ROLE[d.role], 'home');
-    audit('User created', p.id, ROLE[d.role] + ' · ' + d.ctx);
+    audit('User created', p.id, ROLE[d.role] + ' · ' + ctx);
     toast('User created.');
   }
   UI.modal = null;
@@ -562,7 +564,7 @@ route('admin', 'admin', () => {
             title: L(h(p.title), 'project', { id: p.id }, 'dv-link'),
             sub: h(p.type),
             meta: ['Owner <b>' + nm(p.owner) + '</b>', 'Reviewer <b>' + p.stewards.map(nm).join(', ') + '</b>', convoN(p) + ' message' + (convoN(p) === 1 ? '' : 's')],
-            badges: pill(p.status),
+            badges: pill(p.status) + (projAnswered(p) ? pill('Owner replied', 'p-navy') : ''),
             primary: L('Open', 'project', { id: p.id }, 'btn btn-s btn-sm'),
           }),
           empty: ['check', 'Nothing is in review right now', 'Projects appear here once a reviewer is assigned.', ''],

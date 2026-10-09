@@ -28,9 +28,13 @@ const roomLead = id => {
 };
 const G = {
   // projects
+  // Accepting or asking again needs the project submitted, or the owner's reply to the last clarification request.
+  clarify: d =>
+    (isSteward(d.id) && projDecidable(byId('projects', d.id))) ||
+    'only the Programme Administrator or an assigned Faculty/Steward can request clarification, once the project is submitted or the owner has replied',
   clar: d =>
-    (isSteward(d.id) && byId('projects', d.id).status === 'Submitted') ||
-    'only the Programme Administrator or an assigned Faculty/Steward can request clarification on a submitted project',
+    (isSteward(d.id) && projDecidable(byId('projects', d.id))) ||
+    'only the Programme Administrator or an assigned Faculty/Steward can request clarification, once the project is submitted or the owner has replied',
   rejectProj: d =>
     (isSteward(d.id) && ['Submitted', 'Clarification requested'].includes(byId('projects', d.id).status)) ||
     'only the Programme Administrator or an assigned Faculty/Steward can reject a project under review',
@@ -44,9 +48,11 @@ const G = {
     return (o && !!c.post(o)) || 'only the submitter and their reviewers post in this conversation';
   },
   acceptProj: d =>
-    (isSteward(d.id) && byId('projects', d.id).status === 'Submitted') ||
-    'only an assigned steward can accept a submitted project',
-  acc: d => isSteward(d.id) || 'only an assigned steward can accept this project',
+    (isSteward(d.id) && projDecidable(byId('projects', d.id))) ||
+    'only an assigned steward can accept a project that is submitted or whose owner has replied to the clarification',
+  acc: d =>
+    (isSteward(d.id) && projDecidable(byId('projects', d.id))) ||
+    'only an assigned steward can accept a project that is submitted or whose owner has replied to the clarification',
   finalReview: d =>
     (isSteward(d.id) && byId('projects', d.id).stage === 'Final review') ||
     'only an assigned steward can review final deliverables',

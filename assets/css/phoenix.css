@@ -678,7 +678,7 @@ code,
   line-height: var(--lh-xs);
   color: var(--on-plate-2);
 }
-/* signed-in person: avatar, name and active role */
+/* signed-in person: avatar, name and active role switcher button */
 .side-user {
   display: flex;
   align-items: center;
@@ -688,6 +688,20 @@ code,
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.08);
   min-width: 0;
+  width: 100%;
+  color: var(--on-plate);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t-fast), border-color var(--t-fast);
+}
+.side-user:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+.side-user:focus-visible {
+  outline: 2px solid var(--ember-400);
+  outline-offset: 1px;
 }
 .side-user .side-av {
   flex: none;
@@ -701,6 +715,7 @@ code,
   display: flex;
   flex-direction: column;
   min-width: 0;
+  flex: 1;
 }
 .side-user-t b,
 .side-user-t small {
@@ -718,6 +733,17 @@ code,
   line-height: 14px;
   font-weight: 600;
   color: var(--on-plate-2);
+}
+.side-user-chev {
+  flex: none;
+  display: flex;
+  align-items: center;
+  color: var(--on-plate-2);
+  transition: transform var(--t-fast), color var(--t-fast);
+}
+.side-user:hover .side-user-chev {
+  color: var(--on-plate);
+  transform: translateY(1px);
 }
 .side-nav {
   flex: 1;

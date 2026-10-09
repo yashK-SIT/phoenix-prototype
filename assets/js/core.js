@@ -550,6 +550,8 @@ function navCount(r) {
   return 0;
 }
 function sidebar() {
+  const a = asg();
+  const others = roleChoices().length;
   const act = PARENT[UI.route] || UI.route;
   let last = null;
   const items = navItems()
@@ -566,7 +568,7 @@ function sidebar() {
       return `${sec}<a href="#" class="nav${on}" data-a="go" data-r="${rt}"${tb ? ` data-tab="${tb}"` : ''} data-tip="${h(l)}"${on ? ' aria-current="page"' : ''}>${ic(i)}<span class="t">${h(l)}</span><span class="ts" aria-hidden="true">${h(SHORT[rt] || l.split(' ')[0])}</span>${n ? `<span class="ncount" aria-label="${n} new">${n}</span>` : ''}</a>`;
     })
     .join('');
-  return `<aside class="side" id="side-nav" aria-label="Main navigation"${UI.drawer ? ' role="dialog" aria-modal="true"' : ''}><div class="side-plate"><a href="#" class="brand" data-a="go" data-r="home" aria-label="PHOENIX home"><span class="mark">${MARK()}</span><span class="wm"><b>PHOENIX</b><span>Foundation Alpha</span></span></a><div class="side-user"><span class="av side-av" aria-hidden="true">${ini(myId())}</span><span class="side-user-t"><b title="${h(me().name)}">${h(me().name)}</b><small title="${h(ROLE[asg().role])}">${h(ROLE[asg().role])}</small></span></div></div><nav class="side-nav" aria-label="Sections">${items}</nav><div class="side-foot"><button type="button" class="nav side-close" data-a="drawerClose">${ic('x')}<span class="t">Close menu</span></button></div></aside>`;
+  return `<aside class="side" id="side-nav" aria-label="Main navigation"${UI.drawer ? ' role="dialog" aria-modal="true"' : ''}><div class="side-plate"><a href="#" class="brand" data-a="go" data-r="home" aria-label="PHOENIX home"><span class="mark">${MARK()}</span><span class="wm"><b>PHOENIX</b><span>Foundation Alpha</span></span></a><button class="side-user" type="button" data-a="switcher" aria-label="${h(me().name)}, ${h(ROLE[a.role])}${others > 1 ? '. Switch role' : ''}" title="${h(me().name)} · ${h(ROLE[a.role])}"><span class="av side-av" aria-hidden="true">${ini(myId())}</span><span class="side-user-t"><b title="${h(me().name)}">${h(me().name)}</b><small title="${h(ROLE[a.role])}">${h(ROLE[a.role])}${a.bundles.length ? ' · +' + a.bundles.length + ' bundle' + (a.bundles.length > 1 ? 's' : '') : ''}</small></span><span class="side-user-chev">${ic('chev', 16)}</span></button></div><nav class="side-nav" aria-label="Sections">${items}</nav><div class="side-foot"><button type="button" class="nav side-close" data-a="drawerClose">${ic('x')}<span class="t">Close menu</span></button></div></aside>`;
 }
 // The PHOENIX mark: an ember plume rising from a baseline.
 const MARK = (s = 20) =>
@@ -575,12 +577,8 @@ const MARK = (s = 20) =>
 const crumbsHtml = list =>
   `<ol class="crumbs" aria-label="Breadcrumb">${list.map(([l, r, p], i) => (i < list.length - 1 && r ? `<li>${L(l, r, p, '')}</li>` : `<li><span aria-current="page">${l}</span></li>`)).join('')}</ol>`;
 function topbar() {
-  const a = asg(),
-    c = ctx();
-  const others = roleChoices().length;
   const unread = S.notifs.filter(n => n.pid === myId() && !n.read).length;
   return `<header class="top"><button class="iconbtn menubtn" type="button" data-a="drawerToggle" aria-label="Open navigation" aria-controls="side-nav" aria-expanded="${!!UI.drawer}">${ic('menu', 20)}</button><a href="#" class="mbrand" data-a="go" data-r="home" aria-label="PHOENIX home"><span class="mark">${MARK(16)}</span></a>
- <button class="ctx" type="button" data-a="switcher" aria-label="${h(me().name)}, ${h(ROLE[a.role])}${others > 1 ? '. Switch role' : ''}" title="${h(me().name)} · ${h(ROLE[a.role])}"><span class="ctxt"><b>${h(me().name)}</b><small>${h(ROLE[a.role])}${a.bundles.length ? ' · +' + a.bundles.length + ' bundle' + (a.bundles.length > 1 ? 's' : '') : ''}</small></span>${others > 1 ? ic('chev', 16) : ''}</button>
  <div class="grow"></div>
  ${can('ai') ? `<button type="button" class="btn btn-s btn-sm askbtn ${UI.panel === 'ask' ? 'on' : ''}" data-a="askToggle" aria-label="Ask PHOENIX" aria-expanded="${UI.panel === 'ask'}" aria-controls="assist" title="Ask PHOENIX">${ic('sparkle', 16)}<span class="hide-md">Ask PHOENIX</span></button>` : ''}
  <div class="nwrap"><button class="iconbtn ${UI.panel === 'notif' ? 'on' : ''}" type="button" data-a="notifToggle" aria-haspopup="dialog" aria-expanded="${UI.panel === 'notif'}" aria-label="Notifications, ${unread} unread">${ic('bell')}${unread ? `<span class="badge">${unread}</span>` : ''}</button>${UI.panel === 'notif' ? notifMenu() : ''}</div>

@@ -56,6 +56,15 @@ CONVO.project = {
       .forEach(x => notify(x, `${me().name} ${kind === 'reply' ? 'replied to the clarification on' : 'commented on'} “${p.title}”`, 'project', { id: p.id })),
 };
 const projLog = (p, t) => p.history.push({ at: now(), by: myId(), t });
+// The owner has answered the latest clarification request in the review conversation.
+const projAnswered = p => {
+  if (!p || p.status !== 'Clarification requested') return false;
+  const th = p.thread || [];
+  const ask = th.map(m => m.kind).lastIndexOf('clarify');
+  return ask >= 0 && th.slice(ask + 1).some(m => m.by === p.owner);
+};
+// The reviewer can accept, or ask for (further) clarification: on a submitted project, or once the owner has answered.
+const projDecidable = p => !!p && (p.status === 'Submitted' || projAnswered(p));
 // Project listing, following the Circles listing: one list in a card, phase tabs with counts, search, filters, sort.
 const PROJ_PHASES = ['Draft', 'Under review', 'Active', 'Closed', 'Rejected'];
 const projPhase = p =>
@@ -283,7 +292,7 @@ route('project', 'projects', () => {
   const steps = [
     'Draft',
     'Submitted',
-    'Under review',
+    p.status === 'Rejected' ? 'Rejected' : 'Under review',
     'Accepted',
     'Circle',
     'Rope Team',
@@ -304,7 +313,7 @@ route('project', 'projects', () => {
               ? 4
               : p.status === 'Accepted'
                 ? 3
-                : p.status === 'Clarification requested'
+                : ['Clarification requested', 'Rejected'].includes(p.status) || (p.status === 'Submitted' && p.stewards.length)
                   ? 2
                   : p.status === 'Submitted'
                     ? 1
@@ -314,13 +323,14 @@ route('project', 'projects', () => {
   if (own && p.status === 'Draft') actions = B('Edit sections', 'editAfterClar', { id: p.id });
   if (own && p.status === 'Clarification requested')
     actions = B('Update sections', 'editAfterClar', { id: p.id }, 'btn-s');
-  if (((r === 'F' && stewardOf(p)) || r === 'A') && p.status === 'Submitted')
+  const rev = (r === 'F' && stewardOf(p)) || r === 'A';
+  const answered = projAnswered(p);
+  if (rev && projDecidable(p))
     actions =
-      B('Request clarification', 'clarify', { id: p.id }) +
+      B(answered ? 'Ask a follow-up' : 'Request clarification', 'clarify', { id: p.id }) +
       B('Reject', 'rejectProj', { id: p.id }) +
       B('Accept project', 'acceptProj', { id: p.id }, 'btn-p btn-sm');
-  if (((r === 'F' && stewardOf(p)) || r === 'A') && p.status === 'Clarification requested')
-    actions = B('Reject', 'rejectProj', { id: p.id });
+  else if (rev && p.status === 'Clarification requested') actions = B('Reject', 'rejectProj', { id: p.id });
   if (((r === 'F' && stewardOf(p)) || own) && p.status === 'Accepted' && !p.circle && canCreateCircle())
     actions = B(ic('plus', 14) + 'Create Circle', 'newCircle', { project: p.id }, 'btn-p btn-sm');
   if (r === 'F' && stewardOf(p) && p.status === 'Accepted' && p.circle && !['Final review', 'Closed'].includes(p.stage))
@@ -339,7 +349,8 @@ route('project', 'projects', () => {
   if (own && ownRoomProjects().includes(p))
     actions += B(ic('room', 14) + 'Create ' + WL(), 'newRoom', { origin: 'Project', project: p.id, oid: p.rope || p.circle || '' }, p.circle ? 'btn-p btn-sm' : 'btn-s btn-sm');
   if (projEditable(p)) actions = B(ic('edit', 14) + 'Edit details', 'projEdit', { id: p.id }) + actions;
-  const ready = p.sections && p.sections.every(s => ['Accepted', 'Edited'].includes(s.st));
+  // A project submitted without the 8-section draft can still be resubmitted after a clarification.
+  const ready = p.sections ? p.sections.every(s => ['Accepted', 'Edited'].includes(s.st)) : p.status !== 'Draft';
   return (
     crumbsHtml([
       ['Projects', 'projects'],
@@ -353,6 +364,11 @@ route('project', 'projects', () => {
       .filter(c => !c.resolved)
       .map(c => banner('warn', 'Clarification requested by ' + nm(c.by), `“${h(c.text)}” · ${fmt(c.at)}${own ? ' · Reply in the review conversation below, update the sections if needed, then resubmit.' : ''}`, 'message'))
       .join('') +
+    (rev && p.status === 'Clarification requested'
+      ? answered
+        ? banner('info', nm(p.owner) + ' replied', 'Read the reply in the review conversation below, then accept the project, ask a follow-up or reject it.', 'message')
+        : banner('info', 'Waiting for ' + nm(p.owner), 'You can accept the project once the owner replies in the review conversation or resubmits it.')
+      : '') +
     (lastRej ? banner('err', 'Rejected by ' + nm(lastRej.by), `“${h(lastRej.text)}” · ${fmt(lastRej.at)}`) : '') +
     (p.status === 'Submitted' && !p.stewards.length ? banner('info', 'Waiting for a reviewer', r === 'A' ? 'Assign a Steward, Faculty member or Facilitator to review this project.' : 'The Programme Administrator assigns a Steward, Faculty member or Facilitator to review this project. You are notified when it is assigned.') : '') +
     (p.stage === 'Final review' && p.finalNote ? banner('info', 'Final deliverables submitted', h(p.finalNote)) : '') +
@@ -566,27 +582,50 @@ F.acc = d => {
   toast('Project accepted. Next: create the Circle.');
   ok();
 };
+// Everyone who can review a project: active Stewards, Faculty and Facilitators in its programme (one entry per
+// person), never the project owner.
+const projReviewers = p => {
+  const seen = new Set();
+  return S.assign.filter(a => a.ctx === p.ctx && roleBase(a.role) === 'F' && a.status === 'Active' && a.pid !== p.owner && !seen.has(a.pid) && seen.add(a.pid));
+};
+// One reviewer per project; p.stewards stays a list so the rest of the app reads it unchanged.
 A.assignStewards = d => {
+  clearF('asst');
   const p = byId('projects', d.id);
-  const fs = S.assign.filter(a => a.ctx === p.ctx && roleBase(a.role) === 'F' && a.status === 'Active');
+  const rv = projReviewers(p);
+  const cur = p.stewards[0] || '';
   modal(
-    'Assign a reviewer',
-    `<form data-f="asst" class="col prj-dlg"><input type="hidden" name="id" value="${p.id}">${dl([['Project', h(p.title)], ['Owner', nm(p.owner)], ['Areas', (p.tags || []).map(h).join(', ') || '—']])}<fieldset class="np-fs col prj-dlg-fs"><legend class="lbl">Steward, Faculty or Facilitator <span class="req">*</span></legend><div class="chkgrp prj-chkgrp">${fs.map(a => `<label class="row prj-chk"><input class="chk" type="checkbox" name="s" value="${a.pid}" ${p.stewards.includes(a.pid) ? 'checked' : ''}><span>${nm(a.pid)} <span class="cap">· ${h(ROLE[a.role])}</span></span></label>`).join('') || '<p class="cap">No Facilitator / Steward in this programme yet.</p>'}</div></fieldset><span class="help">They review the project, ask for clarification if needed and accept it.</span><div class="actions"><span></span><button class="btn btn-p" type="submit">Assign</button></div></form>`,
+    cur ? 'Change the reviewer' : 'Assign a reviewer',
+    () =>
+      `<form data-f="asst" class="col prj-dlg" novalidate><input type="hidden" name="id" value="${p.id}">${dl([['Project', h(p.title)], ['Owner', nm(p.owner)], ['Areas', (p.tags || []).map(h).join(', ') || '—'], cur && ['Current reviewer', p.stewards.map(nm).join(', ')]])}${
+        rv.length
+          ? fi('asst', 's', 'Steward, Faculty or Facilitator', { type: 'select', req: true, ph: 'Choose a reviewer', value: cur, opts: rv.map(a => [a.pid, P(a.pid).name + ' · ' + ROLE[a.role]]), help: 'Active Stewards, Faculty and Facilitators in this programme. They review the project, ask for clarification if needed and accept it.' })
+          : banner('warn', 'No reviewer available in this programme', 'Invite a Facilitator / Steward from ' + L('Programme admin → Invitations', 'admin', { tab: 'invites' }) + ', then assign them here.')
+      }<div class="actions"><span></span><button class="btn btn-p" type="submit" ${rv.length ? '' : 'disabled'}>${cur ? 'Change reviewer' : 'Assign'}</button></div></form>`,
   );
 };
 F.asst = d => {
+  if (!validate('asst', d, { s: [['req', 'Choose a reviewer.']] })) return render();
   const p = byId('projects', d.id);
-  p.stewards = [].concat(d.s || []);
-  if (!p.stewards.length) {
-    toast('Assign at least one steward.', 'err');
+  if (!projReviewers(p).some(a => a.pid === d.s)) {
+    UI.err.asst = { s: 'Choose an active Steward, Faculty member or Facilitator in this programme.' };
     return render();
   }
-  p.stewards.forEach(s => notify(s, 'You were assigned to review the project “' + p.title + '”', 'project', { id: p.id }));
-  notify(p.owner, 'A reviewer was assigned to your project “' + p.title + '”: ' + p.stewards.map(x => P(x).name).join(', '), 'project', { id: p.id });
-  projLog(p, 'Reviewer assigned by ' + me().name + ': ' + p.stewards.map(x => P(x).name).join(', '));
-  audit('Project reviewer assigned', p.id, p.stewards.join(','));
-  toast('Reviewer assigned.');
+  const was = p.stewards.filter(x => x !== d.s);
+  if (p.stewards.length === 1 && !was.length) {
+    UI.modal = null;
+    clearF('asst');
+    return ok();
+  }
+  p.stewards = [d.s];
+  notify(d.s, 'You were assigned to review the project “' + p.title + '”', 'project', { id: p.id });
+  was.forEach(x => notify(x, 'You are no longer the reviewer for the project “' + p.title + '”', 'project', { id: p.id }));
+  notify(p.owner, 'A reviewer was assigned to your project “' + p.title + '”: ' + P(d.s).name, 'project', { id: p.id });
+  projLog(p, (was.length ? 'Reviewer changed by ' + me().name + ': ' + was.map(x => P(x).name).join(', ') + ' → ' : 'Reviewer assigned by ' + me().name + ': ') + P(d.s).name);
+  audit('Project reviewer assigned', p.id, (was.length ? was.join(',') + ' → ' : '') + d.s);
+  toast(was.length ? 'Reviewer changed.' : 'Reviewer assigned.');
   UI.modal = null;
+  clearF('asst');
   ok();
 };
 function finReady(p) {
