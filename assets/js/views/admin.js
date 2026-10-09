@@ -441,7 +441,7 @@ function cfgForm(isOrg) {
     isOrg ? 'Configure within the pack envelope' : 'Use-case pack: ' + h(pk.name),
     'Platform-controlled items cannot be changed by a tenant.',
     `<form data-f="cfg" class="col adm-form" novalidate><div class="g3">${fi('cfg', 'workspace', 'Label for workspaces', { value: 'Action Room', ro: true, help: 'Fixed across PHOENIX so every role sees the same name.' })}${fi('cfg', 'circle', 'Label for Circles', { value: pk.labels.circle, req: true })}${fi('cfg', 'rope', 'Label for Rope Teams', { value: pk.labels.rope, req: true })}</div>${fi('cfg', 'compassOpt', 'Ask optional Purpose Compass questions PC7–PC12 in context', { type: 'checkbox', value: pk.compassOptional ? 'yes' : '' })}${fi('cfg', 'propose', 'Participants may propose a ' + pk.labels.workspace, { type: 'checkbox', value: S.settings.participantCanProposeWorkspace ? 'yes' : '' })}
- <div class="adm-locked"><span class="adm-locked-ic" aria-hidden="true">${ic('lock', 16)}</span><div><b>Platform-controlled (locked)</b><p class="cap">Consent framework · trust controls · security rules · audit model · core data semantics · Evidence Support Level definitions</p></div></div>${assumed('OI-09 — final split of configurable vs locked items')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save configuration</button></div></form>`,
+ <div class="adm-locked"><span class="adm-locked-ic" aria-hidden="true">${ic('lock', 16)}</span><div><b>Platform-controlled (locked)</b><p class="cap">Consent framework · trust controls · security rules · audit model · core data semantics · Evidence Support Level definitions</p></div></div><div class="actions"><span></span><button class="btn btn-p" type="submit">Save configuration</button></div></form>`,
   );
 }
 F.cfg = d => {
@@ -865,7 +865,7 @@ route('platform', 'platform', () => {
       '',
       dl([
         ['MFA', 'Required for Programme and Platform Administrators'],
-        ['Password policy', assumed('min 10 characters incl. a number')],
+        ['Password policy', 'At least 10 characters, including a number'],
         ['Session timeout', '30 minutes idle'],
         ['Encryption', 'In transit and at rest'],
       ]),

@@ -42,7 +42,7 @@ function stageTrack(p, hereKind) {
       const name = s.o ? h(s.o.name) : s.st === 'skip' ? 'Skipped' : 'Not created yet';
       const link = s.o && canOpenSpace(s.kind, s.o) && !here ? L(name, route_, { id: s.o.id }, 'lnk') : name;
       const back = rets.filter(r => r.to.kind === s.kind).length;
-      return `<li class="jstep is-${s.st}${here ? ' is-here' : ''}${back ? ' has-ret' : ''}"${here ? ' aria-current="step"' : ''}><span class="tile ${['todo', 'skip'].includes(s.st) ? 't-soft' : s.tile}">${s.st === 'done' ? ic('check', 16) : ic(s.icon, 16)}</span><div class="jbody"><span class="jlabel">${n + 1}. ${s.label}${here ? ' <span class="jhere">You are here</span>' : ''}</span><span class="jname">${link}</span><span class="cap jmeta">${s.o ? pill(s.o.state) : s.st === 'skip' ? '<span>Not used for this project</span>' + assumed('OI-12') : h(s.what)}${back ? ' ' + pill(back + ' returned issue' + (back > 1 ? 's' : ''), 'p-amber') : ''}</span></div></li>`;
+      return `<li class="jstep is-${s.st}${here ? ' is-here' : ''}${back ? ' has-ret' : ''}"${here ? ' aria-current="step"' : ''}><span class="tile ${['todo', 'skip'].includes(s.st) ? 't-soft' : s.tile}">${s.st === 'done' ? ic('check', 16) : ic(s.icon, 16)}</span><div class="jbody"><span class="jlabel">${n + 1}. ${s.label}${here ? ' <span class="jhere">You are here</span>' : ''}</span><span class="jname">${link}</span><span class="cap jmeta">${s.o ? pill(s.o.state) : s.st === 'skip' ? '<span>Not used for this project</span>' : h(s.what)}${back ? ' ' + pill(back + ' returned issue' + (back > 1 ? 's' : ''), 'p-amber') : ''}</span></div></li>`;
     })
     .join('')}<li class="jstep jfinal is-${closed ? 'done' : p.stage === 'Final review' ? 'cur' : 'todo'}"><span class="tile ${closed ? 't-teal' : p.stage === 'Final review' ? 't-navy' : 't-soft'}">${ic(closed ? 'check' : 'award', 16)}</span><div class="jbody"><span class="jlabel">Final review</span><span class="jname">${closed ? 'Approved' : p.stage === 'Final review' ? 'In review' : 'After execution'}</span><span class="cap jmeta">Faculty/Steward</span></div></li></ol>${rets.length ? `<div class="jret" role="note">${ic('refresh', 16)}<div><b>${rets.length} issue${rets.length > 1 ? 's' : ''} returned to an earlier stage.</b> <span class="cap">${rets.map(r => h(r.toName) + ': ' + h(r.why.slice(0, 70))).join(' · ')}</span></div></div>` : ''}</section>`;
 }
@@ -69,7 +69,7 @@ function stageGate(p, kind, o) {
         ? B(ic('room', 14) + 'Create or link ' + WL(), 'newRoom', { origin: 'Circle decision', oid: o.id, project: p.id }, 'btn-p btn-sm')
         : `<button class="btn btn-p btn-sm" type="button" disabled>${ic('room', 14)}Create ${WL()}</button><span class="cap">Record an approved decision first.</span>`
       : '';
-    return gateCard('Forward: Circle → ' + WL() + ' (Rope Team skipped — ' + assumed('OI-12') + ')', items, act, p, kind, o);
+    return gateCard('Forward: Circle → ' + WL() + ' (Rope Team skipped)', items, act, p, kind, o);
   }
   if (kind === 'ropes') {
     items.push([(o.reviews || []).some(v => v.status === 'Looks good'), 'Mentor has reviewed the team’s work.']);

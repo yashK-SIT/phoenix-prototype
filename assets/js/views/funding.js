@@ -205,7 +205,7 @@ function fundCard(f) {
       return `<div class="fsum"><div class="fsum-i"><span class="fig-l">Committed</span><span class="fig">${money(f.currency, f.total)}</span></div><div class="fsum-i"><span class="fig-l">Released</span><span class="fig">${money(f.currency, rel)}</span></div><div class="fsum-i"><span class="fig-l">Still to release</span><span class="fig">${money(f.currency, f.total - rel)}</span></div></div><div class="ftr-w"><div class="ftr-h"><span class="lbl">Released</span><span class="cap">${money(f.currency, rel)} of ${money(f.currency, f.total)}</span></div><div class="ftr" role="img" aria-label="Released ${h(f.currency)} ${rel} of ${h(f.currency)} ${f.total}">${f.tranches.map((t, i) => `<span class="ftr-s ${seg[t.state] || 'is-c'}" style="flex-grow:${t.amount || 1}"><i></i><span class="ftr-l">${i + 1} · ${h(stageLabel(t.stage))}</span></span>`).join('')}</div></div>`;
     })() +
       (f.status !== 'Agreement signed' && f.status !== 'Fully released'
-        ? `<div class="col fsetup">${banner('info', 'Funding set-up', 'Funding request → required approval → funding agreement. ' + assumed('OI-02 / OI-03: PHOENIX records commitments and releases; money moves through the provider or off-platform'))}${dl(
+        ? `<div class="col fsetup">${banner('info', 'Funding set-up', 'Funding request → required approval → funding agreement.')}${dl(
             [
               ['Request', pill(f.status)],
               ['Approval', f.approvedBy ? nm(f.approvedBy) : 'Programme Administrator (Finance Owner)'],
@@ -246,7 +246,7 @@ function fundCard(f) {
           ];
         }),
       ) +
-      `<p class="cap fund-note">${assumed('OI-02 tranche split, triggers and hold handling')} Funding decisions are always made by humans.</p>`,
+      `<p class="cap fund-note">Funding decisions are always made by humans.</p>`,
     '',
     'fund-card',
   );

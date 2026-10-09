@@ -454,7 +454,7 @@ route('newevidence', 'evidence', () => {
       '',
       [['Evidence', 'evidence'], ['Upload']],
     ) +
-    `${neMsBanner()}${!UI.p.ms && UI.p.from && byId('rooms', UI.p.from) ? '<div class="ev-up-note">' + banner('info', 'Evidence for ' + h(byId('rooms', UI.p.from).name), 'This evidence supports the completed deliverables. After you submit it you return to the ' + WL() + ', where you can generate the Learning Harvest.') + '</div>' : ''}<div class="g12 ev-up"><form data-f="ne" class="card c8 col ev-upform" novalidate>${errSum(f)}<input type="hidden" name="from" value="${h(UI.p.from || '')}"><input type="hidden" name="ms" value="${h(UI.p.ms || '')}">
+    `${neMsBanner()}${!UI.p.ms && UI.p.from && byId('rooms', UI.p.from) ? '<div class="ev-up-note">' + banner('info', 'Evidence for ' + h(byId('rooms', UI.p.from).name), 'This evidence supports the completed deliverables. After you submit it you return to the ' + WL() + ', where you can generate the Learning Harvest.') + '</div>' : ''}<div class="g12 ev-up"><form data-f="ne" class="card c12 col ev-upform" novalidate>${errSum(f)}<input type="hidden" name="from" value="${h(UI.p.from || '')}"><input type="hidden" name="ms" value="${h(UI.p.ms || '')}">
  <div class="np-sh"><span class="np-n" aria-hidden="true">1</span><h2 class="h3">The evidence</h2></div>
  ${fi(f, 'fmt', 'Evidence format', { type: 'select', req: true, opts: EV_FMTS, value: 'File upload', ch: 'neFmt', help: 'Documents, files, outputs and results can be uploaded or linked. Reflections are written here.' })}
  ${neFmtFields(f, fv(f, 'fmt', 'File upload'), spaces)}
@@ -464,8 +464,7 @@ route('newevidence', 'evidence', () => {
  <div class="np-sh"><span class="np-n" aria-hidden="true">3</span><h2 class="h3">Where it belongs</h2></div>
  ${spaces.length ? fi(f, 'link', 'Link to', { type: 'select', req: true, ph: 'Select a Circle, Rope Team or ' + WL(), value: UI.p.link || '', opts: spaces.map(s => [s.id, (byId('circles', s.id) ? 'Circle' : byId('ropes', s.id) ? 'Rope Team' : WL()) + ' · ' + s.name + (spaceProject(s.id) ? ' — ' + spaceProject(s.id).title : '')]), help: 'Linked by reference, not copied.' }) : banner('info', '', 'Join a Circle, Rope Team or ' + WL() + ' to link evidence.')}
  <div class="f2">${fi(f, 'source', 'Source', { req: true, ph: 'e.g. Field survey' })}${fi(f, 'purpose', 'Purpose', { type: 'select', req: true, opts: ['Project evidence', 'Milestone evidence', 'Learning evidence', 'Portfolio'], ph: 'Select' })}</div>
- <div class="actions">${L('Cancel', 'evidence', {}, 'btn btn-g')}<button class="btn btn-p" type="submit">Submit for review</button></div></form>
- <aside class="c4 col ev-up-side">${card('How it is reviewed', 'A reviewer sets the review status and the Evidence Support Level. Approval never implies release.', `<ol class="ev-levels">${LEVELS.map(([k, v]) => `<li>${evLevel(k)}<span>${v}</span></li>`).join('')}</ol>`, '', 'quiet')}</aside></div>`
+ <div class="actions">${L('Cancel', 'evidence', {}, 'btn btn-g')}<button class="btn btn-p" type="submit">Submit for review</button></div></form></div>`
   );
 });
 F.ne = (d, form) => {

@@ -967,35 +967,6 @@
   font-size: var(--fs-xs);
   font-weight: 700;
 }
-.ev-up-side {
-  align-self: start;
-}
-.ev-levels {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-}
-.ev-levels li {
-  display: grid;
-  grid-template-columns: 74px minmax(0, 1fr);
-  gap: var(--s-3);
-  align-items: center;
-  padding: 8px 0;
-  border-top: 1px solid var(--line-soft);
-  font-size: var(--fs-sm);
-  color: var(--text-2);
-}
-.ev-levels li:first-child {
-  border-top: 0;
-}
-@media (min-width: 1024px) {
-  .ev-up-side {
-    position: sticky;
-    top: calc(var(--top-h) + var(--s-6));
-  }
-}
 
 /* ---------- 6. Repository ---------- */
 .repo-store {

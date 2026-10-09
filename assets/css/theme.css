@@ -754,17 +754,6 @@ nav[aria-label='Breadcrumb'] > span:last-child {
 .pill + .pill {
   margin-left: 6px;
 }
-.flag {
-  background: var(--ochre-50);
-  border: 0;
-  border-radius: 3px;
-  padding: 0 6px;
-  font-family: var(--font);
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--ochre-strong);
-  gap: 4px;
-}
 .ai-tag {
   background: var(--k-circle-50);
   border: 0;
@@ -2587,9 +2576,6 @@ a.stat:hover {
 /* ---------- journey on smaller screens: one line per stage ---------- */
 @container (max-width:1023px) {
   .jstep .tile {
-    display: none;
-  }
-  .jstep .cap .flag {
     display: none;
   }
 }

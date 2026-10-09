@@ -282,24 +282,10 @@
   gap: 4px;
   margin-top: 2px;
 }
-/* status pills and rule flags keep their shape; they move to the next line instead of breaking */
-.jmeta .pill,
-.jmeta .flag {
+/* status pills keep their shape; they move to the next line instead of breaking */
+.jmeta .pill {
   flex: none;
   max-width: 100%;
-}
-/* in a narrow stage card a long rule flag wraps inside its chip instead of overlapping */
-.jmeta .flag {
-  height: auto;
-  min-height: 22px;
-  padding-top: 2px;
-  padding-bottom: 2px;
-  line-height: 16px;
-  align-items: flex-start;
-}
-.jmeta .flag svg {
-  flex: none;
-  margin-top: 2px;
 }
 .jstep.is-done {
   background: var(--primary-soft);

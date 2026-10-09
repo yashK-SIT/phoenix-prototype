@@ -338,8 +338,7 @@ route('circle', 'circles', () => {
       'Weighted votes',
       'Project owner counts twice a regular member. Approved when approving weight ÷ total eligible weight ≥ ' +
         S.settings.voting.threshold +
-        '%. ' +
-        assumed('OI-01 relative-weight interpretation'),
+        '%.',
       c.polls
         .map(p => {
           const tl = tally(c, p);
@@ -641,7 +640,7 @@ function pollForm(c, base) {
   const opts = pollOpts();
   return `<form data-f="poll" class="col" style="gap:14px" novalidate><input type="hidden" name="c" value="${c.id}">${fi('poll', 'q', 'Question', { req: true, ph: 'What should the Circle decide?' })}${fi('poll', 'desc', 'Description (optional)', { type: 'textarea', rows: 2, ph: 'Background, what each option means, links' })}
   <fieldset class="col" style="gap:8px;border:0;padding:0;margin:0"><legend class="lbl" style="margin-bottom:8px">Options <span class="req">*</span></legend>${opts.map((o, i) => `<div class="row" style="gap:8px"><span class="poll-n">${i + 1}</span><input class="input" name="o${i}" value="${h(o)}" aria-label="Option ${i + 1}" placeholder="Option ${i + 1}">${opts.length > 2 ? `<button type="button" class="btn btn-g btn-sm" data-a="pollOptX" data-i="${i}" aria-label="Remove option ${i + 1}">${ic('x', 14)}</button>` : ''}</div>`).join('')}${fe('poll', 'opts') ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe('poll', 'opts')}</span>` : ''}${opts.length < 8 ? `<div>${B(ic('plus', 14) + 'Add option', 'pollOptAdd', {})}</div>` : ''}</fieldset>
-  ${fi('poll', 'closes', 'Closes on (date and time)', { type: 'datetime-local', req: true })}${banner('info', 'Who votes', 'The project owner and regular members vote; the project owner counts twice. Facilitators and mentors do not vote. An option wins when its weight reaches ' + S.settings.voting.threshold + '% of all eligible weight. ' + assumed('OI-01'))}<div class="actions"><span class="cap">Created ${fmt(now().slice(0, 16))} by ${nm(myId())}</span><button class="btn btn-p" type="submit">${base ? 'Open new poll' : 'Create poll'}</button></div></form>`;
+  ${fi('poll', 'closes', 'Closes on (date and time)', { type: 'datetime-local', req: true })}${banner('info', 'Who votes', 'The project owner and regular members vote; the project owner counts twice. Facilitators and mentors do not vote. An option wins when its weight reaches ' + S.settings.voting.threshold + '% of all eligible weight.')}<div class="actions"><span class="cap">Created ${fmt(now().slice(0, 16))} by ${nm(myId())}</span><button class="btn btn-p" type="submit">${base ? 'Open new poll' : 'Create poll'}</button></div></form>`;
 }
 const pollSnap = () => {
   const f = document.querySelector('form[data-f="poll"]');

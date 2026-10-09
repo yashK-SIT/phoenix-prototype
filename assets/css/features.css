@@ -102,7 +102,6 @@
 .mqbtn.on{background:#F2EEF8;color:#5B3F8C}
 .msend{min-height:40px;width:44px;padding:0;border-radius:50%;flex:none}
 .mhelp{font-size:11.5px;color:#6B7585;padding:0 8px;line-height:16px}
-.mhelp .flag{font-size:10.5px;padding:1px 6px}
 @container (max-width:1023px){.msgshell{grid-template-columns:280px minmax(0,1fr)}}
 @container (max-width:760px){
  .msgshell{grid-template-columns:minmax(0,1fr);height:calc(100dvh - 64px - 68px - 32px);min-height:480px;border-radius:14px}

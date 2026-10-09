@@ -1707,8 +1707,7 @@ select.input {
 .p-teal { background: var(--primary-soft); border-color: var(--primary-soft-2); color: var(--primary-text); }
 .p-purple { background: var(--k-circle-bg); border-color: transparent; color: var(--k-circle); }
 .p-navy { background: var(--k-room-bg); border-color: transparent; color: var(--k-room); }
-.ai-tag,
-.flag {
+.ai-tag {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -1722,10 +1721,6 @@ select.input {
   color: var(--signal-text);
   background: var(--signal-soft);
   border: 1px dashed color-mix(in srgb, var(--signal) 50%, transparent);
-}
-.flag {
-  color: var(--warn);
-  background: var(--warn-bg);
 }
 .av {
   flex: none;

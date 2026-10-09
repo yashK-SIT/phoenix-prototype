@@ -294,7 +294,6 @@ const head = (t, sub, right = '', crumbs) => {
   return `${crumbs ? crumbsHtml(crumbs) : ''}<div class="phead"><div class="phead-t"><div class="row wrap" style="gap:10px"><h1 class="h1">${t}</h1>${badges.join('')}</div>${sub ? `<p class="sub">${sub}</p>` : ''}</div>${right.trim() ? `<div class="phead-a">${right}</div>` : ''}</div>`;
 };
 const aiTag = t => `<span class="ai-tag">${ic('sparkle', 12)}${t || 'AI draft'}</span>`;
-const assumed = t => `<span class="flag">${ic('flag', 12)}Assumed rule · ${t}</span>`;
 const money = (c, n) =>
   `<span style="white-space:nowrap">${h(c || 'USD')} ${Number(n || 0).toLocaleString('en-US')}</span>`;
 const dueTag = (due, done) => (!done && due && due < today() ? ' ' + pill('Overdue', 'p-red') : '');

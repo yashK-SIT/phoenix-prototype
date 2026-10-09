@@ -794,12 +794,6 @@
 .mhelp b {
   color: var(--info);
 }
-.mhelp .flag {
-  height: 18px;
-  padding: 0 6px;
-  font-size: 11px;
-}
-
 /* members dialog, question summary */
 .mmem-cap {
   margin-bottom: var(--s-2);

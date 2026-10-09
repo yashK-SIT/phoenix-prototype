@@ -182,10 +182,10 @@ PUB.register = () => {
            '',
          )}</div><p class="cap">Facilitators, Mentors, Partners and Organization Representatives join by invitation only.</p></fieldset>`
  }
- <div class="f2">${fi(f, 'name', 'Full name', { req: true, auto: 'name', vis: 'You and authorised administration' })}${fi(f, 'display', 'Display name', { req: true, vis: 'Your collaboration contexts' })}</div>
- <div class="f2">${inv ? fi(f, 'email', 'Email address', { value: inv.email, ro: true, help: 'From your invitation' }) : fi(f, 'email', 'Email address', { type: 'email', req: true, auto: 'email', help: 'We will send a verification link to this address.' })}${dobField(f)}</div>
+ <div class="f2">${fi(f, 'name', 'Full name', { req: true, auto: 'name' })}${fi(f, 'display', 'Display name', { req: true })}</div>
+ <div class="f2">${inv ? fi(f, 'email', 'Email address', { value: inv.email, ro: true, help: 'From your invitation' }) : fi(f, 'email', 'Email address', { type: 'email', req: true, auto: 'email' })}${dobField(f, undefined, { vis: '' })}</div>
  <div class="f2">${fi(f, 'pw', 'Password', { type: 'password', req: true, auto: 'new-password' })}${fi(f, 'pw2', 'Confirm password', { type: 'password', req: true, auto: 'new-password' })}</div>
- <p class="help auth-pwhelp">At least 10 characters, including a number. ${assumed('policy for Technical Operator to confirm')}</p>
+ <p class="help auth-pwhelp">At least 10 characters, including a number.</p>
  <button class="btn btn-p btn-block" type="submit">Create account</button></form>
  <p class="cap">Already have an account? ${L('Sign in', 'login')}</p>`,
     true,
