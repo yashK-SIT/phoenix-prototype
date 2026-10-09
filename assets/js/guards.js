@@ -59,8 +59,13 @@ const G = {
   submitProj: d => byId('projects', d.id)?.owner === myId() || 'only the project owner can submit',
   submitFinal: d => byId('projects', d.id)?.owner === myId() || 'only the project owner can submit final deliverables',
   fin: d => byId('projects', d.id)?.owner === myId() || 'only the project owner can submit final deliverables',
-  assignStewards: () => role() === 'A' || 'only a Programme Administrator assigns stewards',
-  asst: () => role() === 'A' || 'only a Programme Administrator assigns stewards',
+  // The reviewer is assigned once and cannot be changed afterwards.
+  assignStewards: d =>
+    (role() === 'A' && byId('projects', d.id)?.stewards.length === 0) ||
+    'only a Programme Administrator assigns the reviewer, and only while the project has none',
+  asst: d =>
+    (role() === 'A' && byId('projects', d.id)?.stewards.length === 0) ||
+    'only a Programme Administrator assigns the reviewer, and only while the project has none',
   // circles
   circleState: d => isFac(d.id) || 'only the facilitator can change the Circle lifecycle',
   pauseCircle: d => isFac(d.id) || 'only the facilitator can pause a Circle',

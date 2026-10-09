@@ -343,7 +343,8 @@ route('project', 'projects', () => {
     const rm = byId('rooms', p.room);
     actions = B('Submit final deliverables', 'submitFinal', { id: p.id }, 'btn-p btn-sm');
   }
-  if (r === 'A' && p.status !== 'Rejected') actions += B(p.stewards.length ? 'Change reviewer' : 'Assign reviewer', 'assignStewards', { id: p.id }, p.stewards.length ? 'btn-s btn-sm' : 'btn-p btn-sm');
+  // The reviewer is assigned once and is not changed afterwards.
+  if (r === 'A' && p.status !== 'Rejected' && !p.stewards.length) actions += B('Assign reviewer', 'assignStewards', { id: p.id }, 'btn-p btn-sm');
   const lastRej = p.status === 'Rejected' && (p.thread || []).filter(m => m.kind === 'reject').slice(-1)[0];
   if (r === 'F' && stewardOf(p) && p.stage === 'Closed') actions = '';
   if (own && ownRoomProjects().includes(p))
@@ -588,20 +589,19 @@ const projReviewers = p => {
   const seen = new Set();
   return S.assign.filter(a => a.ctx === p.ctx && roleBase(a.role) === 'F' && a.status === 'Active' && a.pid !== p.owner && !seen.has(a.pid) && seen.add(a.pid));
 };
-// One reviewer per project; p.stewards stays a list so the rest of the app reads it unchanged.
+// One reviewer per project, assigned once; p.stewards stays a list so the rest of the app reads it unchanged.
 A.assignStewards = d => {
   clearF('asst');
   const p = byId('projects', d.id);
   const rv = projReviewers(p);
-  const cur = p.stewards[0] || '';
   modal(
-    cur ? 'Change the reviewer' : 'Assign a reviewer',
+    'Assign a reviewer',
     () =>
-      `<form data-f="asst" class="col prj-dlg" novalidate><input type="hidden" name="id" value="${p.id}">${dl([['Project', h(p.title)], ['Owner', nm(p.owner)], ['Areas', (p.tags || []).map(h).join(', ') || '—'], cur && ['Current reviewer', p.stewards.map(nm).join(', ')]])}${
+      `<form data-f="asst" class="col prj-dlg" novalidate><input type="hidden" name="id" value="${p.id}">${dl([['Project', h(p.title)], ['Owner', nm(p.owner)], ['Areas', (p.tags || []).map(h).join(', ') || '—']])}${
         rv.length
-          ? fi('asst', 's', 'Steward, Faculty or Facilitator', { type: 'select', req: true, ph: 'Choose a reviewer', value: cur, opts: rv.map(a => [a.pid, P(a.pid).name + ' · ' + ROLE[a.role]]), help: 'Active Stewards, Faculty and Facilitators in this programme. They review the project, ask for clarification if needed and accept it.' })
+          ? fi('asst', 's', 'Steward, Faculty or Facilitator', { type: 'select', req: true, ph: 'Choose a reviewer', opts: rv.map(a => [a.pid, P(a.pid).name + ' · ' + ROLE[a.role]]), help: 'Active Stewards, Faculty and Facilitators in this programme. They review the project, ask for clarification if needed and accept it. The reviewer cannot be changed once assigned.' })
           : banner('warn', 'No reviewer available in this programme', 'Invite a Facilitator / Steward from ' + L('Programme admin → Invitations', 'admin', { tab: 'invites' }) + ', then assign them here.')
-      }<div class="actions"><span></span><button class="btn btn-p" type="submit" ${rv.length ? '' : 'disabled'}>${cur ? 'Change reviewer' : 'Assign'}</button></div></form>`,
+      }<div class="actions"><span></span><button class="btn btn-p" type="submit" ${rv.length ? '' : 'disabled'}>Assign</button></div></form>`,
   );
 };
 F.asst = d => {
@@ -611,19 +611,12 @@ F.asst = d => {
     UI.err.asst = { s: 'Choose an active Steward, Faculty member or Facilitator in this programme.' };
     return render();
   }
-  const was = p.stewards.filter(x => x !== d.s);
-  if (p.stewards.length === 1 && !was.length) {
-    UI.modal = null;
-    clearF('asst');
-    return ok();
-  }
   p.stewards = [d.s];
   notify(d.s, 'You were assigned to review the project “' + p.title + '”', 'project', { id: p.id });
-  was.forEach(x => notify(x, 'You are no longer the reviewer for the project “' + p.title + '”', 'project', { id: p.id }));
   notify(p.owner, 'A reviewer was assigned to your project “' + p.title + '”: ' + P(d.s).name, 'project', { id: p.id });
-  projLog(p, (was.length ? 'Reviewer changed by ' + me().name + ': ' + was.map(x => P(x).name).join(', ') + ' → ' : 'Reviewer assigned by ' + me().name + ': ') + P(d.s).name);
-  audit('Project reviewer assigned', p.id, (was.length ? was.join(',') + ' → ' : '') + d.s);
-  toast(was.length ? 'Reviewer changed.' : 'Reviewer assigned.');
+  projLog(p, 'Reviewer assigned by ' + me().name + ': ' + P(d.s).name);
+  audit('Project reviewer assigned', p.id, d.s);
+  toast('Reviewer assigned.');
   UI.modal = null;
   clearF('asst');
   ok();
