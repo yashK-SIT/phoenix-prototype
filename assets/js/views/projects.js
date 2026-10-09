@@ -560,26 +560,39 @@ F.prej = d => {
   toast('Project rejected. The owner has been told why.');
   ok();
 };
+// Support and onboarding paths offered on acceptance. "Circle → Room" skips the Rope Team (see skipsRope).
+const SUPPORT_PATHS = [
+  ['Circle → Rope Team → Room', 'The project starts in a Circle, moves to a Rope Team for mentor guidance, then to the ' + WL() + '.'],
+  ['Circle → Room', 'The project starts in a Circle and moves straight to the ' + WL() + '. No Rope Team or Mentor Request.'],
+];
 A.acceptProj = d => {
   clearF('acc');
-  modal(
-    'Accept project and choose support path',
-    () =>
-      `<form data-f="acc" class="col prj-dlg" novalidate><input type="hidden" name="id" value="${d.id}"><div class="field prj-path"><span class="lbl">Support and onboarding path</span><b>Circle → Rope Team → ${WL()}</b><span class="help">The project starts in a Circle, moves to a Rope Team, then to the ${WL()}.</span></div>${fi('acc', 'note', 'Note to the participant', { type: 'textarea', rows: 3 })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Accept project</button></div></form>`,
-  );
+  UI.form.acc = { path: SUPPORT_PATHS[0][0] };
+  modal('Accept project and choose support path', () => {
+    const cur = SUPPORT_PATHS.find(([v]) => v === fv('acc', 'path')) || SUPPORT_PATHS[0];
+    return `<form data-f="acc" class="col prj-dlg" novalidate><input type="hidden" name="id" value="${d.id}">${fi('acc', 'path', 'Support and onboarding path', { type: 'select', req: true, opts: SUPPORT_PATHS.map(([v]) => [v, pathLabel(v)]), ch: 'accPath', help: cur[1] })}${fi('acc', 'note', 'Note to the participant', { type: 'textarea', rows: 3 })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Accept project</button></div></form>`;
+  });
+};
+// keeps the note while the help text follows the chosen path
+A.accPath = (d, el) => {
+  const f = {};
+  new FormData(el.form).forEach((v, k) => (f[k] = v));
+  UI.form.acc = f;
+  render();
 };
 F.acc = d => {
+  if (!validate('acc', d, { path: [['req', 'Choose a support path.'], ['fn', { f: v => SUPPORT_PATHS.some(([x]) => x === v), m: 'Choose one of the listed paths.' }]] })) return render();
   const p = byId('projects', d.id);
-  // one support path: the Rope Team is not skipped
-  const path = 'Circle → Rope Team → Room';
+  const path = d.path;
   p.status = 'Accepted';
   p.supportPath = path;
   p.clar.forEach(c => (c.resolved = true));
-  projLog(p, 'Accepted by ' + me().name + '; support path: ' + path);
+  projLog(p, 'Accepted by ' + me().name + '; support path: ' + pathLabel(path));
   if ((d.note || '').trim()) convoAdd(p, 'approve', d.note.trim());
   notify(p.owner, `Your project “${p.title}” was accepted. ${d.note || ''}`, 'project', { id: p.id });
   audit('Project accepted', p.id, path);
   UI.modal = null;
+  clearF('acc');
   toast('Project accepted. Next: create the Circle.');
   ok();
 };

@@ -41,7 +41,11 @@ const G = {
   prej: d =>
     (isSteward(d.id) && ['Submitted', 'Clarification requested'].includes(byId('projects', d.id).status)) ||
     'only the Programme Administrator or an assigned Faculty/Steward can reject a project under review',
-  // review conversations (projects and pathways)
+  // review conversations (projects and pathways); pathway posts from Messages follow the same rule
+  pwchat: d => {
+    const p = byId('pathways', d.id);
+    return (p && !!CONVO.pathway.post(p)) || 'only the pathway owner, the Programme Administrator and the assigned Steward post in this conversation';
+  },
   cv: d => {
     const c = CONVO[d.k];
     const o = c && c.get(d.id);
@@ -491,8 +495,8 @@ Object.assign(G, {
     const m = byId('mentorReqs', d.id);
     return (m && (mentorReqVisible(m) || role() === 'A')) || 'you cannot view this request';
   },
-  mrq: d => (role() === 'F' && isSteward(d.project)) || byId('projects', d.project)?.owner === myId() || 'only the project owner or an assigned Faculty/Steward raises Mentor Requests',
-  mentorRequest: d => (role() === 'F' && isSteward(d.project)) || byId('projects', d.project)?.owner === myId() || 'only the project owner or an assigned Faculty/Steward raises Mentor Requests',
+  mrq: d => mentorReqOk(d),
+  mentorRequest: d => mentorReqOk(d),
   pfr: d => {
     const c = byId('circles', d.c);
     return (c && canFinalReview(c)) || 'only the project owner, Faculty/Steward or facilitator writes the final review';
@@ -579,6 +583,12 @@ Object.assign(G, {
   cqDel: platformOnly('manages Purpose Compass questions'),
 });
 // ---- Rope Team documents; project owners create their own Action Room; milestone validation
+// Mentor Requests form a Rope Team, so they are not raised on the Circle → Room path.
+const mentorReqOk = d => {
+  const pr = byId('projects', d.project);
+  if (pr && skipsRope(pr)) return 'this project’s support path goes from the Circle straight to the ' + WL() + ', without a Rope Team';
+  return (role() === 'F' && isSteward(d.project)) || pr?.owner === myId() || 'only the project owner or an assigned Faculty/Steward raises Mentor Requests';
+};
 const roomFor = d => {
   const pr = d.project && byId('projects', d.project);
   if (pr && !canCreateRoom() && !canCreateRoomFor(pr)) return 'you can create an ' + WL() + ' only for your own accepted project that does not have one yet';

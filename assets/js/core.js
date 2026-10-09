@@ -331,7 +331,7 @@ function convoHtml(kind, o) {
           const mine = x.by === myId();
           const lab = c.role(o, x.by);
           const k = CV_KIND[x.kind];
-          return `<li class="cv-m${mine ? ' mine' : ''}"><span class="av">${ini(x.by)}</span><div class="cv-b"><div class="cv-h"><b>${mine ? 'You' : nm(x.by)}</b>${lab ? `<span class="cap">${h(lab)}</span>` : ''}${k ? pill(k[0], k[1]) : ''}<time class="cap" datetime="${h(x.at)}">${fmt(x.at)}</time></div><p>${h(x.text)}</p></div></li>`;
+          return `<li class="cv-m${mine ? ' mine' : ''}"><span class="av">${ini(x.by)}</span><div class="cv-b"><div class="cv-h"><b>${mine ? 'You' : nm(x.by)}</b>${lab ? `<span class="cap">${h(lab)}</span>` : ''}${k ? pill(k[0], k[1]) : ''}<time class="cap" datetime="${h(x.at)}">${fmt(x.at)}</time></div>${x.text ? `<p>${h(x.text)}</p>` : ''}${x.att ? attCard(x.att, mine) : ''}</div></li>`;
         })
         .join('')}</ol>`
     : '<p class="cap">No messages or activity yet.</p>';

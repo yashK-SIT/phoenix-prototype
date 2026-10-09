@@ -118,7 +118,7 @@ const roleTag = (kind, o) => {
     return spaceAdmin(kind, o) || ["A", "O"].includes(role())
       ? `<span class="srole" title="Programme oversight — not a member">${ic("shield", 13)}Oversight</span>`
       : "";
-  return `<span class="srole" title="${h(SPACE_ROLE_HELP[r])}">${ic("user", 13)}Your role here: <b>${h(roleLabel(r))}</b></span>`;
+  return `<span class="srole" title="${h(SPACE_ROLE_HELP[r])}">${ic("user", 13)}Your role here: <b>${h(roleLabel(r, kind))}</b></span>`;
 };
 const roleNote = (kind, o) => {
   const r = spaceRole(kind, o);
@@ -130,12 +130,13 @@ const roleNote = (kind, o) => {
       )
     : "";
 };
-// Roles offered when inviting or changing someone's role. "Member" is shown as "Participant".
+// Roles offered when inviting or changing someone's role. "Member" is shown as "Collaborator" in a Circle and
+// as "Participant" in Rope Teams and Action Rooms; the stored role stays "Member" everywhere.
 const INVITE_ROLES = ["Member", "Facilitator", "Mentor"];
-const roleLabel = (r) => (r === "Member" ? "Participant" : r);
+const roleLabel = (r, kind) => (r === "Member" ? (kind === "circles" ? "Collaborator" : "Participant") : r);
 // Role selector used in the Members tabs (a person who already holds another role keeps it as an option).
 const roleSelect = (act, data, cur, label) =>
-  `<select class="input role-sel" data-ch="${act}"${attr(data)} aria-label="${h(label || "Role in this space")}">${[...INVITE_ROLES, ...(INVITE_ROLES.includes(normRole(cur)) ? [] : [normRole(cur)])].map((x) => `<option value="${x}" ${x === normRole(cur) ? "selected" : ""}>${roleLabel(x)}</option>`).join("")}</select>`;
+  `<select class="input role-sel" data-ch="${act}"${attr(data)} aria-label="${h(label || "Role in this space")}">${[...INVITE_ROLES, ...(INVITE_ROLES.includes(normRole(cur)) ? [] : [normRole(cur)])].map((x) => `<option value="${x}" ${x === normRole(cur) ? "selected" : ""}>${roleLabel(x, data.kind)}</option>`).join("")}</select>`;
 // Everyone in this context who could be added to a space, with their platform role.
 const eligiblePeople = (exclude = [], roles = ["P", "F", "M", "C", "O"]) =>
   S.assign
@@ -382,7 +383,7 @@ function wsTeamCard(kind, o) {
   return card(
     'Members',
     act.length + ' active',
-    `<ul class="ws-team">${act.map(m => `<li><span class="av sm">${ini(m.pid)}</span><span class="ws-team-n">${nm(m.pid)}</span><span class="cap">${h(roleLabel(spaceRole(kind, o, m.pid) || normRole(m.role)))}</span></li>`).join('')}</ul>`,
+    `<ul class="ws-team">${act.map(m => `<li><span class="av sm">${ini(m.pid)}</span><span class="ws-team-n">${nm(m.pid)}</span><span class="cap">${h(roleLabel(spaceRole(kind, o, m.pid) || normRole(m.role), kind))}</span></li>`).join('')}</ul>`,
     L('All members', route_, { id: o.id, tab: 'members' }),
     'ws-team-card',
   );
@@ -399,7 +400,7 @@ const wsReq = x => (x.tasks || []).filter(k => !['Proposed', 'Declined'].include
 const wsPct = x => (wsReq(x).length ? wsReq(x).filter(k => k.status === 'Done').length / wsReq(x).length : -1);
 const wsProg = x =>
   `<span class="ws-prog"><span class="progress" aria-hidden="true"><span class="bar" style="width:${Math.max(0, Math.round(wsPct(x) * 100))}%"></span></span><span>${wsReq(x).length ? wsReq(x).filter(k => k.status === 'Done').length + ' of ' + wsReq(x).length + ' deliverables done' : 'No deliverables yet'}</span></span>`;
-const wsRoleTxt = (kind, o) => (spaceRole(kind, o) ? roleLabel(spaceRole(kind, o)) : { Invited: 'Invited', Requested: 'Pending' }[(memberRec(o) || {}).status] || 'Oversight');
+const wsRoleTxt = (kind, o) => (spaceRole(kind, o) ? roleLabel(spaceRole(kind, o), kind) : { Invited: 'Invited', Requested: 'Pending' }[(memberRec(o) || {}).status] || 'Oversight');
 const wsUnread = o => (unreadIn(o) && memberOf(o) ? ` <span class="mbadge" title="Unread messages">${unreadIn(o)}</span>` : '');
 // The person's other spaces of the same kind, for the sub-navigation's "switch to" list.
 const wsOthers = (kind, o) =>

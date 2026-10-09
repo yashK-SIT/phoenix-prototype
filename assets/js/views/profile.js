@@ -1308,10 +1308,8 @@ const pwParty = (p) =>
     p.reviewer === myId() ||
     role() === "A" ||
     (hasB("Reviewer") && !p.reviewer && ["In review", "Draft"].includes(p.state)));
-const pwParties = (p) => {
-  const adm = ctxAdmins(p.ctx).filter((a) => p.state === "Awaiting reviewer" || (p.thread || []).some((m) => m.by === a));
-  return [...new Set([p.by, p.pid, p.reviewer, ...adm].filter(Boolean))];
-};
+// The pathway owner, the participant, the Steward and the programme's administrators all follow the conversation.
+const pwParties = (p) => [...new Set([p.by, p.pid, p.reviewer, ...ctxAdmins(p.ctx)].filter(Boolean))];
 // The creator is answering when the approver has asked for clarification or returned the pathway.
 const pwAsked = (p) => p.state === "Clarification requested" || (p.state === "Draft" && !!p.changeReq);
 CONVO.pathway = {
@@ -1319,7 +1317,7 @@ CONVO.pathway = {
   acts: (p) => p.activity || [],
   role: (p, pid) =>
     pid === p.by
-      ? "Pathway creator"
+      ? "Pathway owner"
       : pid === p.reviewer
         ? "Steward (approver)"
         : pid === p.pid
@@ -1336,13 +1334,22 @@ CONVO.pathway = {
         ? { kind: "reply", label: "Reply to the clarification request" }
         : p.by === myId()
           ? { kind: "comment", label: p.reviewer ? "Message to your approver" : "Message" }
-          : { kind: "comment", label: "Message to the pathway creator" },
+          : { kind: "comment", label: "Message to the pathway owner" },
   notify: (p, kind) =>
     pwParties(p)
       .filter((x) => x !== myId())
-      .forEach((x) =>
-        notify(x, `${me().name} ${kind === "reply" ? "replied to the clarification on" : "commented on"} the pathway “${p.name}”`, "pathway"),
-      ),
+      .forEach((x) => {
+        // one unread notification per conversation, opening it in Messages
+        const ex = S.notifs.find((n) => n.pid === x && !n.read && n.chat === p.id);
+        if (ex) {
+          ex.cnt = (ex.cnt || 1) + 1;
+          ex.t = `${ex.cnt} new messages on the pathway “${p.name}”`;
+          ex.at = today();
+          return;
+        }
+        notify(x, `${me().name} ${kind === "reply" ? "replied to the clarification on" : "commented on"} the pathway “${p.name}”`, "messages", { c: p.id, k: "pathways" });
+        S.notifs[0].chat = p.id;
+      }),
 };
 const pwCanView = (p) =>
   !!p &&
@@ -2017,7 +2024,7 @@ A.pwActivity = (d) => {
       ],
       p.changeReq &&
         p.state === "Draft" && ["Open change request", h(p.changeReq)],
-    ])}<div><h3 class="h3 pw-h">Conversation and activity</h3><p class="cap" style="margin-bottom:10px">Messages between the pathway creator and the approver, with every review step. Oldest first.</p>${convoHtml("pathway", p)}</div><div><h3 class="h3" style="margin-bottom:8px">Steps</h3>${table(
+    ])}<div><h3 class="h3 pw-h">Conversation and activity</h3><p class="cap" style="margin-bottom:10px">Messages between the pathway owner, the Programme Administrator and the Steward, with every review step. Oldest first. The same conversation is in Messages.</p>${convoHtml("pathway", p)}</div><div><h3 class="h3" style="margin-bottom:8px">Steps</h3>${table(
       ["Step", "Status", "Completed by", "Completed on", "Note and files"],
       p.steps.map((s, i) => [
         `${i + 1}. ${h(s.t)}`,

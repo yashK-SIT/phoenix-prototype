@@ -23,7 +23,6 @@ PUB.login = () => {
  ${st === 'failed' ? banner('err', 'Email or password is incorrect', 'Check your details and try again, or reset your password.') : ''}
  ${st === 'locked' ? banner('err', 'Account temporarily locked', 'Too many failed attempts. Try again in 15 minutes or reset your password.') : ''}
  ${st === 'deactivated' ? banner('err', 'This account is deactivated', 'Contact your programme administrator.') : ''}
- ${UI.p.picked && fv('login', 'email') ? banner('info', 'Enter the password for ' + h(fv('login', 'email')), 'Accounts created in this browser sign in with their own password.') : ''}
  <form data-f="login" class="col auth-form" novalidate>
  ${fi(f, 'email', 'Email address', { type: 'email', req: true, ph: 'name@organisation.org', auto: 'email' })}
  ${fi(f, 'pw', 'Password', { type: 'password', req: true, auto: 'current-password' })}
@@ -33,8 +32,9 @@ PUB.login = () => {
  <div class="col auth-alt"><p>New to PHOENIX? ${L('Create an account', 'register')}</p><p class="cap">Participants and Sponsors can register directly. Every other role joins by invitation.</p>${B(ic('mail', 16) + 'I have an invitation link', 'go', { r: 'invite' }, 'btn-s')}</div>
  ${B(ic('link', 16) + 'Arrive from the LMS (demo deep link)', 'go', { r: 'lms' }, 'btn-g btn-sm')}<details class="auth-demo"><summary>Demo accounts (password: demo1234)</summary><p class="cap">One-click demo sign-in skips two-step verification. Signing in with email and password as an administrator asks for a code (use 123456).</p><div class="col auth-demo-l">${DEMO.filter(([pid]) => S.assign.some(a => a.pid === pid)).map(([pid, aid, l]) => `<button type="button" class="demo-acc" data-a="demoLogin" data-pid="${pid}"><span class="av">${ini(pid)}</span><span class="col demo-acc-t"><b>${nm(pid)}</b><span class="cap">${l}</span></span>${ic('chevr', 16)}</button>`).join('')}</div>${createdList()}</details>`);
 };
-// Accounts created in this browser (registration or Programme admin) are listed with the demo accounts.
-// They sign in with their own password: choosing one fills in the email; no password is shown or skipped.
+// Accounts created in this browser (registration or Programme admin) are listed with the demo accounts and,
+// like them, sign in with one click. Prototype only: there is no server, so this is no less secure than the
+// demo list. A real deployment must not offer password-less sign-in.
 const createdAccounts = () => S.people.filter(p => p.createdVia && p.status !== 'Deleted');
 const createdNote = p => {
   const as = S.assign.filter(a => a.pid === p.id);
@@ -50,7 +50,7 @@ const createdNote = p => {
 const createdList = () => {
   const ps = createdAccounts();
   return ps.length
-    ? `<p class="cap auth-demo-sub"><b>Created in this browser</b> · sign in with the account’s own password</p><div class="col auth-demo-l">${ps
+    ? `<p class="cap auth-demo-sub"><b>Created in this browser</b> · one-click sign-in, like the demo accounts</p><div class="col auth-demo-l">${ps
         .map(p => `<button type="button" class="demo-acc" data-a="loginPick" data-pid="${p.id}"><span class="av">${ini(p.id)}</span><span class="col demo-acc-t"><b>${nm(p.id)}</b><span class="cap">${h(p.email)} · ${h(createdNote(p))}</span></span>${ic('chevr', 16)}</button>`)
         .join('')}</div>`
     : '';
@@ -58,11 +58,17 @@ const createdList = () => {
 A.loginPick = d => {
   const p = createdAccounts().find(x => x.id === d.pid);
   if (!p) return;
-  UI.form.login = { email: p.email };
-  delete UI.err.login;
-  UI.p = { picked: 1 };
-  render();
-  document.getElementById('login_pw')?.focus();
+  // the same account checks as a password sign-in: deactivated accounts stay out; unverified email goes to verification
+  if (p.status === 'Deactivated') {
+    UI.p = { state: 'deactivated' };
+    return render();
+  }
+  clearF('login');
+  if (!p.verified) {
+    UI.pre = { verifyPid: p.id };
+    return go('verify');
+  }
+  startSession(p);
 };
 let fails = {};
 function startSession(p, mfaDone) {

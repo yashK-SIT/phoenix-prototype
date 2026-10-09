@@ -464,22 +464,7 @@ route('roles', 'platform', () => {
       }),
       '',
       'adm-panel rol-list',
-    ) +
-    '<div class="section-gap"></div>' +
-    card(
-      'Role × module overview',
-      'Read-only summary of current permissions. Open a role to change them.',
-      `<div class="tblwrap rmx-wrap"><table class="tbl rmx"><thead><tr><th scope="col">Module</th>${S.roles
-        .filter(r => r.status === 'Active')
-        .map(r => `<th scope="col" title="${h(r.name)}"><abbr title="${h(r.name)}">${h(r.id)}</abbr></th>`)
-        .join('')}</tr></thead><tbody>${Object.entries(MODULES)
-        .map(([m, [l]]) => `<tr><td>${h(l)}</td>${S.roles.filter(r => r.status === 'Active').map(r => `<td title="${h(r.name)}: ${h(permText(r.perms[m]))}"><span class="pv ${r.perms[m] === '-' ? 'none' : ''}">${h(r.perms[m] || '-')}</span></td>`).join('')}</tr>`)
-        .join('')}</tbody></table></div><p class="cap rmx-key">${PERMS.map(([k, , d]) => `<span><b class="pv">${k}</b> ${h(d.toLowerCase())}</span>`).join('')}<span><b class="pv none">-</b> no access</span></p>`,
-      '',
-      'adm-panel rmx-card',
-    ) +
-    '<div class="section-gap"></div>' +
-    card(`Specialist permission bundles <span class="adm-n">${S.bundles.length}</span>`, 'Added to a role assignment for specific responsibilities.', table(['Bundle', 'Responsibility', 'Approval'], S.bundles.map(b => [`<b>${h(b.name)}</b>`, h(b.desc), `<span class="cap">${h(b.approval)}</span>`])), '', 'adm-panel')
+    )
   );
 });
 function roleDetail(r) {

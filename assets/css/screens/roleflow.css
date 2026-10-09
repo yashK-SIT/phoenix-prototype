@@ -1,0 +1,508 @@
+/* ---------- Role Flow (public page from the sign-in screen) ---------- */
+.rfl-page {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+}
+.rfl-top {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: 12px 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.rfl-top .wm b {
+  color: var(--text);
+}
+.rfl-top .wm span {
+  color: var(--text-3);
+}
+.rfl-top-a {
+  gap: 8px;
+}
+.rfl-main {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 32px 24px 64px;
+}
+.rfl-head {
+  margin-bottom: var(--s-5);
+}
+.rfl-head .sub,
+.rfl-intro .sub {
+  max-width: 72ch;
+}
+
+/* role selector */
+.rfl-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--line);
+  scrollbar-width: thin;
+}
+.rfl-tab {
+  flex: none;
+  padding: 10px 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.rfl-tab:hover {
+  color: var(--text);
+}
+.rfl-tab.on {
+  color: var(--primary-text);
+  border-bottom-color: var(--primary);
+}
+.rfl-tab:focus-visible,
+.rfl-jb:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.rfl-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: var(--s-5) 0 var(--s-4);
+}
+.rfl-with {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.rfl-with .cap {
+  margin-right: 4px;
+}
+
+/* role chips: the theme's wayfinding colours, so they follow light and dark mode */
+.rfl-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.rfl-chip-lg {
+  padding: 4px 12px;
+  font-size: 14px;
+}
+.rfl-r-P { color: var(--primary-text); background: var(--primary-soft); }
+.rfl-r-F { color: var(--k-circle); background: var(--k-circle-bg); }
+.rfl-r-M { color: var(--k-rope); background: var(--k-rope-bg); }
+.rfl-r-C { color: var(--k-room); background: var(--k-room-bg); }
+.rfl-r-O { color: var(--info); background: var(--info-bg); }
+.rfl-r-S { color: var(--warn); background: var(--warn-bg); }
+.rfl-r-A { color: var(--signal-text); background: var(--signal-soft); }
+.rfl-r-T,
+.rfl-r-any { color: var(--neutral); background: var(--neutral-bg); }
+
+/* view switch: flowchart or step details */
+.rfl-views {
+  display: inline-flex;
+  gap: 2px;
+  margin-bottom: var(--s-3);
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--sunk);
+}
+.rfl-vb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.rfl-vb.on {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--sh-1);
+}
+.rfl-vb:focus-visible,
+.rfl-chart:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+/* the diagram keeps its own light canvas in both themes, like the exported image */
+.rfl-chart-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 10px;
+}
+.rfl-chart {
+  overflow: auto;
+  max-height: 80vh;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: #ffffff;
+}
+.rfl-chart svg {
+  display: block;
+}
+
+/* legend and phase shortcuts */
+.rfl-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 0 0 var(--s-3);
+  padding: 10px 14px;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  font-size: 13px;
+  color: var(--text-2);
+}
+.rfl-lg {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.rfl-jump {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: var(--s-4);
+}
+.rfl-jb {
+  padding: 4px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.rfl-jb:hover {
+  color: var(--text);
+  border-color: var(--primary);
+}
+
+/* phases */
+.rfl-phases {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+.rfl-phase {
+  padding: 20px 24px 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  scroll-margin-top: 72px;
+}
+.rfl-acc-wrap {
+  margin-top: var(--s-4);
+}
+.rfl-acc-wrap > .cap {
+  display: block;
+  margin-bottom: 12px;
+}
+.rfl-ph-h {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.rfl-num {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 800;
+}
+.rfl-mod {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* the flow: a vertical sequence joined by arrows */
+.rfl-flow {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rfl-n {
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+.rfl-n + .rfl-n {
+  margin-top: 22px;
+}
+/* connector from the previous step, with an arrow head */
+.rfl-n + .rfl-n::before {
+  content: '';
+  position: absolute;
+  left: 13px;
+  top: -22px;
+  width: 2px;
+  height: 18px;
+  background: var(--line-strong);
+}
+.rfl-n + .rfl-n::after {
+  content: '';
+  position: absolute;
+  left: 9px;
+  top: -8px;
+  border: 5px solid transparent;
+  border-top-color: var(--line-strong);
+}
+.rfl-ic {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--text-2);
+}
+.rfl-b {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.rfl-b b {
+  font-weight: 600;
+  line-height: 1.35;
+}
+.rfl-b .cap {
+  line-height: 1.45;
+}
+.rfl-who {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+/* kinds */
+.rfl-a > .rfl-b {
+  border-left: 3px solid var(--primary);
+}
+.rfl-a > .rfl-ic {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary);
+}
+.rfl-h > .rfl-b {
+  border-style: dashed;
+  border-color: var(--line-strong);
+  background: var(--surface-2);
+}
+.rfl-y > .rfl-b {
+  background: var(--sunk);
+  border-color: var(--line-soft);
+}
+.rfl-y > .rfl-b b {
+  color: var(--text-2);
+}
+.rfl-s > .rfl-b {
+  border-radius: 999px;
+  background: var(--primary-soft);
+  border-color: var(--primary-soft-2);
+  color: var(--primary-text);
+  padding: 8px 16px;
+  align-self: start;
+  width: fit-content;
+}
+.rfl-s > .rfl-ic {
+  background: var(--primary-soft);
+  color: var(--primary-text);
+  border-color: var(--primary-soft-2);
+}
+.rfl-g > .rfl-b {
+  background: var(--signal-soft);
+  border-color: transparent;
+}
+.rfl-g > .rfl-ic {
+  color: var(--signal-text);
+}
+/* decisions: a diamond, then one column per branch */
+.rfl-d {
+  grid-template-columns: minmax(0, 1fr);
+}
+.rfl-dq {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 4px 10px;
+  align-items: center;
+}
+.rfl-dq .cap {
+  grid-column: 2;
+}
+.rfl-dia {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-left: 3px;
+  transform: rotate(45deg);
+  border: 2px solid var(--warn-solid);
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.rfl-dia svg {
+  transform: rotate(-45deg);
+}
+.rfl-brs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin: 12px 0 0 38px;
+}
+.rfl-br {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--warn-bd);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.rfl-bl {
+  align-self: start;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--warn-bg);
+  color: var(--warn);
+  font-size: 13px;
+  font-weight: 700;
+}
+.rfl-sub .rfl-n + .rfl-n {
+  margin-top: 18px;
+}
+.rfl-sub .rfl-n + .rfl-n::before {
+  top: -18px;
+  height: 14px;
+}
+.rfl-sub .rfl-n + .rfl-n::after {
+  top: -6px;
+}
+.rfl-sub .rfl-brs {
+  margin-left: 0;
+}
+.rfl-out {
+  align-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: auto;
+  padding: 2px 8px;
+  border-radius: var(--r-md);
+  font-size: 12px;
+  font-weight: 700;
+}
+.rfl-out.is-cont {
+  color: var(--ok);
+  background: var(--ok-bg);
+}
+.rfl-out.is-end {
+  color: var(--bad);
+  background: var(--bad-bg);
+}
+.rfl-out.is-to {
+  color: var(--info);
+  background: var(--info-bg);
+}
+
+@media (max-width: 639px) {
+  .rfl-tabs {
+    flex-wrap: nowrap;
+  }
+  .rfl-top {
+    padding: 10px 16px;
+  }
+  .rfl-top .wm {
+    display: none;
+  }
+  .rfl-main {
+    padding: 20px 16px 48px;
+  }
+  .rfl-phase {
+    padding: 16px;
+  }
+  .rfl-brs {
+    margin-left: 0;
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media print {
+  .rfl-top,
+  .rfl-tabs,
+  .rfl-jump,
+  .rfl-views,
+  .rfl-chart-bar {
+    display: none;
+  }
+  .rfl-chart {
+    max-height: none;
+    overflow: visible;
+    border: 0;
+  }
+  .rfl-chart svg {
+    width: 100%;
+    height: auto;
+  }
+  .rfl-page,
+  .rfl-phase {
+    background: #fff;
+  }
+  .rfl-main {
+    padding: 0;
+    max-width: none;
+  }
+  .rfl-phase {
+    break-inside: avoid-page;
+  }
+  .rfl-br,
+  .rfl-n {
+    break-inside: avoid;
+  }
+}

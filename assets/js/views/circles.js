@@ -387,7 +387,7 @@ route('circle', 'circles', () => {
               const sr = m.pid === c.facilitator ? 'Facilitator' : m.pid === c.owner ? 'Project owner' : normRole(m.role);
               return [
                 `<a href="#" class="lnk" data-a="viewProfile" data-pid="${m.pid}">${nm(m.pid)}</a> <span class="cap">${h(ROLE[ctxRole(m.pid, c.ctx)] || '')}</span>`,
-                memMgr && !ro && !fixed && m.status !== 'Removed' ? roleSelect('memRole', { c: c.id, i, kind: 'circles' }, sr, 'Role of ' + P(m.pid).name) : h(roleLabel(sr)),
+                memMgr && !ro && !fixed && m.status !== 'Removed' ? roleSelect('memRole', { c: c.id, i, kind: 'circles' }, sr, 'Role of ' + P(m.pid).name) : h(roleLabel(sr, 'circles')),
                 pill(m.status),
                 memMgr && !ro && !fixed && ['Active', 'Invited'].includes(m.status)
                   ? CB('Remove', 'memSet', { c: c.id, i, v: 'Removed' }, 'Remove ' + P(m.pid).name + ' from this Circle? They lose access to its chat and records.')
@@ -805,8 +805,8 @@ A.memRole = (d, el) => {
   const c = byId(kind, d.c);
   const m = c.members[d.i];
   m.role = el.value;
-  sysMsg(c, P(m.pid).name + ' is now ' + roleLabel(el.value) + ' in this ' + SPACE_KIND_LABEL(kind));
-  notify(m.pid, 'Your role in ' + c.name + ' is now ' + roleLabel(el.value), { circles: 'circle', ropes: 'rope', rooms: 'room' }[kind], { id: c.id });
+  sysMsg(c, P(m.pid).name + ' is now ' + roleLabel(el.value, kind) + ' in this ' + SPACE_KIND_LABEL(kind));
+  notify(m.pid, 'Your role in ' + c.name + ' is now ' + roleLabel(el.value, kind), { circles: 'circle', ropes: 'rope', rooms: 'room' }[kind], { id: c.id });
   audit('Space role assigned', c.id, P(m.pid).name + ' → ' + el.value);
   ok();
 };
@@ -815,7 +815,7 @@ A.inviteMem = d => {
   mselReset('invm', 'm');
   const cands = eligiblePeople(c.members.filter(m => ['Active', 'Invited'].includes(m.status)).map(m => m.pid), d.kind === 'ropes' ? ['P', 'F', 'M'] : ['P', 'F', 'M', 'C', 'O']);
   modal('Invite to ' + h(c.name), () =>
-    `<form data-f="invm" class="col" style="gap:14px" novalidate><input type="hidden" name="c" value="${c.id}"><input type="hidden" name="kind" value="${d.kind}">${msel('invm', 'm', 'People', cands, [], { req: true, none: 'Everyone eligible is already a member or invited.' })}${fi('invm', 'role', 'Role in this ' + SPACE_KIND_LABEL(d.kind), { type: 'select', opts: [['', 'Based on each person’s platform role'], ...INVITE_ROLES.map(x => [x, roleLabel(x)])], help: 'You can change individual roles later in Members.' })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send invitations</button></div></form>`,
+    `<form data-f="invm" class="col" style="gap:14px" novalidate><input type="hidden" name="c" value="${c.id}"><input type="hidden" name="kind" value="${d.kind}">${msel('invm', 'm', 'People', cands, [], { req: true, none: 'Everyone eligible is already a member or invited.' })}${fi('invm', 'role', 'Role in this ' + SPACE_KIND_LABEL(d.kind), { type: 'select', opts: [['', 'Based on each person’s platform role'], ...INVITE_ROLES.map(x => [x, roleLabel(x, d.kind)])], help: 'You can change individual roles later in Members.' })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send invitations</button></div></form>`,
   );
 };
 F.invm = d => {
@@ -831,7 +831,7 @@ F.invm = d => {
     const ex = memberRec(c, pid);
     if (ex) Object.assign(ex, { role: rl, status: 'Invited' });
     else c.members.push({ pid, role: rl, status: 'Invited' });
-    notify(pid, 'You were invited to ' + c.name + ' as ' + roleLabel(rl), r, { id: c.id });
+    notify(pid, 'You were invited to ' + c.name + ' as ' + roleLabel(rl, d.kind), r, { id: c.id });
   });
   sysMsg(c, me().name + ' invited ' + ids.map(p => P(p).name).join(', '));
   audit('Members invited', c.id, ids.join(','));

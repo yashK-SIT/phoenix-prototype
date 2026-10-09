@@ -3,6 +3,7 @@
 UI.chat = UI.chat || {};
 const CHAT_KINDS = {
   circles: 'Circle',
+  pathways: 'Pathway',
   ropes: 'Rope Team',
   dms: 'Direct message',
   get rooms() {
@@ -10,23 +11,39 @@ const CHAT_KINDS = {
   },
 };
 const CHAT_ROUTE = { circles: 'circle', ropes: 'rope', rooms: 'room' };
-const CHAT_IC = { circles: 'users', ropes: 'route', rooms: 'room', dms: 'message' };
+const CHAT_IC = { circles: 'users', ropes: 'route', rooms: 'room', dms: 'message', pathways: 'route' };
+// Tile colour per conversation kind (list and thread header).
+const CHAT_TILE = { circles: 'c t-purple', rooms: 'a t-navy', dms: 'd t-soft', ropes: 'r t-teal', pathways: 'p t-ember' };
 const IMG_RE = /\.(png|jpe?g|gif|webp|heic)$/i;
 const chatSpaces = (pid = myId()) => [
   ...S.circles.filter(c => inCtx(c) && memberOf(c, pid)).map(o => ({ kind: 'circles', o })),
   ...S.ropes.filter(r => inCtx(r) && memberOf(r, pid)).map(o => ({ kind: 'ropes', o })),
   ...S.rooms.filter(r => inCtx(r) && memberOf(r, pid) && r.state !== 'Draft').map(o => ({ kind: 'rooms', o })),
   ...(S.dms || []).filter(r => memberOf(r, pid)).map(o => ({ kind: 'dms', o })),
+  ...pwConvos(pid).map(o => ({ kind: 'pathways', o })),
 ];
+// ---- pathway review conversations: the pathway owner, the Programme Administrator and the Steward.
+// Messages shows the same thread (p.thread) and activity log as the pathway's "Conversation & activity" dialog.
+const PW_REVIEW = ['Awaiting reviewer', 'In review', 'Clarification requested'];
+const pwInConvo = (p, pid = myId()) => [p.by, p.pid, p.reviewer].includes(pid) || ctxAdmins(p.ctx).includes(pid);
+const pwConvos = (pid = myId()) =>
+  (S.pathways || []).filter(p => inCtx(p) && (p.reviewer || PW_REVIEW.includes(p.state) || (p.thread || []).length) && pwInConvo(p, pid));
+const isPwConvo = o => (S.pathways || []).includes(o);
+// Messages first-class, activity as system lines; oldest first.
+const pwChat = p =>
+  [...(p.thread || []).map(m => ({ id: m.id, by: m.by, at: m.at, t: m.text, cv: m.kind, att: m.att })), ...(p.activity || []).map(a => ({ sys: true, at: a.at, t: (a.by && !a.t.includes(P(a.by).name) ? P(a.by).name + ': ' : '') + a.t }))].sort((a, b) =>
+    String(a.at).localeCompare(String(b.at)),
+  );
+const chatMsgs = o => (isPwConvo(o) ? pwChat(o) : o.chat || []);
 const hasChats = () => !!S && !!S.session && chatSpaces().length > 0;
 const readMark = (id, pid = myId()) => ((S.chatRead || {})[pid] || {})[id] || '';
 const unreadIn = (o, pid = myId()) => {
   const r = readMark(o.id, pid);
-  return (o.chat || []).filter(m => !m.sys && m.by !== pid && m.at > r).length;
+  return chatMsgs(o).filter(m => !m.sys && m.by !== pid && m.at > r).length;
 };
 const unreadTotal = () => chatSpaces().reduce((a, x) => a + unreadIn(x.o), 0);
 function markRead(o) {
-  const last = (o.chat || []).slice(-1)[0];
+  const last = chatMsgs(o).slice(-1)[0];
   if (!last) return;
   S.chatRead = S.chatRead || {};
   const mine = (S.chatRead[myId()] = S.chatRead[myId()] || {});
@@ -78,7 +95,7 @@ function attCard(a, mine) {
   return `<button type="button" class="matt ${img ? 'img' : ''} ${mine ? 'mine' : ''}" data-a="fakeDl" data-n="${h(a.n)}" title="Download ${h(a.n)}">${img ? `<span class="mthumb">${ic('image', 22)}</span>` : `<span class="mext">${h(ext || 'FILE')}</span>`}<span class="mattb"><span class="mattn">${h(a.n)}</span><span class="mattm">${a.mb != null ? a.mb + ' MB' : 'File'} · ${img ? 'Image' : 'Document'}</span></span>${ic('download', 16)}</button>`;
 }
 function chatPreview(o) {
-  const m = (o.chat || []).filter(x => !x.hidden).slice(-1)[0];
+  const m = chatMsgs(o).filter(x => !x.hidden).slice(-1)[0];
   if (!m) return 'No messages yet';
   if (m.sys) return h(m.t);
   const who = m.by === myId() ? 'You' : h(P(m.by).display);
@@ -90,21 +107,72 @@ function convList(sel) {
   const f = UI.chat.filter || 'all';
   const q = (UI.chat.q || '').toLowerCase();
   let list = chatSpaces()
-    .map(x => ({ ...x, last: ((x.o.chat || []).slice(-1)[0] || {}).at || '', un: unreadIn(x.o) }))
+    .map(x => ({ ...x, last: (chatMsgs(x.o).slice(-1)[0] || {}).at || '', un: unreadIn(x.o) }))
     .filter(x => f === 'all' || (f === 'unread' ? x.un > 0 : x.kind === f))
-    .filter(x => !q || (x.o.name + ' ' + (x.o.chat || []).map(m => m.t).join(' ')).toLowerCase().includes(q));
+    .filter(x => !q || (x.o.name + ' ' + chatMsgs(x.o).map(m => m.t).join(' ')).toLowerCase().includes(q));
   list.sort((a, b) => b.last.localeCompare(a.last));
   const unAll = unreadTotal();
   const chip = (k, l) =>
     `<button type="button" class="fchip ${f === k ? 'on' : ''}" data-a="chatFilter" data-v="${k}" aria-pressed="${f === k}">${l}</button>`;
-  return `<div class="mlist-h"><div class="mlist-t"><h1 class="h2">Messages</h1>${unAll ? `<span class="mun">${unAll} unread</span>` : ''}</div><p class="cap">Circles, Rope Teams and ${WL()}s you belong to</p><div class="msearch-w">${ic('search', 16)}<input class="input msearch" placeholder="Search conversations" value="${h(UI.chat.q || '')}" data-ch="chatSearch" aria-label="Search conversations"></div><div class="mfilters" role="group" aria-label="Show">${chip('all', 'All')}${chip('unread', 'Unread')}${chip('circles', 'Circles')}${chip('ropes', 'Rope Teams')}${chip('rooms', WL() + 's')}${(S.dms || []).some(x => memberOf(x)) ? chip('dms', 'Direct') : ''}</div></div><div class="mlist" role="list">${
+  return `<div class="mlist-h"><div class="mlist-t"><h1 class="h2">Messages</h1>${unAll ? `<span class="mun">${unAll} unread</span>` : ''}</div><p class="cap">Circles, Rope Teams, ${WL()}s and pathway reviews you take part in</p><div class="msearch-w">${ic('search', 16)}<input class="input msearch" placeholder="Search conversations" value="${h(UI.chat.q || '')}" data-ch="chatSearch" aria-label="Search conversations"></div><div class="mfilters" role="group" aria-label="Show">${chip('all', 'All')}${chip('unread', 'Unread')}${chip('circles', 'Circles')}${chip('ropes', 'Rope Teams')}${chip('rooms', WL() + 's')}${(S.dms || []).some(x => memberOf(x)) ? chip('dms', 'Direct') : ''}${pwConvos().length ? chip('pathways', 'Pathways') : ''}</div></div><div class="mlist" role="list">${
     list
       .map(({ kind, o, last, un }) => {
         const on = sel && sel.o.id === o.id;
-        return `<button type="button" role="listitem" class="mconv ${on ? 'on' : ''} ${un ? 'un' : ''}" data-a="chatOpen" data-id="${o.id}" data-k="${kind}" ${on ? 'aria-current="true"' : ''}><span class="mav tile ${kind === 'circles' ? 'c t-purple' : kind === 'rooms' ? 'a t-navy' : kind === 'dms' ? 'd t-soft' : 'r t-teal'}" aria-hidden="true">${ic(CHAT_IC[kind], 18)}</span><span class="mconv-b"><span class="mconv-r"><b class="mname">${h(o.name)}</b><span class="mtime">${shortWhen(last)}</span></span><span class="mconv-r"><span class="mprev"><span class="sr">${CHAT_KINDS[kind]}. </span>${chatPreview(o)}</span>${un ? `<span class="mbadge" aria-label="${un} unread">${un}</span>` : o.state !== 'Active' ? `<span class="mstate">${h(o.state)}</span>` : ''}</span></span></button>`;
+        return `<button type="button" role="listitem" class="mconv ${on ? 'on' : ''} ${un ? 'un' : ''}" data-a="chatOpen" data-id="${o.id}" data-k="${kind}" ${on ? 'aria-current="true"' : ''}><span class="mav tile ${CHAT_TILE[kind]}" aria-hidden="true">${ic(CHAT_IC[kind], 18)}</span><span class="mconv-b"><span class="mconv-r"><b class="mname">${h(o.name)}</b><span class="mtime">${shortWhen(last)}</span></span><span class="mconv-r"><span class="mprev"><span class="sr">${CHAT_KINDS[kind]}. </span>${chatPreview(o)}</span>${un ? `<span class="mbadge" aria-label="${un} unread">${un}</span>` : o.state !== 'Active' && kind !== 'pathways' ? `<span class="mstate">${h(o.state)}</span>` : ''}</span></span></button>`;
       })
-      .join('') || `<div class="mlist-empty">${empty('message', f === 'unread' ? 'No unread messages' : 'No conversations', f === 'unread' ? 'You are all caught up.' : 'You join a conversation when you become a member of a Circle, Rope Team or ' + WL() + '.')}</div>`
+      .join('') || `<div class="mlist-empty">${empty('message', f === 'unread' ? 'No unread messages' : 'No conversations', f === 'unread' ? 'You are all caught up.' : 'You join a conversation when you become a member of a Circle, Rope Team or ' + WL() + ', or take part in a pathway review.')}</div>`
   }</div>`;
+}
+// ---- pathway review thread (right pane): same layout as a space conversation; posts go to the pathway's thread
+function pwThread(p) {
+  const c = CONVO.pathway;
+  const pm = c.post(p);
+  markRead(p);
+  const people = [...new Set([p.by, p.pid, p.reviewer, ...ctxAdmins(p.ctx)].filter(Boolean))];
+  let lastDay = '',
+    prev = null;
+  const rows = pwChat(p)
+    .map(m => {
+      let out = '';
+      const day = String(m.at).slice(0, 10);
+      if (day !== lastDay) {
+        out += `<div class="mday"><span>${dayLabel(m.at)}</span></div>`;
+        lastDay = day;
+        prev = null;
+      }
+      if (m.sys) {
+        prev = null;
+        return out + `<div class="msys">${ic('clock', 13)}<span>${h(m.t)}</span><span class="mtime">${tm(m.at)}</span></div>`;
+      }
+      const mine = m.by === myId();
+      const grouped = prev && prev.by === m.by && new Date(m.at) - new Date(prev.at) < 10 * 60000;
+      prev = m;
+      const k = CV_KIND[m.cv];
+      const a = attOf(m);
+      return (
+        out +
+        `<div class="mrow ${mine ? 'mine' : ''} ${grouped && !k ? 'grp' : ''}" id="msg-${m.id}">${!mine ? (grouped && !k ? '<span class="mav-sp"></span>' : `<span class="av" title="${nm(m.by)}">${ini(m.by)}</span>`) : ''}<div class="mcol">${!mine && (!grouped || k) ? `<div class="mwho">${nm(m.by)}<span class="cap"> · ${h(c.role(p, m.by) || '')}</span></div>` : ''}<div class="mbub bubble ${mine ? 'me' : ''}">${k ? `<div class="mcvk">${pill(k[0], k[1])}</div>` : ''}${m.t ? `<div class="mtext">${h(m.t).replace(/\n/g, '<br>')}</div>` : ''}${a ? attCard(a, mine) : ''}<div class="mmeta">${tm(m.at)}</div></div></div></div>`
+      );
+    })
+    .join('');
+  const draft = (UI.chat.drafts || {})[p.id] || '';
+  return `<section class="mthread" aria-label="Pathway conversation: ${h(p.name)}">
+  <header class="mth-h"><button type="button" class="iconbtn mback-btn" data-a="chatBack" aria-label="Back to conversations">${ic('chevl')}</button><span class="mav tile ${CHAT_TILE.pathways}" aria-hidden="true">${ic(CHAT_IC.pathways, 18)}</span><div class="mth-t"><b class="mname">${h(p.name)}</b><span class="cap">Pathway · ${h(p.state === 'Draft' && p.changeReq ? 'Change requested' : p.state)} · ${people.length} people</span></div><span class="mavs hide-sm">${people
+    .slice(0, 4)
+    .map(x => `<span class="av" title="${nm(x)} · ${h(c.role(p, x) || '')}">${ini(x)}</span>`)
+    .join('')}</span>${B(ic('info', 14) + '<span class="mth-bl">Pathway details</span>', 'pwActivity', { id: p.id }, 'btn btn-s btn-sm')}</header>
+  <div class="mpw-who cap">${[['Pathway owner', p.by], p.pid !== p.by && ['Participant', p.pid], ['Steward', p.reviewer]]
+    .filter(Boolean)
+    .map(([l, x]) => `<span><b>${l}</b> ${x ? nm(x) : 'Not assigned yet'}</span>`)
+    .join('')}<span><b>Programme Administrator</b> ${ctxAdmins(p.ctx).map(nm).join(', ') || '—'}</span></div>
+  <div class="msgs" data-scroll="${p.id}" role="log" aria-live="polite">${rows || `<div class="mempty">${empty('message', 'No messages yet', 'Start the conversation. The pathway owner, the Programme Administrator and the Steward see every message.')}</div>`}</div>
+  ${
+    !pm
+      ? `<div class="mro">${ic('lock', 16)}<span>View only. Only the pathway owner, the Programme Administrator and the assigned Steward post here.</span></div>`
+      : `<form data-f="pwchat" class="composer" novalidate><input type="hidden" name="id" value="${p.id}"><div class="mpend" hidden>${ic('clip', 14)}<span class="fname"></span>${B(ic('x', 14), 'clearFile', {}, 'mtool', 'aria-label="Remove attachment"')}</div>
+  <div class="mcomp"><label class="iconbtn mattach" title="Attach a file (up to ${S.settings.maxFileMB} MB)">${ic('clip')}<input type="file" name="f" data-chatfile="1" aria-label="Attach a file" class="sr"></label><textarea name="t" rows="1" class="mta" placeholder="${h(pm.label)}" aria-label="${h(pm.label)}" data-draft="${p.id}">${h(draft)}</textarea><button class="btn btn-p msend" type="submit" aria-label="Send message" title="Send (Enter)">${ic('send', 18)}</button></div>
+  <div class="mhelp">${pm.kind === 'reply' ? '<b>Replying to the clarification request.</b> ' : ''}Enter to send · Shift+Enter for a new line · kept with the pathway's full history and shown in Pathway details</div></form>`
+  }</section>`;
 }
 // ---- conversation thread (right pane / embedded)
 function chatThread(kind, o, opts = {}) {
@@ -179,7 +247,7 @@ function chatThread(kind, o, opts = {}) {
 const roleIn = (o, pid) => {
   if ((S.dms || []).includes(o)) return roleInRaw(o, pid);
   const kind = S.circles.includes(o) ? 'circles' : S.ropes.includes(o) ? 'ropes' : 'rooms';
-  return roleLabel(spaceRole(kind, o, pid) || roleInRaw(o, pid));
+  return roleLabel(spaceRole(kind, o, pid) || roleInRaw(o, pid), kind);
 };
 const roleInRaw = (o, pid) => (o.members.find(m => m.pid === pid) || {}).role || ROLE[(S.assign.find(a => a.pid === pid && a.ctx === o.ctx) || {}).role] || '';
 // ---- the Messages hub
@@ -191,7 +259,7 @@ route('messages', 'any', () => {
   }
   const sel = UI.chat.open && sp.find(x => x.o.id === UI.chat.open.id);
   if (sel) markRead(sel.o);
-  return `<div class="msgshell ${UI.chat.open && sel ? 'has-sel' : ''}"><aside class="mside">${convList(sel)}</aside><div class="mmain">${sel ? chatThread(sel.kind, sel.o) : `<div class="mnone">${empty('message', sp.length ? 'Choose a conversation' : 'No conversations yet', sp.length ? 'Real-time chat with your Circles, Rope Teams and ' + WL() + 's. Messages, files, questions and coordination in one place.' : 'You join a conversation when you become a member of a Circle, Rope Team or ' + WL() + '.')}</div>`}</div></div>`;
+  return `<div class="msgshell ${UI.chat.open && sel ? 'has-sel' : ''}"><aside class="mside">${convList(sel)}</aside><div class="mmain">${sel ? (sel.kind === 'pathways' ? pwThread(sel.o) : chatThread(sel.kind, sel.o)) : `<div class="mnone">${empty('message', sp.length ? 'Choose a conversation' : 'No conversations yet', sp.length ? 'Real-time chat with your Circles, Rope Teams and ' + WL() + 's. Messages, files, questions and coordination in one place.' : 'You join a conversation when you become a member of a Circle, Rope Team or ' + WL() + '.')}</div>`}</div></div>`;
 });
 // Clicking a conversation's name lists everyone in it, with their role in that space.
 A.chatMembers = d => {
@@ -365,6 +433,35 @@ F.chat = (d, form) => {
       }
     });
   audit('Chat message', o.id, (m.att ? 'with attachment' : '') + (m.q ? ' · question' : ''));
+  ok();
+  focusComposer();
+};
+// Posting in a pathway conversation: same rules as the pathway dialog (CONVO.pathway), plus an optional file.
+F.pwchat = (d, form) => {
+  const p = byId('pathways', d.id);
+  const c = CONVO.pathway;
+  const pm = p && c.post(p);
+  if (!pm) return render();
+  const file = form.querySelector('input[type=file]')?.files?.[0];
+  const text = (d.t || '').trim();
+  if (!text && !file) {
+    toast('Write a message or attach a file.', 'warn');
+    return render();
+  }
+  if (file && file.size > S.settings.maxFileMB * 1048576) {
+    toast(`That file is over ${S.settings.maxFileMB} MB. Link video or large media externally instead.`, 'err');
+    return render();
+  }
+  if (file && /\.(exe|bat|cmd|sh|msi)$/i.test(file.name)) {
+    toast('This file type is not supported in chat.', 'err');
+    return render();
+  }
+  convoAdd(p, pm.kind, text);
+  if (file) p.thread[p.thread.length - 1].att = { n: file.name, mb: +(file.size / 1048576).toFixed(2) };
+  c.notify(p, pm.kind);
+  if (UI.chat.drafts) delete UI.chat.drafts[p.id];
+  markRead(p);
+  audit(pm.kind === 'reply' ? 'Clarification reply posted' : 'Review comment posted', p.id, text || (file && file.name) || '');
   ok();
   focusComposer();
 };
