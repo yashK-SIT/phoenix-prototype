@@ -225,7 +225,7 @@ F.usr = d => {
     audit('User updated', p.id, was + ' → ' + JSON.stringify({ ...fields, role: a.role, ctx: a.ctx, status: a.status }));
     toast('User updated.');
   } else {
-    const p = { id: uid('p'), ...fields, verified: true, status: 'Active' };
+    const p = { id: uid('p'), ...fields, verified: true, status: 'Active', createdVia: 'admin', createdAt: now() };
     S.people.push(p);
     S.pw[p.id] = 'demo1234';
     S.consents[p.id] = { history: [] };
@@ -538,23 +538,35 @@ route('admin', 'admin', () => {
           label: 'projects',
           items: rqProj,
           search: p => p.title + ' ' + P(p.owner).name + ' ' + (p.tags || []).join(' '),
+          quick: { label: 'Type', options: dvOpts(rqProj, p => p.type), test: (p, v) => p.type === v },
           filters: [{ key: 'area', label: 'Area', options: [...new Set(rqProj.flatMap(p => p.tags || []))].map(x => [x, x]), test: (p, v) => (p.tags || []).includes(v) }],
           sorts: [['sub', 'Submitted', (a, b) => String(a.submitted || '').localeCompare(String(b.submitted || ''))], ['title', 'Title', (a, b) => a.title.localeCompare(b.title)]],
-          row: p => ({ lead: `<span class="tile t-soft">${ic('folder', 18)}</span>`, title: L(h(p.title), 'project', { id: p.id }), sub: 'Owner: ' + nm(p.owner), meta: [(p.tags || []).map(h).join(', ') || '—', 'Submitted ' + fmt(p.submitted || '')], primary: B('Assign reviewer', 'assignStewards', { id: p.id }, 'btn-p btn-sm') }),
-          empty: ['check', 'No projects are waiting for a reviewer.', '', ''],
+          defaultSort: 'sub',
+          row: p => ({ lead: `<span class="tile t-navy" aria-hidden="true">${ic('folder', 18)}</span>`, title: L(h(p.title), 'project', { id: p.id }, 'dv-link'), sub: h(p.type), meta: ['Owner <b>' + nm(p.owner) + '</b>', (p.tags || []).map(h).join(', '), p.submitted ? 'Submitted ' + fmt(p.submitted) : ''], badges: pill(p.status), primary: L('Open', 'project', { id: p.id }, 'btn btn-s btn-sm') + B('Assign reviewer', 'assignStewards', { id: p.id }, 'btn-p btn-sm') }),
+          empty: ['check', 'No projects are waiting for a reviewer', 'New submissions appear here until you assign a reviewer.', ''],
         }),
         '',
         'adm-panel',
       )}${card(
         'Projects in review ' + n(inProj.length),
         'Projects with an assigned reviewer. Open one to read the conversation and add a comment.',
-        table(
-          ['Item', 'Submitted by', 'Reviewer', 'Status', 'Messages', ''],
-          [
-            ...inProj.map(p => [`<b>${h(p.title)}</b><div class="cap">Project</div>`, nm(p.owner), p.stewards.map(nm).join(', '), pill(p.status), convoN(p), L('Open', 'project', { id: p.id })]),
-          ],
-          'Nothing is in review right now.',
-        ),
+        dataView('adm:inproj', {
+          label: 'projects',
+          items: inProj,
+          search: p => [p.title, P(p.owner).name, ...p.stewards.map(x => P(x).name)].join(' '),
+          quick: { label: 'Status', options: dvOpts(inProj, p => p.status), test: (p, v) => p.status === v },
+          sorts: [['title', 'Title', (a, b) => a.title.localeCompare(b.title)], ['msgs', 'Most messages', (a, b) => convoN(b) - convoN(a)]],
+          defaultSort: 'title',
+          row: p => ({
+            lead: `<span class="tile t-navy" aria-hidden="true">${ic('folder', 18)}</span>`,
+            title: L(h(p.title), 'project', { id: p.id }, 'dv-link'),
+            sub: h(p.type),
+            meta: ['Owner <b>' + nm(p.owner) + '</b>', 'Reviewer <b>' + p.stewards.map(nm).join(', ') + '</b>', convoN(p) + ' message' + (convoN(p) === 1 ? '' : 's')],
+            badges: pill(p.status),
+            primary: L('Open', 'project', { id: p.id }, 'btn btn-s btn-sm'),
+          }),
+          empty: ['check', 'Nothing is in review right now', 'Projects appear here once a reviewer is assigned.', ''],
+        }),
         '',
         'adm-panel',
       )}${pwAdminCards()}</div>`;
@@ -794,10 +806,22 @@ route('platform', 'platform', () => {
     body = `<div class="g12">${card('Availability', '', `<div class="kpis"><div class="kpi"><span class="lt">Uptime</span><span class="statnum">${h(S.health.uptime)}</span></div><div class="kpi"><span class="lt">p95 response time</span><span class="statnum">${h(S.health.p95)}</span></div><div class="kpi"><span class="lt">Status</span><span class="ops-stat">${pill('Healthy')}</span></div></div>`, '', 'c12 ops-avail')}${card(
       'Error log ' + n(S.health.errors.length),
       'Latest application errors and warnings',
-      table(
-        ['When', 'Level', 'Message'],
-        S.health.errors.map(e => [`<span class="adm-date">${fmt(e.at)}</span>`, pill(e.lvl, e.lvl === 'Error' ? 'p-red' : 'p-amber'), h(e.t)]),
-      ),
+      dataView('plat:errors', {
+        label: 'log entries',
+        items: S.health.errors,
+        search: e => e.t + ' ' + e.lvl,
+        quick: { label: 'Level', options: dvOpts(S.health.errors, e => e.lvl), test: (e, v) => e.lvl === v },
+        sorts: [['new', 'Newest first', (a, b) => String(b.at).localeCompare(String(a.at))], ['old', 'Oldest first', (a, b) => String(a.at).localeCompare(String(b.at))]],
+        defaultSort: 'new',
+        layout: 'table',
+        dense: true,
+        columns: [
+          { label: 'When', sort: 'new', cell: e => `<span class="adm-date">${fmt(e.at)}</span>` },
+          { label: 'Level', cell: e => pill(e.lvl, e.lvl === 'Error' ? 'p-red' : 'p-amber') },
+          { label: 'Message', cell: e => h(e.t) },
+        ],
+        empty: ['check', 'No errors or warnings', 'Application errors and warnings appear here.', ''],
+      }),
       '',
       'c7 adm-panel',
     )}${card(
@@ -818,10 +842,20 @@ route('platform', 'platform', () => {
     body = `<div class="g12">${card(
       'Security events and access logs ' + n(S.security.length),
       '',
-      table(
-        ['When', 'Event'],
-        S.security.map(s => [`<span class="adm-date">${fmt(s.at)}</span>`, h(s.t)]),
-      ),
+      dataView('plat:security', {
+        label: 'security events',
+        items: S.security,
+        search: s => s.t,
+        sorts: [['new', 'Newest first', (a, b) => String(b.at).localeCompare(String(a.at))], ['old', 'Oldest first', (a, b) => String(a.at).localeCompare(String(b.at))]],
+        defaultSort: 'new',
+        layout: 'table',
+        dense: true,
+        columns: [
+          { label: 'When', sort: 'new', cell: s => `<span class="adm-date">${fmt(s.at)}</span>` },
+          { label: 'Event', cell: s => h(s.t) },
+        ],
+        empty: ['shield', 'No security events', 'Sign-ins, session revocations and provider changes appear here.', ''],
+      }),
       '',
       'c7 adm-panel',
     )}<div class="c5 adm-stack">${card(
@@ -838,10 +872,22 @@ route('platform', 'platform', () => {
     body = `<div class="g12">${card(
       'Backups and restore tests ' + n(S.backups.length),
       '',
-      table(
-        ['When', 'Status', 'Size'],
-        S.backups.map(b => [`<span class="adm-date">${fmt(b.at)}</span>`, pill(b.status.includes('passed') ? 'Completed' : b.status), `<span class="ops-num">${h(b.size)}</span>`]),
-      ),
+      dataView('plat:backups', {
+        label: 'backups',
+        items: S.backups,
+        search: b => b.status + ' ' + b.size,
+        quick: { label: 'Status', options: dvOpts(S.backups, b => (b.status.includes('passed') ? 'Completed' : b.status)), test: (b, v) => (b.status.includes('passed') ? 'Completed' : b.status) === v },
+        sorts: [['new', 'Newest first', (a, b) => String(b.at).localeCompare(String(a.at))], ['old', 'Oldest first', (a, b) => String(a.at).localeCompare(String(b.at))]],
+        defaultSort: 'new',
+        layout: 'table',
+        dense: true,
+        columns: [
+          { label: 'When', sort: 'new', cell: b => `<span class="adm-date">${fmt(b.at)}</span>` },
+          { label: 'Status', cell: b => pill(b.status.includes('passed') ? 'Completed' : b.status) },
+          { label: 'Size', num: true, cell: b => `<span class="ops-num">${h(b.size)}</span>` },
+        ],
+        empty: ['archive', 'No backups yet', 'Run a backup or a restore test.', ''],
+      }),
       B('Run restore test', 'restoreTest') + B('Run backup now', 'backup', {}, 'btn-p btn-sm'),
       'c7 adm-panel',
     )}${card(

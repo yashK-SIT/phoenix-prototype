@@ -56,6 +56,10 @@ CONVO.project = {
       .forEach(x => notify(x, `${me().name} ${kind === 'reply' ? 'replied to the clarification on' : 'commented on'} “${p.title}”`, 'project', { id: p.id })),
 };
 const projLog = (p, t) => p.history.push({ at: now(), by: myId(), t });
+// Project listing, following the Circles listing: one list in a card, phase tabs with counts, search, filters, sort.
+const PROJ_PHASES = ['Draft', 'Under review', 'Active', 'Closed', 'Rejected'];
+const projPhase = p =>
+  p.status === 'Draft' ? 'Draft' : ['Submitted', 'Clarification requested'].includes(p.status) ? 'Under review' : p.status === 'Rejected' ? 'Rejected' : p.stage === 'Closed' ? 'Closed' : 'Active';
 route('projects', 'projects', () => {
   const r = role();
   const list = S.projects.filter(
@@ -69,21 +73,7 @@ route('projects', 'projects', () => {
             ? p.status !== 'Draft'
             : true),
   );
-  const t = tabs('projs', [
-    ['all', 'All', list.length],
-    ['review', 'Under review', list.filter(p => ['Submitted', 'Clarification requested'].includes(p.status)).length],
-    ['active', 'Active', list.filter(p => p.status === 'Accepted' && p.stage !== 'Closed').length],
-    ['closed', 'Closed', list.filter(p => p.stage === 'Closed').length],
-  ]);
-  const f = list.filter(
-    p =>
-      t.cur === 'all' ||
-      (t.cur === 'review'
-        ? ['Submitted', 'Clarification requested'].includes(p.status)
-        : t.cur === 'active'
-          ? p.status === 'Accepted' && p.stage !== 'Closed'
-          : p.stage === 'Closed'),
-  );
+  const phases = PROJ_PHASES.filter(x => list.some(p => projPhase(p) === x));
   return (
     head(
       r === 'P' ? 'My projects' : 'Projects',
@@ -91,39 +81,46 @@ route('projects', 'projects', () => {
         ? 'Projects in your organisation’s context (read-only)'
         : r === 'F'
           ? 'Submissions and projects you steward'
-          : '',
+          : 'Ideas, needs and opportunities moving from submission to closure.',
       r === 'P' ? B(ic('plus', 16) + 'Start a project', 'go', { r: 'newproject' }, 'btn-p') : '',
     ) +
-    t.html +
-    dataView('projects:' + t.cur, {
-      label: 'projects',
-      title: r === 'P' ? 'My projects' : 'Projects',
-      items: f,
-      search: p => [p.title, p.type, P(p.owner).name, p.area || '', ...(p.tags || []), ...p.stewards.map(s => P(s).name)].join(' '),
-      quick: dvOpts(f, p => p.status).length > 1 ? { label: 'Status', options: dvOpts(f, p => p.status), test: (p, v) => p.status === v } : null,
-      filters: [
-        dvOpts(f, p => p.stage).length && { key: 'stage', label: 'Stage', options: dvOpts(f, p => p.stage, stageLabel), test: (p, v) => p.stage === v },
-        dvOpts(f, p => p.tags || []).length && { key: 'area', label: 'Area of interest', options: dvOpts(f, p => p.tags || []), test: (p, v) => (p.tags || []).includes(v) },
-        dvOpts(f, p => p.owner).length > 1 && { key: 'owner', label: 'Owner', options: dvOpts(f, p => p.owner, id => P(id).name), test: (p, v) => p.owner === v },
-      ].filter(Boolean),
-      sorts: [
-        ['title', 'Title', (a, b) => a.title.localeCompare(b.title)],
-        ['submitted', 'Submitted', (a, b) => String(a.submitted || '').localeCompare(String(b.submitted || ''))],
-        ['funding', 'Funding need', (a, b) => (a.fundingNeed || 0) - (b.fundingNeed || 0)],
-      ],
-      layout: 'table',
-      columns: [
-        { label: 'Project', sort: 'title', cell: p => `<span class="rec-name"><span class="tile t-soft" aria-hidden="true">${ic('folder', 16)}</span><span class="rec-nt"><b>${h(p.title)}</b><span class="cap">${h(p.type)}${p.submitted ? ' · submitted ' + fmt(p.submitted) : ''}</span></span></span>` },
-        { label: 'Status', cell: p => pill(p.status) },
-        { label: 'Stage', cell: p => (p.stage ? pill(stageLabel(p.stage), SC[p.stage]) : '<span class="cap">—</span>') },
-        { label: 'Owner', cell: p => nm(p.owner) },
-        { label: 'Stewards', hideSm: true, cell: p => p.stewards.map(nm).join(', ') || '<span class="cap">—</span>' },
-        { label: 'Areas', hideSm: true, cell: p => ((p.tags || []).length ? `<span class="rec-tags">${p.tags.slice(0, 3).map(x => `<span class="rec-tag">${h(x)}</span>`).join('')}${p.tags.length > 3 ? `<span class="cap">+${p.tags.length - 3}</span>` : ''}</span>` : '<span class="cap">—</span>') },
-        { label: 'Funding need', num: true, sort: 'funding', cell: p => (p.fundingNeed ? `<span class="rec-num">${money('USD', p.fundingNeed)}</span>` : '<span class="cap">—</span>') },
-        { label: '', cell: p => L('Open', 'project', { id: p.id }) },
-      ],
-      empty: r === 'P' ? ['folder', 'You have no projects yet', 'Start one from an idea, need or opportunity.', B(ic('plus', 16) + 'Start a project', 'go', { r: 'newproject' }, 'btn-p btn-sm')] : ['folder', 'No projects.', ''],
-    })
+    card(
+      r === 'P' ? 'Your projects' : 'Projects',
+      '',
+      dataView('projects:list', {
+        label: 'projects',
+        items: list,
+        search: p => [p.title, p.type, P(p.owner).name, p.area || '', ...(p.tags || []), ...p.stewards.map(s => P(s).name)].join(' '),
+        quick: { label: 'Phase', options: phases.map(x => [x, x]), test: (p, v) => projPhase(p) === v },
+        filters: [
+          dvOpts(list, p => p.status).length > 1 && { key: 'status', label: 'Status', options: dvOpts(list, p => p.status), test: (p, v) => p.status === v },
+          dvOpts(list, p => p.stage).length && { key: 'stage', label: 'Stage', options: dvOpts(list, p => p.stage, stageLabel), test: (p, v) => p.stage === v },
+          dvOpts(list, p => p.tags || []).length && { key: 'area', label: 'Area of interest', options: dvOpts(list, p => p.tags || []), test: (p, v) => (p.tags || []).includes(v) },
+          dvOpts(list, p => p.owner).length > 1 && { key: 'owner', label: 'Owner', options: dvOpts(list, p => p.owner, id => P(id).name), test: (p, v) => p.owner === v },
+        ].filter(Boolean),
+        sorts: [
+          ['title', 'Title', (a, b) => a.title.localeCompare(b.title)],
+          ['submitted', 'Submitted', (a, b) => String(b.submitted || '').localeCompare(String(a.submitted || ''))],
+          ['funding', 'Funding need', (a, b) => (b.fundingNeed || 0) - (a.fundingNeed || 0)],
+        ],
+        defaultSort: 'title',
+        row: p => ({
+          lead: `<span class="tile t-navy" aria-hidden="true">${ic('folder', 18)}</span>`,
+          title: L(h(p.title), 'project', { id: p.id }, 'dv-link'),
+          sub: h(p.type) + (p.area ? ' · ' + h(p.area) : ''),
+          meta: [
+            r !== 'P' ? 'Owner <b>' + nm(p.owner) + '</b>' : '',
+            'Steward <b>' + (p.stewards.map(nm).join(', ') || 'not assigned') + '</b>',
+            (p.tags || []).length ? `<span class="rec-tags">${p.tags.slice(0, 3).map(x => `<span class="rec-tag">${h(x)}</span>`).join('')}${p.tags.length > 3 ? `<span class="cap">+${p.tags.length - 3}</span>` : ''}</span>` : '',
+            p.submitted ? 'Submitted ' + fmt(p.submitted) : '',
+            p.fundingNeed ? 'Funding need ' + money('USD', p.fundingNeed) : '',
+          ],
+          badges: pill(p.status) + (p.stage ? pill(stageLabel(p.stage), SC[p.stage]) : ''),
+          primary: L('Open', 'project', { id: p.id }, 'btn btn-s btn-sm'),
+        }),
+        empty: r === 'P' ? ['folder', 'You have no projects yet', 'Start one from an idea, need or opportunity.', B(ic('plus', 16) + 'Start a project', 'go', { r: 'newproject' }, 'btn-p btn-sm')] : ['folder', 'No projects yet', 'Submitted projects in this programme appear here.', ''],
+      }),
+    )
   );
 });
 // Distinct values of a field across a list, as [value, label] options for a Data View filter (sorted by label).
@@ -341,6 +338,7 @@ route('project', 'projects', () => {
   if (r === 'F' && stewardOf(p) && p.stage === 'Closed') actions = '';
   if (own && ownRoomProjects().includes(p))
     actions += B(ic('room', 14) + 'Create ' + WL(), 'newRoom', { origin: 'Project', project: p.id, oid: p.rope || p.circle || '' }, p.circle ? 'btn-p btn-sm' : 'btn-s btn-sm');
+  if (projEditable(p)) actions = B(ic('edit', 14) + 'Edit details', 'projEdit', { id: p.id }) + actions;
   const ready = p.sections && p.sections.every(s => ['Accepted', 'Edited'].includes(s.st));
   return (
     crumbsHtml([
@@ -450,6 +448,47 @@ F.submitProj = d => {
   audit('Project submitted', p.id, p.stewards.length ? 'Reviewers: ' + p.stewards.join(',') : 'Awaiting reviewer assignment');
   clearF('sp');
   toast(p.stewards.length ? 'Resubmitted to your reviewer.' : 'Submitted. The Programme Administrator will assign a Steward, Faculty member or Facilitator to review it.');
+  ok();
+};
+// ---- the project owner edits the project's details until it is closed or rejected (the 8 sections have their own flow)
+const projEditable = p => !!p && p.owner === myId() && p.status !== 'Rejected' && p.stage !== 'Closed';
+A.projEdit = d => {
+  const p = byId('projects', d.id);
+  clearF('pje');
+  UI.form.pje = { type: p.type, title: p.title, desc: p.desc || '', tags: (p.tags || []).join(', '), area: p.area || '', fundingNeed: p.fundingNeed || '' };
+  modal(
+    'Edit project details',
+    () =>
+      `<form data-f="pje" class="col prj-submit" novalidate>${errSum('pje')}<input type="hidden" name="id" value="${p.id}"><div class="f2">${fi('pje', 'title', 'Working title', { req: true, max: 120 })}${fi('pje', 'type', 'Starting point', { type: 'select', req: true, opts: ['Need', 'Opportunity', 'Project idea'] })}</div>${fi('pje', 'desc', 'Description', { type: 'textarea', rows: 5, req: true, help: 'At least 40 characters.' })}${fi('pje', 'tags', 'Areas of interest', { ph: 'e.g. Urban heat, Water', help: 'Comma-separated.' })}<div class="f2">${fi('pje', 'area', 'Location or programme area')}${fi('pje', 'fundingNeed', 'Funding requirement in USD', { type: 'number', min: 0 })}</div>${banner('info', '', p.status === 'Draft' ? 'The 8 sections are edited with Edit sections.' : 'Your reviewer is told what changed. The 8 sections are not changed here.')}<div class="actions">${B('Cancel', 'closeM')}<button class="btn btn-p" type="submit">Save changes</button></div></form>`,
+    true,
+  );
+};
+F.pje = d => {
+  if (!validate('pje', d, { title: ['req'], type: ['req'], desc: ['req', ['min', 40]], fundingNeed: [['fn', { f: v => !v || Number(v) >= 0, m: 'Enter 0 or more.' }]] })) return render();
+  const p = byId('projects', d.id);
+  const next = {
+    type: d.type,
+    title: d.title.trim(),
+    desc: d.desc.trim(),
+    tags: [...new Set((d.tags || '').split(',').map(x => x.trim().slice(0, 40)).filter(Boolean))],
+    area: (d.area || '').trim(),
+    fundingNeed: +d.fundingNeed || null,
+  };
+  const ch = changedFields({ ...p, tags: (p.tags || []).join(',') }, { ...next, tags: next.tags.join(',') }, { title: 'title', type: 'starting point', desc: 'description', tags: 'areas', area: 'location', fundingNeed: 'funding need' });
+  UI.modal = null;
+  clearF('pje');
+  if (!ch.length) {
+    toast('No changes to save.');
+    return ok();
+  }
+  Object.assign(p, next);
+  projLog(p, 'Details edited by the owner: ' + ch.join(', '));
+  if (p.status !== 'Draft')
+    projParties(p)
+      .filter(x => x !== myId())
+      .forEach(x => notify(x, me().name + ' edited “' + p.title + '”: ' + ch.join(', '), 'project', { id: p.id }));
+  audit('Project edited', p.id, ch.join(', '));
+  toast('Project updated.');
   ok();
 };
 A.editAfterClar = d => {

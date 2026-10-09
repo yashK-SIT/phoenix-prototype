@@ -678,28 +678,46 @@ code,
   line-height: var(--lh-xs);
   color: var(--on-plate-2);
 }
-.side-ctx {
+/* signed-in person: avatar, name and active role */
+.side-user {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: var(--s-2);
   padding: var(--s-2) var(--s-3);
   border-radius: var(--r-md);
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.08);
   min-width: 0;
 }
-.side-ctx small {
-  font-size: 11px;
-  line-height: 14px;
-  color: var(--on-plate-2);
-  font-weight: 700;
+.side-user .side-av {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  background: var(--canopy-700);
+  color: var(--on-plate);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
-.side-ctx span {
-  font-size: var(--fs-sm);
-  line-height: var(--lh-sm);
-  font-weight: 600;
+.side-user-t {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.side-user-t b,
+.side-user-t small {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.side-user-t b {
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  font-weight: 700;
+}
+.side-user-t small {
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 600;
+  color: var(--on-plate-2);
 }
 .side-nav {
   flex: 1;
@@ -840,7 +858,7 @@ button.nav {
   margin: var(--s-2) var(--s-2);
 }
 .app.is-compact .wm,
-.app.is-compact .side-ctx,
+.app.is-compact .side-user,
 .app.is-compact .nav .t,
 .app.is-compact .navsec span {
   display: none;
@@ -2757,7 +2775,7 @@ select.input {
 }
 .dv-bar {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: var(--s-3);
   flex-wrap: wrap;
@@ -3018,6 +3036,19 @@ select.input {
   align-items: center;
   gap: var(--s-2);
 }
+/* rows without a ⋯ menu keep the same action column as rows that have one */
+.dv-list:has(.dv-menuwrap) .dv-act:not(:has(.dv-menuwrap))::after {
+  content: '';
+  flex: none;
+  width: 38px;
+}
+/* rows with several actions: actions wrap, right-aligned, instead of squeezing the title */
+.dv-act.is-wrap {
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 55%;
+}
 .dv-menuwrap {
   position: relative;
 }
@@ -3036,6 +3067,44 @@ select.input {
   box-shadow: none;
   font-weight: 600;
   color: var(--text);
+}
+/* items with a label longer than one line grow instead of overlapping; the icon stays with the first line */
+.dv-menu {
+  width: max-content;
+  max-width: min(320px, calc(100vw - 32px));
+}
+.dv-menu .btn.menu-i,
+.menu .btn.menu-i {
+  height: auto;
+  min-height: 38px;
+  padding: 8px var(--s-3);
+  align-items: flex-start;
+  white-space: normal;
+  line-height: 20px;
+}
+.dv-menu .btn.menu-i svg,
+.menu .btn.menu-i svg {
+  flex: none;
+  margin-top: 2px;
+}
+.menu-t {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+.menu-t b {
+  font-weight: 600;
+}
+.menu-t span {
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-weight: 500;
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+.menu-i + .menu-i {
+  margin-top: 2px;
 }
 .dv-menu .btn.menu-i:hover,
 .menu .btn.menu-i:hover {
@@ -3095,6 +3164,14 @@ select.input {
   padding-top: var(--s-1);
   font-size: var(--fs-sm);
 }
+/* left: rows per page, then the range; right: page navigation */
+.dv-pager-info {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-2) var(--s-5);
+  min-width: 0;
+}
 .dv-range {
   color: var(--text-2);
 }
@@ -3102,6 +3179,7 @@ select.input {
   display: flex;
   align-items: center;
   gap: var(--s-1);
+  margin-left: auto;
 }
 .dv-nums {
   display: flex;
@@ -3148,7 +3226,7 @@ select.input {
   display: flex;
   align-items: center;
   gap: var(--s-2);
-  margin-left: var(--s-3);
+  margin-right: var(--s-3);
 }
 .dv-go .input {
   width: 72px;
@@ -3233,6 +3311,10 @@ select.input {
   .dv-act {
     justify-content: space-between;
   }
+  .dv-act.is-wrap {
+    max-width: none;
+    justify-content: flex-start;
+  }
   .card .dv-list,
   .card .dv-tblwrap {
     margin: 0 calc(-1 * var(--s-5));
@@ -3263,8 +3345,12 @@ select.input {
     flex-direction: column;
     align-items: stretch;
   }
+  .dv-pager-info {
+    justify-content: space-between;
+  }
   .dv-pages {
     justify-content: space-between;
+    margin-left: 0;
   }
   .dv-nums {
     display: none;

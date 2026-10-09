@@ -105,6 +105,7 @@ route('circles', 'circles', () => {
               badges: pill(c.state),
               primary: (c.visibility === 'Programme' ? L('Open', 'circle', { id: c.id }, 'btn btn-s btn-sm') : '') + (c.state === 'Active' ? joinBtn(c) : ''),
             }),
+            empty: ['users', 'No other Circles', 'Circles you are not in appear here.', ''],
           }),
         )
       : '')
@@ -431,7 +432,7 @@ route('circle', 'circles', () => {
       !ro && (isMem || mgr) ? `<form data-f="cdoc" class="row wrap ws-upform" novalidate><input type="hidden" name="c" value="${c.id}"><input type="file" name="f" class="input ws-file" multiple aria-label="Choose documents"><button class="btn btn-p btn-sm" type="submit">${ic('upload', 14)}Upload</button></form>` : '',
     );
   const prj = byId('projects', c.project);
-  const acts = !isMem && !mgr && c.state === 'Active' ? joinBtn(c) : isMem ? L(ic('message', 16) + 'Open in Messages', 'messages', { c: c.id, k: 'circles' }, 'btn btn-s') : '';
+  const acts = spaceEditBtn('circles', c) + (!isMem && !mgr && c.state === 'Active' ? joinBtn(c) : isMem ? L(ic('message', 16) + 'Open in Messages', 'messages', { c: c.id, k: 'circles' }, 'btn btn-s') : '');
   // the space header, its facts and the project journey live in Overview; other sections get a one-line context bar
   if (t.cur === 'overview') body = spaceHead('circles', c, h(c.purpose), null, acts) + roleNote('circles', c) + (prj ? stageTrack(prj, 'circles') : '');
   else body = wsBar('circles', c, acts) + body;

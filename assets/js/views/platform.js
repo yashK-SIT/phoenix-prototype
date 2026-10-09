@@ -460,6 +460,7 @@ route('roles', 'platform', () => {
           badges: (r.approval ? pill('Approval needed', 'p-amber') : pill('Automatic', 'p-grey')) + pill(r.status === 'Active' ? (r.system ? 'Seeded' : 'Custom') : r.status, r.status !== 'Active' ? 'p-grey' : r.system ? 'p-teal' : 'p-purple'),
           primary: L('Manage', 'roles', { id: r.id }, 'btn btn-s btn-sm'),
         }),
+        empty: ['shield', 'No roles yet', 'Use “Create role” to add one.', ''],
       }),
       '',
       'adm-panel rol-list',

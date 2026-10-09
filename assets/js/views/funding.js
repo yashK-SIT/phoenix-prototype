@@ -57,25 +57,18 @@ route('funding', 'funding', () => {
     const ints = (S.interests[myId()] || []).map(x => x.toLowerCase());
     let body = '';
     if (t.cur === 'discover') {
-      const q = (UI.q.fund = UI.q.fund || { scope: 'match' });
-      const ps = sponsorProjects(q.scope === 'all').filter(
-        p =>
-          !S.funding.some(f => f.project === p.id && f.sponsor === myId()) &&
-          (!q.area || (p.tags || []).includes(q.area)) &&
-          (!q.stage || p.stage === q.stage) &&
-          (!q.need || (q.need === 'yes' ? !!p.fundingNeed : !p.fundingNeed)),
-      );
-      const sel = (k, l, opts) =>
-        `<select class="input fund-sel" data-ch="fundQ" data-k="${k}" aria-label="${l}">${opts.map(([v, tt]) => `<option value="${v}" ${(q[k] || '') === v ? 'selected' : ''}>${tt}</option>`).join('')}</select>`;
+      // all eligible projects not yet funded by me; "Matching my interests" is a standard filter, on by default
+      const ps = sponsorProjects(true).filter(p => !S.funding.some(f => f.project === p.id && f.sponsor === myId()));
+      if (!UI.dv['fund:discover']) UI.dv['fund:discover'] = { f: { show: 'match' } };
       body =
-        `<div class="fund-scope"><label class="cap" for="fund-scope">Show</label>${sel('scope', 'Show', [['match', 'Matching my interests'], ['all', 'All eligible projects']]).replace('<select ', '<select id="fund-scope" ')}<p class="cap fund-ints">Your interests: ${ints.map(h).join(', ') || 'none set'}. Matching is by stated interest only. No automated funding decisions.</p></div>` +
-        dataView('fund:discover:' + (q.scope === 'all' ? 'all' : 'match'), {
+        card('Projects you can fund', 'Your interests: ' + (ints.map(h).join(', ') || 'none set') + '. Matching is by stated interest only. No automated funding decisions.', dataView('fund:discover', {
           label: 'projects',
           items: ps,
           search: p => p.title + ' ' + (p.type || '') + ' ' + (p.tags || []).join(' '),
+          quick: { label: 'Stage', options: ['Circle', 'Rope Team', 'Room'].filter(x => ps.some(p => p.stage === x)).map(x => [x, stageLabel(x)]), test: (p, v) => p.stage === v },
           filters: [
+            { key: 'show', label: 'Show', options: [['match', 'Matching my interests']], test: p => sponsorMatch(p, ints).length > 0 },
             { key: 'area', label: 'Area', options: PROJECT_AREAS.map(a => [a, a]), test: (p, v) => (p.tags || []).includes(v) },
-            { key: 'stage', label: 'Stage', options: [['Circle', 'Circle'], ['Rope Team', 'Rope Team'], ['Room', WL()]], test: (p, v) => p.stage === v },
             { key: 'need', label: 'Funding requirement', options: [['yes', 'States a funding requirement'], ['no', 'No amount stated']], test: (p, v) => (v === 'yes' ? !!p.fundingNeed : !p.fundingNeed) },
           ],
           sorts: [
@@ -96,13 +89,13 @@ route('funding', 'funding', () => {
               menu: (saved ? '' : B(ic('check', 16) + 'Save', 'fundSave', { id: p.id }, 'menu-i')) + B(ic('message', 16) + 'Message project owner', 'dmOpen', { pid: p.owner, project: p.id }, 'menu-i'),
             };
           },
-          empty: ['folder', 'No projects match these filters', q.scope === 'match' ? 'Try “All eligible projects”, or update your funding interests.' : 'Try clearing a filter.', ''],
-        });
+          empty: ['folder', 'No projects match these filters', 'Remove a filter (for example “Show: Matching my interests”), or update your funding interests.', ''],
+        }));
     }
     if (t.cur === 'pitches')
       body = (() => {
         const pis = S.pitches.filter(p => p.to === myId());
-        return dataView('fund:pitches', {
+        return card('Pitches received', '', dataView('fund:pitches', {
           label: 'pitches',
           items: pis,
           search: pi => byId('projects', pi.project).title + ' ' + P(pi.from).name + ' ' + pi.text,
@@ -133,7 +126,7 @@ route('funding', 'funding', () => {
             };
           },
           empty: ['send', 'No pitches', '', ''],
-        });
+        }));
       })();
     if (t.cur === 'initiatives') body = initiativesView();
     if (t.cur === 'funded')
@@ -173,18 +166,20 @@ route('funding', 'funding', () => {
             dataView('fund:sent', {
               label: 'pitches',
               items: S.pitches.filter(p => p.from === myId()),
+              search: p => [String(cName(p.project)).replace(/<[^>]+>/g, ''), P(p.to).name, p.status].join(' '),
               quick: { label: 'Status', options: [...new Set(S.pitches.filter(p => p.from === myId()).map(p => p.status))].map(v => [v, v]), test: (p, v) => p.status === v },
               sorts: [
                 ['new', 'Newest first', (a, b) => String(b.at).localeCompare(String(a.at))],
-                ['amt', 'Amount', (a, b) => a.amount - b.amount],
+                ['amt', 'Amount', (a, b) => b.amount - a.amount],
               ],
-              layout: 'table',
-              columns: [
-                { label: 'Project', cell: p => cName(p.project) },
-                { label: 'Sponsor', cell: p => nm(p.to) },
-                { label: 'Amount', num: true, sort: 'amt', cell: p => money('USD', p.amount) },
-                { label: 'Status', cell: p => pill(p.status) },
-              ],
+              defaultSort: 'new',
+              row: p => ({
+                lead: `<span class="tile t-soft" aria-hidden="true">${ic('send', 18)}</span>`,
+                title: cName(p.project),
+                sub: 'To ' + nm(p.to),
+                meta: ['Amount <b>' + money('USD', p.amount) + '</b>', p.at ? 'Sent ' + fmt(p.at) : ''],
+                badges: pill(p.status),
+              }),
               empty: ['send', 'No pitches sent yet', 'Use “Pitch a sponsor” to send one.', ''],
             }),
             '',
@@ -451,17 +446,23 @@ route('billing', 'payments', () => {
     body = `<div class="g12">${!es.some(e => e.ctx === ctxId() && ['Active', 'Grace'].includes(e.state)) ? `<div class="c12">${banner('info', 'No access product in this context yet', 'You can still use the core collaboration features while your programme or a sponsor arranges access. Choose an option below if you want individual access.')}</div>` : ''}${card(
       'My entitlements',
       'Paid and sponsored entitlements combine; expiry of one never cancels the other.',
-      table(
-        ['Product', 'Context', 'Source', 'State', 'Until', ''],
-        es.map(e => [
-          h(byId('products', e.product).name),
-          h(S.contexts.find(c => c.id === e.ctx).name),
-          h(e.source),
-          pill(e.state),
-          fmt(e.until),
-          ['pd2', 'pd3'].includes(e.product) ? B('Billing portal', 'portal', { id: e.id }) : '',
-        ]),
-      ),
+      dataView('bill:mine', {
+        label: 'entitlements',
+        items: es,
+        search: e => byId('products', e.product).name + ' ' + e.source + ' ' + e.state,
+        quick: { label: 'State', options: [...new Set(es.map(e => e.state))].map(v => [v, v]), test: (e, v) => e.state === v },
+        sorts: [['until', 'Ends soonest', (a, b) => String(a.until).localeCompare(String(b.until))]],
+        defaultSort: 'until',
+        row: e => ({
+          lead: `<span class="tile t-soft" aria-hidden="true">${ic('card', 18)}</span>`,
+          title: h(byId('products', e.product).name),
+          sub: h(S.contexts.find(c => c.id === e.ctx).name),
+          meta: ['Source <b>' + h(e.source) + '</b>', 'Until ' + fmt(e.until)],
+          badges: pill(e.state),
+          primary: ['pd2', 'pd3'].includes(e.product) ? B('Billing portal', 'portal', { id: e.id }) : '',
+        }),
+        empty: ['card', 'No entitlements yet', 'Access you buy, or that a sponsor or your programme grants, appears here.', ''],
+      }),
       '',
       'c12 bill-ents',
     )}
@@ -490,16 +491,22 @@ route('billing', 'payments', () => {
   ${card(
     'Get access',
     'Checkout happens on the provider-hosted page. PHOENIX never sees card details.',
-    table(
-      ['Product', 'Type', 'Price', 'Entitlement', ''],
-      rel.map(p => [
-        h(p.name),
-        h(p.kind),
-        h(p.price),
-        h(p.ent),
-        B(p.kind === 'Donation' ? 'Donate' : 'Choose', 'checkout', { id: p.id }, 'btn-s btn-sm'),
-      ]),
-    ),
+    dataView('bill:offer', {
+      label: 'products',
+      items: rel,
+      search: p => p.name + ' ' + p.kind + ' ' + p.ent,
+      quick: { label: 'Type', options: [...new Set(rel.map(p => p.kind))].map(v => [v, v]), test: (p, v) => p.kind === v },
+      sorts: [['name', 'Name', (a, b) => a.name.localeCompare(b.name)]],
+      defaultSort: 'name',
+      row: p => ({
+        lead: `<span class="tile t-soft" aria-hidden="true">${ic('coin', 18)}</span>`,
+        title: h(p.name),
+        sub: h(p.ent),
+        meta: ['Type <b>' + h(p.kind) + '</b>', 'Price <b>' + h(p.price) + '</b>'],
+        primary: B(p.kind === 'Donation' ? 'Donate' : 'Choose', 'checkout', { id: p.id }, 'btn-s btn-sm'),
+      }),
+      empty: ['coin', 'Nothing to choose from yet', 'Released products appear here.', ''],
+    }),
     '',
     'c12 bill-price',
   )}
@@ -521,23 +528,21 @@ route('billing', 'payments', () => {
                 search: pid => P(pid).name,
                 quick: { label: 'Entitlement', options: [...new Set(sp.assigned.map(est))].map(v => [v, v]), test: (pid, v) => est(pid) === v },
                 sorts: [['name', 'Name', (a, b) => P(a).name.localeCompare(P(b).name)]],
-                layout: 'table',
-                columns: [
-                  { label: 'Seat holder', sort: 'name', cell: pid => `<b>${nm(pid)}</b>` },
-                  { label: 'Entitlement', cell: pid => pill(est(pid)) },
-                  {
-                    label: '',
-                    cell: pid => {
-                      const e = S.ents.find(e => e.pid === pid && e.source.includes(sp.id));
-                      return (
-                        (e && e.state === 'Suspended'
-                          ? B('Reactivate', 'seat', { sp: sp.id, pid, v: 'Active' })
-                          : CB('Suspend', 'seat', { sp: sp.id, pid, v: 'Suspended' }, 'Suspend the sponsored seat for ' + P(pid).name + '? Sponsored access pauses; consent, correction and export rights continue.')) +
-                        CB('Release seat', 'seat', { sp: sp.id, pid, v: 'release' }, 'Release this seat? ' + P(pid).name + ' loses the sponsored entitlement and the seat returns to the pool.')
-                      );
-                    },
-                  },
-                ],
+                defaultSort: 'name',
+                row: pid => {
+                  const e = S.ents.find(e => e.pid === pid && e.source.includes(sp.id));
+                  return {
+                    lead: `<span class="av" aria-hidden="true">${ini(pid)}</span>`,
+                    title: nm(pid),
+                    sub: h(P(pid).email || ''),
+                    badges: pill(est(pid)),
+                    primary:
+                      (e && e.state === 'Suspended'
+                        ? B('Reactivate', 'seat', { sp: sp.id, pid, v: 'Active' })
+                        : CB('Suspend', 'seat', { sp: sp.id, pid, v: 'Suspended' }, 'Suspend the sponsored seat for ' + P(pid).name + '? Sponsored access pauses; consent, correction and export rights continue.')) +
+                      CB('Release seat', 'seat', { sp: sp.id, pid, v: 'release' }, 'Release this seat? ' + P(pid).name + ' loses the sponsored entitlement and the seat returns to the pool.'),
+                  };
+                },
                 empty: ['users', 'No seats assigned yet', 'Use “Assign seat” to give a participant a sponsored seat.', ''],
               });
             })()}`,
@@ -592,16 +597,16 @@ route('billing', 'payments', () => {
           { key: 'cycle', label: 'Billing cycle', options: [...new Set(S.products.map(p => p.cycle))].map(v => [v, v]), test: (p, v) => p.cycle === v },
         ],
         sorts: [['name', 'Name', (a, b) => a.name.localeCompare(b.name)], ['kind', 'Type', (a, b) => a.kind.localeCompare(b.kind)]],
-        layout: 'table',
-        columns: [
-          { label: 'Product', sort: 'name', cell: p => `<b>${h(p.name)}</b>` },
-          { label: 'Type', sort: 'kind', cell: p => h(p.kind) },
-          { label: 'Price', num: true, cell: p => h(p.price) },
-          { label: 'Cycle', hideSm: true, cell: p => h(p.cycle) },
-          { label: 'Entitlement', hideSm: true, cell: p => h(p.ent) },
-          { label: 'Status', cell: p => pill(p.status) },
-          { label: '', cell: p => prodAct(p) },
-        ],
+        defaultSort: 'name',
+        row: p => ({
+          lead: `<span class="tile t-soft" aria-hidden="true">${ic('coin', 18)}</span>`,
+          title: h(p.name),
+          sub: h(p.ent),
+          meta: ['Type <b>' + h(p.kind) + '</b>', 'Price <b>' + h(p.price) + '</b>', 'Cycle ' + h(p.cycle)],
+          badges: pill(p.status),
+          primary: prodAct(p),
+        }),
+        empty: ['coin', 'No products yet', 'Draft a product; the Finance Owner approves and releases it.', ''],
       }),
       B(ic('plus', 14) + 'Draft product', 'prodNew', {}, 'btn-p btn-sm'),
       'bill-prod',
@@ -623,15 +628,16 @@ route('billing', 'payments', () => {
           ['until', 'Ends soonest', (a, b) => String(a.until).localeCompare(String(b.until))],
           ['person', 'Person', (a, b) => P(a.pid).name.localeCompare(P(b.pid).name)],
         ],
-        layout: 'table',
-        columns: [
-          { label: 'Person', sort: 'person', cell: e => `<b>${nm(e.pid)}</b>` },
-          { label: 'Product', cell: e => h(byId('products', e.product).name) },
-          { label: 'Source', hideSm: true, cell: e => h(e.source) },
-          { label: 'State', cell: e => pill(e.state) },
-          { label: 'Until', sort: 'until', cell: e => fmt(e.until) },
-          { label: '', cell: e => B('Revoke', 'entRevoke', { id: e.id }) },
-        ],
+        defaultSort: 'until',
+        row: e => ({
+          lead: `<span class="av" aria-hidden="true">${ini(e.pid)}</span>`,
+          title: nm(e.pid),
+          sub: h(byId('products', e.product).name),
+          meta: ['Source <b>' + h(e.source) + '</b>', 'Until ' + fmt(e.until)],
+          badges: pill(e.state),
+          primary: B('Revoke', 'entRevoke', { id: e.id }),
+        }),
+        empty: ['card', 'No entitlements yet', 'Use “Grant access” to give someone access.', ''],
       }),
       B(ic('plus', 14) + 'Grant access', 'entGrant', {}, 'btn-p btn-sm'),
       'bill-ents',
@@ -650,23 +656,21 @@ route('billing', 'payments', () => {
           ['seats', 'Seats', (a, b) => a.total - b.total],
           ['sponsor', 'Sponsor', (a, b) => P(a.sponsor).name.localeCompare(P(b.sponsor).name)],
         ],
-        layout: 'table',
-        columns: [
-          { label: 'Sponsor', sort: 'sponsor', cell: s => `<b>${nm(s.sponsor)}</b>` },
-          { label: 'Context', hideSm: true, cell: s => h(S.contexts.find(c => c.id === s.ctx).name) },
-          { label: 'Seats', num: true, sort: 'seats', cell: s => s.assigned.length + ' / ' + s.total },
-          { label: 'Until', sort: 'until', cell: s => fmt(s.until) },
-          { label: 'Status', cell: s => pill(s.status) },
-          {
-            label: '',
-            cell: s =>
-              s.status === 'Pending'
-                ? hasB('Finance Owner')
-                  ? B('Confirm invoice paid · activate', 'poolActivate', { id: s.id }, 'btn-p btn-sm')
-                  : '<span class="cap">Needs Finance Owner</span>'
-                : '',
-          },
-        ],
+        defaultSort: 'until',
+        row: s => ({
+          lead: `<span class="av" aria-hidden="true">${ini(s.sponsor)}</span>`,
+          title: nm(s.sponsor),
+          sub: h(S.contexts.find(c => c.id === s.ctx).name),
+          meta: ['Seats <b>' + s.assigned.length + ' / ' + s.total + '</b>', 'Until ' + fmt(s.until)],
+          badges: pill(s.status),
+          primary:
+            s.status === 'Pending'
+              ? hasB('Finance Owner')
+                ? B('Confirm invoice paid · activate', 'poolActivate', { id: s.id }, 'btn-p btn-sm')
+                : '<span class="cap">Needs Finance Owner</span>'
+              : '',
+        }),
+        empty: ['users', 'No seat pools yet', 'Use “Create seat pool” for a sponsor’s seats.', ''],
       }),
       B(ic('plus', 14) + 'Create seat pool', 'poolNew', {}, 'btn-p btn-sm'),
       'bill-seats',
@@ -697,6 +701,7 @@ route('billing', 'payments', () => {
           { label: 'Processed', cell: ({ p }) => (p.dup ? pill('Duplicate — ignored', 'p-grey') : p.processed ? pill('Done') : pill('Pending')) },
           { label: '', cell: ({ p, i }) => (!p.processed && !p.dup ? B('Process', 'procEvt', { i }) : '') },
         ],
+        empty: ['inbox', 'No payment events yet', 'Provider webhook events appear here.', ''],
       }),
       hasB('Finance Owner')
         ? B('Reconcile with provider', 'reconcile', {}, 'btn-p btn-sm') +
@@ -1007,10 +1012,6 @@ F.pkg = d => {
   ok();
 };
 
-A.fundQ = (d, el) => {
-  UI.q.fund = { ...(UI.q.fund || {}), [d.k]: el.value };
-  render();
-};
 A.poolActivate = d => {
   const sp = byId('seatPools', d.id);
   sp.status = 'Active';

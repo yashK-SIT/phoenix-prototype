@@ -38,7 +38,7 @@ route("rooms", "rooms", () => {
             )
           : "",
     ) +
-    dataView("rooms", {
+    card("Your " + WL() + "s", "", dataView("rooms", {
       label: WL() + "s",
       items: list,
       search: (x) => [x.name, x.purpose, P(x.lead).name, x.origin.type, cName(x.origin.id), wsRoleTxt("rooms", x)].join(" "),
@@ -79,7 +79,7 @@ route("rooms", "rooms", () => {
             : L("Open", "room", { id: x.id }, "btn btn-s btn-sm"),
       }),
       empty: ["room", "No " + WL() + "s yet.", "Execution spaces appear here when you are invited to one or one is created for your project.", ""],
-    })
+    }))
   );
 });
 // Primary origin: the actual projects this person can start an Action Room for, then the non-project origins.
@@ -641,7 +641,8 @@ route("room", "rooms", () => {
  ${card("Lifecycle", "Draft · Proposed · Pending approval · Active · Closed", `<div class="col" style="gap:8px">${x.state === "Proposed" && canCreateRoom() ? B("Activate", "roomState", { r: x.id, v: x.flags.length ? "Pending approval" : "Active" }, "btn-p btn-sm") + B("Decline (back to Draft)", "roomDecline", { r: x.id }) : ""}${x.state === "Proposed" && !canCreateRoom() ? '<p class="cap">Proposed. An authorised Faculty/Steward, Project Lead, Partner, Organization Representative or Programme Administrator activates it.</p>' : ""}${x.state === "Pending approval" && (r === "F" || r === "A") ? B("Approve activation", "roomState", { r: x.id, v: "Active" }, "btn-p btn-sm") + B("Decline (back to Draft)", "roomDecline", { r: x.id }) : ""}${x.state === "Draft" && isM ? B("Re-propose", "roomState", { r: x.id, v: "Proposed" }) : ""}${x.declineReason ? banner("warn", "Approval declined", h(x.declineReason)) : ""}${!ro && isM && !pr ? B(ic("refresh", 14) + "Return issue to Circle", "returnTo", { from: "rooms", id: x.id, to: "circle" }) : ""}${!ro && isM ? B(ic("sparkle", 14) + "Start a Learning Harvest", "newHarvest", { scope: x.id }) : ""}${x.state === "Active" && lead && !pr ? B("Close " + WL(), "roomClose", { r: x.id }) : ""}${pr ? `<p class="cap">Final deliverables are submitted from the Overview tab or the ${L("project", "project", { id: pr.id })}. Backward movement is on the Overview tab.</p>` : ""}</div>`, "", "c5")}
  ${returnsCard(x) ? `<div class="c12">${returnsCard(x)}</div>` : ""}</div>`;
   const acts =
-      isM
+    spaceEditBtn("rooms", x) +
+    (isM
         ? L(
             ic("message", 16) + "Open in Messages",
             "messages",
@@ -656,7 +657,7 @@ route("room", "rooms", () => {
                   "btn-p",
                 )
               : "")
-        : "";
+        : "");
   // the space header, its facts and the project journey live in Overview; other sections get a one-line context bar
   if (t.cur === "overview") body = spaceHead("rooms", x, h(x.purpose), null, acts) + roleNote("rooms", x) + (pr ? stageTrack(pr, "rooms") : "") + body;
   else body = wsBar("rooms", x, acts) + body;

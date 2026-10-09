@@ -224,10 +224,10 @@
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: minmax(0, 1fr);
-  align-items: end;
-  gap: var(--s-2);
+  align-items: stretch;
+  gap: var(--s-3);
   margin: 0;
-  padding: var(--s-6) 0 0;
+  padding: var(--s-2) 0 0;
   list-style: none;
 }
 .jstep {
@@ -241,11 +241,8 @@
   border-radius: var(--r-md);
   background: var(--surface-2);
 }
-/* each stage sits one step higher */
-.jstep:nth-child(2) { margin-bottom: 8px; }
-.jstep:nth-child(3) { margin-bottom: 16px; }
-.jstep:nth-child(4) { margin-bottom: 24px; }
 .jstep .tile {
+  flex: none;
   width: 32px;
   height: 32px;
 }
@@ -256,16 +253,24 @@
   min-width: 0;
 }
 .jlabel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  min-height: 20px;
   font-size: var(--fs-xs);
   line-height: var(--lh-xs);
   font-weight: 700;
   color: var(--text-3);
 }
+/* names wrap to two lines rather than being cut short */
 .jname {
   font-weight: 700;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
 }
 .jname .lnk {
   font-weight: 700;
@@ -275,6 +280,25 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
+  margin-top: 2px;
+}
+/* status pills and rule flags keep their shape; they move to the next line instead of breaking */
+.jmeta .pill,
+.jmeta .flag {
+  flex: none;
+  max-width: 100%;
+}
+/* in a narrow stage card a long rule flag wraps inside its chip instead of overlapping */
+.jmeta .flag {
+  height: auto;
+  min-height: 22px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+  line-height: 16px;
+  align-items: flex-start;
+}
+.jmeta .flag svg {
+  flex: none;
   margin-top: 2px;
 }
 .jstep.is-done {
@@ -308,9 +332,6 @@
   border-top: 3px solid var(--signal);
 }
 .jhere {
-  position: absolute;
-  top: -12px;
-  left: var(--s-3);
   display: inline-flex;
   align-items: center;
   height: 20px;
@@ -338,33 +359,18 @@
   margin-top: 2px;
   color: var(--warn);
 }
+/* tablets: two stages per row */
 @media (max-width: 1023px) {
-  .jstep .tile {
-    display: none;
-  }
-}
-@media (max-width: 639px) {
   .jsteps {
     grid-auto-flow: row;
-    gap: var(--s-4);
-    padding-top: var(--s-3);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .jstep:nth-child(n) {
-    margin-bottom: 0;
-  }
-  .jstep:nth-child(2) { margin-left: 12px; }
-  .jstep:nth-child(3) { margin-left: 24px; }
-  .jstep:nth-child(4) { margin-left: 36px; }
-  .jstep .tile {
-    display: inline-grid;
-  }
-  .jname {
-    white-space: normal;
-  }
-  .jhere {
-    position: static;
-    margin-left: 6px;
-    height: 18px;
+}
+/* phones: one stage per row */
+@media (max-width: 639px) {
+  .jsteps {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s-2);
   }
 }
 
@@ -1647,9 +1653,6 @@
 .wf-mem .avstack {
   flex: none;
 }
-.jsteps {
-  padding-top: var(--s-4);
-}
 /* phone record cards: badges keep their own width instead of stretching across the cell */
 @media (max-width: 639px) {
   .app:is([data-route='room'], [data-route='rope'], [data-route='circle'], [data-route='rooms'], [data-route='ropeteams'], [data-route='circles']) .tbl td > .pill {
@@ -1755,7 +1758,7 @@
 }
 .dv-menu .btn.menu-i {
   justify-content: flex-start;
-  height: 38px;
+  min-height: 38px;
   border: 0;
   box-shadow: none;
   font-size: var(--fs-body);

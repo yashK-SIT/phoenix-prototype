@@ -575,6 +575,27 @@ const roomFor = d => {
 };
 Object.assign(G, {
   rdoc: d => activeMember('ropes', d.id) || 'only members of an active Rope Team upload documents',
+  // owners edit their own records
+  projEdit: d => projEditable(byId('projects', d.id)) || 'only the project owner edits it, until it is closed or rejected',
+  pje: d => projEditable(byId('projects', d.id)) || 'only the project owner edits it, until it is closed or rejected',
+  spaceEdit: d => (SPACE_EDIT[d.kind] && spaceEditable(d.kind, byId(d.kind, d.id))) || 'only the owner edits this space while it is open',
+  spe: d => (SPACE_EDIT[d.kind] && spaceEditable(d.kind, byId(d.kind, d.id))) || 'only the owner edits this space while it is open',
+  evEdit: d => evEditable(byId('evidence', d.id)) || 'only the owner edits evidence, while it is under review',
+  eve: d => evEditable(byId('evidence', d.id)) || 'only the owner edits evidence, while it is under review',
+  card: d => {
+    if (d.id) return byId('cards', d.id)?.owner === myId() || 'only the card owner edits it';
+    if (!d.from) return true;
+    const c = byId('circles', d.from);
+    return (c && (sCan('circles', c, 'card') || isFac(c.id))) || 'only contributing members of that Circle can create cards from it';
+  },
+  pwEdit: d => pwEditable(byId('pathways', d.id)) || 'only the creator edits a pathway, until it is approved or a step is completed',
+  pwe: d => pwEditable(byId('pathways', d.id)) || 'only the creator edits a pathway, until it is approved or a step is completed',
+  // replies are to other people's messages
+  msgReply: d => {
+    const o = byId(d.k, d.c);
+    const m = o && (o.chat || []).find(x => x.id === d.id);
+    return (m && m.by !== myId()) || 'you reply to other people’s messages';
+  },
   newRoom: roomFor,
   nr: roomFor,
   // milestones: members add evidence; only the Steward reviews it and validates the milestone

@@ -61,7 +61,7 @@ route('opportunities', 'opportunities', () => {
       ['P', 'C', 'O'].includes(r) ? B(ic('plus', 16) + 'New card', 'go', { r: 'newcard' }, 'btn-p') : '',
     ) +
     t.html +
-    dataView('opps:' + t.cur, {
+    card(t.cur === 'mine' ? 'Your cards' : 'Cards you can discover', '', dataView('opps:' + t.cur, {
       label: 'cards',
       items: f,
       search: c => c.title + ' ' + c.desc + ' ' + c.cat + ' ' + P(c.owner).name,
@@ -82,10 +82,10 @@ route('opportunities', 'opportunities', () => {
         sub: `<span class="opp-desc">${h(c.desc)}</span>`,
         meta: [h(c.cat), nm(c.owner) + (c.ownerOrg ? ' · ' + h(S.orgs.find(o => o.id === c.ownerOrg).name) : ''), audienceText(c), c.from ? `From ${L(cName(c.from), 'circle', { id: c.from })}` : '', 'Expires ' + fmt(c.expires)],
         badges: oppKind(c.kind) + pill(c.status),
-        primary: L('Open', 'card', { id: c.id }),
+        primary: L('Open', 'card', { id: c.id }, 'btn btn-s btn-sm'),
       }),
       empty: t.cur === 'mine' ? ['megaphone', 'No cards yet', 'Publish a need, asset, offer or opportunity with an audience and expiry.', ['P', 'C', 'O'].includes(r) ? B(ic('plus', 16) + 'New card', 'go', { r: 'newcard' }, 'btn-p btn-sm') : ''] : ['megaphone', 'No cards match these filters.', ''],
-    })
+    }))
   );
 });
 A.qf = (d, el) => {
@@ -111,6 +111,8 @@ route('newcard', 'opportunities', () => {
   const from = UI.p.from || (e && e.from) || '';
   const src = from && byId('circles', from);
   if (src && !memberOf(src) && !isFac(src.id)) return deniedView('circles');
+  // only the card owner edits it
+  if (e && e.owner !== myId()) return deniedView('opportunities');
   if (e && !UI.form.card) UI.form.card = { ...e };
   if (!e && src && !UI.form.card) UI.form.card = { vis: 'Circle members', project: src.project && byId('projects', src.project)?.owner === myId() ? src.project : '' };
   const vis = fv('card', 'vis', src ? 'Circle members' : 'Programme');
@@ -364,11 +366,14 @@ route('matches', 'matching', () => {
       'Match Briefs',
       'Potential match → Match Brief → steward approval → mutual consent → introduction. No hidden ranking.',
     ) +
-    dataView('matches', {
+    card(
+      'Match Briefs',
+      '',
+      dataView('matches', {
       label: 'Match Briefs',
       items: list,
       search: m => P(m.a).name + ' ' + P(m.b).name + ' ' + m.origin + ' ' + m.status,
-      quick: dvOpts(list, m => m.status).length > 1 ? { label: 'Status', options: dvOpts(list, m => m.status), test: (m, v) => m.status === v } : null,
+      quick: { label: 'Status', options: dvOpts(list, m => m.status), test: (m, v) => m.status === v },
       filters: [
         { key: 'origin', label: 'Origin', options: dvOpts(list, m => m.origin), test: (m, v) => m.origin === v },
         { key: 'blockers', label: 'Blockers', options: [['yes', 'Has do-not-introduce'], ['no', 'None']], test: (m, v) => (v === 'yes' ? m.blockers.length > 0 : !m.blockers.length) },
@@ -383,10 +388,11 @@ route('matches', 'matching', () => {
         sub: h(m.origin),
         meta: [m.steward ? 'Steward · ' + nm(m.steward) : ''],
         badges: pill(m.status) + (m.blockers.length ? pill(m.blockers.length + ' do-not-introduce', 'p-red') : ''),
-        primary: L('Open', 'match', { id: m.id }),
+        primary: L('Open', 'match', { id: m.id }, 'btn btn-s btn-sm'),
       }),
-      empty: ['link', 'No Match Briefs.', 'Potential match → Match Brief → steward approval → mutual consent → introduction.'],
-    })
+      empty: ['link', 'No Match Briefs yet', 'A steward drafts a Match Brief from a potential match; both people consent before any introduction.', ''],
+    }),
+    )
   );
 });
 route('match', 'matching', () => {

@@ -1228,7 +1228,7 @@ div.adm-id {
 /* menu items rendered with B()/CB() carry .btn: keep them left-aligned like other menu items */
 .dv-menu .btn.menu-i {
   justify-content: flex-start;
-  height: 38px;
+  min-height: 38px;
   font-size: var(--fs-body);
 }
 .adm-inv-av {

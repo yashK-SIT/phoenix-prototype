@@ -1200,6 +1200,15 @@ p.evo-act {
   gap: 6px;
   margin-top: var(--s-3);
 }
+/* accounts created in this browser, below the seeded demo accounts */
+.auth-demo-sub {
+  margin-top: var(--s-4);
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--line);
+}
+.auth-demo-sub + .auth-demo-l {
+  margin-top: var(--s-2);
+}
 /* register: role choice cards */
 .auth .choice {
   position: relative;

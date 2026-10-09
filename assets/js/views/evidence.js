@@ -90,11 +90,6 @@ route('evidence', 'evidence', () => {
       : t.cur === 'queue'
         ? S.evidence.filter(e => e.review === 'Submitted' && e.owner !== myId())
         : S.evidence.filter(evVisible);
-  const pf = UI.q.evp || '';
-  const projs = [...new Set(base.flatMap(e => evProjects(e).map(p => p.id)))].map(id => byId('projects', id));
-  const list = base.filter(e => !pf || (pf === 'none' ? !evProjects(e).length : evProjects(e).some(p => p.id === pf)));
-  const groups = [...projs.filter(p => !pf || p.id === pf).map(p => [p, list.filter(e => evProjects(e).includes(p))]), ...(!pf || pf === 'none' ? [[null, list.filter(e => !evProjects(e).length)]] : [])].filter(([, l]) => l.length);
-  const grouped = (UI.q.evg || 'project') === 'project';
   return (
     head(
       'Evidence',
@@ -103,22 +98,7 @@ route('evidence', 'evidence', () => {
     ) +
     t.html +
     (t.cur === 'queue' ? msQueueCard() : '') +
-    `<div class="rec-toolbar ev-toolbar"><div class="rec-tf"><select class="input" data-ch="qf" data-k="evp" aria-label="Project"><option value="">Project: all</option>${projs.map(p => `<option value="${p.id}" ${pf === p.id ? 'selected' : ''}>${h(p.title)}</option>`).join('')}<option value="none" ${pf === 'none' ? 'selected' : ''}>Not linked to a project</option></select><select class="input" data-ch="qf" data-k="evg" aria-label="Layout"><option value="project" ${grouped ? 'selected' : ''}>Group by project</option><option value="flat" ${!grouped ? 'selected' : ''}>Single list</option></select></div><span class="rec-count"><b>${list.length}</b> item${list.length === 1 ? '' : 's'}${grouped && groups.length ? ` · ${groups.length} group${groups.length === 1 ? '' : 's'}` : ''}</span></div>` +
-    (grouped
-      ? `<div class="ev-groups">${
-          groups
-            .map(([p, l]) =>
-              card(
-                p ? h(p.title) : 'Not linked to a project',
-                p ? l.length + ' item' + (l.length > 1 ? 's' : '') + ' · ' + pill(stageLabel(p.stage || p.status)) : 'Personal or portfolio evidence',
-                evTable(l, false, 'evidence:' + t.cur + ':' + (p ? p.id : 'none')),
-                p && can('projects') ? L('Open project', 'project', { id: p.id }) : '',
-                'ev-group' + (p ? '' : ' ev-none'),
-              ),
-            )
-            .join('') || table([], [], 'No evidence here yet.')
-        }</div>`
-      : `<section class="card ev-group ev-flat">${evTable(list, true, 'evidence:' + t.cur + ':flat')}</section>`)
+    card(t.cur === 'queue' ? 'Evidence to review' : t.cur === 'all' ? 'Evidence you can see' : 'Your evidence', '', evTable(base, true, 'evidence:' + t.cur))
   );
 });
 // Evidence Support Level: the code as text, with a four-step meter (E0 = none lit, E4 = all lit).
@@ -128,38 +108,43 @@ function evLevel(l) {
 }
 // File-type glyph for an evidence row, from how it was provided.
 const evGlyph = e => ({ Link: 'link', 'Reflection or written output': 'edit', 'Repository record': 'archive' })[e.format] || 'file';
-// One evidence collection as a Data View (one per project group, or one flat list). `key` keeps its filters apart.
+// One evidence collection as a Data View in the Circles listing style (one per Evidence tab).
+// `key` keeps each list's search, tabs and filters apart.
 function evTable(list, withProject, key = 'evidence') {
   const lvl = e => +String(e.level || 'E0').slice(1) || 0;
   return dataView(key, {
     label: 'evidence items',
     items: list,
     search: e => [e.title, e.type, e.claim, P(e.owner).name, ...(e.linked || []).map(l => String(cName(l)).replace(/<[^>]+>/g, '')), withProject ? evProjects(e).map(p => p.title).join(' ') : ''].join(' '),
-    quick: dvOpts(list, e => e.review).length > 1 ? { label: 'Review status', options: REVIEW.filter(s => list.some(e => e.review === s)).map(s => [s, s]), test: (e, v) => e.review === v } : null,
+    quick: { label: 'Review status', options: REVIEW.filter(s => list.some(e => e.review === s)).map(s => [s, s]), test: (e, v) => e.review === v },
     filters: [
+      withProject && { key: 'project', label: 'Project', options: [...dvOpts(list, e => evProjects(e).map(p => p.id), id => byId('projects', id).title), ...(list.some(e => !evProjects(e).length) ? [['none', 'Not linked to a project']] : [])], test: (e, v) => (v === 'none' ? !evProjects(e).length : evProjects(e).some(p => p.id === v)) },
       { key: 'type', label: 'Evidence type', options: EV_TYPES.filter(x => list.some(e => e.type === x)).map(x => [x, x]), test: (e, v) => e.type === v },
       { key: 'level', label: 'Evidence Support Level', options: LEVELS.map(([k, v]) => [k, k + ' — ' + v]), test: (e, v) => e.level === v },
       { key: 'release', label: 'Release', options: dvOpts(list, e => e.release), test: (e, v) => e.release === v },
-    ],
+    ].filter(Boolean),
     sorts: [
       ['title', 'Title', (a, b) => a.title.localeCompare(b.title)],
-      ['level', 'Support level', (a, b) => lvl(a) - lvl(b)],
+      ['level', 'Support level', (a, b) => lvl(b) - lvl(a)],
       ['review', 'Review status', (a, b) => REVIEW.indexOf(a.review) - REVIEW.indexOf(b.review)],
     ],
-    layout: 'table',
-    columns: [
-      { label: 'Evidence', sort: 'title', cell: e => `<span class="rec-name"><span class="tile t-soft" aria-hidden="true">${ic(evGlyph(e), 16)}</span><span class="rec-nt"><b>${h(e.title)}</b><span class="cap">${h(e.format || 'File upload')}</span></span></span>` },
-      withProject && { label: 'Project', cell: e => evProjectName(e) || '<span class="cap">—</span>' },
-      { label: 'Type', hideSm: true, cell: e => `<span class="ev-type">${h(e.type)}</span>` },
-      { label: 'Claim', hideSm: true, cell: e => `<span class="ev-claim">${h(e.claim)}</span>` },
-      { label: 'Owner', cell: e => nm(e.owner) },
-      { label: 'Linked to', hideSm: true, cell: e => (e.linked || []).map(cName).join(', ') || '—' },
-      { label: 'Level', sort: 'level', cell: e => evLevel(e.level) },
-      { label: 'Review', sort: 'review', cell: e => pill(e.review) },
-      { label: 'Release', cell: e => `<span class="ev-rel ${e.release === 'Not released' ? 'is-no' : ''}">${h(e.release)}</span>` },
-      { label: '', cell: e => L('Open', 'evidence', { id: e.id }) },
-    ].filter(Boolean),
-    empty: ['award', 'No evidence here yet.', ''],
+    defaultSort: 'title',
+    row: e => ({
+      lead: `<span class="tile t-soft" aria-hidden="true">${ic(evGlyph(e), 18)}</span>`,
+      title: L(h(e.title), 'evidence', { id: e.id }, 'dv-link'),
+      sub: h(e.claim),
+      meta: [
+        `<span class="ev-type">${h(e.type)}</span>`,
+        'Owner <b>' + nm(e.owner) + '</b>',
+        withProject && evProjectName(e) ? 'Project <b>' + evProjectName(e) + '</b>' : '',
+        (e.linked || []).length ? 'Linked to ' + (e.linked || []).map(cName).join(', ') : '',
+        evLevel(e.level),
+        `<span class="ev-rel ${e.release === 'Not released' ? 'is-no' : ''}">${h(e.release)}</span>`,
+      ],
+      badges: pill(e.review),
+      primary: L('Open', 'evidence', { id: e.id }, 'btn btn-s btn-sm'),
+    }),
+    empty: ['award', 'No evidence here yet', 'Evidence you upload, or can see, appears here.', ''],
   });
 }
 // How the evidence was provided. Older records are files.
@@ -187,7 +172,7 @@ function evDetail(e) {
       ['Evidence', 'evidence'],
       [h(e.title)],
     ]) +
-    `<div class="shead-main ev-head"><span class="tile" aria-hidden="true">${ic(evGlyph(e), 20)}</span><div class="shead-t"><div class="shead-kind">Evidence · ${h(e.type)}</div><div class="row wrap ev-ttl"><h1 class="h1">${h(e.title)}</h1>${pill(e.review)}</div><div class="shead-meta"><span>Project · ${evProjects(e).map(p => h(p.title)).join(', ') || 'Not linked to a project'}</span><span>${nm(e.owner)}</span><span>${h(e.format || 'File upload')}</span></div></div></div>` +
+    `<div class="shead-main ev-head"><span class="tile" aria-hidden="true">${ic(evGlyph(e), 20)}</span><div class="shead-t"><div class="shead-kind">Evidence · ${h(e.type)}</div><div class="row wrap ev-ttl"><h1 class="h1">${h(e.title)}</h1>${pill(e.review)}</div><div class="shead-meta"><span>Project · ${evProjects(e).map(p => h(p.title)).join(', ') || 'Not linked to a project'}</span><span>${nm(e.owner)}</span><span>${h(e.format || 'File upload')}</span></div></div>${evEditable(e) ? `<div class="shead-a">${B(ic('edit', 14) + 'Edit', 'evEdit', { id: e.id })}</div>` : ''}</div>` +
     `<ul class="ev-facts" aria-label="Status">${[
       ['Review status', pill(e.review)],
       ['Evidence Support Level', evLevel(e.level) + `<span class="cap">${h((LEVELS.find(l => l[0] === e.level) || [])[1] || '')}</span>`],
@@ -321,6 +306,37 @@ F.evr = d => {
   clearF('evr');
   UI.modal = null;
   toast('Review saved.');
+  ok();
+};
+// ---- the evidence owner edits its description while it is under review; approved evidence is not edited
+// (upload a new item instead), so a review never silently stops matching what was reviewed
+const evEditable = e => !!e && e.owner === myId() && ['Submitted', 'Needs Revision'].includes(e.review);
+A.evEdit = d => {
+  const e = byId('evidence', d.id);
+  clearF('eve');
+  UI.form.eve = { title: e.title, type: e.type, claim: e.claim || '', source: e.source || '' };
+  modal(
+    'Edit evidence',
+    () =>
+      `<form data-f="eve" class="col ev-form" novalidate>${errSum('eve')}<input type="hidden" name="id" value="${e.id}">${fi('eve', 'title', 'Title', { req: true, max: 120 })}<div class="f2">${fi('eve', 'type', 'Evidence type', { type: 'select', req: true, opts: EV_TYPES })}${fi('eve', 'source', 'Source', { req: true })}</div>${fi('eve', 'claim', 'Claim or metric it supports', { req: true })}${banner('info', '', 'The file, link or text itself is not changed here. Your reviewer is told what changed.')}<div class="actions">${B('Cancel', 'closeM')}<button class="btn btn-p" type="submit">Save changes</button></div></form>`,
+  );
+};
+F.eve = d => {
+  if (!validate('eve', d, { title: ['req'], type: ['req'], claim: ['req'], source: ['req'] })) return render();
+  const e = byId('evidence', d.id);
+  const next = { title: d.title.trim(), type: d.type, claim: d.claim.trim(), source: d.source.trim() };
+  const ch = changedFields(e, next, { title: 'title', type: 'type', claim: 'claim', source: 'source' });
+  UI.modal = null;
+  clearF('eve');
+  if (!ch.length) {
+    toast('No changes to save.');
+    return ok();
+  }
+  Object.assign(e, next);
+  e.history.push({ at: today(), t: 'Edited by the owner: ' + ch.join(', ') });
+  if (e.reviewer && e.reviewer !== myId()) notify(e.reviewer, 'Evidence edited by ' + me().name + ': ' + e.title, 'evidence', { id: e.id });
+  audit('Evidence edited', e.id, ch.join(', '));
+  toast('Evidence updated.');
   ok();
 };
 A.evResub = d => {
@@ -601,12 +617,12 @@ route('repository', 'repository', () => {
     (r === 'A'
       ? `<div class="repo-store" role="status">${ic('archive', 18)}<div class="grow"><div class="bt">Storage</div><p class="cap">${used.toFixed(1)} MB used of the 50 GB quota (${((used / 51200) * 100).toFixed(2)}%). Warning at 80%.</p></div><div class="progress repo-meter" aria-hidden="true"><span class="bar" style="width:${Math.max(1, Math.min(100, (used / 51200) * 100))}%"></span></div></div>`
       : '') +
-    dataView('repository', {
+    card('Records', '', dataView('repository', {
       label: 'records',
       items: vis,
       search: x => x.title + ' ' + x.kind + ' ' + x.tags + ' ' + x.linked.map(l => plain(cName(l))).join(' ') + ' ' + P(x.owner).name,
       searchLabel: 'Search by title, type, people or space',
-      quick: dvOpts(vis, x => x.state).length > 1 ? { label: 'State', options: dvOpts(vis, x => x.state), test: (x, v) => x.state === v } : null,
+      quick: { label: 'State', options: dvOpts(vis, x => x.state), test: (x, v) => x.state === v },
       filters: [
         { key: 'kind', label: 'Type', options: dvOpts(vis, x => x.kind), test: (x, v) => x.kind === v },
         { key: 'space', label: 'Linked to', options: dvOpts(vis, x => x.linked, l => plain(cName(l))), test: (x, v) => x.linked.includes(v) },
@@ -624,7 +640,7 @@ route('repository', 'repository', () => {
         primary: x.state !== 'Quarantined' ? B('Details', 'repoView', { id: x.id }) : '',
       }),
       empty: ['archive', 'No records.', ''],
-    })
+    }))
   );
 });
 A.repoQ = (d, el) => {
@@ -752,11 +768,11 @@ route('harvests', 'harvest', () => {
       'Source records → AI draft → human review → edit → approve/reject → release. Previous versions are kept.',
       r !== 'S' && r !== 'O' ? B(ic('plus', 16) + 'Start a Harvest', 'newHarvest', {}, 'btn-p') : '',
     ) +
-    dataView('harvests', {
+    card('Your Learning Harvests', '', dataView('harvests', {
       label: 'Harvests',
       items: list,
       search: x => x.scopeName + ' ' + x.trigger + ' ' + x.state + ' ' + x.release,
-      quick: dvOpts(list, x => x.state).length > 1 ? { label: 'State', options: ['Draft', 'Review', 'Approved', 'Rejected'].filter(s => list.some(x => x.state === s)).map(s => [s, s]), test: (x, v) => x.state === v } : null,
+      quick: { label: 'State', options: ['Draft', 'Review', 'Approved', 'Rejected'].filter(s => list.some(x => x.state === s)).map(s => [s, s]), test: (x, v) => x.state === v },
       filters: [
         { key: 'trigger', label: 'Trigger', options: dvOpts(list, x => x.trigger), test: (x, v) => x.trigger === v },
         { key: 'release', label: 'Release', options: dvOpts(list, x => x.release), test: (x, v) => x.release === v },
@@ -773,10 +789,10 @@ route('harvests', 'harvest', () => {
         sub: h(x.trigger),
         meta: [`${x.tpl === 2 ? WL() + ' template' : 'Template v1.0'} · v${x.ver}`, h(x.release)],
         badges: pill(x.state) + (x.ai ? aiTag('AI-assisted') : ''),
-        primary: L('Open', 'harvest', { id: x.id }),
+        primary: L('Open', 'harvest', { id: x.id }, 'btn btn-s btn-sm'),
       }),
       empty: ['sparkle', 'No Harvests yet.', ''],
-    })
+    }))
   );
 });
 A.newHarvest = d => {

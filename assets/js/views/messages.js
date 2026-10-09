@@ -140,9 +140,15 @@ function chatThread(kind, o, opts = {}) {
         : [];
       const allSeen = mine && seen.length && seen.length >= members.filter(x => x.pid !== myId()).length;
       const tools = acc.mem && !acc.ro && !m.hidden;
+      // no Reply on your own messages; answering and moderation stay as they were
+      const toolBtns = tools
+        ? (!mine ? B(ic('reply', 15), 'msgReply', { c: o.id, k: kind, id: m.id }, 'mtool', 'aria-label="Reply" title="Reply"') : '') +
+          (m.q && !m.ans && (mine || acc.mod) ? B(ic('check', 15), 'msgAns', { c: o.id, k: kind, id: m.id }, 'mtool', 'aria-label="Mark answered" title="Mark answered"') : '') +
+          (acc.mod && !mine ? B(ic('eye', 15), 'msgHide', { c: o.id, k: kind, id: m.id }, 'mtool', 'aria-label="Hide message" title="Hide message (moderation)"') : '')
+        : '';
       return (
         out +
-        `<div class="mrow ${mine ? 'mine' : ''} ${grouped ? 'grp' : ''}" id="msg-${m.id}">${!mine ? (grouped ? '<span class="mav-sp"></span>' : `<span class="av" title="${nm(m.by)}">${ini(m.by)}</span>`) : ''}<div class="mcol">${!mine && !grouped ? `<div class="mwho">${nm(m.by)}<span class="cap"> · ${h(roleIn(o, m.by))}</span></div>` : ''}<div class="mbub bubble ${mine ? 'me' : ''} ${m.hidden ? 'hid' : ''} ${m.q && !m.hidden ? 'q' : ''}">${rp ? `<a href="#msg-${rp.id}" class="mquote"><b>${rp.by ? nm(rp.by) : 'System'}</b><span>${h((rp.t || attOf(rp)?.n || '').slice(0, 90))}</span></a>` : ''}${m.q && !m.hidden ? `<div class="mqtag">${ic('question', 13)}${m.ans ? 'Question · answered' : 'Open question'}</div>` : ''}${m.hidden ? `<i>${h(m.t)}</i>` : m.t ? `<div class="mtext">${h(m.t).replace(/\n/g, '<br>')}</div>` : ''}${a && !m.hidden ? attCard(a, mine) : ''}<div class="mmeta">${tm(m.at)}${mine ? `<span class="mtick ${allSeen ? 'seen' : ''}" title="${seen.length ? 'Seen by ' + h(seen.join(', ')) : 'Sent'}">${ic(seen.length ? 'checks' : 'check', 14)}</span>` : ''}</div></div></div>${tools ? `<div class="mtools">${B(ic('reply', 15), 'msgReply', { c: o.id, k: kind, id: m.id }, 'mtool', 'aria-label="Reply" title="Reply"')}${m.q && !m.ans && (mine || acc.mod) ? B(ic('check', 15), 'msgAns', { c: o.id, k: kind, id: m.id }, 'mtool', 'aria-label="Mark answered" title="Mark answered"') : ''}${acc.mod && !mine ? B(ic('eye', 15), 'msgHide', { c: o.id, k: kind, id: m.id }, 'mtool', 'aria-label="Hide message" title="Hide message (moderation)"') : ''}</div>` : ''}</div>`
+        `<div class="mrow ${mine ? 'mine' : ''} ${grouped ? 'grp' : ''}" id="msg-${m.id}">${!mine ? (grouped ? '<span class="mav-sp"></span>' : `<span class="av" title="${nm(m.by)}">${ini(m.by)}</span>`) : ''}<div class="mcol">${!mine && !grouped ? `<div class="mwho">${nm(m.by)}<span class="cap"> · ${h(roleIn(o, m.by))}</span></div>` : ''}<div class="mbub bubble ${mine ? 'me' : ''} ${m.hidden ? 'hid' : ''} ${m.q && !m.hidden ? 'q' : ''}">${rp ? `<a href="#msg-${rp.id}" class="mquote"><b>${rp.by ? nm(rp.by) : 'System'}</b><span>${h((rp.t || attOf(rp)?.n || '').slice(0, 90))}</span></a>` : ''}${m.q && !m.hidden ? `<div class="mqtag">${ic('question', 13)}${m.ans ? 'Question · answered' : 'Open question'}</div>` : ''}${m.hidden ? `<i>${h(m.t)}</i>` : m.t ? `<div class="mtext">${h(m.t).replace(/\n/g, '<br>')}</div>` : ''}${a && !m.hidden ? attCard(a, mine) : ''}<div class="mmeta">${tm(m.at)}${mine ? `<span class="mtick ${allSeen ? 'seen' : ''}" title="${seen.length ? 'Seen by ' + h(seen.join(', ')) : 'Sent'}">${ic(seen.length ? 'checks' : 'check', 14)}</span>` : ''}</div></div></div>${toolBtns ? `<div class="mtools">${toolBtns}</div>` : ''}</div>`
       );
     })
     .join('');
@@ -185,16 +191,8 @@ route('messages', 'any', () => {
   }
   const sel = UI.chat.open && sp.find(x => x.o.id === UI.chat.open.id);
   if (sel) markRead(sel.o);
-  return `<div class="msgshell ${UI.chat.open && sel ? 'has-sel' : ''}"><aside class="mside">${convList(sel)}</aside><div class="mmain">${sel ? chatThread(sel.kind, sel.o) : `<div class="mnone">${empty('message', sp.length ? 'Choose a conversation' : 'No conversations yet', sp.length ? 'Real-time chat with your Circles, Rope Teams and ' + WL() + 's. Messages, files, questions and coordination in one place.' : 'You join a conversation when you become a member of a Circle, Rope Team or ' + WL() + '.')}</div>`}</div>${sel ? chatContext(sel.kind, sel.o) : ''}</div>`;
+  return `<div class="msgshell ${UI.chat.open && sel ? 'has-sel' : ''}"><aside class="mside">${convList(sel)}</aside><div class="mmain">${sel ? chatThread(sel.kind, sel.o) : `<div class="mnone">${empty('message', sp.length ? 'Choose a conversation' : 'No conversations yet', sp.length ? 'Real-time chat with your Circles, Rope Teams and ' + WL() + 's. Messages, files, questions and coordination in one place.' : 'You join a conversation when you become a member of a Circle, Rope Team or ' + WL() + '.')}</div>`}</div></div>`;
 });
-// Context pane beside the thread on wide layouts: who is here and what has been shared. Read-only.
-function chatContext(kind, o) {
-  const members = o.members.filter(m => !m.status || m.status === 'Active');
-  const msgs = (o.chat || []).filter(m => !m.sys && !m.hidden);
-  const files = msgs.map(attOf).filter(Boolean);
-  const openQ = msgs.filter(m => m.q && !m.ans).length;
-  return `<aside class="mctx" aria-label="About this conversation"><div class="mctx-id"><span class="mav tile ${kind === 'circles' ? 'c t-purple' : kind === 'rooms' ? 'a t-navy' : kind === 'dms' ? 'd t-soft' : 'r t-teal'}" aria-hidden="true">${ic(CHAT_IC[kind], 18)}</span><div class="mctx-t"><span class="mctx-k">${CHAT_KINDS[kind]}</span><b>${h(o.name)}</b></div>${pill(o.state)}</div><dl class="mctx-n"><div><dt>Messages</dt><dd>${msgs.length}</dd></div><div><dt>Files</dt><dd>${files.length}</dd></div><div><dt>Open questions</dt><dd>${openQ}</dd></div></dl><section class="mctx-s"><h2 class="mctx-h">Members<span class="cnt">${members.length}</span></h2><ul class="mctx-ppl">${members.slice(0, 8).map(m => `<li><span class="av sm">${ini(m.pid)}</span><span class="mctx-pn"><b>${nm(m.pid)}${m.pid === myId() ? ' <span class="cap">(you)</span>' : ''}</b><span class="cap">${h(roleIn(o, m.pid) || '—')}</span></span></li>`).join('')}</ul>${members.length > 8 ? `<p class="cap">+${members.length - 8} more</p>` : ''}</section>${files.length ? `<section class="mctx-s"><h2 class="mctx-h">Shared files<span class="cnt">${files.length}</span></h2><ul class="mctx-files">${files.slice(-5).reverse().map(a => `<li><span class="mext">${h((a.n.split('.').pop() || 'FILE').toUpperCase().slice(0, 4))}</span><span class="mctx-fn">${h(a.n)}</span></li>`).join('')}</ul></section>` : ''}</aside>`;
-}
 // Clicking a conversation's name lists everyone in it, with their role in that space.
 A.chatMembers = d => {
   const o = byId(d.k, d.c);

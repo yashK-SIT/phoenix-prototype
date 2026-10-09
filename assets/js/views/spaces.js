@@ -287,6 +287,48 @@ A.reRender = () => {
 // ---------- Workspace header for Circles, Rope Teams and Action Rooms ----------
 // Breadcrumb, then icon tile (space-kind hue), kind eyebrow, name and state, purpose and actions; then a facts strip:
 // your role, members, who leads, the linked project and progress counted from what the space already records.
+// ---- the owner of a Circle, Rope Team or Action Room edits its name and purpose while it is open
+const SPACE_EDIT = {
+  circles: { label: 'Circle', owner: o => o.owner, open: o => !['Completed', 'Archived/Closed'].includes(o.state), fields: [['name', 'Name'], ['purpose', 'Purpose'], ['outcome', 'Expected outcome']] },
+  ropes: { label: 'Rope Team', owner: o => o.owner, open: o => o.state === 'Active', fields: [['name', 'Name'], ['charter', 'Charter']] },
+  rooms: { label: WL(), owner: o => o.lead, open: o => o.state !== 'Closed', fields: [['name', 'Name'], ['purpose', 'Purpose / charter'], ['outcome', 'Expected outcome']] },
+};
+const spaceEditable = (kind, o) => !!o && !!SPACE_EDIT[kind] && SPACE_EDIT[kind].owner(o) === myId() && SPACE_EDIT[kind].open(o);
+const spaceEditBtn = (kind, o) => (spaceEditable(kind, o) ? B(ic('edit', 16) + 'Edit', 'spaceEdit', { kind, id: o.id }, 'btn-s') : '');
+A.spaceEdit = d => {
+  const o = byId(d.kind, d.id);
+  const cfg = SPACE_EDIT[d.kind];
+  clearF('spe');
+  UI.form.spe = Object.fromEntries(cfg.fields.map(([k]) => [k, o[k] || '']));
+  modal(
+    'Edit ' + cfg.label,
+    () =>
+      `<form data-f="spe" class="col ws-form" novalidate>${errSum('spe')}<input type="hidden" name="kind" value="${d.kind}"><input type="hidden" name="id" value="${o.id}">${cfg.fields.map(([k, l]) => fi('spe', k, l, k === 'name' ? { req: true, max: 120 } : { type: 'textarea', rows: 3, req: k !== 'outcome', help: k === 'outcome' ? 'Optional' : '' })).join('')}${banner('info', '', 'Members are told what changed. Membership, roles and records are not changed here.')}<div class="actions">${B('Cancel', 'closeM')}<button class="btn btn-p" type="submit">Save changes</button></div></form>`,
+  );
+};
+F.spe = d => {
+  const cfg = SPACE_EDIT[d.kind];
+  // the expected outcome is optional here: older spaces may not have one
+  if (!validate('spe', d, Object.fromEntries(cfg.fields.filter(([k]) => k !== 'outcome').map(([k]) => [k, ['req']])))) return render();
+  const o = byId(d.kind, d.id);
+  const next = Object.fromEntries(cfg.fields.map(([k]) => [k, String(d[k] || '').trim()]));
+  const ch = changedFields(o, next, Object.fromEntries(cfg.fields.map(([k, l]) => [k, l.toLowerCase()])));
+  UI.modal = null;
+  clearF('spe');
+  if (!ch.length) {
+    toast('No changes to save.');
+    return ok();
+  }
+  Object.assign(o, next);
+  if (d.kind === 'rooms') o.charter = o.purpose;
+  sysMsg(o, me().name + ' edited the ' + cfg.label + ': ' + ch.join(', '));
+  o.members
+    .filter(m => m.pid !== myId() && (!m.status || m.status === 'Active'))
+    .forEach(m => notify(m.pid, cfg.label + ' edited by ' + me().name + ': ' + o.name, { circles: 'circle', ropes: 'rope', rooms: 'room' }[d.kind], { id: o.id }));
+  audit(cfg.label + ' edited', o.id, ch.join(', '));
+  toast(cfg.label + ' updated.');
+  ok();
+};
 function spaceHead(kind, o, sub, crumbs, actions = '') {
   const icon = { circles: 'users', ropes: 'route', rooms: 'room' }[kind];
   const tile = { circles: 't-purple', ropes: 't-teal', rooms: 't-navy' }[kind];

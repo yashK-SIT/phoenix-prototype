@@ -417,7 +417,7 @@ route('rope', 'ropeteams', () => {
  )}${isFac ? card('Mentor feedback', 'Feedback the mentor sent to the facilitator.', S.feedback.filter(f => f.rope === x.id).map(f => lrow('message', h(f.t), nm(f.by) + ' · ' + fmt(f.at))).join('') || '<p class="cap">No feedback yet.</p>') : ''}</div>
  ${returnsCard(x) ? `<div class="c12">${returnsCard(x)}</div>` : ''}</div>`;
   }
-  const acts = isMem ? L(ic('message', 16) + 'Open in Messages', 'messages', { c: x.id, k: 'ropes' }, 'btn btn-s') : '';
+  const acts = spaceEditBtn('ropes', x) + (isMem ? L(ic('message', 16) + 'Open in Messages', 'messages', { c: x.id, k: 'ropes' }, 'btn btn-s') : '');
   // the space header, its facts and the project journey live in Overview; other sections get a one-line context bar
   if (t.cur === 'overview') body = spaceHead('ropes', x, h(x.charter), null, acts) + roleNote('ropes', x) + (pr ? stageTrack(pr, 'ropes') : '');
   else body = wsBar('ropes', x, acts) + body;

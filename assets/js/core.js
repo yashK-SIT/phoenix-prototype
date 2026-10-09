@@ -566,8 +566,7 @@ function sidebar() {
       return `${sec}<a href="#" class="nav${on}" data-a="go" data-r="${rt}"${tb ? ` data-tab="${tb}"` : ''} data-tip="${h(l)}"${on ? ' aria-current="page"' : ''}>${ic(i)}<span class="t">${h(l)}</span><span class="ts" aria-hidden="true">${h(SHORT[rt] || l.split(' ')[0])}</span>${n ? `<span class="ncount" aria-label="${n} new">${n}</span>` : ''}</a>`;
     })
     .join('');
-  const c = ctx();
-  return `<aside class="side" id="side-nav" aria-label="Main navigation"${UI.drawer ? ' role="dialog" aria-modal="true"' : ''}><div class="side-plate"><a href="#" class="brand" data-a="go" data-r="home" aria-label="PHOENIX home"><span class="mark">${MARK()}</span><span class="wm"><b>PHOENIX</b><span>Foundation Alpha</span></span></a>${c && c.kind !== 'Platform' ? `<div class="side-ctx"><small>${h(c.kind || 'Programme')}</small><span title="${h(c.name)}">${h(c.name)}</span></div>` : `<div class="side-ctx"><small>Workspace</small><span>Platform operations</span></div>`}</div><nav class="side-nav" aria-label="Sections">${items}</nav><div class="side-foot"><button type="button" class="nav side-close" data-a="drawerClose">${ic('x')}<span class="t">Close menu</span></button></div></aside>`;
+  return `<aside class="side" id="side-nav" aria-label="Main navigation"${UI.drawer ? ' role="dialog" aria-modal="true"' : ''}><div class="side-plate"><a href="#" class="brand" data-a="go" data-r="home" aria-label="PHOENIX home"><span class="mark">${MARK()}</span><span class="wm"><b>PHOENIX</b><span>Foundation Alpha</span></span></a><div class="side-user"><span class="av side-av" aria-hidden="true">${ini(myId())}</span><span class="side-user-t"><b title="${h(me().name)}">${h(me().name)}</b><small title="${h(ROLE[asg().role])}">${h(ROLE[asg().role])}</small></span></div></div><nav class="side-nav" aria-label="Sections">${items}</nav><div class="side-foot"><button type="button" class="nav side-close" data-a="drawerClose">${ic('x')}<span class="t">Close menu</span></button></div></aside>`;
 }
 // The PHOENIX mark: an ember plume rising from a baseline.
 const MARK = (s = 20) =>
@@ -1238,19 +1237,28 @@ function dataView(k, o) {
       .map(it => {
         const r = o.row(it);
         const sel = o.rowId && st.sel.includes(o.rowId(it));
-        return `<li class="dv-row${sel ? ' is-sel' : ''}">${selBox(it)}${r.lead ? `<div class="dv-lead">${r.lead}</div>` : ''}<div class="dv-main"><div class="dv-title">${r.title || ''}</div>${r.sub ? `<div class="dv-sub">${r.sub}</div>` : ''}${(r.meta || []).filter(Boolean).length ? `<div class="dv-meta">${r.meta.filter(Boolean).map(m => `<span>${m}</span>`).join('')}</div>` : ''}</div>${r.badges ? `<div class="dv-badges">${r.badges}</div>` : ''}<div class="dv-act">${r.primary || ''}${menu(it, r.menu)}</div></li>`;
+        return `<li class="dv-row${sel ? ' is-sel' : ''}">${selBox(it)}${r.lead ? `<div class="dv-lead">${r.lead}</div>` : ''}<div class="dv-main"><div class="dv-title">${r.title || ''}</div>${r.sub ? `<div class="dv-sub">${r.sub}</div>` : ''}${(r.meta || []).filter(Boolean).length ? `<div class="dv-meta">${r.meta.filter(Boolean).map(m => `<span>${m}</span>`).join('')}</div>` : ''}${r.extra || ''}</div>${r.badges ? `<div class="dv-badges">${r.badges}</div>` : ''}<div class="dv-act${r.wrap ? ' is-wrap' : ''}">${r.primary || ''}${menu(it, r.menu)}</div></li>`;
       })
       .join('')}</ul>`;
   }
-  // pagination (always visible once there are results)
+  // pagination (always visible once there are results): rows per page and the range on the left, page navigation
+  // (and Go to page on long lists) at the far right
   const pg = n
-    ? `<nav class="dv-pager" aria-label="Pagination for ${h(noun)}"><span class="dv-range">Showing <b>${from}–${to}</b> of <b>${n}</b>${n !== all.length ? ` <span class="cap">(${all.length} in total)</span>` : ''}</span><div class="dv-pages"><button type="button" class="btn btn-s btn-sm" data-a="dvPage" data-k="${kk}" data-v="${st.page - 1}"${st.page <= 1 ? ' disabled' : ''} aria-label="Previous page">${ic('chevl', 16)}<span class="hide-sm">Previous</span></button><span class="dv-nums">${dvPages(st.page, pages)
+    ? `<nav class="dv-pager" aria-label="Pagination for ${h(noun)}"><div class="dv-pager-info"><div class="dv-size"><label class="cap" for="dvz-${kk}">Rows per page</label><select class="input" id="dvz-${kk}" data-ch="dvSize" data-k="${kk}">${[10, 25, 50, 100].map(z => `<option${z === st.size ? ' selected' : ''}>${z}</option>`).join('')}</select></div><span class="dv-range">Showing <b>${from}–${to}</b> of <b>${n}</b>${n !== all.length ? ` <span class="cap">(${all.length} in total)</span>` : ''}</span></div><div class="dv-pages">${pages > 7 ? `<form class="dv-go" data-f="dvgo" novalidate><input type="hidden" name="k" value="${kk}"><label class="cap" for="dvg-${kk}">Go to page</label><input class="input" id="dvg-${kk}" name="p" type="number" min="1" max="${pages}" inputmode="numeric"><button type="submit" class="btn btn-s btn-sm">Go</button></form>` : ''}<button type="button" class="btn btn-s btn-sm" data-a="dvPage" data-k="${kk}" data-v="${st.page - 1}"${st.page <= 1 ? ' disabled' : ''} aria-label="Previous page">${ic('chevl', 16)}<span class="hide-sm">Previous</span></button><span class="dv-nums">${dvPages(st.page, pages)
         .map(p => (p === '…' ? '<span class="dv-gap" aria-hidden="true">…</span>' : `<button type="button" class="dv-num${p === st.page ? ' on' : ''}" data-a="dvPage" data-k="${kk}" data-v="${p}"${p === st.page ? ' aria-current="page"' : ''} aria-label="Page ${p}">${p}</button>`))
-        .join('')}</span><span class="dv-pos">Page ${st.page} of ${pages}</span><button type="button" class="btn btn-s btn-sm" data-a="dvPage" data-k="${kk}" data-v="${st.page + 1}"${st.page >= pages ? ' disabled' : ''} aria-label="Next page"><span class="hide-sm">Next</span>${ic('chevr', 16)}</button></div><div class="dv-size"><label class="cap" for="dvz-${kk}">Rows per page</label><select class="input" id="dvz-${kk}" data-ch="dvSize" data-k="${kk}">${[10, 25, 50, 100].map(z => `<option${z === st.size ? ' selected' : ''}>${z}</option>`).join('')}</select>${pages > 7 ? `<form class="dv-go" data-f="dvgo" novalidate><input type="hidden" name="k" value="${kk}"><label class="cap" for="dvg-${kk}">Go to page</label><input class="input" id="dvg-${kk}" name="p" type="number" min="1" max="${pages}" inputmode="numeric"><button type="submit" class="btn btn-s btn-sm">Go</button></form>` : ''}</div></nav>`
+        .join('')}</span><span class="dv-pos">Page ${st.page} of ${pages}</span><button type="button" class="btn btn-s btn-sm" data-a="dvPage" data-k="${kk}" data-v="${st.page + 1}"${st.page >= pages ? ' disabled' : ''} aria-label="Next page"><span class="hide-sm">Next</span>${ic('chevr', 16)}</button></div></nav>`
     : '';
   st._msg = n ? `Showing ${from} to ${to} of ${n} ${noun}${fOn.length || st.q.trim() || st.quick ? ', filtered' : ''}. Page ${st.page} of ${pages}.` : `No ${noun} match.`;
   return `<section class="dv${fOpen ? ' has-fpanel' : ''}" data-dv="${kk}" aria-label="${h(o.title || noun)}">${bar}${chips}${bulkBar}${body}${pg}</section>`;
 }
+// Owner edits: which fields changed, as readable labels for the history, audit log and notifications.
+//   labels = { field: 'label', … }
+const changedFields = (before, after, labels) =>
+  Object.keys(labels)
+    .filter(k => String(before[k] ?? '') !== String(after[k] ?? ''))
+    .map(k => labels[k]);
+// A menu item with the action on top and what it applies to underneath.
+const menuT = (action, detail) => `<span class="menu-t"><b>${action}</b>${detail ? `<span>${detail}</span>` : ""}</span>`;
 const dvAfter = (k, focusSel) => {
   dvSave();
   render();

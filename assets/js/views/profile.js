@@ -1155,7 +1155,7 @@ route("pathway", "pathways", () => {
             sub: h(p.mode) + " · proposed by " + nm(p.by),
             meta: [p.changeReq && p.state === "Draft" ? `You asked for: ${h(p.changeReq)}` : ""],
             badges: pill(p.state === "Draft" && p.changeReq ? "Change requested" : p.state),
-            primary: B("Conversation & activity", "pwActivity", { id: p.id }),
+            primary: pwEditBtn(p) + B("Conversation & activity", "pwActivity", { id: p.id }),
           }),
           empty: ["route", "No pathways yet", "Pathways proposed to you, or drafted by you, appear here.", ""],
         }),
@@ -1209,7 +1209,7 @@ route("pathway", "pathways", () => {
         ["none", "No current pathway", (f) => f < 0],
       ];
       const actMenu = (x, cur) =>
-        pwCanView(x) ? B(ic("message", 16) + "Conversation & activity: " + h(x.name) + (cur ? " (current)" : ""), "pwActivity", { id: x.id }, "menu-i", 'role="menuitem"') : "";
+        pwCanView(x) ? B(ic("message", 16) + menuT("Conversation & activity", h(x.name) + " · " + h(cur ? "Current" : label(x))), "pwActivity", { id: x.id }, "menu-i", 'role="menuitem"') : "";
       return card(
         "Participants",
         parts.length + " participant" + (parts.length === 1 ? "" : "s"),
@@ -1250,7 +1250,7 @@ route("pathway", "pathways", () => {
               primary:
                 revise.map((x) => B("Revise and re-propose", "pwRevise", { id: x.id }, "btn-p btn-sm")).join("") +
                 (["F", "M"].includes(r) ? B("Propose pathway", "proposePathway", { pid: p }) : c ? pwActBtn(c) : ""),
-              menu: [["F", "M"].includes(r) && c ? actMenu(c, true) : "", ...others.map((x) => actMenu(x))].filter(Boolean).join(""),
+              menu: [["F", "M"].includes(r) && c ? actMenu(c, true) : "", ...others.map((x) => actMenu(x)), ...others.filter(pwEditable).map((x) => B(ic("edit", 16) + menuT("Edit pathway", h(x.name)), "pwEdit", { id: x.id }, "menu-i", 'role="menuitem"'))].filter(Boolean).join(""),
             };
           },
           empty: ["users", "No participants yet", "Participants in this context appear here.", ""],
@@ -1449,16 +1449,42 @@ const stepsRule = [
 function pwMineCard(list) {
   const mine = list.filter((p) => p.by === myId() && PW_OPEN.includes(p.state));
   if (!mine.length) return "";
+  const where = (p) =>
+    p.state === "Awaiting reviewer"
+      ? "Waiting for the Programme Administrator to assign a Steward"
+      : p.state === "In review"
+        ? "With " + nm(p.reviewer) + " for review"
+        : p.state === "Clarification requested"
+          ? "Clarification requested by " + nm(p.reviewer) + " — reply in the conversation, or update and resubmit"
+          : "Rejected by " + nm(p.reviewer);
   return (
     card(
-      "Pathways you submitted",
-      "Reviewed by a Steward or Faculty member assigned by the Programme Administrator.",
-      mine
-        .map(
-          (p) =>
-            `<div class="lrow hm-row pw-row"><span class="tile t-soft" aria-hidden="true">${ic("route", 16)}</span><div class="lt"><b>${h(p.name)}</b><p class="cap">${p.steps.map((s) => h(s.t)).join(" → ")}</p><p class="cap pw-state">${p.state === "Awaiting reviewer" ? "Waiting for the Programme Administrator to assign a Steward" : p.state === "In review" ? "With " + nm(p.reviewer) + " for review" : p.state === "Clarification requested" ? "Clarification requested by " + nm(p.reviewer) + " — reply in the conversation, or update and resubmit" : "Rejected by " + nm(p.reviewer)}</p>${p.reviewNote && ["Clarification requested", "Rejected"].includes(p.state) ? `<p class="pw-note">${h(p.reviewNote)}</p>` : ""}</div><div class="hm-row-r">${pill(p.state, { "Clarification requested": "p-amber", Rejected: "p-red" }[p.state])}${B(ic("message", 14) + "Conversation & activity" + (convoN(p) ? " (" + convoN(p) + ")" : ""), "pwActivity", { id: p.id })}${p.state === "Clarification requested" ? B("Update and resubmit", "pwUpd", { id: p.id }, "btn-p btn-sm") : ""}</div></div>`,
-        )
-        .join(""),
+      "Pathways you submitted <span class=\"adm-n\">" + mine.length + "</span>",
+      "Reviewed by a Steward assigned by the Programme Administrator.",
+      dataView("pathway:submitted", {
+        label: "pathways",
+        items: mine,
+        search: (p) => p.name + " " + p.steps.map((s) => s.t).join(" ") + " " + p.state,
+        quick: { label: "State", options: dvOpts(mine, (p) => p.state), test: (p, v) => p.state === v },
+        sorts: [["sub", "Newest first", (a, b) => String(b.submitted || "").localeCompare(String(a.submitted || ""))], ["name", "Name", (a, b) => a.name.localeCompare(b.name)]],
+        defaultSort: "sub",
+        row: (p) => ({
+        lead: `<span class="tile t-soft" aria-hidden="true">${ic("route", 16)}</span>`,
+        title: h(p.name),
+        sub: p.steps.map((s) => h(s.t)).join(" → "),
+        meta: [where(p), p.submitted ? "Submitted " + fmt(p.submitted) : ""],
+        extra: p.reviewNote && ["Clarification requested", "Rejected"].includes(p.state) ? `<p class="pw-note">${h(p.reviewNote)}</p>` : "",
+        badges: pill(p.state, { "Clarification requested": "p-amber", Rejected: "p-red" }[p.state]),
+        primary:
+          pwEditBtn(p) +
+          B(ic("message", 14) + "Conversation & activity" + (convoN(p) ? " (" + convoN(p) + ")" : ""), "pwActivity", { id: p.id }) +
+          (p.state === "Clarification requested" ? B("Update and resubmit", "pwUpd", { id: p.id }, "btn-p btn-sm") : ""),
+        wrap: true,
+      }),
+        empty: ["route", "No pathways submitted", "Pathways you create appear here while they are reviewed.", ""],
+      }),
+      "",
+      "pf-dv",
     ) + '<div class="pf-gap"></div>'
   );
 }
@@ -1467,17 +1493,75 @@ function pwToReviewCard() {
   if (!mine.length && role() !== "F") return "";
   return (
     card(
-      "Pathways assigned to you for review",
+      "Pathways assigned to you for review <span class=\"adm-n\">" + mine.length + "</span>",
       "Approve to make the pathway current for the participant, request clarification, or reject it. Pathways waiting on the creator stay here until they are resubmitted.",
-      mine
-        .map(
-          (p) =>
-            `<div class="lrow hm-row pw-row"><span class="tile t-soft" aria-hidden="true">${ic("route", 16)}</span><div class="lt"><b>${h(p.name)}</b><p class="cap">For ${nm(p.pid)} · ${h(p.mode)}${p.resubmitted ? " · resubmitted " + fmt(p.resubmitted) : ""}</p><ol class="req-list pw-list">${p.steps.map((s) => `<li>${h(s.t)}</li>`).join("")}</ol>${p.note ? `<p class="cap">Creator’s note: ${h(p.note)}</p>` : ""}</div><div class="hm-row-r">${p.state === "Clarification requested" ? pill("Waiting for the creator", "p-amber") : ""}${B(ic("message", 14) + "Conversation & activity" + (convoN(p) ? " (" + convoN(p) + ")" : ""), "pwActivity", { id: p.id })}${B("Reject", "pwDec", { id: p.id, v: "Rejected" })}${p.state === "In review" ? B("Request clarification", "pwDec", { id: p.id, v: "Clarification requested" }) + B("Approve", "pwDec", { id: p.id, v: "Current" }, "btn-p btn-sm") : ""}</div></div>`,
-        )
-        .join("") || empty("check", "Nothing to review", "Pathways the Programme Administrator assigns to you appear here."),
+      dataView("pathway:toreview", {
+        label: "pathways",
+        items: mine,
+        search: (p) => [p.name, P(p.pid).name, P(p.by).name, ...p.steps.map((s) => s.t)].join(" "),
+        quick: { label: "State", options: dvOpts(mine, (p) => p.state), test: (p, v) => p.state === v },
+        sorts: [["name", "Name", (a, b) => a.name.localeCompare(b.name)], ["msgs", "Most messages", (a, b) => convoN(b) - convoN(a)]],
+        defaultSort: "name",
+        row: (p) => ({
+          lead: `<span class="tile t-soft" aria-hidden="true">${ic("route", 16)}</span>`,
+          title: h(p.name),
+          sub: p.steps.map((s) => h(s.t)).join(" → "),
+          meta: ["For " + nm(p.pid), "Created by " + nm(p.by), h(p.mode), p.resubmitted ? "Resubmitted " + fmt(p.resubmitted) : ""],
+          extra: p.note ? `<p class="pw-note">Creator’s note: ${h(p.note)}</p>` : "",
+          badges: p.state === "Clarification requested" ? pill("Waiting for the creator", "p-amber") : pill("In review"),
+          primary:
+            B(ic("message", 14) + "Conversation" + (convoN(p) ? " (" + convoN(p) + ")" : ""), "pwActivity", { id: p.id }) +
+            B("Reject", "pwDec", { id: p.id, v: "Rejected" }) +
+            (p.state === "In review" ? B("Request clarification", "pwDec", { id: p.id, v: "Clarification requested" }) + B("Approve", "pwDec", { id: p.id, v: "Current" }, "btn-p btn-sm") : ""),
+          wrap: true,
+        }),
+        empty: ["check", "Nothing to review", "Pathways the Programme Administrator assigns to you appear here.", ""],
+      }),
+      "",
+      "pf-dv",
     ) + '<div class="pf-gap"></div>'
   );
 }
+// ---- the creator edits a pathway until it is approved or accepted, and only while no step has been completed
+const PW_EDITABLE = ["Awaiting reviewer", "In review", "Clarification requested", "Draft", "Proposed to participant"];
+const pwEditable = (p) => !!p && p.by === myId() && PW_EDITABLE.includes(p.state) && !p.steps.some((s) => s.done);
+const pwEditBtn = (p) => (pwEditable(p) ? B(ic("edit", 14) + "Edit", "pwEdit", { id: p.id }) : "");
+A.pwEdit = (d) => {
+  const p = byId("pathways", d.id);
+  clearF("pwe");
+  UI.form.pwe = { name: p.name, steps: p.steps.map((s) => s.t).join("\n"), note: "" };
+  modal(
+    "Edit pathway",
+    () =>
+      `<form data-f="pwe" class="col pf-form" novalidate>${errSum("pwe")}<input type="hidden" name="id" value="${p.id}">${fi("pwe", "name", "Pathway name", { req: true, max: 120 })}${fi("pwe", "steps", "Steps (one per line, 3–5)", { type: "textarea", rows: 5, req: true })}${fi("pwe", "note", "What you changed (optional)", { type: "textarea", rows: 2, max: 2000, help: "Added to the pathway conversation." })}${banner("info", "", "Editing keeps the pathway’s current state (" + h(p.state) + "). Everyone involved is told it changed.")}<div class="actions">${B("Cancel", "closeM")}<button class="btn btn-p" type="submit">Save changes</button></div></form>`,
+  );
+};
+F.pwe = (d) => {
+  if (!validate("pwe", d, { name: ["req"], steps: stepsRule })) return render();
+  const p = byId("pathways", d.id);
+  const steps = d.steps
+    .split("\n")
+    .filter((x) => x.trim())
+    .map((t) => ({ t: t.trim(), done: false }));
+  const changed = [d.name.trim() !== p.name && "name", steps.map((s) => s.t).join("|") !== p.steps.map((s) => s.t).join("|") && "steps"].filter(Boolean);
+  const note = (d.note || "").trim();
+  UI.modal = null;
+  clearF("pwe");
+  if (!changed.length && !note) {
+    toast("No changes to save.");
+    return ok();
+  }
+  p.name = d.name.trim();
+  p.steps = steps;
+  if (changed.length) pwLog(p, "Edited by " + me().name + ": " + changed.join(" and ") + " changed");
+  if (note) convoAdd(p, "comment", note);
+  pwParties(p)
+    .filter((x) => x !== myId())
+    .forEach((x) => notify(x, "Pathway edited by " + me().name + ": " + p.name, "pathway"));
+  audit("Pathway edited", p.id, changed.join(", ") || "note only");
+  toast("Pathway updated.");
+  ok();
+};
 function pwForm(p) {
   const tpls = S.templates.filter((t) => t.status === "Approved");
   const src = fv("pwn", "src", p ? p.tpl || "custom" : "custom");
@@ -1592,25 +1676,55 @@ function pwAdminCards() {
   const wait = S.pathways.filter((p) => inCtx(p) && pwNeedsSteward(p));
   const inRev = S.pathways.filter((p) => inCtx(p) && p.reviewer && ["In review", "Clarification requested"].includes(p.state));
   const conv = (p) => B(ic("message", 14) + "Conversation" + (convoN(p) ? " (" + convoN(p) + ")" : ""), "pwActivity", { id: p.id });
+  const lead = `<span class="tile t-soft" aria-hidden="true">${ic("route", 16)}</span>`;
   return (
     card(
-      "Pathways waiting for a Steward",
+      "Pathways waiting for a Steward <span class=\"adm-n\">" + wait.length + "</span>",
       "Assign a Steward to approve each pathway. They approve it, reject it or request clarification from the creator.",
-      table(
-        ["Pathway", "Created by", "For", "Steps", "Submitted", ""],
-        wait.map((p) => [`<b>${h(p.name)}</b><div class="cap">${h(p.mode)}</div>`, nm(p.by), nm(p.pid), p.steps.map((x) => h(x.t)).join(" → "), fmt(p.submitted || ""), conv(p) + B("Assign Steward", "pwAssign", { id: p.id }, "btn-p btn-sm")]),
-        "No pathways are waiting for a Steward.",
-      ),
+      dataView("pathway:waiting", {
+        label: "pathways",
+        items: wait,
+        search: (p) => [p.name, P(p.by).name, P(p.pid).name, ...p.steps.map((x) => x.t)].join(" "),
+        quick: { label: "Mode", options: dvOpts(wait, (p) => p.mode), test: (p, v) => p.mode === v },
+        sorts: [["sub", "Oldest first", (a, b) => String(a.submitted || "").localeCompare(String(b.submitted || ""))], ["name", "Name", (a, b) => a.name.localeCompare(b.name)]],
+        defaultSort: "sub",
+        row: (p) => ({
+          lead,
+          title: h(p.name),
+          sub: p.steps.map((x) => h(x.t)).join(" → "),
+          meta: ["Created by " + nm(p.by), "For " + nm(p.pid), h(p.mode), p.submitted ? "Submitted " + fmt(p.submitted) : ""],
+          badges: pill("Awaiting Steward", "p-amber"),
+          primary: conv(p) + B("Assign Steward", "pwAssign", { id: p.id }, "btn-p btn-sm"),
+        }),
+        empty: ["check", "No pathways are waiting for a Steward", "New pathways appear here until you assign a Steward.", ""],
+      }),
+      "",
+      "pf-dv",
     ) +
     '<div class="section-gap"></div>' +
     card(
-      "Pathways with a Steward",
+      "Pathways with a Steward <span class=\"adm-n\">" + inRev.length + "</span>",
       "Open the conversation to follow the review or add a comment.",
-      table(
-        ["Pathway", "Created by", "Steward", "Status", ""],
-        inRev.map((p) => [`<b>${h(p.name)}</b>`, nm(p.by), nm(p.reviewer), pill(p.state), conv(p) + B("Change Steward", "pwAssign", { id: p.id })]),
-        "No pathways are with a Steward right now.",
-      ),
+      dataView("pathway:withsteward", {
+        label: "pathways",
+        items: inRev,
+        search: (p) => [p.name, P(p.by).name, P(p.pid).name, P(p.reviewer).name].join(" "),
+        quick: { label: "State", options: dvOpts(inRev, (p) => p.state), test: (p, v) => p.state === v },
+        filters: [{ key: "steward", label: "Steward", options: dvOpts(inRev, (p) => p.reviewer, (id) => P(id).name), test: (p, v) => p.reviewer === v }],
+        sorts: [["name", "Name", (a, b) => a.name.localeCompare(b.name)]],
+        defaultSort: "name",
+        row: (p) => ({
+          lead,
+          title: h(p.name),
+          sub: "Steward: " + nm(p.reviewer),
+          meta: ["Created by " + nm(p.by), "For " + nm(p.pid)],
+          badges: pill(p.state),
+          primary: conv(p) + B("Change Steward", "pwAssign", { id: p.id }),
+        }),
+        empty: ["users", "No pathways are with a Steward right now", "Pathways move here once a Steward is assigned.", ""],
+      }),
+      "",
+      "pf-dv",
     )
   );
 }

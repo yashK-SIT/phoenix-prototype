@@ -21,7 +21,7 @@ route("incidents", "governance", () => {
       "Reports are confidential. No automated sanctions.",
       B(ic("plus", 16) + "Report an incident", "incNew", {}, "btn-p"),
     ) +
-    dataView("incidents:" + (own ? "all" : "mine"), {
+    card(own ? "Cases" : "Your reports", "", dataView("incidents:" + (own ? "all" : "mine"), {
       label: own ? "cases" : "reports",
       items: list,
       search: (i) => i.kind + " " + i.desc + " " + i.where + " " + i.id,
@@ -50,7 +50,7 @@ route("incidents", "governance", () => {
         primary: L("Open", "incidents", { id: i.id }, "btn btn-s btn-sm"),
       }),
       empty: ["shield", own ? "No incidents." : "You have not reported anything.", "", ""],
-    })
+    }))
   );
 });
 function incDetail(i, own) {
@@ -297,6 +297,11 @@ F.prov = (d) => {
 // ---------- GAP CLOSURE (Section 6 user-story audit) ----------
 function migrate() {
   ensurePlatformData();
+  // accounts that are not in the seed were created in this browser (registration or Programme admin)
+  const seedIds = new Set(seed().people.map((p) => p.id));
+  S.people.forEach((p) => {
+    if (!seedIds.has(p.id) && !p.createdVia) p.createdVia = "earlier";
+  });
   // review conversations: earlier clarification requests become the first messages of the project's conversation
   S.projects.forEach((p) => {
     if (p.thread) return;
@@ -543,7 +548,9 @@ route("resources", "any", () => {
           )
         : "",
     ) +
-    `<div class="reslib"><div class="reslib-main">${
+    `${card(
+      "Resources",
+      list.length + " resource" + (list.length === 1 ? "" : "s") + " · " + list.filter((x) => x.status === "Published").length + " active · " + list.filter((x) => x.status === "In review").length + " in review. Published resources are approved sources for Ask PHOENIX.",
       // Content library: a Data View over the same visible list; type is the quick filter.
       dataView("resources:" + r, {
         label: "resources",
@@ -576,7 +583,7 @@ route("resources", "any", () => {
         }),
         empty: ["file", "No resources for your role yet.", "", ""],
       })
-    }</div><aside class="reslib-side">${
+    )}${
       r === "F"
         ? card(
             "Use-case pack: " + h(pack().name),
@@ -590,16 +597,10 @@ route("resources", "any", () => {
               ],
             ]),
             "",
-            "res-pack",
+            "res-pack res-pack-below",
           )
         : ""
-    }${card(
-      "In this library",
-      "",
-      `<dl class="res-sum"><div><dt>Resources</dt><dd>${list.length}</dd></div><div><dt>Active</dt><dd>${list.filter((x) => x.status === "Published").length}</dd></div><div><dt>In review</dt><dd>${list.filter((x) => x.status === "In review").length}</dd></div></dl><p class="cap res-note">${ic("sparkle", 13)}Resources are approved sources for Ask PHOENIX once published.</p>`,
-      "",
-      "quiet",
-    )}</aside></div>`
+    }`
   );
 });
 A.resOpen = (d) => {

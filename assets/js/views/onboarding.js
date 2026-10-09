@@ -419,8 +419,7 @@ function ONB() {
     const f = 'prof';
     const pr = S.profiles[myId()] || {};
     body = `<div class="col onb-h"><p class="over">Step 3 of ${steps.length}</p><h1 class="h1">Your minimum profile</h1><p class="sub">Just the basics. Each field shows who can see it. Every save creates a version.</p></div>${errSum(f)}
-  <form data-f="prof" class="card col onb-card" novalidate><div class="f2">${fi(f, 'name', 'Full name', { value: me().name, ro: true, vis: 'You and authorised administration' })}${fi(f, 'display', 'Display name', { req: true, value: me().display, vis: 'Your collaboration contexts' })}</div>
-  <div class="f2">${dobField(f, me().dob || '')}<span></span></div>
+  <form data-f="prof" class="card col onb-card" novalidate><div class="f2">${fi(f, 'name', 'Full name', { value: me().name, ro: true, vis: 'You and authorised administration' })}${fi(f, 'display', 'Display name', { value: me().display, ro: true, vis: 'Your collaboration contexts', help: 'Set when your account was created.' })}</div>
   ${me().org ? fi(f, 'aff', 'Organisation / affiliation', { value: S.orgs.find(o => o.id === me().org).name, ro: true, vis: 'Context-visible' }) : ''}
   ${fi(f, 'bio', 'Short biography', { type: 'textarea', rows: 3, max: 400, value: pr.bio, help: 'Optional · up to 400 characters', vis: 'Your choice — default: your collaboration contexts' })}
   ${fi(f, 'interests', 'Interests', { value: '', ph: 'Comma-separated, e.g. urban heat, food resilience', help: 'Optional' })}
@@ -512,15 +511,11 @@ A.onbBack = d => {
 F.prof = d => {
   if (
     !validate('prof', d, {
-      display: ['req'],
-      dob: dobRules(true),
       ...(role() === 'S' ? { sponsorInt: ['req'] } : {}),
     })
   )
     return render();
   const p = me();
-  p.display = d.display.trim();
-  p.dob = d.dob;
   const pr = (S.profiles[p.id] = S.profiles[p.id] || { ver: 0, history: [] });
   pr.bio = d.bio;
   pr.lang = 'English';
