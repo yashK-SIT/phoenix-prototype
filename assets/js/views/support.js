@@ -297,6 +297,7 @@ F.prov = (d) => {
 // ---------- GAP CLOSURE (Section 6 user-story audit) ----------
 function migrate() {
   ensurePlatformData();
+  S.roleReqs = S.roleReqs || [];
   // Role switching: every person has a primary role (their first assignment), and notices belong to a role.
   [...new Set(S.assign.map((a) => a.pid))].forEach((pid) => {
     const l = S.assign.filter((a) => a.pid === pid);

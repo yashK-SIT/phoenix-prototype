@@ -1087,6 +1087,9 @@ function seed() {
         reqFinal: false,
       },
     ],
+    // Role requests a person made by accepting an invitation for a role that needs approval. Each stays visible
+    // to them (in every role, so also in their primary role) with its status until they dismiss a decided one.
+    roleReqs: [],
     mentorReqs: [
       {
         id: 'mr1',

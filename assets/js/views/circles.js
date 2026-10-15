@@ -48,7 +48,7 @@ const joinBtn = (c, kind = 'circles') => {
 };
 route('circles', 'circles', () => {
   const r = role();
-  UI._afterHead = invitesCard('circles');
+  UI._afterHead = invitesCard('circles') + roleReqCard('circles');
   const all = S.circles.filter(inCtx);
   const sees = c => memberOf(c) || ['A', 'O'].includes(r) || c.facilitator === myId() || ['Requested', 'Invited'].includes((memberRec(c) || {}).status);
   // Only Circles that are part of the active role's work; Participants can also discover Circles to join.

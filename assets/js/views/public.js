@@ -77,38 +77,38 @@ function startSession(p, mfaDone) {
   if (UI.pre?.mfaPid) delete UI.pre.mfaPid;
   if (UI.pre?.addRole && UI.pre.addRole.email === p.email) {
     const r = UI.pre.addRole;
-    const na = {
-      id: uid('a'),
-      pid: p.id,
-      role: r.role,
-      ctx: r.ctx,
-      status: roleNeedsApproval(roleBase(r.role)) && !(r.inv && byId('invites', r.inv)?.preApproved) ? 'Pending role approval' : 'Active',
-      bundles: [],
-      onb: { agreement: false, consents: false, profile: true, compass: roleBase(r.role) !== 'P' },
-    };
-    if (r.inv && byId('invites', r.inv)?.until) na.until = byId('invites', r.inv).until;
     const piv = r.inv && byId('invites', r.inv);
-    if (piv && piv.preApproved) na.approval = [{ at: now(), by: piv.preApproved, note: 'Appointed by the Platform Administrator' }];
-    if (piv && piv.org && !p.org) p.org = piv.org;
-    S.assign.push(na);
-    if (r.inv) {
-      const iv = byId('invites', r.inv);
-      iv.status = 'Accepted';
+    // one account, one assignment per role: a role already held is not added again
+    const held = S.assign.find(x => x.pid === p.id && x.role === r.role && x.status !== 'Role not activated');
+    if (held) {
+      if (piv) piv.status = 'Accepted';
+      audit('Invitation matched a role already held', p.id, ROLE[r.role] + ' · ' + held.status);
+      UI.pre = null;
+      toast(`You already hold the ${ROLE[r.role]} role on this account${held.status === 'Pending role approval' ? ' — it is awaiting approval' : ''}.`);
+    } else {
+      const status = roleNeedsApproval(roleBase(r.role)) && !(piv && piv.preApproved) ? 'Pending role approval' : 'Active';
+      const step = piv && piv.preApproved ? { at: now(), by: piv.preApproved, note: 'Appointed by the Platform Administrator' } : status !== 'Active' ? { at: now(), by: 'system', note: 'Sensitive role — approval requested' } : null;
+      let na = declinedRole(p.id, r.role);
+      if (na) Object.assign(na, { ctx: r.ctx, status, approval: [...(na.approval || []), ...(step ? [step] : [])] });
+      else S.assign.push((na = { id: uid('a'), pid: p.id, role: r.role, ctx: r.ctx, status, bundles: [], onb: { agreement: false, consents: false, profile: true, compass: roleBase(r.role) !== 'P' }, ...(step ? { approval: [step] } : {}) }));
+      if (piv && piv.until) na.until = piv.until;
+      if (piv && piv.org && !p.org) p.org = piv.org;
+      if (piv) piv.status = 'Accepted';
+      if (na.status !== 'Active') {
+        S.assign
+          .filter(x => roleBase(x.role) === 'A')
+          .forEach(x =>
+            notify(x.pid, `Role approval requested: ${p.name} — ${ROLE[r.role]}`, 'admin', { tab: 'users' }, x.ctx),
+          );
+        roleReqAdd(na, { kind: 'invite', id: r.inv, name: (S.contexts.find(c => c.id === r.ctx) || {}).name, from: piv && piv.by });
+      }
+      audit('Scoped role added to existing record', p.id, ROLE[r.role] + ' · ' + r.ctx);
+      a = na.status === 'Active' ? na : a;
+      UI.pre = null;
+      toast(
+        `${ROLE[r.role]} role added to your existing account${na.status !== 'Active' ? ' — awaiting approval' : ''}.`,
+      );
     }
-    if (na.status !== 'Active') {
-      S.assign
-        .filter(x => roleBase(x.role) === 'A')
-        .forEach(x =>
-          notify(x.pid, `Role approval requested: ${p.name} — ${ROLE[r.role]}`, 'admin', { tab: 'users' }, x.ctx),
-        );
-      na.approval = [{ at: now(), by: 'system', note: 'Sensitive role — approval requested' }];
-    }
-    audit('Scoped role added to existing record', p.id, ROLE[r.role] + ' · ' + r.ctx);
-    a = na.status === 'Active' ? na : a;
-    UI.pre = null;
-    toast(
-      `${ROLE[r.role]} role added to your existing account${na.status !== 'Active' ? ' — awaiting approval' : ''}.`,
-    );
   }
   const keep = UI.pre;
   resetUI();

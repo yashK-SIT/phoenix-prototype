@@ -10,7 +10,7 @@ const ownRoomProjects = () =>
 const canCreateRoomFor = (pr) => canCreateRoom() || (!!pr && ownRoomProjects().includes(pr));
 route("rooms", "rooms", () => {
   const r = role();
-  UI._afterHead = invitesCard("rooms");
+  UI._afterHead = invitesCard("rooms") + roleReqCard("rooms");
   const list = S.rooms.filter(
     (x) =>
       inCtx(x) &&

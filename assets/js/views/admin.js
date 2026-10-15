@@ -107,43 +107,68 @@ F.inv = d => {
   toast(`${list.length - dup} invitation(s) sent${dup ? ', ' + dup + ' duplicate(s) skipped' : ''}.`);
   ok();
 };
+// A person's roles, primary first. One account holds every role; there is never a second record per role.
+const userRoles = pid => {
+  const l = S.assign.filter(x => x.pid === pid);
+  const p = primaryOf(pid);
+  return p ? [p, ...l.filter(x => x !== p)] : l;
+};
+const PENDING_ROLE = 'Pending role approval';
+// The assignment Manage and Edit open first: a role waiting for approval, else the primary role.
+const userFocus = roles => roles.find(a => a.status === PENDING_ROLE) || roles[0];
+// One entry per person, whatever the number of roles they hold. People with a role waiting for approval come first.
 // crud: the Programme Administrator can also add, view, edit and delete the account itself.
 function usersTable(ctxFilter, canEdit, crud) {
-  const as = S.assign
-    .filter(a => !ctxFilter || a.ctx === ctxFilter)
-    .sort((x, y) => (y.status === 'Pending role approval') - (x.status === 'Pending role approval'));
+  const as = S.assign.filter(a => !ctxFilter || a.ctx === ctxFilter);
+  const us = [...new Set(as.map(a => a.pid))]
+    .map(pid => ({ pid, roles: userRoles(pid).filter(a => as.includes(a)) }))
+    .sort((x, y) => y.roles.some(a => a.status === PENDING_ROLE) - x.roles.some(a => a.status === PENDING_ROLE));
   const cn = a => S.contexts.find(c => c.id === a.ctx).name;
   const uniq = xs => [...new Set(xs)].filter(Boolean);
   return dataView('adm:users:' + (ctxFilter || 'all'), {
-    label: 'role assignments',
+    label: 'users',
     searchLabel: 'Search people, emails or roles',
-    items: as,
-    search: a => P(a.pid).name + ' ' + (P(a.pid).email || '') + ' ' + ROLE[a.role] + ' ' + cn(a) + ' ' + a.bundles.join(' '),
-    quick: { label: 'Status', options: uniq(as.map(a => a.status)).map(x => [x, x]), test: (a, v) => a.status === v },
+    items: us,
+    search: u => P(u.pid).name + ' ' + (P(u.pid).email || '') + ' ' + u.roles.map(a => ROLE[a.role] + ' ' + cn(a) + ' ' + a.bundles.join(' ')).join(' '),
+    quick: { label: 'Status', options: uniq(as.map(a => a.status)).map(x => [x, x]), test: (u, v) => u.roles.some(a => a.status === v) },
     filters: [
-      { key: 'role', label: 'Role', options: uniq(as.map(a => a.role)).map(r => [r, ROLE[r] || r]), test: (a, v) => a.role === v },
-      { key: 'bundle', label: 'Permission bundle', options: S.bundles.map(b => [b.name, b.name]), test: (a, v) => a.bundles.includes(v) },
-      ...(ctxFilter ? [] : [{ key: 'ctx', label: 'Context', options: uniq(as.map(a => a.ctx)).map(c => [c, S.contexts.find(x => x.id === c).name]), test: (a, v) => a.ctx === v }]),
+      { key: 'role', label: 'Role', options: uniq(as.map(a => a.role)).map(r => [r, ROLE[r] || r]), test: (u, v) => u.roles.some(a => a.role === v) },
+      { key: 'bundle', label: 'Permission bundle', options: S.bundles.map(b => [b.name, b.name]), test: (u, v) => u.roles.some(a => a.bundles.includes(v)) },
+      ...(ctxFilter ? [] : [{ key: 'ctx', label: 'Context', options: uniq(as.map(a => a.ctx)).map(c => [c, S.contexts.find(x => x.id === c).name]), test: (u, v) => u.roles.some(a => a.ctx === v) }]),
     ],
     sorts: [
       ['name', 'Name', (a, b) => P(a.pid).name.localeCompare(P(b.pid).name)],
-      ['role', 'Role', (a, b) => String(ROLE[a.role]).localeCompare(String(ROLE[b.role]))],
-      ['status', 'Status', (a, b) => a.status.localeCompare(b.status)],
+      ['role', 'Primary role', (a, b) => String(ROLE[a.roles[0].role]).localeCompare(String(ROLE[b.roles[0].role]))],
+      ['status', 'Status', (a, b) => userFocus(a.roles).status.localeCompare(userFocus(b.roles).status)],
     ],
-    row: a => ({
-      lead: `<span class="av">${ini(a.pid)}</span>`,
-      title: nm(a.pid),
-      sub: h(P(a.pid).email),
-      meta: [`<span class="adm-role">${ROLE[a.role]}</span>`, h(cn(a))],
-      badges: pill(a.status) + a.bundles.map(b => pill(b, 'p-grey')).join('') + (a.mandate ? pill(a.mandate.valid ? 'Mandate to ' + fmt(a.mandate.until) : 'Mandate expired', a.mandate.valid ? 'p-teal' : 'p-red') : '') + (a.until ? pill((a.status === 'Expired' ? 'Role expired ' : 'Role expires ') + fmt(a.until), a.status === 'Expired' ? 'p-red' : 'p-grey') : ''),
-      primary: crud
-        ? B('View', 'userView', { id: a.id }) + (userEditable(a.pid) ? B(ic('edit', 14) + 'Edit', 'userEdit', { id: a.id }) + B('Manage', 'userManage', { id: a.id }) + CB('Delete', 'userDel', { pid: a.pid }, 'Delete the account of ' + P(a.pid).name + '? All of their roles are removed and they can no longer sign in. Their past contributions stay on record under their name.', 'btn-d btn-sm') : '')
-        : canEdit && a.pid !== myId()
-          ? B('Manage', 'userManage', { id: a.id })
-          : '',
-    }),
+    row: u => {
+      const a = userFocus(u.roles);
+      return {
+        lead: `<span class="av">${ini(u.pid)}</span>`,
+        title: nm(u.pid),
+        sub: h(P(u.pid).email),
+        meta: [u.roles.map(x => `<span class="adm-role">${h(ROLE[x.role])}</span>${isPrimary(x) ? ' (primary)' : ''}`).join(', '), h(uniq(u.roles.map(cn)).join(', '))],
+        // every role active: one Active tag; otherwise each role that is not active is named with its status
+        badges:
+          (u.roles.every(x => x.status === 'Active') ? pill('Active') : u.roles.filter(x => x.status !== 'Active').map(x => pill(ROLE[x.role] + ': ' + x.status, SC[x.status] || 'p-grey')).join('')) +
+          uniq(u.roles.flatMap(x => x.bundles)).map(b => pill(b, 'p-grey')).join('') +
+          u.roles.filter(x => x.mandate).map(x => pill(x.mandate.valid ? 'Mandate to ' + fmt(x.mandate.until) : 'Mandate expired', x.mandate.valid ? 'p-teal' : 'p-red')).join('') +
+          u.roles.filter(x => x.until).map(x => pill(ROLE[x.role] + (x.status === 'Expired' ? ' expired ' : ' expires ') + fmt(x.until), x.status === 'Expired' ? 'p-red' : 'p-grey')).join(''),
+        primary: crud
+          ? B('View', 'userView', { id: a.id }) + (userEditable(u.pid) ? B(ic('edit', 14) + 'Edit', 'userEdit', { id: a.id }) + B('Manage', 'userManage', { id: a.id }) + CB('Delete', 'userDel', { pid: u.pid }, 'Delete the account of ' + P(u.pid).name + '? All of their roles are removed and they can no longer sign in. Their past contributions stay on record under their name.', 'btn-d btn-sm') : '')
+          : canEdit && u.pid !== myId()
+            ? B('Manage', 'userManage', { id: a.id })
+            : '',
+      };
+    },
     empty: ['users', 'No users in this context yet', 'Invite people to give them a role.', ''],
   });
+}
+// Role tabs in the Manage and Edit dialogs: one account, one tab per role, primary first.
+function userRoleTabs(a, act) {
+  const roles = userRoles(a.pid);
+  if (roles.length < 2) return '';
+  return `<div class="row wrap" style="gap:6px" role="group" aria-label="Roles on this account">${roles.map(x => B(h(ROLE[x.role]) + (isPrimary(x) ? ' · Primary' : '') + (x.status === PENDING_ROLE ? ' · Pending' : x.status !== 'Active' ? ' · ' + h(x.status) : ''), act, { id: x.id }, x.id === a.id ? 'btn-p btn-sm' : 'btn-s btn-sm', 'aria-pressed="' + (x.id === a.id) + '"')).join('')}</div>`;
 }
 // ---- user accounts (Programme Administrator): create, read, update, delete
 // Not your own account, and never a Platform Administrator's account.
@@ -160,6 +185,7 @@ function userForm(p, a) {
   <div class="f2">${fi(f, 'name', 'Full name', { req: true, value: p?.name, auto: 'off' })}${fi(f, 'display', 'Display name', { req: true, value: p?.display, auto: 'off' })}</div>
   <div class="f2">${fi(f, 'email', 'Email address', { type: 'email', req: true, value: p?.email, auto: 'off' })}${dobField(f, p?.dob || '', { req: true, auto: 'off', vis: '' })}</div>
   <h3 class="h3">${a ? 'This role assignment' : 'First role'}</h3>
+  ${a ? userRoleTabs(a, 'userEdit') : ''}
   <div class="f2">${fi(f, 'role', 'Role', { type: 'select', req: true, ph: 'Choose a role', value: a?.role, opts: invitableRoles(USER_ROLES).map(r => [r.id, r.name + (r.system ? '' : ' (custom)')]) })}${fi(f, 'ctxName', 'Context', { value: cx ? cx.name : '', ro: true })}</div>
   ${a ? fi(f, 'status', 'Role status', { type: 'select', value: a.status, opts: st }) : ''}
   ${a && S.assign.filter(x => x.pid === a.pid).length > 1 ? banner('info', '', 'Account details apply to every role this person holds. Role and status apply only to this assignment.') : ''}
@@ -178,7 +204,10 @@ A.userEdit = d => {
 A.userView = d => {
   const a = byId('assign', d.id);
   const p = P(a.pid);
-  const roles = S.assign.filter(x => x.pid === p.id);
+  const roles = userRoles(p.id);
+  const [first, ...more] = roles;
+  const cx = x => h((S.contexts.find(c => c.id === x.ctx) || {}).name || x.ctx);
+  const named = x => h(ROLE[x.role]) + (x.status !== 'Active' ? ' ' + pill(x.status) : '');
   modal(
     h(p.name),
     `<div class="col" style="gap:16px">${dl([
@@ -189,9 +218,12 @@ A.userView = d => {
       ['Organization', h((S.orgs.find(o => o.id === p.org) || {}).name || '—')],
       ['Email verified', p.verified ? 'Yes' : 'No'],
       ['Account status', pill(p.status || 'Active')],
-    ])}<div><h3 class="h3" style="margin-bottom:8px">Roles</h3>${table(
-      ['Role', 'Context', 'Status', 'Expires'],
-      roles.map(x => [h(ROLE[x.role]), h((S.contexts.find(c => c.id === x.ctx) || {}).name || x.ctx), pill(x.status), x.until ? fmt(x.until) : '—']),
+    ])}<div><h3 class="h3" style="margin-bottom:8px">Roles</h3>${dl([
+      ['Primary role', first ? named(first) : '<span class="cap">None</span>'],
+      ['Additional roles', more.length ? more.map(named).join(', ') : '<span class="cap">None</span>'],
+    ])}<div style="height:12px"></div>${table(
+      ['Role', 'Type', 'Context', 'Status', 'Expires'],
+      roles.map(x => [h(ROLE[x.role]), x === first ? PRIMARY_TAG : 'Additional', cx(x), pill(x.status), x.until ? fmt(x.until) : '—']),
     )}</div><div class="actions">${B('Close', 'closeM')}${userEditable(p.id) ? B(ic('edit', 14) + 'Edit', 'userEdit', { id: a.id }, 'btn-p btn-sm') : ''}</div></div>`,
     true,
   );
@@ -221,6 +253,7 @@ F.usr = d => {
     a.role = d.role;
     if (d.status && d.status !== a.status) {
       a.status = d.status;
+      roleReqSettle(a);
       notify(a.pid, 'Your ' + ROLE[a.role] + ' access is now ' + d.status, 'home');
     }
     if (roleChanged) notify(a.pid, 'Your role was changed to ' + ROLE[a.role] + ' in ' + S.contexts.find(c => c.id === a.ctx).name, 'home');
@@ -267,8 +300,8 @@ A.userManage = d => {
   const isO = role() === 'O';
   modal(
     'Manage ' + nm(a.pid),
-    () => `<div class="adm-dlg"><div class="adm-dlg-who"><span class="av lg">${ini(a.pid)}</span><div class="adm-who-t"><b>${nm(a.pid)}</b><div class="cap">${h(P(a.pid).email)}</div></div></div>${dl([
-      ['Role', ROLE[a.role]],
+    () => `<div class="adm-dlg"><div class="adm-dlg-who"><span class="av lg">${ini(a.pid)}</span><div class="adm-who-t"><b>${nm(a.pid)}</b><div class="cap">${h(P(a.pid).email)}</div></div></div>${userRoleTabs(a, 'userManage')}${dl([
+      ['Role', ROLE[a.role] + (isPrimary(a) ? ' (primary)' : '')],
       ['Context', h(S.contexts.find(c => c.id === a.ctx).name)],
       ['Status', pill(a.status)],
       ['Assignment expires', a.until ? fmt(a.until) : 'No expiry set'],
@@ -280,7 +313,7 @@ A.userManage = d => {
   );
 };
 // Additional roles on the same account (no second account, one shared profile). The first role stays primary.
-const heldRoles = pid => S.assign.filter(x => x.pid === pid && !['Revoked', 'Role declined'].includes(x.status)).map(x => x.role);
+const heldRoles = pid => S.assign.filter(x => x.pid === pid && !['Revoked', 'Role not activated'].includes(x.status)).map(x => x.role);
 function addRoleForm(pid) {
   const opts = invitableRoles(USER_ROLES).filter(r => !heldRoles(pid).includes(r.id)).map(r => [r.id, r.name]);
   const held = S.assign.filter(x => x.pid === pid).map(x => h(ROLE[x.role]) + (isPrimary(x) ? ' (primary)' : '')).join(', ');
@@ -293,11 +326,14 @@ F.addrole = d => {
     return render();
   }
   if (heldRoles(pid).includes(d.role)) {
-    UI.err.addrole = { role: 'This person already holds that role.' };
+    const pend = S.assign.some(x => x.pid === pid && x.role === d.role && x.status === PENDING_ROLE);
+    UI.err.addrole = { role: pend ? 'This role is waiting for approval. Open it above to approve or decline it.' : 'This person already holds that role.' };
     return render();
   }
-  const na = { id: uid('a'), pid, role: d.role, ctx: ctxId(), status: 'Active', bundles: [], approval: [{ at: now(), by: myId(), note: ROLE[d.role] + ' role added by ' + me().name }], onb: { agreement: false, consents: true, profile: true, compass: true } };
-  S.assign.push(na);
+  const step = { at: now(), by: myId(), note: ROLE[d.role] + ' role added by ' + me().name };
+  const old = declinedRole(pid, d.role);
+  if (old) Object.assign(old, { status: 'Active', approval: [...(old.approval || []), step] });
+  else S.assign.push({ id: uid('a'), pid, role: d.role, ctx: ctxId(), status: 'Active', bundles: [], approval: [step], onb: { agreement: false, consents: true, profile: true, compass: true } });
   notify(pid, 'You have a new role: ' + ROLE[d.role] + '. Switch to it from the role selector at the top left.', 'home', {}, null, primaryOf(pid).role);
   audit('Role added to existing account', pid, ROLE[d.role]);
   clearF('addrole');
@@ -311,6 +347,7 @@ A.userStatus = d => {
     delete a.until;
   }
   a.status = d.v;
+  roleReqSettle(a);
   notify(a.pid, 'Your ' + ROLE[a.role] + ' access is now ' + d.v, 'home');
   audit('User ' + d.v, a.id, '');
   UI.modal = null;
@@ -392,7 +429,7 @@ route('org', 'admin', () => {
     );
   if (t.cur === 'users')
     body = card(
-      `Users in your organisation’s context <span class="adm-n">${S.assign.filter(a => a.ctx === c).length}</span>`,
+      `Users in your organisation’s context <span class="adm-n">${new Set(S.assign.filter(a => a.ctx === c).map(a => a.pid)).size}</span>`,
       'Assign roles, grant or revoke mandates within your organisation.',
       usersTable(c, true),
       '',
@@ -602,7 +639,7 @@ route('admin', 'admin', () => {
     body =
       (pend.length ? banner('warn', pend.length + ' role' + (pend.length > 1 ? 's' : '') + ' awaiting approval', 'Open Manage on the person to approve or decline the role.') + '<div style="height:12px"></div>' : '') +
       card(
-        'Users and roles ' + n(S.assign.length),
+        'Users and roles ' + n(new Set(S.assign.map(a => a.pid)).size),
         'Add, view, edit and delete user accounts. Manage roles, bundles and mandates. No direct database work.',
         usersTable(null, true, true),
         B(ic('plus', 14) + 'Add user', 'userNew', {}, 'btn-p btn-sm'),
@@ -734,6 +771,7 @@ A.roleDecide = d => {
     by: myId(),
     note: d.v === 'Active' ? 'Approved by ' + me().name : 'Declined by ' + me().name,
   });
+  roleReqSettle(a);
   notify(
     a.pid,
     d.v === 'Active'

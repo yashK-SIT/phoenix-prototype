@@ -672,7 +672,7 @@ const hmCols = (main, rail) =>
 route("home", "home", () => {
   const r = role();
   // invitations for any role, answered from whichever role is active (T has no spaces)
-  UI._afterHead = r === "T" ? "" : invitesCard();
+  UI._afterHead = r === "T" ? "" : invitesCard() + roleReqCard();
   return {
     P: homeP,
     F: homeF,

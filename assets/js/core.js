@@ -1079,6 +1079,24 @@ const primaryOf = (pid = myId()) => {
   return l.find(x => x.primary) || l[0];
 };
 const isPrimary = (x, pid = x.pid) => !!x && primaryOf(pid)?.role === x.role;
+// Role requests: accepting an invitation for a role that needs approval records a request on the person's own
+// account (src: { kind, id, name, from }). It stays visible to them with its status — Pending, Approved, Rejected.
+function roleReqAdd(a, src) {
+  S.roleReqs.push({ id: uid('rr'), pid: a.pid, aid: a.id, role: a.role, kind: src.kind, oid: src.id || null, name: src.name || '', from: src.from || null, at: now(), status: 'Pending' });
+}
+// Whenever an assignment leaves "Pending role approval", its open requests record the outcome.
+function roleReqSettle(a) {
+  if (!a || a.status === 'Pending role approval') return;
+  (S.roleReqs || [])
+    .filter(r => r.aid === a.id && r.status === 'Pending')
+    .forEach(r => {
+      r.status = a.status === 'Active' ? 'Approved' : 'Rejected';
+      r.decidedAt = now();
+      r.decidedBy = myId();
+    });
+}
+// A role the person was declined for earlier is asked for again on that same assignment, never as a second one.
+const declinedRole = (pid, role) => S.assign.find(x => x.pid === pid && x.role === role && x.status === 'Role not activated');
 // The switcher lists roles, primary first. Only active roles can be chosen for work.
 const switchChoices = (pid = myId()) => {
   const p = primaryOf(pid);

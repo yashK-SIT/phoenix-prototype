@@ -569,11 +569,16 @@ function invDo(x, mode) {
   let a = ownRole(x.base);
   if (!a) {
     const pending = roleNeedsApproval(x.base) && !invPreApproved(x);
-    a = { id: uid('a'), pid: myId(), role: x.base, ctx: asg().ctx, status: pending ? 'Pending role approval' : 'Active', bundles: [], approval: [{ at: now(), by: invFrom(x) || 'system', note: ROLE[x.base] + ' role from an invitation to ' + INV_NOUN(x.kind) + ' “' + (x.o.name || x.o.need) + '”' + (pending ? ' — approval requested' : '') }], onb: { agreement: false, consents: true, profile: true, compass: true } };
-    S.assign.push(a);
+    const step = { at: now(), by: invFrom(x) || 'system', note: ROLE[x.base] + ' role from an invitation to ' + INV_NOUN(x.kind) + ' “' + (x.o.name || x.o.need) + '”' + (pending ? ' — approval requested' : '') };
+    a = declinedRole(myId(), x.base);
+    if (a) (a.approval = a.approval || []).push(step);
+    else S.assign.push((a = { id: uid('a'), pid: myId(), role: x.base, ctx: asg().ctx, bundles: [], approval: [step], onb: { agreement: false, consents: true, profile: true, compass: true } }));
+    a.status = pending ? 'Pending role approval' : 'Active';
     audit('Role added from invitation', myId(), ROLE[x.base] + ' · ' + a.status);
     if (pending) S.assign.filter(y => roleBase(y.role) === 'A' && y.status === 'Active').forEach(y => notify(y.pid, `Role approval requested: ${me().name} — ${ROLE[x.base]} (from an invitation)`, 'admin', { tab: 'users' }));
   }
+  // a role still waiting for approval: the request stays with the person until it is decided
+  if (a.status === 'Pending role approval') roleReqAdd(a, { kind: x.kind, id: x.o.id, name: x.o.name || x.o.need, from: invFrom(x) });
   // 2. the invitation itself, through the guarded handlers
   if (x.kind === 'circles') A.circleInvite({ id: x.o.id, v: 'Active' });
   else if (x.kind === 'ropes') A.ropeInvite({ id: x.o.id, v: 'Active' });
@@ -581,13 +586,57 @@ function invDo(x, mode) {
   else A.mentorReq({ id: x.o.id, v: 'Accepted' });
   UI.modal = null;
   // 3. switch (only to an active role) and open what was joined
-  const pr = x.kind === 'mentorReqs' ? byId('projects', x.o.project) : null;
-  const dest = x.kind === 'mentorReqs' ? (pr && pr.rope ? { r: 'rope', p: { id: pr.rope } } : { r: 'ropeteams', p: {} }) : { r: INV_ROUTE[x.kind], p: { id: x.o.id } };
+  const dest = invDest(x.kind, x.o.id);
   if (mode === 'switch' && a.status === 'Active' && a.role !== roleId()) return switchTo(a.id, dest, true);
   if (a.role === roleId()) return go(dest.r, dest.p);
-  toast(a.status === 'Active' ? 'Joined. It is under your ' + ROLE[a.role] + ' role — switch from the top left.' : 'Joined. Your ' + ROLE[a.role] + ' role is waiting for approval; you will be notified.');
+  toast(a.status === 'Active' ? 'Joined. It is under your ' + ROLE[a.role] + ' role — switch from the top left.' : 'Joined. Your ' + ROLE[a.role] + ' role is waiting for approval — follow it under Your role requests on My PHOENIX.');
   ok();
 }
+// Where an invitation leads once joined: the space, or for a Mentor Request the project's Rope Team.
+function invDest(kind, id) {
+  if (kind === 'mentorReqs') {
+    const pr = byId('projects', (byId('mentorReqs', id) || {}).project);
+    return pr && pr.rope ? { r: 'rope', p: { id: pr.rope } } : { r: 'ropeteams', p: {} };
+  }
+  return INV_ROUTE[kind] ? { r: INV_ROUTE[kind], p: { id } } : { r: 'home', p: {} };
+}
+// Your role requests: shown in every role (so in the primary role too), like invitations. A request stays while
+// the Programme Administrator decides, then shows Approved or Rejected until the person dismisses it.
+const REQ_ORDER = { Pending: 0, Approved: 1, Rejected: 1 };
+const myRoleReqs = only =>
+  (S.roleReqs || [])
+    .filter(r => r.pid === myId() && !r.dismissed && (!only || r.kind === only || (only === 'ropes' && r.kind === 'mentorReqs')))
+    .sort((x, y) => REQ_ORDER[x.status] - REQ_ORDER[y.status] || String(y.decidedAt || y.at).localeCompare(String(x.decidedAt || x.at)));
+function roleReqRow(r) {
+  const a = byId('assign', r.aid);
+  const when =
+    r.status === 'Pending'
+      ? 'Requested ' + fmt(r.at) + ' · waiting for the Programme Administrator. You can work in it once it is approved.'
+      : (r.status === 'Approved' ? 'Approved ' : 'Not approved ') + fmt(r.decidedAt) + (r.decidedBy ? ' by ' + nm(r.decidedBy) : '') + (r.status === 'Rejected' ? '. Your account and other roles are unaffected.' : '');
+  const open = r.status === 'Approved' && a && a.status === 'Active' ? B(a.role === roleId() ? 'Open' : 'Switch to ' + h(ROLE[a.role]) + ' and open', 'reqOpen', { id: r.id }, 'btn-p btn-sm') : '';
+  const acts = open + (r.status !== 'Pending' ? B('Dismiss', 'reqDismiss', { id: r.id }) : '');
+  return `<div class="inv-row"><span class="tile t-purple" aria-hidden="true">${ic(r.kind === 'circles' ? 'users' : r.kind === 'rooms' ? 'room' : r.kind === 'invite' ? 'mail' : 'route', 18)}</span><div class="inv-t"><span class="cap">${INV_NOUN(r.kind) || 'Invitation'}${r.from ? ' · from ' + nm(r.from) : ''}</span><b>${h(r.name)}</b><p class="inv-ask">${h(ROLE[r.role])} role ${pill(r.status)}</p><span class="cap">${when}</span></div>${acts ? `<div class="inv-a">${acts}</div>` : ''}</div>`;
+}
+function roleReqCard(kind) {
+  const list = myRoleReqs(kind);
+  if (!list.length) return '';
+  const open = list.filter(r => r.status === 'Pending').length;
+  return `<section class="card inv-card" aria-label="Your role requests"><div class="inv-h"><span class="tile t-purple" aria-hidden="true">${ic('clock', 18)}</span><div class="inv-ht"><h2 class="h2">Your role requests</h2><p class="cap">Roles you asked for by accepting an invitation. Shown in every role until the Programme Administrator decides.</p></div>${open ? `<span class="cnt">${open}</span>` : ''}</div>${list.map(roleReqRow).join('')}</section><div class="section-gap"></div>`;
+}
+A.reqOpen = d => {
+  const r = (S.roleReqs || []).find(x => x.id === d.id && x.pid === myId());
+  const a = r && byId('assign', r.aid);
+  if (!a || a.status !== 'Active') return deny('that role is not active');
+  const dest = invDest(r.kind, r.oid);
+  if (a.role === roleId()) return go(dest.r, dest.p);
+  switchTo(a.id, dest);
+};
+A.reqDismiss = d => {
+  const r = (S.roleReqs || []).find(x => x.id === d.id && x.pid === myId());
+  if (!r || r.status === 'Pending') return;
+  r.dismissed = true;
+  ok();
+};
 A.invDecline = d => {
   const x = invFind(d.kind, d.id);
   if (!x) return deny('there is no invitation to respond to');

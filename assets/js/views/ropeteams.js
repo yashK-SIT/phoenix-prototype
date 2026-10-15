@@ -115,7 +115,7 @@ A.mentorReq = d => {
 };
 route('ropeteams', 'ropeteams', () => {
   const r = role();
-  UI._afterHead = invitesCard('ropes');
+  UI._afterHead = invitesCard('ropes') + roleReqCard('ropes');
   const list = S.ropes.filter(x => inCtx(x) && inScope('ropes', x) && (memberOf(x) || r === 'A' || r === 'O' || ['Requested', 'Invited'].includes((memberRec(x) || {}).status)));
   const joinable = S.ropes.filter(x => inCtx(x) && !list.includes(x) && ropeJoinable(x));
   const reqs = S.mentorReqs.filter(m => mentorReqVisible(m) && !(m.open && m.status === 'Pending' && (m.declinedBy || []).includes(myId())));
