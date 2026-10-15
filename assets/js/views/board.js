@@ -312,7 +312,7 @@ F.tke = d => {
 // ---- My tasks across every Action Room
 function myTasks(pid = myId()) {
   return S.rooms
-    .filter(x => inCtx(x) && memberOf(x, pid))
+    .filter(x => inCtx(x) && memberOf(x, pid) && roleSpace('rooms', x, pid))
     .flatMap(x => x.tasks.filter(k => k.owner === pid && !['Declined'].includes(k.status)).map(k => ({ x, k })))
     .sort((a, b) => (a.k.status === 'Done') - (b.k.status === 'Done') || taskOverdue(b.k) - taskOverdue(a.k) || (a.k.due || '9').localeCompare(b.k.due || '9'));
 }

@@ -31,7 +31,7 @@ F.mrq = d => {
   S.mentorReqs.push(m);
   const pr = byId('projects', d.project);
   const recips = m.open ? S.assign.filter(a => a.ctx === pr.ctx && roleBase(a.role) === 'M' && a.status === 'Active').map(a => a.pid) : [d.to];
-  recips.forEach(p => notify(p, (m.open ? 'Open Mentor Request: ' : 'Mentor Request from ' + me().name + ': ') + d.need, 'ropeteams'));
+  recips.forEach(p => notify(p, (m.open ? 'Open Mentor Request: ' : 'Mentor Request from ' + me().name + ': ') + d.need, 'ropeteams', {}, null, '*'));
   const c = byId('circles', pr.circle);
   if (c) sysMsg(c, 'Mentor Request raised: ' + d.need);
   audit('Mentor Request raised', m.id, d.need + (m.open ? ' (open)' : ''));
@@ -40,7 +40,11 @@ F.mrq = d => {
   toast(m.open ? 'Open request sent to mentors in this programme.' : 'Mentor Request sent.');
   ok();
 };
-const mentorReqVisible = m => m.to === myId() || m.from === myId() || (m.open && role() === 'M' && inCtx(byId('projects', m.project) || {}));
+// A request addressed to me is visible in every role while it is pending (it is an invitation to mentor).
+const mentorReqVisible = m => {
+  if (!inCtx(byId('projects', m.project) || {})) return false;
+  return (m.to === myId() && (role() === 'M' || m.status === 'Pending')) || m.from === myId() || (m.open && role() === 'M');
+};
 // The Rope Team facilitator is the steward who raised the request; if the project owner raised it, the project's steward
 // (or the Circle facilitator) joins as facilitator instead.
 const ropeFacilitator = (pr, m, circle) => {
@@ -57,7 +61,7 @@ A.mentorReq = d => {
   }
   m.status = d.v;
   if (m.open) m.to = myId();
-  notify(m.from, `${me().name} ${d.v.toLowerCase()} your Mentor Request: ${m.need}`, 'ropeteams');
+  notify(m.from, `${me().name} ${d.v.toLowerCase()} your Mentor Request: ${m.need}`, 'ropeteams', {}, null, byId('projects', m.project)?.owner === m.from ? 'P' : 'F');
   audit('Mentor Request ' + d.v, m.id, '');
   if (d.v === 'Accepted') {
     const pr = byId('projects', m.project);
@@ -111,7 +115,8 @@ A.mentorReq = d => {
 };
 route('ropeteams', 'ropeteams', () => {
   const r = role();
-  const list = S.ropes.filter(x => inCtx(x) && (memberOf(x) || r === 'A' || r === 'O' || ['Requested', 'Invited'].includes((memberRec(x) || {}).status)));
+  UI._afterHead = invitesCard('ropes');
+  const list = S.ropes.filter(x => inCtx(x) && inScope('ropes', x) && (memberOf(x) || r === 'A' || r === 'O' || ['Requested', 'Invited'].includes((memberRec(x) || {}).status)));
   const joinable = S.ropes.filter(x => inCtx(x) && !list.includes(x) && ropeJoinable(x));
   const reqs = S.mentorReqs.filter(m => mentorReqVisible(m) && !(m.open && m.status === 'Pending' && (m.declinedBy || []).includes(myId())));
   return (
@@ -143,7 +148,9 @@ route('ropeteams', 'ropeteams', () => {
               primary:
                 B('Details', 'mrDetails', { id: m.id }) +
                 ((m.to === myId() || (m.open && r === 'M')) && m.status === 'Pending'
-                  ? B('Decline', 'mentorReq', { id: m.id, v: 'Declined' }) + B('Accept', 'mentorReq', { id: m.id, v: 'Accepted' }, 'btn-p btn-sm')
+                  ? m.to === myId()
+                    ? B('Decline', 'invDecline', { kind: 'mentorReqs', id: m.id }) + B('Accept', 'invJoin', { kind: 'mentorReqs', id: m.id }, 'btn-p btn-sm')
+                    : B('Decline', 'mentorReq', { id: m.id, v: 'Declined' }) + B('Accept', 'mentorReq', { id: m.id, v: 'Accepted' }, 'btn-p btn-sm')
                   : ''),
             }),
             empty: ['route', r === 'M' ? 'No Mentor Requests for you right now.' : 'No requests.', '', ''],
@@ -213,7 +220,7 @@ route('rope', 'ropeteams', () => {
   if (myM && myM.status === 'Invited')
     return (
       head(h(x.name), 'You have been invited to this Rope Team', '', crumbs) +
-      card('', '', `<p>${h(x.charter)}</p>${dl([['Mentor', x.mentor ? nm(x.mentor) : '—'], ['Your role', h(normRole(myM.role))], ['Circle', cName(x.circle)]])}<div class="row ws-acts">${B('Decline', 'ropeInvite', { id: x.id, v: 'Declined' })}${B('Accept and join', 'ropeInvite', { id: x.id, v: 'Active' }, 'btn-p btn-sm')}</div>`)
+      card('', '', `<p>${h(x.charter)}</p>${dl([['Mentor', x.mentor ? nm(x.mentor) : '—'], ['Your role', h(normRole(myM.role))], ['Circle', cName(x.circle)]])}${invPanel('ropes', x)}`)
     );
   if (!isMem && !['A', 'O'].includes(r) && !inviter) {
     if (ropeJoinable(x) || (x.circle && memberOf(byId('circles', x.circle) || {})))

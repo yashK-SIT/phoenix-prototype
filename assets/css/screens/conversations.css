@@ -1054,6 +1054,25 @@
 .nmenu-empty .empty {
   padding: var(--s-4);
 }
+/* unread notices in the person's other roles: counts only, opened after a switch */
+.nmenu-else {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-3) var(--s-4);
+  border-top: 1px solid var(--line-soft);
+}
+.nmenu-else-r {
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+.nmenu-else-t {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
 .nmenu-foot {
   padding: var(--s-3) var(--s-4);
   border-top: 1px solid var(--line-soft);

@@ -19,9 +19,10 @@ const LEVELS = [
   ['E4', 'Independently verified'],
 ];
 const REVIEW = ['Submitted', 'Needs Revision', 'Approved', 'Rejected', 'Insufficient', 'Restricted', 'Withdrawn'];
+// A Facilitator / Steward sees evidence within their stewardship, not every record.
 const evVisible = e =>
   e.owner === myId() ||
-  role() === 'F' ||
+  (role() === 'F' && inScope('evidence', e)) ||
   hasB('Reviewer') ||
   role() === 'A' ||
   (e.review === 'Approved' &&
@@ -80,7 +81,7 @@ route('evidence', 'evidence', () => {
     (r === 'F' || hasB('Reviewer')) && [
       'queue',
       'Review queue',
-      S.evidence.filter(e => e.review === 'Submitted' && e.owner !== myId()).length,
+      S.evidence.filter(e => e.review === 'Submitted' && e.owner !== myId() && (role() !== 'F' || inScope('evidence', e))).length,
     ],
     ['all', 'Visible to me'],
   ]);
@@ -88,7 +89,7 @@ route('evidence', 'evidence', () => {
     t.cur === 'mine'
       ? S.evidence.filter(e => e.owner === myId())
       : t.cur === 'queue'
-        ? S.evidence.filter(e => e.review === 'Submitted' && e.owner !== myId())
+        ? S.evidence.filter(e => e.review === 'Submitted' && e.owner !== myId() && (role() !== 'F' || inScope('evidence', e)))
         : S.evidence.filter(evVisible);
   return (
     head(
@@ -756,7 +757,7 @@ route('harvests', 'harvest', () => {
     const o = byId('circles', x.scope) || byId('rooms', x.scope) || byId('ropes', x.scope);
     return (
       r === 'A' ||
-      (o && (memberOf(o) || r === 'F')) ||
+      (o && inScope('harvests', x) && (memberOf(o) || r === 'F')) ||
       x.personal === myId() ||
       ((r === 'S' || r === 'O') && x.release === 'Released')
     );
@@ -1194,7 +1195,7 @@ function hv2View(x, mem, comp, edit) {
     'hv2-status',
   )}
  <nav class="card quiet hv2-toc hide-md" aria-label="Harvest sections"><span class="lbl">In this Harvest</span><ol>${[...HV2.map(([k, t]) => [k, t]), ['decisions', 'F. Continue / Change / Stop / Test'], ['links', 'G. Links to records']].map(([k, t]) => `<li><a href="#hv2-${k}">${t}</a></li>`).join('')}</ol></nav>
- ${subj ? card('Your baseline', 'Context from your Purpose Compass. Only you see this panel; nothing here is copied into the Harvest unless you write it in.', dl([['Purpose', h(cp.PC1 || '—')], ['Outcome', h(cp.PC2 || '—')], ['Success looks like', h(cp.PC6 || '—')], ['You bring', h(cp.PC7 || '—')], ['Blockers you expected', h(cp.PC3 || '—')], ['How you learn', h(cp.learnHow || '—')], ['First milestone', h(cp.PC5 || '—')]]) + '<p class="cap hv2-note">Did an expected blocker happen? Add it to Negative findings if you want to share it.</p>', L('Open baseline', 'profile', { tab: 'compass' })) : ''}
+ ${subj ? card('Your baseline', 'Context from your Purpose Compass. Only you see this panel; nothing here is copied into the Harvest unless you write it in.', dl([['Purpose', h(cp.PC1 || '—')], ['Outcome', h(cp.PC2 || '—')], ['Success looks like', h(cp.PC6 || '—')], ['You bring', h(cp.PC7 || '—')], ['Blockers you expected', h(cp.PC3 || '—')], ['What you want to learn', h(cp.PC8 || '—')], ['First milestone', h(cp.PC5 || '—')]]) + '<p class="cap hv2-note">Did an expected blocker happen? Add it to Negative findings if you want to share it.</p>', L('Open baseline', 'profile', { tab: 'compass' })) : ''}
  ${card('Profile evolution', 'Suggested from the approved Harvest. Never applied automatically.', !hvDone(x) ? '<p class="cap">Identified when the Harvest is approved. The person reviews each suggestion and approves or rejects it.</p>' : subj ? (mineEvo.length ? `<p>${pend.length ? `<b>${pend.length}</b> waiting for your review` : 'All reviewed'} · ${mineEvo.filter(e => e.status === 'Approved').length} approved · ${mineEvo.filter(e => e.status === 'Rejected').length} rejected</p>` : '<p class="cap">No profile changes were identified.</p>') : `<p class="cap">${allEvo.length} suggestion${allEvo.length === 1 ? '' : 's'} offered to ${nm(x.subject)} · ${pend.length} awaiting their decision. Only they can approve.</p>`, subj && mineEvo.length ? L(pend.length ? 'Review profile changes' : 'See decisions', 'profile', { tab: 'evo' }, 'btn btn-p btn-sm') : '')}
  ${card('Contributions', 'Reflections, lessons, dissent and questions.', x.contrib.map(c => lrow('message', h(c.t), nm(c.by))).join('') || '<p class="cap">None yet.</p>', mem && ['Draft', 'Review'].includes(x.state) ? B(ic('plus', 14) + 'Contribute', 'hvContrib', { id: x.id }) : '')}
  ${card('Release', 'Separate approval for public or funder release.', `<p class="hv-rel">${h(x.release)}</p>${x.state === 'Approved' && comp && x.release === 'Not released' ? B('Request funder release', 'hvRel', { id: x.id, v: 'Funder release requested' }) : ''}${role() === 'A' && x.release === 'Funder release requested' ? B('Approve release', 'hvRel', { id: x.id, v: 'Released' }, 'btn-p btn-sm') : ''}`)}

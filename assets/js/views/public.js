@@ -3,9 +3,9 @@ const PUB = {};
 const authWrap = (inner, wide) =>
   `<div class="auth"><aside class="auth-side"><div class="brand"><span class="mark">${MARK(22)}</span><span class="wm"><b>PHOENIX</b><span>Foundation Alpha</span></span></div><div class="col auth-story"><p class="auth-lead">From purpose to <em>collaboration</em>, action, evidence and learning.</p><p class="auth-copy">One account across every programme you take part in. You decide what is shared, with whom, and for what purpose.</p><ol class="auth-path" aria-label="How a project moves through PHOENIX"><li class="k-circle"><span class="n">1</span><b>Circle</b><span>Agree the problem and the scope together.</span></li><li class="k-rope"><span class="n">2</span><b>Rope Team</b><span>A mentor helps the team get the requirements right.</span></li><li class="k-room"><span class="n">3</span><b>Action Room</b><span>Plan the work, deliver it and record the evidence.</span></li></ol></div><div class="col auth-notes"><div class="row">${ic('shield', 16)}<span>No personal information is public by default.</span></div><div class="row">${ic('lock', 16)}<span>AI, research and sharing permissions are separate and optional.</span></div></div></aside><main class="auth-main"><div class="mhead"><span class="mark">${MARK(20)}</span><span class="wm"><b>PHOENIX</b><span>Foundation Alpha</span></span></div><section class="auth-card ${wide ? 'wide' : ''}">${inner}</section><p class="cap auth-foot">Prototype · data is stored only in this browser · <a href="#" class="cap" data-a="resetDemo">Reset demo data</a></p></main></div>`;
 const DEMO = [
-  ['p1', 'a1', 'Participant (2 contexts)'],
+  ['p1', 'a1', 'Participant (project owner)'],
   ['p2', 'a2', 'Facilitator / Steward + Reviewer'],
-  ['p3', 'a3', 'Mentor (+ Participant in Seva Hub)'],
+  ['p3', 'a3p', 'Participant (primary) + Mentor + Facilitator'],
   ['p4', 'a4', 'Partner / Collaborator'],
   ['p6', 'a6', 'Sponsor / Funder'],
   ['p7', 'a7', 'Programme Admin + specialist bundles'],
@@ -72,7 +72,8 @@ A.loginPick = d => {
 let fails = {};
 function startSession(p, mfaDone) {
   const list = S.assign.filter(a => a.pid === p.id);
-  let a = list.find(x => x.status === 'Active') || list[0];
+  // last role used, else the primary role, else any active role
+  let a = list.find(x => x.id === p.lastAid && x.status === 'Active') || list.find(x => x.primary && x.status === 'Active') || list.find(x => x.status === 'Active') || list[0];
   if (UI.pre?.mfaPid) delete UI.pre.mfaPid;
   if (UI.pre?.addRole && UI.pre.addRole.email === p.email) {
     const r = UI.pre.addRole;
@@ -98,7 +99,7 @@ function startSession(p, mfaDone) {
       S.assign
         .filter(x => roleBase(x.role) === 'A')
         .forEach(x =>
-          notify(x.pid, `Role approval requested: ${p.name} — ${ROLE[r.role]}`, 'admin', { tab: 'users' }),
+          notify(x.pid, `Role approval requested: ${p.name} — ${ROLE[r.role]}`, 'admin', { tab: 'users' }, x.ctx),
         );
       na.approval = [{ at: now(), by: 'system', note: 'Sensitive role — approval requested' }];
     }
@@ -113,6 +114,7 @@ function startSession(p, mfaDone) {
   resetUI();
   UI.pre = keep && keep.addRole ? null : keep;
   S.session = { pid: p.id, aid: a.id };
+  if (a.status === 'Active') p.lastAid = a.id;
   audit('Signed in', 'session', p.email);
   save();
   go('home');
@@ -249,6 +251,8 @@ F.reg = d => {
     role,
     ctx: cx,
     status: 'Registered (email unverified)',
+    // the first role given at registration is the person's primary role
+    primary: true,
     bundles: [],
     onb: { agreement: false, consents: false, profile: false, compass: role !== 'P' },
     ...(inv && inv.until ? { until: inv.until } : {}),
@@ -366,7 +370,7 @@ A.doVerify = () => {
       S.assign
         .filter(x => roleBase(x.role) === 'A')
         .forEach(x =>
-          notify(x.pid, `Role approval requested: ${p.name} — ${ROLE[a.role]}`, 'admin', { tab: 'users' }),
+          notify(x.pid, `Role approval requested: ${p.name} — ${ROLE[a.role]}`, 'admin', { tab: 'users' }, x.ctx),
         );
     }
   }
@@ -385,14 +389,14 @@ PUB.pending = () => {
   }
   if (a.status === 'Expired')
     return authWrap(
-      `<h1 class="h1">Role assignment expired</h1>${banner('warn', 'Your ' + ROLE[a.role] + ' assignment in ' + h(ctx().name) + ' expired on ' + fmt(a.until), 'Ask your programme administrator to renew it. Your account, consent, correction and export rights continue, and your other roles are unaffected.')}${S.assign.filter(x => x.pid === myId()).length > 1 ? B('Switch to another role', 'switcher', {}, 'btn-s btn-block') : ''}${B('Sign out', 'logout', {}, 'btn-s btn-block')}`,
+      `<h1 class="h1">Role assignment expired</h1>${banner('warn', 'Your ' + ROLE[a.role] + ' assignment expired on ' + fmt(a.until), 'Ask your programme administrator to renew it. Your account, consent, correction and export rights continue, and your other roles are unaffected.')}${S.assign.filter(x => x.pid === myId()).length > 1 ? B('Switch to another role', 'switcher', {}, 'btn-s btn-block') : ''}${B('Sign out', 'logout', {}, 'btn-s btn-block')}`,
     );
   if (a.status === 'Deactivated')
     return authWrap(
-      `<h1 class="h1">Access deactivated</h1>${banner('err', 'Your ' + ROLE[a.role] + ' access in ' + h(ctx().name) + ' is deactivated', 'Contact your programme administrator. Your consent, correction and export rights continue.')}${S.assign.filter(x => x.pid === myId()).length > 1 ? B('Switch to another role', 'switcher', {}, 'btn-s btn-block') : ''}${B('Sign out', 'logout', {}, 'btn-s btn-block')}`,
+      `<h1 class="h1">Access deactivated</h1>${banner('err', 'Your ' + ROLE[a.role] + ' access is deactivated', 'Contact your programme administrator. Your consent, correction and export rights continue.')}${S.assign.filter(x => x.pid === myId()).length > 1 ? B('Switch to another role', 'switcher', {}, 'btn-s btn-block') : ''}${B('Sign out', 'logout', {}, 'btn-s btn-block')}`,
     );
   const declined = a.status === 'Role not activated';
-  return `<div class="auth solo"><main class="auth-main"><section class="auth-card">${declined ? `<h1 class="h1">Role not activated</h1>${banner('err', `The approver did not approve the ${ROLE[a.role]} role`, h(a.approval?.slice(-1)[0]?.note || '') + ' Your account still exists; other roles are unaffected.')}` : `<span class="tile t-purple auth-ic" aria-hidden="true">${ic('clock', 22)}</span><h1 class="h1">Your role is awaiting approval</h1><p class="sub">The <b>${ROLE[a.role]}</b> role in <b>${h(ctx().name)}</b> needs approval from an authorised approver before it becomes active.</p><div class="timeline"><div class="tl done"><span class="td">${ic('check', 14)}</span>Registered</div><div class="tl done"><span class="td">${ic('check', 14)}</span>Email verified</div><div class="tl cur"><span class="td">3</span>Role approval</div><div class="tl"><span class="td">4</span>Agreement</div></div>${banner('info', '', 'We will notify you when a decision is made.')}`}
+  return `<div class="auth solo"><main class="auth-main"><section class="auth-card">${declined ? `<h1 class="h1">Role not activated</h1>${banner('err', `The approver did not approve the ${ROLE[a.role]} role`, h(a.approval?.slice(-1)[0]?.note || '') + ' Your account still exists; other roles are unaffected.')}` : `<span class="tile t-purple auth-ic" aria-hidden="true">${ic('clock', 22)}</span><h1 class="h1">Your role is awaiting approval</h1><p class="sub">The <b>${ROLE[a.role]}</b> role needs approval from an authorised approver before it becomes active.</p><div class="timeline"><div class="tl done"><span class="td">${ic('check', 14)}</span>Registered</div><div class="tl done"><span class="td">${ic('check', 14)}</span>Email verified</div><div class="tl cur"><span class="td">3</span>Role approval</div><div class="tl"><span class="td">4</span>Agreement</div></div>${banner('info', '', 'We will notify you when a decision is made.')}`}
  ${S.assign.filter(x => x.pid === myId()).length > 1 ? B('Switch to another role', 'switcher', {}, 'btn-s btn-block') : ''}${B('Sign out', 'logout', {}, 'btn-s btn-block')}</section></main></div>`;
 };
 // LMS deep-link entry (7.13)

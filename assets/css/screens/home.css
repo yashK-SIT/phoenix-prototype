@@ -1317,6 +1317,14 @@ p.evo-act {
   border-color: var(--primary);
   background: var(--primary-soft);
 }
+.demo-acc.is-off {
+  cursor: default;
+  background: var(--sunk);
+}
+.demo-acc.is-off:hover {
+  border-color: var(--line);
+  background: var(--sunk);
+}
 .demo-acc:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;

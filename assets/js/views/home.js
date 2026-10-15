@@ -19,12 +19,14 @@ const memberRec = (o, pid = myId()) =>
   (o.members || []).find((m) => m.pid === pid);
 const stageLabel = (s) => (s === "Room" ? WL() : s);
 const pathLabel = (s) => String(s || "").replace(/Room/g, WL());
+// My spaces under the active role: membership alone is not enough, the active role's work must include the space.
+const roleSpace = (kind, o, pid) => pid !== myId() || inScope(kind, o);
 const myCircles = (pid = myId()) =>
-  S.circles.filter((c) => inCtx(c) && memberOf(c, pid));
+  S.circles.filter((c) => inCtx(c) && memberOf(c, pid) && roleSpace("circles", c, pid));
 const myRopes = (pid = myId()) =>
-  S.ropes.filter((r) => inCtx(r) && memberOf(r, pid));
+  S.ropes.filter((r) => inCtx(r) && memberOf(r, pid) && roleSpace("ropes", r, pid));
 const myRooms = (pid = myId()) =>
-  S.rooms.filter((r) => inCtx(r) && memberOf(r, pid));
+  S.rooms.filter((r) => inCtx(r) && memberOf(r, pid) && roleSpace("rooms", r, pid));
 const stewardOf = (p) => p.stewards.includes(myId());
 function inboxItems() {
   const r = role(),
@@ -62,7 +64,7 @@ function inboxItems() {
       );
   if (r === "F" || hasB("Reviewer"))
     S.evidence
-      .filter((e) => e.review === "Submitted" && e.owner !== me_)
+      .filter((e) => e.review === "Submitted" && e.owner !== me_ && (r !== "F" || inScope("evidence", e)))
       .forEach((e) =>
         out.push([
           "Evidence review",
@@ -118,7 +120,7 @@ function inboxItems() {
       );
   if (r === "F" || r === "A")
     S.harvests
-      .filter((x) => ["Draft", "Review"].includes(x.state))
+      .filter((x) => ["Draft", "Review"].includes(x.state) && inScope("harvests", x))
       .forEach((x) =>
         out.push([
           "Learning Harvest",
@@ -142,7 +144,7 @@ function inboxItems() {
       );
   if (r === "F")
     S.rooms
-      .filter((x) => inCtx(x) && memberOf(x))
+      .filter((x) => inCtx(x) && memberOf(x) && inScope("rooms", x))
       .forEach((x) =>
         (x.contribs || [])
           .filter((c) => c.status === "Submitted")
@@ -174,7 +176,7 @@ function inboxItems() {
       );
   if (r === "F" || r === "A")
     S.rooms
-      .filter((x) => inCtx(x) && x.state === "Pending approval")
+      .filter((x) => inCtx(x) && x.state === "Pending approval" && inScope("rooms", x))
       .forEach((x) =>
         out.push([
           WL() + " activation",
@@ -185,7 +187,7 @@ function inboxItems() {
         ]),
       );
   if (r === "F" || r === "A")
-    S.rooms.forEach((x) =>
+    S.rooms.filter((x) => inScope("rooms", x)).forEach((x) =>
       (x.changes || [])
         .filter((c) => ["Proposed", "Reviewed"].includes(c.state))
         .forEach((c) =>
@@ -199,7 +201,7 @@ function inboxItems() {
         ),
     );
   if (r === "F" || r === "A")
-    S.rooms.forEach((x) =>
+    S.rooms.filter((x) => inScope("rooms", x)).forEach((x) =>
       (x.joinReqs || [])
         .filter((j) => j.status === "Pending")
         .forEach((j) =>
@@ -385,6 +387,15 @@ function nextAction() {
           {},
         ];
     }
+    // Nothing else pending: start from the first milestone the person set in their Purpose Compass (PC5).
+    const ms = (S.compass[pid] || {}).PC5;
+    if (ms)
+      return [
+        "Start on your first milestone",
+        `“${h(ms)}” — from your Purpose Compass. Turn it into a project a steward can review.`,
+        "newproject",
+        {},
+      ];
     return [
       "Define your first project",
       "Turn an idea, need or opportunity into a structured project a steward can review.",
@@ -660,6 +671,8 @@ const hmCols = (main, rail) =>
 // ---------- HOME ----------
 route("home", "home", () => {
   const r = role();
+  // invitations for any role, answered from whichever role is active (T has no spaces)
+  UI._afterHead = r === "T" ? "" : invitesCard();
   return {
     P: homeP,
     F: homeF,
@@ -792,7 +805,7 @@ function homeP() {
   return (
     head(
       "My PHOENIX",
-      `Welcome back, ${h(me().display)}. Here is what needs you in ${h(ctx().name)}.`,
+      `Welcome back, ${h(me().display)}. Here is what needs you as ${h(ROLE[roleId()])}.`,
       B(
         ic("megaphone", 16) + "Post a need or offer",
         "go",
@@ -865,7 +878,7 @@ function homeP() {
    "hm-tbl",
  )}`,
    `${card("My pathway", pw ? h(pw.name) : "", pw ? `<div class="hm-prog"><div class="progress"><span class="bar" style="width:${(pw.steps.filter((s) => s.done).length / pw.steps.length) * 100}%"></span></div><span class="cap">${pw.steps.filter((s) => s.done).length} of ${pw.steps.length}</span></div><ol class="hm-steps">${pw.steps.map((s, i) => `<li class="${s.done ? "done" : i === pw.steps.findIndex((x) => !x.done) ? "cur" : ""}"><span class="hm-step-m" aria-hidden="true">${s.done ? ic("check", 12) : i + 1}</span><span class="hm-step-t"><b>${h(s.t)}</b>${s.done ? `<span class="cap">Done</span>` : i === pw.steps.findIndex((x) => !x.done) ? `<span class="cap">Next milestone</span>` : ""}</span></li>`).join("")}</ol>` : empty("route", "No current pathway", "A facilitator or mentor may propose one. You decide whether to accept it."), pw ? L("Open", "pathway") : "", "hm-list")}
- ${card("Collaborations", "In this context", [...myCircles().map((c) => hrow("users", h(c.name), "Circle · " + c.members.length + " members" + (unreadIn(c) ? " · " + unreadIn(c) + " unread" : ""), unr(c) + pill(c.state) + " " + L("Open", "circle", { id: c.id }), "t-purple")), ...myRopes().map((c) => hrow("route", h(c.name), "Rope Team · mentor " + (c.mentor ? nm(c.mentor) : "—") + (unreadIn(c) ? " · " + unreadIn(c) + " unread" : ""), unr(c) + pill(c.state) + " " + L("Open", "rope", { id: c.id }), "t-teal")), ...myRooms().map((c) => hrow("room", h(c.name), WL(), pill(c.state) + " " + L("Open", "room", { id: c.id }), "t-navy"))].join("") || empty("users", "No collaborations yet", "When a steward accepts your project, they create a Circle and invite you."), "", "hm-list")}
+ ${card("Collaborations", "Your Circles, Rope Teams and Action Rooms", [...myCircles().map((c) => hrow("users", h(c.name), "Circle · " + c.members.length + " members" + (unreadIn(c) ? " · " + unreadIn(c) + " unread" : ""), unr(c) + pill(c.state) + " " + L("Open", "circle", { id: c.id }), "t-purple")), ...myRopes().map((c) => hrow("route", h(c.name), "Rope Team · mentor " + (c.mentor ? nm(c.mentor) : "—") + (unreadIn(c) ? " · " + unreadIn(c) + " unread" : ""), unr(c) + pill(c.state) + " " + L("Open", "rope", { id: c.id }), "t-teal")), ...myRooms().map((c) => hrow("room", h(c.name), WL(), pill(c.state) + " " + L("Open", "room", { id: c.id }), "t-navy"))].join("") || empty("users", "No collaborations yet", "When a steward accepts your project, they create a Circle and invite you."), "", "hm-list")}
  ${card("Opportunities for you", "Cards visible to you", opps.map((c) => hrow("megaphone", h(c.title), h(c.kind) + " · expires " + fmt(c.expires), L("View", "card", { id: c.id }))).join("") || empty("megaphone", "No open opportunities", "New cards for your audience appear here."), L("Browse", "opportunities"), "hm-list")}
  <section class="card hm-ask"><div class="hm-ask-h"><span class="tile t-soft" aria-hidden="true">${ic("sparkle", 18)}</span><div><b>Ask PHOENIX</b><p class="cap">${consent(pid, "ai") === "Granted" ? "Private answers from approved sources. Nothing is saved to your record." : "AI processing is off. You can turn it on in Privacy & consent."}</p></div></div>${B("What should I do next to reach my milestone?", "askPreset", { q: "What should I do next to reach my milestone?" }, "btn-s")}</section>`,
  )}</div>`
@@ -885,7 +898,7 @@ function homeF() {
     .flatMap((x) => msPending(x).map(([m, it]) => [x, m, it]))
     .filter(([, , it]) => byId("evidence", it.ev)?.owner !== pid);
   const attention = S.ropes
-    .filter((r) => inCtx(r) && memberOf(r))
+    .filter((r) => inCtx(r) && memberOf(r) && inScope("ropes", r))
     .flatMap((r) =>
       Object.entries(r.indicators || {})
         .filter(
@@ -919,13 +932,13 @@ function homeF() {
   return (
     head(
       "My PHOENIX",
-      `Facilitator / Steward · ${h(ctx().name)}`,
+      `Facilitator / Steward${activeRoleTag()}`,
       B("Project reviews", "go", { r: "projects" }, "btn-p"),
     ) +
     `<div class="hm">
  <div class="hm-top">
- <section class="card hm-ns hm-purpose" aria-labelledby="hm-pp-t"><span class="over" id="hm-pp-t">Programme purpose</span><p class="hm-ns-q">${h(ctx().name)}: move climate ideas from learning to accountable local action.</p><div class="hm-spaces">${[["Circles", myCircles().length, "circles", "t-purple", "users"], ["Rope Teams", S.ropes.filter((r) => inCtx(r) && memberOf(r)).length, "ropeteams", "t-teal", "route"], [WL() + "s", myRooms().length, "rooms", "t-navy", "room"]].map(([l, n, r, t, i]) => `<a href="#" data-a="go" data-r="${r}"><span class="tile ${t}" aria-hidden="true">${ic(i, 16)}</span><b>${n}</b><span>${l}</span></a>`).join("")}</div><p class="cap hm-ns-n">Spaces you facilitate or belong to in this programme.</p></section>${nextCard()}</div>
- ${hmStrip([stat("s-purple", "t-purple", "folder", subs.length, "Project submissions", "Awaiting review or clarification", "projects"), stat("s-teal", "t-teal", "link", S.matches.filter((m) => m.steward === pid && m.status === "In steward review").length, "Match Briefs", "Awaiting your review", "matches"), stat("s-slate", "t-navy", "award", new Set([...S.evidence.filter((e) => e.review === "Submitted" && e.owner !== pid).map((e) => e.id), ...msMine.map(([, , it]) => it.ev)]).size, "Evidence to review", msMine.length ? msMine.length + " for milestones you steward" : "Set status and E0–E4", "evidence", { tab: "queue" }), stat("s-mist", "t-soft", "route", S.pathways.filter((x) => x.reviewer === pid && x.state === "In review").length, "Pathways to review", "Assigned to you", "pathway")], "Your review queue")}
+ <section class="card hm-ns hm-purpose" aria-labelledby="hm-pp-t"><span class="over" id="hm-pp-t">Programme purpose</span><p class="hm-ns-q">Move climate ideas from learning to accountable local action.</p><div class="hm-spaces">${[["Circles", myCircles().length, "circles", "t-purple", "users"], ["Rope Teams", S.ropes.filter((r) => inCtx(r) && memberOf(r) && inScope("ropes", r)).length, "ropeteams", "t-teal", "route"], [WL() + "s", myRooms().length, "rooms", "t-navy", "room"]].map(([l, n, r, t, i]) => `<a href="#" data-a="go" data-r="${r}"><span class="tile ${t}" aria-hidden="true">${ic(i, 16)}</span><b>${n}</b><span>${l}</span></a>`).join("")}</div><p class="cap hm-ns-n">Spaces you facilitate as Facilitator / Steward.</p></section>${nextCard()}</div>
+ ${hmStrip([stat("s-purple", "t-purple", "folder", subs.length, "Project submissions", "Awaiting review or clarification", "projects"), stat("s-teal", "t-teal", "link", S.matches.filter((m) => m.steward === pid && m.status === "In steward review").length, "Match Briefs", "Awaiting your review", "matches"), stat("s-slate", "t-navy", "award", new Set([...S.evidence.filter((e) => e.review === "Submitted" && e.owner !== pid && inScope("evidence", e)).map((e) => e.id), ...msMine.map(([, , it]) => it.ev)]).size, "Evidence to review", msMine.length ? msMine.length + " for milestones you steward" : "Set status and E0–E4", "evidence", { tab: "queue" }), stat("s-mist", "t-soft", "route", S.pathways.filter((x) => x.reviewer === pid && x.state === "In review").length, "Pathways to review", "Assigned to you", "pathway")], "Your review queue")}
  ${hmCols(
    `${myTasksCard()}
  ${msMine.length ? card("Milestone evidence to review", "Approve every piece before you validate the milestone.", msMine.map(([x, m, it]) => lrow("award", h(byId("evidence", it.ev)?.title || it.ev), "For “" + h(m.t) + "” · " + h(x.name) + " · added by " + nm(it.by), B("Review", "msRev", { r: x.id, id: m.id, i: msItems(m).indexOf(it) }, "btn-p btn-sm"))).join(""), L("Review queue", "evidence", { tab: "queue" }), "hm-list") : ""}
@@ -967,7 +980,7 @@ function homeM() {
   return (
     head(
       "My PHOENIX",
-      `Mentor / Advisor · ${h(ctx().name)}`,
+      `Mentor / Advisor${activeRoleTag()}`,
       B(ic("message", 16) + "Messages", "go", { r: "messages" }, "btn-s"),
     ) +
     `<div class="hm">

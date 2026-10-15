@@ -301,6 +301,13 @@ const G = {
   userEdit: d => (role() === 'A' && !!byId('assign', d.id) && userEditable(byId('assign', d.id).pid)) || 'you cannot edit this account',
   usr: d => (role() === 'A' && (!d.aid || (!!byId('assign', d.aid) && userEditable(byId('assign', d.aid).pid)))) || 'you cannot edit this account',
   userDel: d => (role() === 'A' && S.people.some(p => p.id === d.pid) && userEditable(d.pid)) || 'you cannot delete this account',
+  // invitations: only the invited person answers, from any of their roles
+  invJoin: d => !!invFind(d.kind, d.id) || 'there is no invitation to respond to',
+  invGo: d => !!invFind(d.kind, d.id) || 'there is no invitation to respond to',
+  invDecline: d => !!invFind(d.kind, d.id) || 'there is no invitation to respond to',
+  circleInvite: d => (memberRec(byId('circles', d.id) || {}) || {}).status === 'Invited' || 'there is no invitation to respond to',
+  roomInvite: d => (memberRec(byId('rooms', d.id) || {}) || {}).status === 'Invited' || 'there is no invitation to respond to',
+  addrole: d => (role() === 'A' && S.people.some(p => p.id === d.pid) && userEditable(d.pid) && !!roleRec(d.role) && roleBase(d.role) !== 'T') || 'only a Programme Administrator adds a role to another person’s account',
   invNew: () => ['A', 'O'].includes(role()) || 'only administrators create invitations',
   inv: d =>
     role() === 'A' ||
@@ -311,7 +318,19 @@ const G = {
     return (i && (role() === 'A' || (role() === 'O' && i.ctx === ctxId()))) || 'not permitted';
   },
   cfg: () => ['A', 'O'].includes(role()) || 'only administrators change configuration',
-  vote: d => (d.c ? true : role() === 'A' || 'only a Programme Administrator changes the voting rule'),
+  // Circle vote: one eligible member = one vote, once per round, on an open vote in an active Circle.
+  vote: d => {
+    if (!d.c) return role() === 'A' || 'only a Programme Administrator changes the voting rule';
+    const c = byId('circles', d.c);
+    const p = c && c.polls.find(x => x.id === d.p);
+    if (!p) return 'vote not found';
+    if (!eligibleVoter(c, myId())) return 'only the project owner and active Circle members vote';
+    if (c.state !== 'Active') return 'the Circle is not active';
+    if (p.status !== 'Open') return 'this vote is not open';
+    if (![YES, NO, NTA].includes(+d.i)) return 'choose Yes, No or NTA';
+    if (p.votes[myId()] != null) return 'you have already voted in this round';
+    return true;
+  },
   cfgRestore: () => role() === 'A' || 'only a Programme Administrator restores configuration',
   packAct: () => role() === 'A' || 'only a Programme Administrator activates packs',
   srcToggle: () => hasB('AI Owner') || 'only the AI Owner approves AI sources',
@@ -576,11 +595,6 @@ Object.assign(G, {
   poled: platformOnly('writes policies'),
   polPublish: platformOnly('publishes policies'),
   polDel: platformOnly('deletes policy drafts'),
-  cqNew: platformOnly('manages Purpose Compass questions'),
-  cqEdit: platformOnly('manages Purpose Compass questions'),
-  cq: platformOnly('manages Purpose Compass questions'),
-  cqMove: platformOnly('manages Purpose Compass questions'),
-  cqDel: platformOnly('manages Purpose Compass questions'),
 });
 // ---- Rope Team documents; project owners create their own Action Room; milestone validation
 // Mentor Requests form a Rope Team, so they are not raised on the Circle → Room path.
@@ -691,6 +705,23 @@ Object.assign(G, {
     const p = byId('pathways', d.id);
     return (p && p.reviewer === myId() && (p.state === 'In review' || (d.v === 'Rejected' && p.state === 'Clarification requested'))) || 'only the assigned reviewer decides on this pathway';
   },
+});
+// ---- minimum age: every handler that stores a date of birth re-checks it here, independent of the form's own
+// validation and the date picker's limit. Registration runs before sign-in, so this sits outside the session guard.
+const DOB_WRITERS = { reg: 'reg', basics: 'basics', usr: 'usr' };
+Object.entries(DOB_WRITERS).forEach(([k, f]) => {
+  const orig = F[k];
+  if (typeof orig !== 'function') return;
+  F[k] = (d, ...rest) => {
+    const v = ((d && d.dob) || '').trim();
+    if (v && !adultOk(v)) {
+      audit('Date of birth rejected', f, 'Under ' + MIN_AGE + ' or invalid', 'denied');
+      UI.form[f] = d;
+      UI.err[f] = { ...(UI.err[f] || {}), dob: dobOk(v) ? UNDERAGE_MSG : 'Enter a valid date of birth in the past.' };
+      return render();
+    }
+    return orig(d, ...rest);
+  };
 });
 // Wrap handlers. Same key may exist in A (click) and F (form submit); both are guarded.
 Object.keys(G).forEach(k => {

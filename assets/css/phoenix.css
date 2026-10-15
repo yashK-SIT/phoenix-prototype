@@ -734,6 +734,34 @@ code,
   font-weight: 600;
   color: var(--on-plate-2);
 }
+.side-user-t .side-user-ctx {
+  font-weight: 500;
+}
+/* active role, with a Primary tag when it is the person's first role */
+.side-user-t .side-user-role {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.side-user-rn {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.side-user-prim {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  font-size: 10px;
+  line-height: 14px;
+  font-weight: 700;
+  color: var(--on-plate);
+}
+.role-primary {
+  font-size: 11px;
+}
 .side-user-chev {
   flex: none;
   display: flex;

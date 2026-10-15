@@ -57,7 +57,7 @@ route("profile", "any", () => {
               ' · <span class="cap">Private; released only for an approved introduction</span>',
           ],
           ["Biography", h(pr.bio || "—")],
-          ["Active role", ROLE[role()] + " · " + h(ctx().name)],
+          ["Active role", ROLE[role()] + (isPrimary(asg()) ? " (primary role)" : "")],
         ]),
         B(ic("edit", 14) + "Edit basics", "editBasics"),
         "pf-basic",
@@ -378,7 +378,7 @@ route("profile", "any", () => {
   }
   const org = me().org && S.orgs.find((o) => o.id === me().org);
   return (
-    `<header class="shead-main pf-head"><span class="av lg pf-av" aria-hidden="true">${ini(pid)}</span><div class="shead-t"><p class="shead-kind">Profile</p><div class="row wrap pf-title"><h1 class="h1">${h(me().name)}</h1>${pill(ROLE[role()], "p-teal")}</div><div class="shead-meta"><span>${h(ctx().name)}</span>${org ? `<span>${h(org.name)}</span>` : ""}<span>Profile v${pr.ver}</span><span>${cl.length} claim${cl.length === 1 ? "" : "s"}</span></div><p class="pf-sub">Your versioned profile. You can correct any claim and compare versions.</p></div></header>` +
+    `<header class="shead-main pf-head"><span class="av lg pf-av" aria-hidden="true">${ini(pid)}</span><div class="shead-t"><p class="shead-kind">Profile</p><div class="row wrap pf-title"><h1 class="h1">${h(me().name)}</h1>${pill(ROLE[role()], "p-teal")}</div><div class="shead-meta"><span>${switchChoices(pid).length > 1 ? "Same profile in all " + switchChoices(pid).length + " roles" : "Your profile"}</span>${org ? `<span>${h(org.name)}</span>` : ""}<span>Profile v${pr.ver}</span><span>${cl.length} claim${cl.length === 1 ? "" : "s"}</span></div><p class="pf-sub">Your versioned profile. You can correct any claim and compare versions.</p></div></header>` +
     t.html +
     body
   );
@@ -1168,17 +1168,19 @@ route("pathway", "pathways", () => {
     ...new Set(
       S.assign
         .filter(
-          (a) => a.ctx === ctxId() && roleBase(a.role) === "P" && a.status === "Active",
+          (a) => roleBase(a.role) === "P" && a.status === "Active" && a.pid !== pid,
         )
         .map((a) => a.pid),
     ),
-  ].filter((p) => r !== "M" || myRopes().some((rt) => memberOf(rt, p)) || S.pathways.some((x) => x.pid === p && x.by === pid));
+  ].filter((p) => (r === "M" ? myRopes().some((rt) => memberOf(rt, p)) || S.pathways.some((x) => x.pid === p && x.by === pid) : r === "F" ? S.pathways.some((x) => x.pid === p && inScope("pathways", x)) : true));
   return (
     head(
       "Pathways",
       r === "M"
         ? "For participants in your Rope Teams"
-        : "Participants in this context",
+        : r === "F"
+          ? "Participants whose pathways you created or review as Steward"
+          : "Participants",
       r === "A"
         ? B("Template library", "go", { r: "admin", tab: "library" }, "btn-s")
         : "",
@@ -1186,7 +1188,7 @@ route("pathway", "pathways", () => {
     (r === "A" ? pwAdminCards() + '<div class="section-gap"></div>' : "") +
     pwToReviewCard() +
     (() => {
-      const pwOf = (p) => S.pathways.filter((x) => x.pid === p && inCtx(x));
+      const pwOf = (p) => S.pathways.filter((x) => x.pid === p && inCtx(x) && inScope("pathways", x));
       const curOf = (p) => pwOf(p).find((x) => x.state === "Current");
       const lastOf = (c) =>
         c &&
@@ -1390,6 +1392,7 @@ F.pp = (d) => {
     id: uid("pw"),
     pid: d.pid,
     ctx: ctxId(),
+    byRole: role(), // the role the creator acted in; keeps it out of their other roles
     name:
       d.mode === "3" ? d.name : tpl.name + (d.mode === "2" ? " (adapted)" : ""),
     tpl: d.tpl || null,
@@ -1418,7 +1421,7 @@ F.pp = (d) => {
   if (state === "Awaiting reviewer") {
     p.submitted = today();
     ctxAdmins(ctxId()).forEach((a) => notify(a, "Assign a Steward to the pathway “" + p.name + "” from " + me().name, "admin", { tab: "requests" }));
-  } else notify(d.pid, "A pathway was proposed to you: " + p.name, "pathway");
+  } else notify(d.pid, "A pathway was proposed to you: " + p.name, "pathway", { id: p.id });
   audit("Pathway proposed", p.id, p.mode);
   clearF("pp");
   UI.modal = null;
@@ -1564,7 +1567,7 @@ F.pwe = (d) => {
   if (note) convoAdd(p, "comment", note);
   pwParties(p)
     .filter((x) => x !== myId())
-    .forEach((x) => notify(x, "Pathway edited by " + me().name + ": " + p.name, "pathway"));
+    .forEach((x) => notify(x, "Pathway edited by " + me().name + ": " + p.name, "pathway", { id: p.id }));
   audit("Pathway edited", p.id, changed.join(", ") || "note only");
   toast("Pathway updated.");
   ok();
@@ -1605,7 +1608,7 @@ F.pwn = (d) => {
     convoAdd(p0, "resubmit", d.note.trim());
     pwParties(p0)
       .filter((x) => x !== myId())
-      .forEach((x) => notify(x, "Pathway resubmitted for review: " + p0.name + " (" + me().name + ")", "pathway"));
+      .forEach((x) => notify(x, "Pathway resubmitted for review: " + p0.name + " (" + me().name + ")", "pathway", { id: p0.id }));
     audit("Pathway resubmitted", p0.id, d.note);
     toast("Resubmitted to " + P(p0.reviewer).name + ".");
   } else {
@@ -1614,6 +1617,7 @@ F.pwn = (d) => {
       id: uid("pw"),
       pid: myId(),
       ctx: ctxId(),
+      byRole: role(), // the role the creator acted in; keeps it out of their other roles
       name: d.name.trim(),
       tpl: tpl ? tpl.id : null,
       mode: tpl ? "Based on template “" + tpl.name + "”" : "Custom pathway",
@@ -1669,9 +1673,9 @@ F.pwas = (d) => {
   p.reviewer = d.rv;
   if (p.state !== "Clarification requested") p.state = "In review";
   pwLog(p, (was ? "Steward changed by " + me().name + ": " + P(was).name + " → " : "Steward assigned by " + me().name + ": ") + P(d.rv).name);
-  notify(d.rv, "Pathway assigned to you for approval: " + p.name + " (" + P(p.by).name + ")", "pathway");
-  [...new Set([p.by, p.pid])].forEach((x) => notify(x, "A Steward was assigned to the pathway “" + p.name + "”: " + P(d.rv).name, "pathway"));
-  if (was) notify(was, "You are no longer the Steward for the pathway “" + p.name + "”", "pathway");
+  notify(d.rv, "Pathway assigned to you for approval: " + p.name + " (" + P(p.by).name + ")", "pathway", { id: p.id });
+  [...new Set([p.by, p.pid])].forEach((x) => notify(x, "A Steward was assigned to the pathway “" + p.name + "”: " + P(d.rv).name, "pathway", { id: p.id }));
+  if (was) notify(was, "You are no longer the Steward for the pathway “" + p.name + "”", "pathway", { id: p.id });
   audit("Pathway Steward assigned", p.id, (was ? was + " → " : "") + d.rv);
   UI.modal = null;
   clearF("pwas");
@@ -1742,8 +1746,8 @@ A.pwDec = (d) => {
     p.state = "Proposed to participant";
     p.reviewNote = "";
     pwLog(p, "Approved by " + me().name + " and proposed to the participant");
-    notify(p.pid, "Pathway proposed to you: " + p.name, "pathway");
-    notify(p.by, "Your pathway “" + p.name + "” was approved by " + me().name, "pathway");
+    notify(p.pid, "Pathway proposed to you: " + p.name, "pathway", { id: p.id });
+    notify(p.by, "Your pathway “" + p.name + "” was approved by " + me().name, "pathway", { id: p.id });
     audit("Pathway approved", p.id, "Proposed to participant");
     toast("Approved. The participant is asked to accept it.");
     return ok();
@@ -1758,7 +1762,7 @@ A.pwDec = (d) => {
     p.state = "Current";
     p.reviewNote = "";
     pwLog(p, "Approved by " + me().name + " — it became the current pathway");
-    notify(p.pid, "Your pathway “" + p.name + "” was approved and is now current", "pathway");
+    notify(p.pid, "Your pathway “" + p.name + "” was approved and is now current", "pathway", { id: p.id });
     audit("Pathway approved", p.id, "");
     toast("Approved. It is now the participant’s current pathway.");
     return ok();
@@ -1779,7 +1783,7 @@ F.pwd = (d) => {
   convoAdd(p, rej ? "reject" : "clarify", p.reviewNote);
   pwParties(p)
     .filter((x) => x !== myId())
-    .forEach((x) => notify(x, (rej ? "Pathway rejected: " : "Clarification requested on the pathway: ") + p.name, "pathway"));
+    .forEach((x) => notify(x, (rej ? "Pathway rejected: " : "Clarification requested on the pathway: ") + p.name, "pathway", { id: p.id }));
   audit("Pathway " + p.state.toLowerCase(), p.id, p.reviewNote);
   UI.modal = null;
   clearF("pwd");
@@ -1804,9 +1808,9 @@ A.pwReview = (d) => {
   }
   p.state = d.v;
   pwLog(p, "Approved by Reviewer and proposed to the participant");
-  notify(p.pid, "Pathway proposed to you: " + p.name, "pathway");
+  notify(p.pid, "Pathway proposed to you: " + p.name, "pathway", { id: p.id });
   if (p.by !== p.pid)
-    notify(p.by, "Pathway approved by a Reviewer: " + p.name, "pathway");
+    notify(p.by, "Pathway approved by a Reviewer: " + p.name, "pathway", { id: p.id });
   audit("Pathway review", p.id, d.v);
   ok();
 };
@@ -1820,6 +1824,7 @@ F.pwr = (d) => {
     p.by,
     "Pathway returned by reviewer: " + p.name + " — " + d.why,
     "pathway",
+    { id: p.id },
   );
   audit("Pathway review", p.id, "Returned: " + d.why);
   UI.modal = null;
@@ -1836,7 +1841,7 @@ A.pwAccept = (d) => {
     });
   p.state = "Current";
   pwLog(p, "Accepted the pathway — it became current");
-  notify(p.by, `${me().name} accepted the pathway “${p.name}”`, "pathway");
+  notify(p.by, `${me().name} accepted the pathway “${p.name}”`, "pathway", { id: p.id });
   audit("Pathway accepted", p.id, "");
   ok();
 };
@@ -1858,6 +1863,7 @@ F.pwc = (d) => {
     p.by,
     `${me().name} requested a change to “${p.name}”: ${d.why}`,
     "pathway",
+    { id: p.id },
   );
   audit("Pathway change requested", p.id, d.why);
   UI.modal = null;
@@ -1904,10 +1910,10 @@ F.pwv = (d) => {
   p.state = !p.mode.startsWith("3") ? "Proposed to participant" : p.reviewer ? "In review" : "Awaiting reviewer";
   p.changeReq = "";
   convoAdd(p, "resubmit", d.note.trim());
-  if (p.state === "In review") notify(p.reviewer, "Revised pathway awaiting your approval: " + p.name, "pathway");
+  if (p.state === "In review") notify(p.reviewer, "Revised pathway awaiting your approval: " + p.name, "pathway", { id: p.id });
   else if (p.state === "Awaiting reviewer")
     ctxAdmins(p.ctx).forEach((a) => notify(a, "Assign a Steward to the revised pathway “" + p.name + "”", "admin", { tab: "requests" }));
-  else notify(p.pid, "Revised pathway proposed to you: " + p.name, "pathway");
+  else notify(p.pid, "Revised pathway proposed to you: " + p.name, "pathway", { id: p.id });
   audit("Pathway revised", p.id, d.note);
   UI.modal = null;
   clearF("pwv");
@@ -1978,6 +1984,7 @@ F.pws = (d, form) => {
       p.by,
       `${me().name} completed “${s.t}” on the pathway ${p.name}`,
       "pathway",
+      { id: p.id },
     );
   S.candidates.push({
     id: uid("cd"),

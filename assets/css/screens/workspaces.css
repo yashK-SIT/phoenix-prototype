@@ -1923,3 +1923,142 @@
   background: var(--sunk);
   border-radius: var(--r-md);
 }
+
+/* ---------- 12. Circle votes: one eligible member = one vote; Yes / No / NTA ---------- */
+.poll-elig {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: var(--s-3);
+  padding: var(--s-3);
+  border: 1px solid var(--info-bd);
+  border-radius: var(--r-md);
+  background: var(--info-bg);
+}
+.poll-elig-h {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px var(--s-2);
+}
+.poll-elig-h .cap {
+  margin-left: auto;
+}
+.poll-k {
+  display: inline-block;
+  min-width: 40px;
+  margin-right: var(--s-2);
+  padding: 1px 8px;
+  border-radius: var(--r-sm, 6px);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  text-align: center;
+  background: var(--neutral-bg);
+  color: var(--text-2);
+}
+.poll-k.poll-k-yes,
+.vote-k.vote-k-yes {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+.poll-k.poll-k-no,
+.vote-k.vote-k-no {
+  background: var(--bad-bg);
+  color: var(--bad);
+}
+.vote-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.vote-opts legend {
+  margin-bottom: 4px;
+}
+.vote-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--s-3);
+}
+.vote-k {
+  display: grid;
+  place-items: center;
+  height: 44px;
+  border-radius: var(--r-md);
+  font-weight: 700;
+  background: var(--neutral-bg);
+  color: var(--text-2);
+}
+.vote-in {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.vote-fixed {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 var(--s-3);
+  border: 1px dashed var(--line);
+  border-radius: var(--r-md);
+  background: var(--sunk);
+  color: var(--text-2);
+}
+@media (max-width: 480px) {
+  .vote-row {
+    grid-template-columns: 52px minmax(0, 1fr);
+    gap: var(--s-2);
+  }
+}
+
+/* ---------- 13. Invitations across roles ---------- */
+.inv-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  border-color: var(--info-bd);
+}
+.inv-h {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+.inv-ht {
+  flex: 1;
+  min-width: 0;
+}
+.inv-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--s-3);
+  padding: var(--s-3);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.inv-t {
+  flex: 1 1 260px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.inv-ask {
+  margin: 6px 0 2px;
+  padding: 6px 10px;
+  border-left: 3px solid var(--primary);
+  border-radius: 0 var(--r-md) var(--r-md) 0;
+  background: var(--primary-soft);
+}
+.inv-a {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  align-items: center;
+}

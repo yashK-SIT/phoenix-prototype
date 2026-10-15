@@ -27,176 +27,49 @@ const PURPOSES = [
   ],
   ['ext', 'External-system exchange', 'Allow exchange with connected external systems, such as a learning platform.'],
 ];
-const COMPASS = [
-  [
-    'PC1',
-    'Orientation and meaning',
-    'What matters most to you right now in this programme, community or stage of your life?',
-    'Private',
-  ],
-  [
-    'PC2',
-    'North Star / outcome',
-    'What outcome do you want to achieve in the next 3–12 months?',
-    'Private · share with chosen support roles',
-  ],
-  [
-    'PC3',
-    'Blockers, without diagnosis',
-    'What could prevent or slow you down?',
-    'High-restriction · explicit sharing only',
-  ],
-  [
-    'PC4',
-    'Capacity / pathway realism',
-    'How much time can you realistically commit?',
-    'Private · matching/pathway roles only if shared',
-  ],
-  ['PC5', 'First milestone', 'What is your first meaningful milestone?', 'Contextual'],
-  ['PC6', 'Participant-defined success', 'What would success look like?', 'Private'],
-  [
-    'PC7',
-    'What you bring',
-    'What skills, knowledge, experience, relationships, resources or strengths do you bring?',
-    'Private',
-  ],
-  ['PC8', 'Learning interest', 'What would you most like to learn or become better at?', 'Private'],
-  [
-    'PC9',
-    'Contribution context',
-    'What issues, communities, causes or opportunities are you most interested in contributing to?',
-    'Private',
-  ],
-  [
-    'PC10',
-    'Support / need',
-    'What people, resources, relationships or forms of support would help you progress?',
-    'Private',
-  ],
-  [
-    'PC11',
-    'Opportunity preference',
-    'Which opportunities are most relevant now: learning, service, mentoring, leadership, research, project work, livelihood, entrepreneurship, community action?',
-    'Private',
-  ],
-  [
-    'PC12',
-    'Practical constraints',
-    'Are there working preferences or constraints the platform should respect (schedule, location, language, accessibility, collaboration format)?',
-    'Private',
-  ],
-];
-// ---- Purpose Compass Baseline: Purpose plus six question sets, the starting point of the journey.
-// Answers live in S.compass[pid] beside PC1–PC12; PC keys keep their meaning, the other keys hold the extra sub-questions.
-// [key, question, required, help] — the seeded questions. At run time the questions live in S.compassQs and are
-// managed by the Platform Administrator (Purpose Compass screen); answers stay in S.compass[pid] under each question id.
-const BL_SEED = [
-  { id: 'purpose', n: 'Purpose', d: 'Where your journey starts.', q: [['PC1', 'What matters most to you right now in this programme, community or stage of your life?', 1]] },
-  {
-    id: 'B1',
-    n: 'Outcome — 3–12 months',
-    q: [
-      ['PC2', 'What outcome do you want to achieve in the next 3–12 months?', 1],
-      ['PC6', 'What would success look like?', 1],
-    ],
-  },
-  {
-    id: 'B2',
-    n: 'What you bring',
-    q: [
-      ['PC7', 'What skills, knowledge, experience, relationships, resources or strengths do you bring?', 1],
-      ['skills', 'What existing skills should be captured?', 0, 'Comma-separated, e.g. survey design, Spanish-language outreach. Saved to your profile as self-declared skills, visible only to you until you change it.'],
-    ],
-  },
-  {
-    id: 'B3',
-    n: 'Blockers',
-    q: [
-      ['PC3', 'What could prevent or slow you down?', 1],
-      ['risks', 'What risks, dependencies or support gaps do you have?', 0],
-    ],
-  },
-  {
-    id: 'B4',
-    n: 'How you learn',
-    q: [
-      ['learnHow', 'How do you learn best?', 1],
-      ['learnSupport', 'What kind of guidance, practice, feedback, mentoring or resources help you learn?', 0],
-    ],
-  },
-  {
-    id: 'B5',
-    n: 'Constraints',
-    d: 'What should be considered when planning your journey. Fill in only what is relevant to you.',
-    q: [
-      ['PC4', 'Availability — how much time can you realistically commit?', 1],
-      ['cLoc', 'Location', 0],
-      ['cTech', 'Technology / access', 0],
-      ['cFin', 'Financial constraints', 0],
-      ['cCare', 'Care responsibilities', 0],
-      ['cAcc', 'Accessibility requirements', 0],
-      ['cOther', 'Other personal or practical constraints', 0],
-    ],
-  },
-  {
-    id: 'B6',
-    n: 'First milestone & who to involve',
-    q: [
-      ['PC5', 'What is your first meaningful milestone?', 1],
-      ['involve', 'Who needs to be involved, consulted, supported or invited?', 0],
-    ],
-  },
-];
-const BL_VIS = {
-  skills: 'Only me until I change it in Profile',
-  risks: 'High-restriction · explicit sharing only',
-  cFin: 'High-restriction · explicit sharing only',
-  cCare: 'High-restriction · explicit sharing only',
-  cAcc: 'High-restriction · explicit sharing only',
-  involve: 'Contextual',
+// ---- Purpose Compass: fixed, IKIGAI-inspired questions (Build Freeze Review §4.1). Not editable at run time and never scored.
+// PC1–PC6 are the minimum asked at onboarding, three short screens of two. PC7–PC12 are optional and asked later, in
+// Profile, only when the programme's pack enables them. Answers live in S.compass[pid] under each question id.
+const PC_VIS = {
+  own: 'Private',
+  support: 'Private · share with chosen support roles',
+  high: 'High-restriction · explicit sharing only',
+  pathway: 'Private · matching/pathway roles only if shared',
+  ctx: 'Contextual',
 };
-const blVisSeed = k => (COMPASS.find(c => c[0] === k) || [])[3] || BL_VIS[k] || 'Private';
-const COMPASS_VIS = ['Private', 'Private · share with chosen support roles', 'Contextual', 'High-restriction · explicit sharing only', 'Only me until I change it in Profile'];
-const COMPASS_TYPES = [
-  ['textarea', 'Long answer'],
-  ['text', 'Short answer'],
-  ['hours', 'Hours per week or month'],
-];
-function seedCompassQs() {
-  const out = [];
-  BL_SEED.forEach(s =>
-    s.q.forEach(([k, q, req, help]) =>
-      out.push({ id: k, text: q, set: s.n, setNote: s.d || '', help: help || '', req: !!req, type: k === 'PC4' ? 'hours' : /^c[A-Z]/.test(k) ? 'text' : 'textarea', onb: true, vis: blVisSeed(k) }),
-    ),
-  );
-  COMPASS.filter(([id]) => !out.some(q => q.id === id)).forEach(([id, , q, vis]) =>
-    out.push({ id, text: q, set: 'Asked later, in context', setNote: '', help: '', req: false, type: 'textarea', onb: false, vis }),
-  );
-  return out.map((q, i) => ({ ...q, order: i + 1 }));
-}
-const compassQs = () => (S.compassQs || []).filter(q => !q.deleted).sort((a, b) => a.order - b.order);
-// Questions grouped by their set, in order. onbOnly: only the questions asked at onboarding.
+const PC_LATER = 'Optional — add when it helps';
+const COMPASS_QS = [
+  { id: 'PC1', set: 'Purpose and direction', text: 'What matters most to you right now in this programme, community or stage of your life?', vis: PC_VIS.own },
+  { id: 'PC2', set: 'Purpose and direction', text: 'What would you like to accomplish, contribute to or become more capable of over the next 3–6 months?', vis: PC_VIS.support },
+  { id: 'PC3', set: 'What is in the way', text: 'What is the main hurdle currently making that difficult?', help: 'Describe it in your own words. This is never used to diagnose or score you.', vis: PC_VIS.high },
+  { id: 'PC4', set: 'What is in the way', text: 'How much time can you realistically commit?', type: 'hours', vis: PC_VIS.pathway },
+  { id: 'PC5', set: 'Your first milestone', text: 'What is one meaningful milestone you could realistically reach in the next 2–4 weeks?', help: 'This becomes the starting point for your first Next Action.', vis: PC_VIS.ctx },
+  { id: 'PC6', set: 'Your first milestone', text: 'What would help you know you are making meaningful progress?', vis: PC_VIS.own },
+  { id: 'PC7', set: PC_LATER, text: 'What skills, knowledge, experience, relationships, resources or strengths do you bring?', vis: PC_VIS.own },
+  { id: 'PC8', set: PC_LATER, text: 'What would you most like to learn or become better at?', vis: PC_VIS.own },
+  { id: 'PC9', set: PC_LATER, text: 'What issues, communities, causes or opportunities are you most interested in contributing to?', vis: PC_VIS.own },
+  { id: 'PC10', set: PC_LATER, text: 'What people, resources, relationships or forms of support would help you progress?', vis: PC_VIS.own },
+  { id: 'PC11', set: PC_LATER, text: 'Which opportunities are most relevant now: learning, service, mentoring, leadership, research, project work, livelihood, entrepreneurship, community action?', vis: PC_VIS.own },
+  { id: 'PC12', set: PC_LATER, text: 'Are there working preferences or constraints the platform should respect (schedule, location, language, accessibility, collaboration format)?', vis: PC_VIS.own },
+].map(q => ({ type: 'textarea', help: '', onb: q.set !== PC_LATER, req: q.set !== PC_LATER, ...q }));
+// onbOnly: the six minimum questions. Otherwise the optional ones are added when the current pack asks for them.
+const compassQs = (onbOnly = true) => COMPASS_QS.filter(q => q.onb || (!onbOnly && pack().compassOptional));
+// Questions grouped by their set, in order.
 function blSets(onbOnly = true) {
   const groups = [];
-  compassQs()
-    .filter(q => !onbOnly || q.onb)
-    .forEach(q => {
-      let g = groups.find(x => x.n === (q.set || 'Questions'));
-      if (!g) groups.push((g = { n: q.set || 'Questions', d: '', q: [] }));
-      if (!g.d && q.setNote) g.d = q.setNote;
-      g.q.push(q);
-    });
+  compassQs(onbOnly).forEach(q => {
+    let g = groups.find(x => x.n === q.set);
+    if (!g) groups.push((g = { n: q.set, d: q.set === PC_LATER ? 'Asked later, in context. Answer only what is useful to you.' : '', q: [] }));
+    g.q.push(q);
+  });
   return groups;
 }
-const blVis = k => (compassQs().find(q => q.id === k) || {}).vis || blVisSeed(k);
-const blKeys = () => compassQs().filter(q => q.onb).map(q => q.id);
 const blAnswered = (a, q) => !!String(a[q.id] || '').replace('|', '').trim();
 const blMissing = pid => {
   const a = S.compass[pid] || {};
   return blSets().filter(s => s.q.some(q => q.req && !blAnswered(a, q)));
 };
 const hoursText = v => (v ? String(v).replace('|', ' ') : '');
-const blAnswer = (a, k) => ((compassQs().find(q => q.id === k) || {}).type === 'hours' ? hoursText(a[k]) : a[k] || '');
 // One question. "Hours" questions are a number plus a unit.
 function blField(f, q, a) {
   const k = q.id;
@@ -226,19 +99,20 @@ function blApply(pid, d, sets) {
       } else a[q.id] = (d[q.id] || '').trim();
     }),
   );
-  if (sets.some(s => s.q.some(q => q.id === 'skills'))) blSyncSkills(pid, a.skills);
 }
-// The skills the person types are their own statement: kept as one self-declared Skills claim, private by default.
-function blSyncSkills(pid, v) {
-  const c = S.claims.find(x => x.pid === pid && x.src === 'baseline' && x.state === 'Current');
+// What the person types at onboarding is their own statement: one self-declared claim per field, private by default.
+// Going Back and saving again updates that claim instead of adding a second one.
+function onbClaim(pid, field, v) {
+  const c = S.claims.find(x => x.pid === pid && x.field === field && x.src === 'onb' && x.state === 'Current');
   if (!v) return;
   if (c) {
     if (c.value !== v) {
       c.value = v;
       c.ver = (c.ver || 1) + 1;
     }
-  } else S.claims.push({ id: uid('cl'), pid, field: 'Skills', value: v, prov: 'Self-declared', vis: 'Only me', state: 'Current', ver: 1, src: 'baseline' });
+  } else S.claims.push({ id: uid('cl'), pid, field, value: v, prov: 'Self-declared', vis: 'Only me', state: 'Current', ver: 1, src: 'onb' });
 }
+const onbVal = (pid, field) => (S.claims.find(x => x.pid === pid && x.field === field && x.src === 'onb' && x.state === 'Current') || {}).value || '';
 const claimVals = (pid, field) =>
   S.claims
     .filter(c => c.pid === pid && c.field === field && c.state === 'Current')
@@ -388,7 +262,7 @@ function policyGate(g) {
   <form data-f="agr" class="pgate-f" novalidate><input type="hidden" name="g" value="${g.id}"><input type="hidden" name="mode" value="update">${fi('agr', 'a1', `I have read and accept <b>${h(g.type)} v${g.ver}</b>.`, { type: 'checkbox', req: true })}<div class="actions">${B('Sign out', 'logout', {}, 'btn-s')}<button class="btn btn-p" type="submit">Accept and continue</button></div></form></div></div>`;
 }
 function onbTop(cur, steps) {
-  return `<header class="onb-top"><div class="row onb-brand"><span class="mark">${MARK(20)}</span><span class="wm hide-sm"><b>PHOENIX</b><span>Foundation Alpha</span></span></div><nav class="steps" aria-label="Onboarding progress">${steps.map((l, i) => `${i ? '<span class="sline"></span>' : ''}<div class="step ${i < cur ? 'done' : i === cur ? 'cur' : ''}"><span class="n">${i < cur ? ic('check', 14) : i + 1}</span><span class="st">${l}</span></div>`).join('')}</nav><div class="row">${roleChoices().length > 1 ? B('Switch role', 'switcher', {}, 'btn-g btn-sm') : ''}${B('Save and exit', 'logout', {}, 'btn-g btn-sm hide-sm')}</div></header>`;
+  return `<header class="onb-top"><div class="row onb-brand"><span class="mark">${MARK(20)}</span><span class="wm hide-sm"><b>PHOENIX</b><span>Foundation Alpha</span></span></div><nav class="steps" aria-label="Onboarding progress">${steps.map((l, i) => `${i ? '<span class="sline"></span>' : ''}<div class="step ${i < cur ? 'done' : i === cur ? 'cur' : ''}"><span class="n">${i < cur ? ic('check', 14) : i + 1}</span><span class="st">${l}</span></div>`).join('')}</nav><div class="row">${switchChoices().length > 1 ? B('Switch role or context', 'switcher', {}, 'btn-g btn-sm') : ''}${B('Save and exit', 'logout', {}, 'btn-g btn-sm hide-sm')}</div></header>`;
 }
 function ONB() {
   const a = asg();
@@ -422,33 +296,29 @@ function ONB() {
   <form data-f="prof" class="card col onb-card" novalidate><div class="f2">${fi(f, 'name', 'Full name', { value: me().name, ro: true, vis: 'You and authorised administration' })}${fi(f, 'display', 'Display name', { value: me().display, ro: true, vis: 'Your collaboration contexts', help: 'Set when your account was created.' })}</div>
   ${me().org ? fi(f, 'aff', 'Organisation / affiliation', { value: S.orgs.find(o => o.id === me().org).name, ro: true, vis: 'Context-visible' }) : ''}
   ${fi(f, 'bio', 'Short biography', { type: 'textarea', rows: 3, max: 400, value: pr.bio, help: 'Optional · up to 400 characters', vis: 'Your choice — default: your collaboration contexts' })}
-  ${fi(f, 'interests', 'Interests', { value: '', ph: 'Comma-separated, e.g. urban heat, food resilience', help: 'Optional' })}
+  ${fi(f, 'interests', 'Interests', { value: onbVal(myId(), 'Interests'), ph: 'Comma-separated, e.g. urban heat, food resilience', help: 'Optional' })}
+  ${fi(f, 'skills', 'Skills', { value: onbVal(myId(), 'Skills'), ph: 'Comma-separated, e.g. survey design, Spanish-language outreach', help: 'Optional', vis: 'Only you until you change it in Profile' })}
+  ${fi(f, 'experience', 'Experience', { type: 'textarea', rows: 3, max: 600, value: onbVal(myId(), 'Experience'), ph: 'Roles, projects or lived experience you want to bring', help: 'Optional · up to 600 characters', vis: 'Only you until you change it in Profile' })}
+  ${fi(f, 'knowledge', 'Knowledge', { value: onbVal(myId(), 'Knowledge'), ph: 'Comma-separated, e.g. GIS mapping, community health', help: 'Optional', vis: 'Only you until you change it in Profile' })}
   ${role() === 'S' ? fi(f, 'sponsorInt', 'Funding interests', { req: true, ph: 'e.g. Urban heat, tree canopy', help: 'Used to show you matching projects. Not shared with participants.' }) : ''}
-  ${banner('info', '', 'Skills, availability and other details are asked for later, only when a workflow needs them.')}
   <div class="actions">${B(ic('chevl', 16) + 'Back', 'onbBack', { s: 'agreement' }, 'btn-g')}<button class="btn btn-p" type="submit">Save and continue</button></div></form>`;
   } else {
     const f = 'pc';
     const ans = S.compass[myId()] || {};
     const sets = blSets();
     const n = sets.length;
-    if (!n) {
-      a.onb.compass = true;
-      save();
-      setTimeout(() => go('home'));
-      return '';
-    }
     if (UI.tab.pcStep == null) {
       const miss = blMissing(myId());
       UI.tab.pcStep = miss.length ? sets.findIndex(s => s.n === miss[0].n) : n - 1;
     }
     const st = Math.max(0, Math.min(UI.tab.pcStep || 0, n - 1));
     const set = sets[st];
-    body = `<div class="col onb-h"><p class="over">Step 4 of 4 · Purpose Compass Baseline</p><h1 class="h1">Set your starting point</h1><p class="sub">A few short question sets. Nothing here is scored, and nothing is used to infer sensitive traits. Your answers become the context for your ${WL()}s and Learning Harvests.</p></div>
-  <div class="col onb-prog"><div class="row onb-prog-h"><span class="lbl">Set ${st + 1} of ${n}</span><span class="cap">${Math.round((st / n) * 100)}% complete</span></div><div class="progress"><span class="bar" style="width:${(st / n) * 100}%"></span></div></div>
-  ${errSum(f)}<form data-f="pc" class="card col onb-card" novalidate><input type="hidden" name="set" value="${st}"><div class="col onb-h"><span class="over">Question set ${st + 1}</span><h2 class="h2">${h(set.n)}</h2>${set.d ? `<p class="cap">${h(set.d)}</p>` : ''}</div>
+    body = `<div class="col onb-h"><p class="over">Step 4 of 4 · Purpose Compass</p><h1 class="h1">Set your starting point</h1><p class="sub">Six short questions on ${n} screens. You author your own direction: nothing here is scored, and nothing is used to infer sensitive traits. Your first milestone sets your first Next Action.</p></div>
+  <div class="col onb-prog"><div class="row onb-prog-h"><span class="lbl">Screen ${st + 1} of ${n}</span><span class="cap">${Math.round((st / n) * 100)}% complete</span></div><div class="progress"><span class="bar" style="width:${(st / n) * 100}%"></span></div></div>
+  ${errSum(f)}<form data-f="pc" class="card col onb-card" novalidate><input type="hidden" name="set" value="${st}"><div class="col onb-h"><span class="over">Screen ${st + 1} of ${n}</span><h2 class="h2">${h(set.n)}</h2>${set.d ? `<p class="cap">${h(set.d)}</p>` : ''}</div>
   ${set.q.map(q => blField(f, q, ans)).join('')}
   ${st === 0 ? `<div class="col onb-have"><span class="lbl">Already in your profile</span>${dl([['Interests', h(claimVals(myId(), 'Interests') || '—')], ['Role assignments', `<div class="col onb-roles">${blRoles(myId())}</div>`]])}<span class="help">Role assignments and their expiry are set by your administrator.</span></div>` : ''}
-  ${st === n - 1 ? banner('ok', '', 'Your North Star appears on My PHOENIX as your self-declared direction. You can review and change the whole baseline any time in Profile → Purpose Compass.') : ''}
+  ${st === n - 1 ? banner('ok', '', 'Next you land on My PHOENIX with your first Next Action, built from the milestone you set here. You can change your answers any time in Profile → Purpose Compass.') : ''}
   <div class="actions">${st ? B(ic('chevl', 16) + 'Previous', 'pcPrev', {}, 'btn-g') : B(ic('chevl', 16) + 'Back', 'onbBack', { s: 'profile' }, 'btn-g')}<div class="row wrap">${B('Save and finish later', 'logout', {}, 'btn-s')}<button class="btn btn-p" type="submit">${st === n - 1 ? 'Finish and go to My PHOENIX' : 'Next'}</button></div></div></form>`;
   }
   return `<div class="onb">${onbTop(cur, steps)}<main class="onb-body">${body}</main></div>`;
@@ -528,17 +398,12 @@ F.prof = d => {
     why: 'Onboarding',
     source: 'Self-declared',
   });
-  if (d.interests)
-    S.claims.push({
-      id: uid('cl'),
-      pid: p.id,
-      field: 'Interests',
-      value: d.interests,
-      prov: 'Self-declared',
-      vis: 'Only me',
-      state: 'Current',
-      ver: 1,
-    });
+  [
+    ['Interests', d.interests],
+    ['Skills', d.skills],
+    ['Experience', d.experience],
+    ['Knowledge', d.knowledge],
+  ].forEach(([field, v]) => onbClaim(p.id, field, (v || '').trim()));
   if (d.sponsorInt)
     S.interests[p.id] = d.sponsorInt
       .split(',')
@@ -575,8 +440,8 @@ F.pc = d => {
   asg().onb.compass = true;
   S.compass[myId()]._at = today();
   UI.tab.pcStep = null;
-  audit('Purpose Compass Baseline completed', myId(), sets.length + ' question sets');
-  toast('Welcome to PHOENIX. Your baseline and North Star are set.');
+  audit('Purpose Compass completed', myId(), 'PC1–PC6');
+  toast('Welcome to PHOENIX. Your Purpose Compass is set.');
   save();
   go('home');
 };

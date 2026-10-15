@@ -74,10 +74,11 @@ route('projects', 'projects', () => {
   const list = S.projects.filter(
     p =>
       inCtx(p) &&
+      inScope('projects', p) &&
       (r === 'P'
         ? p.owner === myId()
         : r === 'F'
-          ? stewardOf(p) || p.status !== 'Draft'
+          ? p.status !== 'Draft' || stewardOf(p)
           : r === 'O'
             ? p.status !== 'Draft'
             : true),

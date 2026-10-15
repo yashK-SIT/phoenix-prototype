@@ -18,7 +18,7 @@ function stageSteps(p) {
     rm = byId('rooms', p.room);
   const idx = { Circle: 0, 'Rope Team': 1, Room: 2, 'Final review': 3, Closed: 4 }[p.stage] ?? -1;
   const steps = [
-    { key: 'circle', kind: 'circles', label: 'Circle', o: c, i: 0, icon: 'users', tile: 't-purple', what: 'Discuss, decide, weighted vote' },
+    { key: 'circle', kind: 'circles', label: 'Circle', o: c, i: 0, icon: 'users', tile: 't-purple', what: 'Discuss, decide, vote (one member, one vote)' },
     !skipsRope(p) && { key: 'rope', kind: 'ropes', label: 'Rope Team', o: rt, i: 1, icon: 'route', tile: 't-teal', what: 'Mentor guidance, reviews, finalise requirements' },
     { key: 'room', kind: 'rooms', label: WL(), o: rm, i: 2, icon: 'room', tile: 't-navy', what: 'Tasks, milestones, evidence, final submission' },
   ].filter(Boolean);
@@ -54,7 +54,7 @@ function stageGate(p, kind, o) {
   const items = [];
   if (kind === 'circles') {
     const agreed = circleAgreed(o);
-    items.push([agreed, 'The matter is discussed and agreed — at least one decision is recorded (weighted vote ≥ ' + S.settings.voting.threshold + '% or facilitator record).']);
+    items.push([agreed, 'The matter is discussed and agreed — at least one decision is recorded (vote with Yes ≥ ' + S.settings.voting.threshold + '% of eligible members, or facilitator record).']);
     if (!skipsRope(p)) {
       items.push([!!p.rope, 'A Rope Team is formed: a mentor accepts a Mentor Request.']);
       const steward = r === 'F' && p.stewards.includes(myId());

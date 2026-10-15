@@ -10,9 +10,11 @@ const ownRoomProjects = () =>
 const canCreateRoomFor = (pr) => canCreateRoom() || (!!pr && ownRoomProjects().includes(pr));
 route("rooms", "rooms", () => {
   const r = role();
+  UI._afterHead = invitesCard("rooms");
   const list = S.rooms.filter(
     (x) =>
       inCtx(x) &&
+      inScope("rooms", x) &&
       ((memberRec(x) && memberRec(x).status !== "Removed") ||
         ["A", "O"].includes(r)),
   );
@@ -308,7 +310,7 @@ route("room", "rooms", () => {
                 ["Lead", nm(x.lead)],
               ])}</div>${banner("info", "", "You can accept or decline without obligation. If you accept, you join with this defined responsibility and submit contributions for Faculty/Steward review.")}`
             : ""
-        }<div class="row ws-acts">${B("Decline", "roomInvite", { id: x.id, v: "Removed" })}${B("Accept", "roomInvite", { id: x.id, v: "Active" }, "btn-p btn-sm")}</div>`,
+        }${invPanel("rooms", x)}`,
       )
     );
   const ro = x.state !== "Active";
@@ -1240,7 +1242,7 @@ F.rin = (d) => {
   }
   if (d.kind === "Participant in this context") {
     const rl = INVITE_ROLES.includes(d.role) ? d.role : "Member";
-    x.members.push({ pid: d.pid, role: rl, status: "Invited" });
+    x.members.push({ pid: d.pid, role: rl, status: "Invited", by: myId(), at: now() });
     notify(d.pid, "Invitation to join " + x.name + " as " + roleLabel(rl), "room", { id: x.id });
   } else {
     x.joinReqs.push({

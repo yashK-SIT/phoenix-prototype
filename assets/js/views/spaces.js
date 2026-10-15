@@ -12,7 +12,7 @@ const SPACE_ROLES = [
 ];
 const SPACE_ROLE_HELP = {
   "Project owner":
-    "Owns the project. Leads the work, manages the Circle with the facilitator, and joins votes with double weight.",
+    "Owns the project. Leads the work, manages the Circle with the facilitator, and votes like every other member (one vote, no extra weight).",
   Facilitator:
     "Faculty/Steward for this space. Facilitates, moderates, approves and reviews.",
   Member:
@@ -405,7 +405,7 @@ const wsUnread = o => (unreadIn(o) && memberOf(o) ? ` <span class="mbadge" title
 // The person's other spaces of the same kind, for the sub-navigation's "switch to" list.
 const wsOthers = (kind, o) =>
   (S[kind] || [])
-    .filter(y => y !== o && inCtx(y) && memberOf(y))
+    .filter(y => y !== o && inCtx(y) && memberOf(y) && inScope(kind, y))
     .slice(0, 8)
     .map(y => [h(y.name), { circles: 'circle', ropes: 'rope', rooms: 'room' }[kind], { id: y.id }]);
 
@@ -489,3 +489,111 @@ window.addEventListener('resize', () => {
   TAB_FIT_T = setTimeout(() => fitTabs(document.getElementById('app')), 80);
 });
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => fitTabs(document.getElementById('app')));
+
+// ---------- Invitations and requests across roles ----------
+// An invitation to a Circle, Rope Team or Action Room, or a Mentor Request addressed to the person, is visible in
+// every role (so also in the primary role) and in its own module. It names the role being asked for. Joining asks
+// whether to switch to that role; a role the person does not hold yet is added to the same account, subject to the
+// usual approval rule for sensitive roles (pre-approved when a Programme Administrator sent the invitation).
+const SPACE_PLATFORM = { Mentor: 'M', Facilitator: 'F', Reviewer: 'F', Member: 'P', 'Project owner': 'P', Partner: 'C' };
+const INV_ROUTE = { circles: 'circle', ropes: 'rope', rooms: 'room' };
+const INV_NOUN = kind => ({ circles: 'Circle', ropes: 'Rope Team', rooms: WL(), mentorReqs: 'Mentor Request' })[kind];
+const invitedIn = (kind, o, pid = myId()) => !!INV_ROUTE[kind] && !!o && ((o.members || []).find(m => m.pid === pid) || {}).status === 'Invited';
+function myInvites(pid = myId(), only) {
+  const out = [];
+  ['circles', 'ropes', 'rooms'].forEach(kind =>
+    (S[kind] || []).forEach(o => {
+      const m = (o.members || []).find(x => x.pid === pid);
+      if (m && m.status === 'Invited' && (!only || only === kind)) out.push({ kind, o, m, base: SPACE_PLATFORM[normRole(m.role)] || 'P', label: roleLabel(normRole(m.role), kind) });
+    }),
+  );
+  if (!only || only === 'mentorReqs')
+    S.mentorReqs.filter(r => r.to === pid && r.status === 'Pending').forEach(r => out.push({ kind: 'mentorReqs', o: r, base: 'M', label: 'Mentor' }));
+  return out;
+}
+const invFind = (kind, id) => myInvites().find(x => x.kind === kind && x.o.id === id);
+// The person's own role of a kind: Active, else Pending approval, else none.
+const ownRole = (base, pid = myId()) => {
+  const l = S.assign.filter(a => a.pid === pid && roleBase(a.role) === base);
+  return l.find(a => a.status === 'Active') || l.find(a => a.status === 'Pending role approval') || null;
+};
+const invAsk = x => `They want you to join as ${/^[AEIOU]/.test(x.label) ? 'an' : 'a'} <b>${h(x.label)}</b>${x.base !== 'P' || roleBase(roleId()) !== 'P' ? ` (${(ownRole(x.base) || {}).status === 'Active' ? 'your' : 'the'} ${h(ROLE[x.base])} role)` : ''}.`;
+const invPreApproved = x => {
+  const by = invFrom(x);
+  return !!by && S.assign.some(a => a.pid === by && roleBase(a.role) === 'A' && a.status === 'Active');
+};
+const invRoleNote = x => {
+  const a = ownRole(x.base);
+  if (a && a.status === 'Active') return roleId() === a.role ? 'You are working in this role now.' : 'You already hold this role. Joining lets you switch to it.';
+  if (a) return 'Your ' + ROLE[x.base] + ' role is awaiting approval.';
+  return 'New role for you: joining adds ' + ROLE[x.base] + ' to your account' + (roleNeedsApproval(x.base) && !invPreApproved(x) ? ' (needs Programme Administrator approval)' : '') + '.';
+};
+const invTitle = x => (x.kind === 'mentorReqs' ? h(x.o.need) + ' · ' + cName(x.o.project) : h(x.o.name));
+const invWhat = x => (x.kind === 'mentorReqs' ? h(x.o.detail || '') : h(x.o.purpose || x.o.charter || ''));
+const invFrom = x => (x.kind === 'mentorReqs' ? x.o.from : (x.m && x.m.by) || x.o.facilitator || x.o.owner || x.o.lead);
+function invRow(x) {
+  const details = x.kind === 'mentorReqs' ? B('Details', 'mrDetails', { id: x.o.id }) : B('Details', 'go', { r: INV_ROUTE[x.kind], id: x.o.id });
+  return `<div class="inv-row"><span class="tile t-purple" aria-hidden="true">${ic(x.kind === 'circles' ? 'users' : x.kind === 'rooms' ? 'room' : 'route', 18)}</span><div class="inv-t"><span class="cap">${INV_NOUN(x.kind)}${invFrom(x) ? ' · from ' + nm(invFrom(x)) : ''}</span><b>${invTitle(x)}</b>${invWhat(x) ? `<span class="cap">${invWhat(x)}</span>` : ''}<p class="inv-ask">${invAsk(x)}</p><span class="cap">${invRoleNote(x)}</span></div><div class="inv-a">${details}${B('Decline', 'invDecline', { kind: x.kind, id: x.o.id })}${B(x.kind === 'mentorReqs' ? 'Accept' : 'Join', 'invJoin', { kind: x.kind, id: x.o.id }, 'btn-p btn-sm')}</div></div>`;
+}
+// Invitations card for one module (circles, ropes — with Mentor Requests — or rooms), or all of them (home).
+function invitesCard(kind) {
+  const list = kind === 'ropes' ? [...myInvites(myId(), 'ropes'), ...myInvites(myId(), 'mentorReqs')] : myInvites(myId(), kind);
+  if (!list.length) return '';
+  return `<section class="card inv-card" aria-label="Invitations for you"><div class="inv-h"><span class="tile t-purple" aria-hidden="true">${ic('mail', 18)}</span><div class="inv-ht"><h2 class="h2">Invitations for you</h2><p class="cap">Shown in every role. You can respond here without switching first.</p></div><span class="cnt">${list.length}</span></div>${list.map(invRow).join('')}</section><div class="section-gap"></div>`;
+}
+// The invited view inside a Circle, Rope Team or Action Room: details, the role asked for, Join / Decline.
+function invPanel(kind, o) {
+  const x = invFind(kind, o.id);
+  if (!x) return '';
+  return `${banner('info', 'You are invited to this ' + INV_NOUN(kind), invAsk(x) + ' ' + invRoleNote(x))}<div class="row ws-acts">${B('Decline', 'invDecline', { kind, id: o.id })}${B('Join', 'invJoin', { kind, id: o.id }, 'btn-p btn-sm')}</div>`;
+}
+A.invJoin = d => {
+  const x = invFind(d.kind, d.id);
+  if (!x) return deny('there is no invitation to respond to');
+  const a = ownRole(x.base);
+  if (a && a.status === 'Active' && a.role === roleId()) return invDo(x, 'stay');
+  const active = (a && a.status === 'Active') || !roleNeedsApproval(x.base) || invPreApproved(x);
+  const why = a && a.status === 'Active' ? 'This ' + INV_NOUN(x.kind) + ' belongs to your ' + h(ROLE[x.base]) + ' role.' : active ? 'Joining adds the ' + h(ROLE[x.base]) + ' role to your account. Your profile and primary role stay the same.' : 'Joining adds the ' + h(ROLE[x.base]) + ' role to your account. It needs Programme Administrator approval before you can work in it; you will be notified.';
+  modal(
+    (x.kind === 'mentorReqs' ? 'Accept' : 'Join') + ' as ' + h(x.label) + '?',
+    `<div class="col" style="gap:12px"><p>${invAsk(x)}</p><p class="muted">You are working as <b>${h(ROLE[roleId()])}</b>${isPrimary(asg()) ? ' (your primary role)' : ''}. ${why}</p>${active ? `<p class="muted">Do you want to switch to your ${h(ROLE[x.base])} role now? Its menu, projects, Circles, Rope Teams, Action Rooms and notifications open.</p>` : ''}<div class="actions">${B('Cancel', 'closeM', {}, 'btn-s btn-sm')}${active ? B('Join, stay as ' + h(ROLE[roleId()]), 'invGo', { kind: x.kind, id: x.o.id, mode: 'stay' }, 'btn-s btn-sm') + B('Join and switch to ' + h(ROLE[x.base]), 'invGo', { kind: x.kind, id: x.o.id, mode: 'switch' }, 'btn-p btn-sm') : B('Join and request the role', 'invGo', { kind: x.kind, id: x.o.id, mode: 'stay' }, 'btn-p btn-sm')}</div></div>`,
+  );
+};
+A.invGo = d => {
+  const x = invFind(d.kind, d.id);
+  if (!x) return deny('there is no invitation to respond to');
+  invDo(x, d.mode);
+};
+function invDo(x, mode) {
+  // 1. the role, on the same account
+  let a = ownRole(x.base);
+  if (!a) {
+    const pending = roleNeedsApproval(x.base) && !invPreApproved(x);
+    a = { id: uid('a'), pid: myId(), role: x.base, ctx: asg().ctx, status: pending ? 'Pending role approval' : 'Active', bundles: [], approval: [{ at: now(), by: invFrom(x) || 'system', note: ROLE[x.base] + ' role from an invitation to ' + INV_NOUN(x.kind) + ' “' + (x.o.name || x.o.need) + '”' + (pending ? ' — approval requested' : '') }], onb: { agreement: false, consents: true, profile: true, compass: true } };
+    S.assign.push(a);
+    audit('Role added from invitation', myId(), ROLE[x.base] + ' · ' + a.status);
+    if (pending) S.assign.filter(y => roleBase(y.role) === 'A' && y.status === 'Active').forEach(y => notify(y.pid, `Role approval requested: ${me().name} — ${ROLE[x.base]} (from an invitation)`, 'admin', { tab: 'users' }));
+  }
+  // 2. the invitation itself, through the guarded handlers
+  if (x.kind === 'circles') A.circleInvite({ id: x.o.id, v: 'Active' });
+  else if (x.kind === 'ropes') A.ropeInvite({ id: x.o.id, v: 'Active' });
+  else if (x.kind === 'rooms') A.roomInvite({ id: x.o.id, v: 'Active' });
+  else A.mentorReq({ id: x.o.id, v: 'Accepted' });
+  UI.modal = null;
+  // 3. switch (only to an active role) and open what was joined
+  const pr = x.kind === 'mentorReqs' ? byId('projects', x.o.project) : null;
+  const dest = x.kind === 'mentorReqs' ? (pr && pr.rope ? { r: 'rope', p: { id: pr.rope } } : { r: 'ropeteams', p: {} }) : { r: INV_ROUTE[x.kind], p: { id: x.o.id } };
+  if (mode === 'switch' && a.status === 'Active' && a.role !== roleId()) return switchTo(a.id, dest, true);
+  if (a.role === roleId()) return go(dest.r, dest.p);
+  toast(a.status === 'Active' ? 'Joined. It is under your ' + ROLE[a.role] + ' role — switch from the top left.' : 'Joined. Your ' + ROLE[a.role] + ' role is waiting for approval; you will be notified.');
+  ok();
+}
+A.invDecline = d => {
+  const x = invFind(d.kind, d.id);
+  if (!x) return deny('there is no invitation to respond to');
+  if (x.kind === 'circles') A.circleInvite({ id: x.o.id, v: 'Removed' });
+  else if (x.kind === 'ropes') A.ropeInvite({ id: x.o.id, v: 'Declined' });
+  else if (x.kind === 'rooms') A.roomInvite({ id: x.o.id, v: 'Removed' });
+  else A.mentorReq({ id: x.o.id, v: 'Declined' });
+  toast('Invitation declined.');
+};

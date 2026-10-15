@@ -237,6 +237,7 @@ F.usr = d => {
       role: d.role,
       ctx,
       status: 'Active',
+      primary: true,
       bundles: [],
       approval: [{ at: now(), by: myId(), note: 'Account created by ' + me().name }],
       onb: { agreement: false, consents: false, profile: false, compass: roleBase(d.role) !== 'P' },
@@ -275,8 +276,33 @@ A.userManage = d => {
  <section class="adm-sec"><h3 class="adm-sec-t">Access</h3><div class="row wrap adm-sec-a">${a.status === 'Pending role approval' ? B('Approve role', 'roleDecide', { id: a.id, v: 'Active' }, 'btn-p btn-sm') + B('Decline role', 'roleDecide', { id: a.id, v: 'Role not activated' }) : a.status === 'Active' ? CB('Deactivate', 'userStatus', { id: a.id, v: 'Deactivated' }, 'Deactivate this ' + ROLE[a.role] + ' access? The person keeps their account, consent, correction and export rights.', 'btn-d btn-sm') : B('Activate', 'userStatus', { id: a.id, v: 'Active' }, 'btn-p btn-sm')}</div></section>
  ${a.pid !== myId() ? `<form data-f="aexp" class="adm-sec" novalidate><input type="hidden" name="id" value="${a.id}">${fi('aexp', 'until', 'Role assignment expires', { type: 'date', value: a.until || '', help: 'Leave empty for no expiry. On the day after this date the role stops working until it is renewed.' })}<div class="actions"><span></span><button class="btn btn-s btn-sm" type="submit">Save expiry</button></div></form>` : ''}
  <form data-f="bund" class="adm-sec"><input type="hidden" name="id" value="${a.id}"><span class="lbl adm-sec-t">Specialist permission bundles</span><div class="adm-chks">${S.bundles.map(b => `<label class="adm-chk"><input class="chk" type="checkbox" name="b" value="${b.name}" ${a.bundles.includes(b.name) ? 'checked' : ''} ${isO && ['Finance Owner', 'AI Owner', 'Trust/Data Steward', 'Incident/Safety Owner'].includes(b.name) ? 'disabled' : ''}><span class="adm-chk-t">${b.name}</span><span class="cap">· ${h(b.approval)}</span></label>`).join('')}</div><span class="help">Higher-trust bundles need Programme/Organization Administrator approval and are not delegated at workspace level.</span><div class="actions"><span></span><button class="btn btn-s btn-sm" type="submit">Save bundles</button></div></form>
- ${['O', 'C'].includes(roleBase(a.role)) ? `<form data-f="mand" class="adm-sec"><input type="hidden" name="id" value="${a.id}"><span class="lbl adm-sec-t">Mandate (authority to bind the organization)</span><div class="f2">${fi('mand', 'scope', 'Scope', { value: a.mandate?.scope, req: true })}${fi('mand', 'until', 'Valid until', { type: 'date', req: true, value: a.mandate?.until })}</div><div class="actions">${a.mandate ? CB('Revoke mandate', 'mandRevoke', { id: a.id }, 'Revoke this mandate? Elevated access is removed; ordinary access continues.', 'btn-d btn-sm') : '<span></span>'}<button class="btn btn-s btn-sm" type="submit">Grant / update mandate</button></div></form>` : ''}</div>`,
+ ${['O', 'C'].includes(roleBase(a.role)) ? `<form data-f="mand" class="adm-sec"><input type="hidden" name="id" value="${a.id}"><span class="lbl adm-sec-t">Mandate (authority to bind the organization)</span><div class="f2">${fi('mand', 'scope', 'Scope', { value: a.mandate?.scope, req: true })}${fi('mand', 'until', 'Valid until', { type: 'date', req: true, value: a.mandate?.until })}</div><div class="actions">${a.mandate ? CB('Revoke mandate', 'mandRevoke', { id: a.id }, 'Revoke this mandate? Elevated access is removed; ordinary access continues.', 'btn-d btn-sm') : '<span></span>'}<button class="btn btn-s btn-sm" type="submit">Grant / update mandate</button></div></form>` : ''}${role() === 'A' && userEditable(a.pid) ? addRoleForm(a.pid) : ''}</div>`,
   );
+};
+// Additional roles on the same account (no second account, one shared profile). The first role stays primary.
+const heldRoles = pid => S.assign.filter(x => x.pid === pid && !['Revoked', 'Role declined'].includes(x.status)).map(x => x.role);
+function addRoleForm(pid) {
+  const opts = invitableRoles(USER_ROLES).filter(r => !heldRoles(pid).includes(r.id)).map(r => [r.id, r.name]);
+  const held = S.assign.filter(x => x.pid === pid).map(x => h(ROLE[x.role]) + (isPrimary(x) ? ' (primary)' : '')).join(', ');
+  return `<form data-f="addrole" class="adm-sec" novalidate><input type="hidden" name="pid" value="${pid}"><span class="lbl adm-sec-t">Roles on this account</span><p class="cap">${held}</p>${opts.length ? `${fi('addrole', 'role', 'Add a role', { type: 'select', ph: 'Choose a role', opts, help: 'Same account and profile. The person switches between roles from the top-left role selector; their primary role does not change.' })}<div class="actions"><span></span><button class="btn btn-s btn-sm" type="submit">Add role</button></div>` : '<p class="cap">This person already holds every role you can assign.</p>'}</form>`;
+}
+F.addrole = d => {
+  const pid = d.pid;
+  if (!d.role) {
+    UI.err.addrole = { role: 'Choose a role to add.' };
+    return render();
+  }
+  if (heldRoles(pid).includes(d.role)) {
+    UI.err.addrole = { role: 'This person already holds that role.' };
+    return render();
+  }
+  const na = { id: uid('a'), pid, role: d.role, ctx: ctxId(), status: 'Active', bundles: [], approval: [{ at: now(), by: myId(), note: ROLE[d.role] + ' role added by ' + me().name }], onb: { agreement: false, consents: true, profile: true, compass: true } };
+  S.assign.push(na);
+  notify(pid, 'You have a new role: ' + ROLE[d.role] + '. Switch to it from the role selector at the top left.', 'home', {}, null, primaryOf(pid).role);
+  audit('Role added to existing account', pid, ROLE[d.role]);
+  clearF('addrole');
+  toast(ROLE[d.role] + ' role added to ' + P(pid).name + '’s account.');
+  ok();
 };
 A.userStatus = d => {
   const a = byId('assign', d.id);

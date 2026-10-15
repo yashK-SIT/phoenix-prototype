@@ -16,9 +16,9 @@ const CHAT_IC = { circles: 'users', ropes: 'route', rooms: 'room', dms: 'message
 const CHAT_TILE = { circles: 'c t-purple', rooms: 'a t-navy', dms: 'd t-soft', ropes: 'r t-teal', pathways: 'p t-ember' };
 const IMG_RE = /\.(png|jpe?g|gif|webp|heic)$/i;
 const chatSpaces = (pid = myId()) => [
-  ...S.circles.filter(c => inCtx(c) && memberOf(c, pid)).map(o => ({ kind: 'circles', o })),
-  ...S.ropes.filter(r => inCtx(r) && memberOf(r, pid)).map(o => ({ kind: 'ropes', o })),
-  ...S.rooms.filter(r => inCtx(r) && memberOf(r, pid) && r.state !== 'Draft').map(o => ({ kind: 'rooms', o })),
+  ...S.circles.filter(c => inCtx(c) && memberOf(c, pid) && roleSpace('circles', c, pid)).map(o => ({ kind: 'circles', o })),
+  ...S.ropes.filter(r => inCtx(r) && memberOf(r, pid) && roleSpace('ropes', r, pid)).map(o => ({ kind: 'ropes', o })),
+  ...S.rooms.filter(r => inCtx(r) && memberOf(r, pid) && roleSpace('rooms', r, pid) && r.state !== 'Draft').map(o => ({ kind: 'rooms', o })),
   ...(S.dms || []).filter(r => memberOf(r, pid)).map(o => ({ kind: 'dms', o })),
   ...pwConvos(pid).map(o => ({ kind: 'pathways', o })),
 ];

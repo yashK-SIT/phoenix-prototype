@@ -47,7 +47,7 @@ function rfAccess(c) {
     return [
       rfS('Start: open PHOENIX'),
       rfD('Do you have an invitation link?', [
-        rfB('No', [rfA('Create an account as ' + rfName(c), 'Participants and Sponsors can register directly. Name, display name, email, date of birth and a password (10+ characters with a number). The account joins the default programme.')]),
+        rfB('No', [rfA('Create an account as ' + rfName(c), 'Participants and Sponsors can register directly. Name, display name, email, date of birth (18 or older) and a password (10+ characters with a number). The account joins the default programme.')]),
         rfB('Yes', [rfA('Open the invitation link and accept', 'PHOENIX checks the link. Expired, withdrawn or used links stop here with a “Request a new invitation” form. A valid link fixes the role, programme and email.')]),
       ]),
       rfD('Does this email already have a PHOENIX account?', [
@@ -156,7 +156,7 @@ function rfFlows() {
             rfA('Build the team', 'Invite people as Collaborator, Facilitator or Mentor, and approve or decline join requests. Invitees accept or decline.'),
             rfA('Join other Circles', 'Ask to join an active Circle in your programme (its owner or facilitator decides), or accept an invitation.'),
             rfA('Work together', 'Chat, sessions, records and commitments, documents, an Opportunity Card or a Learning Harvest from the Circle.'),
-            rfA('Decide by weighted vote', 'You or the Facilitator open and close polls. Owner counts twice, Collaborators once; 60% of all eligible weight records a decision.'),
+            rfA('Decide by vote', 'You or the Facilitator open and close votes (Yes, No, NTA). One eligible member = one vote — the owner has no extra weight; Yes from 60% of all eligible members records a decision, and a Yes/No tie returns the proposal to Shared for a re-vote.'),
             rfD('Which support path was chosen?', [
               rfB('Circle → Rope Team → ' + W, [rfA('Raise a Mentor Request', 'To a named mentor or as an open request to every mentor in the programme.'), rfH('M', 'A mentor accepts'), rfY('Rope Team formed', 'You, the Circle’s Collaborators, the mentor and a facilitator join; Circle documents are copied in. Stage “Rope Team”.')]),
               rfB('Circle → ' + W, [rfY('No Rope Team', 'Mentor Requests are not available. Once a decision is recorded, “Create or link ' + W + '” appears.')], 'Skips to the ' + W + ' phase'),
@@ -297,7 +297,7 @@ function rfFlows() {
             rfA('Create the Circle for a project you steward', 'Or the owner creates it. You join as Facilitator.'),
             rfA('Manage membership', 'Invite, approve or decline join requests, change roles, remove members.'),
             rfA('Run sessions, record decisions, review commitments, resolve concerns'),
-            rfA('Open and close polls; final-review poll outcomes', 'Facilitators do not vote. 60% of eligible weight records a decision.'),
+            rfA('Open and close polls; final-review poll outcomes', 'Facilitators do not vote. Yes from 60% of eligible members records a decision; a tie returns it to Shared for a re-vote.'),
             rfA('Approve the AI Circle summary, moderate chat, pause the Circle for repair or resume it'),
             rfD('Support path', [
               rfB('With Rope Team', [rfA('Raise a Mentor Request (or the owner does)'), rfH('M', 'Mentor accepts; Rope Team formed')]),

@@ -297,6 +297,51 @@ F.prov = (d) => {
 // ---------- GAP CLOSURE (Section 6 user-story audit) ----------
 function migrate() {
   ensurePlatformData();
+  // Role switching: every person has a primary role (their first assignment), and notices belong to a role.
+  [...new Set(S.assign.map((a) => a.pid))].forEach((pid) => {
+    const l = S.assign.filter((a) => a.pid === pid);
+    if (!l.some((a) => a.primary)) l[0].primary = true;
+  });
+  // Pathways record the role their creator acted in, so they stay out of the creator's other roles.
+  S.pathways.forEach((pw) => {
+    if (pw.byRole) return;
+    const held = S.assign.filter((a) => a.pid === pw.by).map((a) => roleBase(a.role));
+    pw.byRole = pw.by === pw.pid ? "P" : held.includes("M") && !held.includes("F") ? "M" : held.includes("F") ? "F" : held[0] || "A";
+  });
+  // Invitation notices (spaces and Mentor Requests) are shown in every role.
+  S.notifs.forEach((n) => {
+    if (n.role === "*") return;
+    const rq = notifRec(n);
+    const invited = rq && rq[1] && ["circles", "ropes", "rooms"].includes(rq[0]) && ((rq[1].members || []).find((m) => m.pid === n.pid) || {}).status === "Invited";
+    if (invited || (n.r === "ropeteams" && /Mentor Request/.test(n.t) && S.mentorReqs.some((m) => m.to === n.pid && m.status === "Pending"))) n.role = "*";
+  });
+  if (!S.mig_roleScope) {
+    // Mentors now view the projects they mentor (scoped); applied once so later Role management edits stand.
+    const m = (S.roles || []).find((r) => r.id === "M");
+    if (m && m.perms && m.perms.projects === "-") m.perms.projects = "V";
+    S.notifs.forEach((n) => delete n.role);
+    S.mig_roleScope = true;
+  }
+  // Circle votes: one eligible member = one vote (weights removed) and exactly three choices — Yes, No, NTA.
+  // Older polls keep their first two options as Yes and No; votes for any further option are dropped.
+  const V = S.settings.voting;
+  delete V.ownerWeight;
+  delete V.memberWeight;
+  V.eligible = "Project owner and active Circle members, one vote each";
+  V.abstain = "NTA and not voting count as not approving";
+  V.tie = "A Yes/No tie returns the proposal to Shared for revision and a new vote";
+  S.circles.forEach((c) =>
+    (c.polls || []).forEach((p) => {
+      if (p.v === 2) return;
+      p.options = [p.options[0] || "Yes", p.options[1] || "No", NTA_TEXT];
+      Object.keys(p.votes || {}).forEach((k) => {
+        if (p.votes[k] > 1) delete p.votes[k];
+      });
+      if (p.status === "Closed — Decided") p.status = "Closed — Approved";
+      p.round = p.round || 1;
+      p.v = 2;
+    }),
+  );
   // accounts that are not in the seed were created in this browser (registration or Programme admin)
   const seedIds = new Set(seed().people.map((p) => p.id));
   S.people.forEach((p) => {
@@ -335,6 +380,12 @@ function migrate() {
   });
   // Role approvals moved into Programme admin → Users
   S.notifs.forEach((n) => {
+    if (!n.ctx) {
+      // Mentor Request notices belong to the recipient's Mentor context
+      const own = S.assign.filter((a) => a.pid === n.pid);
+      const mentor = n.r === "ropeteams" && own.find((a) => a.role === "M");
+      n.ctx = routeCtx(n.r, n.p) || (mentor || own[0] || {}).ctx || null;
+    }
     if (n.r === "admin" && n.p && n.p.tab === "approvals") n.p.tab = "users";
     if (n.r === "rope" && n.p && n.p.tab === "contrib") n.p.tab = "about";
   });
@@ -356,8 +407,8 @@ function migrate() {
     });
     g11.text = polSeedText({ ...g11, ver: 3 });
   }
-  // Purpose Compass questions are data managed by the Platform Administrator
-  if (!S.compassQs) S.compassQs = seedCompassQs();
+  // Purpose Compass questions are fixed in code (PC1–PC12); drop any admin-edited copy saved by an earlier version
+  delete S.compassQs;
   // one default programme for self-registration (there is no programme choice)
   S.settings.defaultCtx = S.settings.defaultCtx || "c1";
   // two-person conversations (sponsor ↔ project owner)

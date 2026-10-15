@@ -17,7 +17,7 @@ A.closePanel = closePanel;
 // ---- notifications
 const notifDay = d => (d === today() ? 'Today' : d === new Date(Date.now() - 864e5).toISOString().slice(0, 10) ? 'Yesterday' : 'Earlier');
 function notifMenu() {
-  const ns = S.notifs.filter(n => n.pid === myId());
+  const ns = myNotifs();
   const un = ns.filter(n => !n.read).length;
   const list = UI.notifF === 'unread' ? ns.filter(n => !n.read) : ns;
   let lastGroup = '';
@@ -33,8 +33,18 @@ function notifMenu() {
   return `<div class="nmenu" id="notif-menu" role="dialog" aria-label="Notifications">
   <div class="nmenu-h"><b>Notifications</b>${un ? B(ic('check', 14) + 'Mark all as read', 'readAll', {}, 'btn-g btn-sm') : ''}</div>
   <div class="nmenu-tabs seg" role="group" aria-label="Show">${f('all', 'All', ns.length)}${f('unread', 'Unread', un)}</div>
-  <div class="nmenu-list">${rows || `<div class="nmenu-empty">${empty('bell', UI.notifF === 'unread' ? 'You are all caught up' : 'No notifications yet', UI.notifF === 'unread' ? 'Nothing unread.' : 'Activity in your Circles, reviews, approvals and payments appears here.')}</div>`}</div>
+  <div class="nmenu-list">${rows || `<div class="nmenu-empty">${empty('bell', UI.notifF === 'unread' ? 'You are all caught up' : 'No notifications yet', UI.notifF === 'unread' ? 'Nothing unread.' : 'Activity in your Circles, reviews, approvals and payments appears here.')}</div>`}</div>${notifElsewhere()}
   <div class="nmenu-foot">Invitations, approvals and payment changes also go by email.</div></div>`;
+}
+// Unread notices in my other active roles: counted per role, never listed here, opened only after a switch.
+function notifElsewhere() {
+  const rows = switchChoices()
+    .filter(a => a.role !== roleId() && a.status === 'Active')
+    .map(a => [a, notifsFor(a.role).filter(n => !n.read).length])
+    .filter(([, n]) => n);
+  return rows.length
+    ? `<div class="nmenu-else"><span class="cap">In your other roles</span>${rows.map(([a, n]) => `<div class="row nmenu-else-r"><span class="nmenu-else-t"><span><b>${h(ROLE[a.role])}</b>${isPrimary(a) ? ' · Primary' : ''}</span><span class="cap">${n} unread</span></span>${B('Switch', 'doSwitch', { id: a.id }, 'btn-s btn-sm')}</div>`).join('')}</div>`
+    : '';
 }
 A.notifToggle = () => {
   UI.panel = UI.panel === 'notif' ? null : 'notif';
@@ -46,7 +56,7 @@ A.notifFilter = d => {
   render();
 };
 A.readAll = () => {
-  S.notifs.filter(n => n.pid === myId()).forEach(n => (n.read = true));
+  myNotifs().forEach(n => (n.read = true));
   ok();
 };
 document.addEventListener('mousedown', e => {

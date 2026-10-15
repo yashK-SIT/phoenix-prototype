@@ -48,7 +48,8 @@ const MX = {
   profile: { P: 'O', F: 'V', M: 'V', C: 'O', O: 'A', S: '-', A: 'M', T: '-' },
   pathways: { P: 'OC', F: 'CR', M: 'C', C: 'C', O: 'R', S: '-', A: 'M', T: '-' },
   aireq: { P: 'C', F: 'V', M: '-', C: '-', O: '-', S: '-', A: '-', T: '-' },
-  projects: { P: 'C', F: 'R', M: '-', C: '-', O: 'V', S: '-', A: 'M', T: '-' },
+  // Mentors view the projects they mentor (read-only, scoped by inScope)
+  projects: { P: 'C', F: 'R', M: 'V', C: '-', O: 'V', S: '-', A: 'M', T: '-' },
   circles: { P: 'C', F: 'M', M: 'C', C: 'C', O: 'M', S: '-', A: 'VM', T: '-' },
   voting: { P: 'C', F: 'C', M: '-', C: '-', O: '-', S: '-', A: '-', T: '-' },
   ropeteams: { P: 'C', F: 'C', M: 'C', C: '-', O: 'M', S: '-', A: 'VM', T: '-' },
@@ -112,20 +113,143 @@ const myId = () => S.session?.pid;
 // Legal basis to be confirmed by the WSS Trust/Data Steward before any real data is processed.
 const consent = () => 'Granted';
 const ent = pid => S.ents.filter(e => e.pid === pid && e.ctx === ctxId() && ['Active', 'Grace'].includes(e.state));
-const inCtx = o => !o.ctx || o.ctx === ctxId();
+// Projects and their spaces no longer belong to a programme context for the people using them (contexts remain an
+// internal admin construct for agreements, entitlements and audit). What a person sees is decided by the active role:
+// see inScope() below. inCtx stays as the hook every list already calls, and no longer filters by context.
+const inCtx = o => !!o;
 const reaccept = () => {
   const a = asg();
   if (!a) return null;
   const g = S.agreements.find(g => g.ctx === a.ctx && g.status === 'Active' && g.roles.includes(roleBase(a.role)));
-  if (!g) return null;
+  // a published version only asks for re-acceptance once it is in effect
+  if (!g || (g.effective && g.effective > today())) return null;
   return S.accepts.some(x => x.pid === a.pid && x.ag === g.id) ? null : g;
 };
 function audit(a, o, d, r = 'ok') {
   S.audit.unshift({ at: now(), by: myId() || 'anonymous', ctx: ctxId(), a, o, d, r });
 }
-function notify(pid, t, r, p) {
-  S.notifs.unshift({ id: uid('n'), pid, t, r, p: p || {}, read: false, at: today() });
+// Each notice belongs to one of the recipient's roles and shows only while that role is active.
+// rid (optional) names the role; otherwise it is the recipient's role whose work includes the record the notice opens,
+// else the role whose menu has that screen, else their primary role. ctx is kept for the audit trail only.
+function notify(pid, t, r, p, c, rid) {
+  const n = { id: uid('n'), pid, t, r, p: p || {}, read: false, at: today(), ctx: c || ctxId() || null };
+  // rid may be a role id or a base letter (e.g. 'M'); it resolves to the recipient's own role of that kind
+  const own = rid && rid !== '*' && (S.assign || []).find(a => a.pid === pid && (a.role === rid || roleBase(a.role) === rid));
+  n.role = rid === '*' ? '*' : own ? own.role : notifRole(n);
+  S.notifs.unshift(n);
 }
+// Lists of records that notices open, keyed by route (detail routes, and list routes opened with an id).
+const NOTIF_REC = { circles: 'circles', ropeteams: 'ropes', rooms: 'rooms', projects: 'projects', pathway: 'pathways', opportunities: 'cards', matches: 'matches', harvests: 'harvests' };
+const notifRec = n => {
+  // chat notices name their space as p.c
+  if (n.r === 'messages' && n.p && n.p.c) {
+    const k = ['circles', 'ropes', 'rooms', 'pathways'].find(k => byId(k, n.p.c));
+    return k ? [k, byId(k, n.p.c)] : null;
+  }
+  const k = ROUTE_REC[n.r] || NOTIF_REC[n.r];
+  return k && n.p && n.p.id ? [k, byId(k, n.p.id)] : null;
+};
+// '*' marks a notice for every role: invitations and Mentor Requests, answered from whichever role is active.
+function notifRole(n) {
+  const rq = notifRec(n);
+  if (rq && rq[1] && ['circles', 'ropes', 'rooms'].includes(rq[0]) && ((rq[1].members || []).find(m => m.pid === n.pid) || {}).status === 'Invited') return '*';
+  const list = (S.assign || []).filter(a => a.pid === n.pid && !['Revoked', 'Role declined'].includes(a.status));
+  if (!list.length) return null;
+  if (list.length === 1) return list[0].role;
+  const rec = notifRec(n);
+  if (rec && rec[1]) {
+    const hit = list.filter(a => inScopeAs(roleBase(a.role), rec[0], rec[1], n.pid));
+    const strict = hit.filter(a => SCOPED_ROLES.includes(roleBase(a.role)));
+    if (strict.length) return (strict.find(a => a.primary) || strict[0]).role;
+  }
+  const R = ROUTES[n.r];
+  if (R && R.mod && R.mod !== 'any') {
+    const hit = list.filter(a => lvlAs(a.role, R.mod) !== '-' && lvlAs(a.role, R.mod) !== 'T');
+    if (hit.length === 1) return hit[0].role;
+  }
+  return primaryOf(n.pid).role;
+}
+const lvlAs = (rid, m) => {
+  const r = roleRec(rid);
+  return (r && r.perms ? r.perms[m] : (MX[m] || {})[rid]) || '-';
+};
+const ctxLabel = id => (S.contexts.find(c => c.id === id) || {}).name || 'another context';
+// Notices for a role (default: the active one). Switching role swaps the list and the unread count.
+const notifsFor = (rid = roleId(), pid = myId()) => S.notifs.filter(n => n.pid === pid && [rid, '*'].includes(n.role || (n.role = notifRole(n))));
+const myNotifs = () => notifsFor();
+// The context a record belongs to: its own, or that of the project or space it links to.
+const CTX_SRC = ['projects', 'circles', 'ropes', 'rooms', 'cards'];
+function recCtx(o, depth = 0) {
+  if (!o || depth > 2) return null;
+  if (o.ctx) return o.ctx;
+  for (const k of ['project', 'circle', 'card', 'scope', 'linked'])
+    for (const id of [].concat(o[k] || []))
+      for (const c of CTX_SRC) {
+        const r = recCtx(byId(c, id), depth + 1);
+        if (r) return r;
+      }
+  return null;
+}
+// ---- Role scope. Projects and their spaces are no longer separated by programme context; instead the active role
+// decides which records a person works with. A Participant sees what they own or take part in; a Facilitator/Steward
+// what they steward or facilitate; a Mentor what they mentor. Other roles keep the scoping their own screens apply.
+// Used by lists, detail routes (router check), notifications and the authorization layer — one rule everywhere.
+const SCOPED_ROLES = ['P', 'F', 'M'];
+const FAC_RE = /^(Facilitator|Steward|Faculty)/;
+const MEN_RE = /^Mentor/;
+const memIn = (o, pid, test) => !!o && (o.members || []).some(m => m.pid === pid && !['Removed', 'Declined', 'Left'].includes(m.status) && test(m.role || ''));
+const asParticipant = r => !FAC_RE.test(r) && !MEN_RE.test(r) && r !== 'Observer';
+// Spaces (Circle, Rope Team, Action Room) that belong to a project.
+const projSpaces = pr => (pr ? [...S.circles.filter(c => c.project === pr.id), ...S.ropes.filter(r => r.project === pr.id), ...S.rooms.filter(x => x.project === pr.id || [].concat(x.linked || []).includes(pr.id))] : []);
+const spaceProj = o => (o && o.project ? byId('projects', o.project) : null);
+function inScopeAs(rb, kind, o, pid) {
+  if (!o) return false;
+  if (!SCOPED_ROLES.includes(rb)) return true;
+  const sp = { circles: 1, ropes: 1, rooms: 1 };
+  // An open invitation is visible in every role, so it can be answered without switching first.
+  if (sp[kind] && ((o.members || []).find(m => m.pid === pid) || {}).status === 'Invited') return true;
+  if (rb === 'P') {
+    if (kind === 'projects') return o.owner === pid || projSpaces(o).some(x => memIn(x, pid, asParticipant) || x.lead === pid);
+    if (sp[kind]) return o.owner === pid || o.lead === pid || memIn(o, pid, asParticipant);
+    if (kind === 'pathways') return o.pid === pid;
+    if (kind === 'cards' || kind === 'evidence') return o.owner === pid || o.by === pid;
+    if (kind === 'harvests') return o.by === pid || o.subject === pid || ['circles', 'ropes', 'rooms'].some(k => byId(k, o.scope) && inScopeAs(rb, k, byId(k, o.scope), pid));
+    if (kind === 'matches') return o.a === pid || o.b === pid;
+    return true;
+  }
+  if (rb === 'F') {
+    const stew = pr => !!pr && (pr.stewards || []).includes(pid);
+    if (kind === 'projects') return stew(o) || projSpaces(o).some(x => x.facilitator === pid || memIn(x, pid, r => FAC_RE.test(r)));
+    if (sp[kind]) return o.facilitator === pid || memIn(o, pid, r => FAC_RE.test(r)) || stew(spaceProj(o));
+    if (kind === 'pathways') return o.reviewer === pid || (o.by === pid && (o.byRole || 'F') === 'F');
+    if (kind === 'evidence') return o.reviewer === pid || o.by === pid || stew(byId('projects', o.project));
+    if (kind === 'cards') return o.owner === pid || stew(byId('projects', o.project));
+    if (kind === 'harvests') return o.by === pid || ['circles', 'ropes', 'rooms'].some(k => byId(k, o.scope) && inScopeAs(rb, k, byId(k, o.scope), pid));
+    if (kind === 'matches') return o.steward === pid || o.a === pid || o.b === pid;
+    return true;
+  }
+  // Mentor
+  const mentees = new Set(S.ropes.filter(r => r.mentor === pid || memIn(r, pid, r2 => MEN_RE.test(r2))).flatMap(r => (r.members || []).map(m => m.pid)));
+  if (kind === 'projects') return projSpaces(o).some(x => x.mentor === pid || memIn(x, pid, r => MEN_RE.test(r))) || S.mentorReqs.some(m => m.to === pid && m.project === o.id && m.status !== 'Declined');
+  if (sp[kind]) return o.mentor === pid || memIn(o, pid, r => MEN_RE.test(r));
+  if (kind === 'pathways') return (o.by === pid && (o.byRole || 'M') === 'M') || (o.pid !== pid && mentees.has(o.pid) && o.shared !== false);
+  if (kind === 'evidence' || kind === 'cards') return o.by === pid || o.owner === pid || (!!o.project && inScopeAs(rb, 'projects', byId('projects', o.project), pid));
+  if (kind === 'harvests') return o.by === pid || ['circles', 'ropes', 'rooms'].some(k => byId(k, o.scope) && inScopeAs(rb, k, byId(k, o.scope), pid));
+  if (kind === 'matches') return o.a === pid || o.b === pid;
+  return true;
+}
+const inScope = (kind, o) => inScopeAs(role(), kind, o, myId());
+// The roles (of the signed-in person, or of pid) whose work includes a record.
+const rolesSeeing = (kind, o, pid = myId()) => roleChoices(pid).filter(a => a.status === 'Active' && inScopeAs(roleBase(a.role), kind, o, pid));
+// Detail routes and the records they open (by UI.p.id).
+const ROUTE_REC = { project: 'projects', circle: 'circles', rope: 'ropes', room: 'rooms', card: 'cards', match: 'matches', evidence: 'evidence', harvest: 'harvests' };
+const routeCtx = (r, p) => (ROUTE_REC[r] && p && p.id ? recCtx(byId(ROUTE_REC[r], p.id)) : null);
+const routeRec = (r, p) => (ROUTE_REC[r] && p && p.id ? byId(ROUTE_REC[r], p.id) : null);
+// My active assignment in a context, preferring the given role.
+const activeIn = (c, role) => {
+  const list = S.assign.filter(a => a.pid === myId() && a.ctx === c && a.status === 'Active');
+  return list.find(a => a.role === role) || list[0];
+};
 function toast(t, k = 'ok') {
   UI.toast = { t, k };
   clearTimeout(UI._tt);
@@ -291,7 +415,10 @@ const head = (t, sub, right = '', crumbs) => {
     badges.push(m);
     return '';
   });
-  return `${crumbs ? crumbsHtml(crumbs) : ''}<div class="phead"><div class="phead-t"><div class="row wrap" style="gap:10px"><h1 class="h1">${t}</h1>${badges.join('')}</div>${sub ? `<p class="sub">${sub}</p>` : ''}</div>${right.trim() ? `<div class="phead-a">${right}</div>` : ''}</div>`;
+  // a screen can place one block (e.g. invitations) straight under its first heading
+  const after = UI._afterHead || '';
+  UI._afterHead = '';
+  return `${crumbs ? crumbsHtml(crumbs) : ''}<div class="phead"><div class="phead-t"><div class="row wrap" style="gap:10px"><h1 class="h1">${t}</h1>${badges.join('')}</div>${sub ? `<p class="sub">${sub}</p>` : ''}</div>${right.trim() ? `<div class="phead-a">${right}</div>` : ''}</div>${after}`;
 };
 const aiTag = t => `<span class="ai-tag">${ic('sparkle', 12)}${t || 'AI draft'}</span>`;
 const money = (c, n) =>
@@ -366,7 +493,7 @@ function fi(f, n, label, o = {}) {
   else if (o.type === 'checkbox')
     return `<label class="row" style="align-items:flex-start;gap:10px"><input class="chk" type="checkbox" name="${n}" value="yes" ${v === 'yes' || v === true ? 'checked' : ''} aria-invalid="${!!e}"><span>${label}${req}</span></label>${e ? `<span class="emsg" role="alert">${ic('alert', 14)}${e}</span>` : ''}`;
   else
-    ctl = `<input id="${id}" name="${n}" class="input${ec}" type="${o.type || 'text'}" value="${h(v)}" placeholder="${h(o.ph || '')}" ${o.ro ? 'readonly' : ''} ${o.min != null ? `min="${o.min}"` : ''} ${o.maxv != null ? `max="${o.maxv}"` : ''} ${o.step ? `step="${o.step}"` : ''} aria-invalid="${!!e}" ${o.auto ? `autocomplete="${o.auto}"` : ''}>`;
+    ctl = `<input id="${id}" name="${n}" class="input${ec}" type="${o.type || 'text'}" value="${h(v)}" placeholder="${h(o.ph || '')}" ${o.ro ? 'readonly' : ''} ${o.min != null ? `min="${o.min}"` : ''} ${o.maxv != null ? `max="${o.maxv}"` : ''} ${o.step ? `step="${o.step}"` : ''} aria-invalid="${!!e}" ${o.auto ? `autocomplete="${o.auto}"` : ''} ${o.ch ? `data-ch="${o.ch}"` : ''}>`;
   return `<div class="field ${o.cls || ''}"><label class="lbl" for="${id}">${label}${req}</label>${ctl}${e ? `<span class="emsg" role="alert">${ic('alert', 14)}${e}</span>` : ''}${o.help ? `<span class="help">${o.help}</span>` : ''}${o.vis ? `<span class="vis">${ic('lock', 14)}${o.vis}</span>` : ''}</div>`;
 }
 function validate(f, d, rules) {
@@ -410,19 +537,44 @@ function clearF(f) {
   delete UI.err[f];
   (UI._cleared = UI._cleared || new Set()).add(f);
 }
-// ---- date of birth: a real past date, not more than 120 years ago. No minimum age is enforced (policy not set).
+// ---- date of birth: a real past date, not more than 120 years ago, and the person must be at least MIN_AGE.
+// Everywhere a DOB is collected or changed uses dobField + dobRules, and guards.js re-checks it on submit (dobGate).
+const MIN_AGE = 18;
 const dobOk = v => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
   // Parsed as UTC so the round-trip check holds in every time zone.
   const d = new Date(v + 'T00:00:00Z');
   return !isNaN(d) && d.toISOString().slice(0, 10) === v && v < today() && +v.slice(0, 4) >= new Date().getFullYear() - 120;
 };
+// Whole years on a given day (YYYY-MM-DD). Someone born on 29 Feb has their birthday on 1 Mar in other years.
+const ageOn = (dob, on = today()) => +on.slice(0, 4) - +dob.slice(0, 4) - (on.slice(5) < dob.slice(5) ? 1 : 0);
+const adultOk = v => dobOk(v) && ageOn(v) >= MIN_AGE;
+// Latest date of birth that is MIN_AGE today; the date picker cannot go past it.
+const dobMax = () => {
+  const t = today();
+  const y = String(+t.slice(0, 4) - MIN_AGE).padStart(4, '0');
+  return t.slice(5) === '02-29' && !dobOk(y + '-02-29') ? y + '-02-28' : y + t.slice(4);
+};
+const dobMin = () => +today().slice(0, 4) - 120 + '-01-01';
+const UNDERAGE_MSG = `PHOENIX accounts are for people aged ${MIN_AGE} or older. This date of birth is less than ${MIN_AGE} years ago.`;
 const dobRules = req => [
   ...(req ? [['req', 'Enter your date of birth.']] : []),
   ['fn', { f: v => !v || dobOk(v), m: 'Enter a valid date of birth in the past.' }],
+  ['fn', { f: v => !v || adultOk(v), m: UNDERAGE_MSG }],
 ];
 const dobField = (f, value, o = {}) =>
-  fi(f, 'dob', 'Date of birth', { type: 'date', req: o.req !== false, value, maxv: today(), auto: 'bday', vis: 'You and authorised administration', ...o });
+  fi(f, 'dob', 'Date of birth', {
+    type: 'date',
+    req: o.req !== false,
+    value,
+    min: dobMin(),
+    maxv: dobMax(),
+    auto: 'bday',
+    ch: 'dobCheck',
+    help: `Must be ${MIN_AGE} or older. Latest date you can choose: ${fmt(dobMax())}.`,
+    vis: 'You and authorised administration',
+    ...o,
+  });
 // Accounts are soft-deleted; a deleted account no longer matches an email address.
 const personByEmail = e => S.people.find(p => p.status !== 'Deleted' && (p.email || '').toLowerCase() === String(e || '').trim().toLowerCase());
 const errSum = f => {
@@ -457,7 +609,6 @@ function navItems() {
       ['tenants', 'Organizations', 'building'],
       ['roles', 'Role management', 'shield'],
       ['policies', 'Policies & agreements', 'file'],
-      ['compassqs', 'Purpose Compass', 'target'],
       ['platform:integrations', 'Integrations', 'link'],
       ['platform:security', 'Security & access', 'lock'],
       ['platform:health', 'Health & alerts', 'chart'],
@@ -468,7 +619,7 @@ function navItems() {
   items.push(['home', 'My PHOENIX', 'home']);
   if (hasChats()) items.push(['messages', 'Messages', 'message']);
   add('pathways', 'pathway', 'Pathway', 'route', r !== 'C' && r !== 'O');
-  add('projects', 'projects', r === 'F' ? 'Project reviews' : 'Projects', 'folder');
+  add('projects', 'projects', r === 'F' ? 'Project reviews' : r === 'M' ? 'Mentored projects' : r === 'P' ? 'My projects' : 'Projects', 'folder');
   add('circles', 'circles', 'Circles', 'users');
   add('ropeteams', 'ropeteams', 'Rope Teams', 'route');
   add('rooms', 'rooms', W + 's', 'room');
@@ -550,7 +701,8 @@ function navCount(r) {
 }
 function sidebar() {
   const a = asg();
-  const others = roleChoices().length;
+  const others = switchChoices().length;
+  const prim = isPrimary(a);
   const act = PARENT[UI.route] || UI.route;
   let last = null;
   const items = navItems()
@@ -567,7 +719,7 @@ function sidebar() {
       return `${sec}<a href="#" class="nav${on}" data-a="go" data-r="${rt}"${tb ? ` data-tab="${tb}"` : ''} data-tip="${h(l)}"${on ? ' aria-current="page"' : ''}>${ic(i)}<span class="t">${h(l)}</span><span class="ts" aria-hidden="true">${h(SHORT[rt] || l.split(' ')[0])}</span>${n ? `<span class="ncount" aria-label="${n} new">${n}</span>` : ''}</a>`;
     })
     .join('');
-  return `<aside class="side" id="side-nav" aria-label="Main navigation"${UI.drawer ? ' role="dialog" aria-modal="true"' : ''}><div class="side-plate"><a href="#" class="brand" data-a="go" data-r="home" aria-label="PHOENIX home"><span class="mark">${MARK()}</span><span class="wm"><b>PHOENIX</b><span>Foundation Alpha</span></span></a><button class="side-user" type="button" data-a="switcher" aria-label="${h(me().name)}, ${h(ROLE[a.role])}${others > 1 ? '. Switch role' : ''}" title="${h(me().name)} · ${h(ROLE[a.role])}"><span class="av side-av" aria-hidden="true">${ini(myId())}</span><span class="side-user-t"><b title="${h(me().name)}">${h(me().name)}</b><small title="${h(ROLE[a.role])}">${h(ROLE[a.role])}${a.bundles.length ? ' · +' + a.bundles.length + ' bundle' + (a.bundles.length > 1 ? 's' : '') : ''}</small></span><span class="side-user-chev">${ic('chev', 16)}</span></button></div><nav class="side-nav" aria-label="Sections">${items}</nav><div class="side-foot"><button type="button" class="nav side-close" data-a="drawerClose">${ic('x')}<span class="t">Close menu</span></button></div></aside>`;
+  return `<aside class="side" id="side-nav" aria-label="Main navigation"${UI.drawer ? ' role="dialog" aria-modal="true"' : ''}><div class="side-plate"><a href="#" class="brand" data-a="go" data-r="home" aria-label="PHOENIX home"><span class="mark">${MARK()}</span><span class="wm"><b>PHOENIX</b><span>Foundation Alpha</span></span></a><button class="side-user" type="button" data-a="switcher" aria-label="${h(me().name)}, active role ${h(ROLE[a.role])}${prim ? ' (primary)' : ''}${others > 1 ? '. Switch role, ' + others + ' roles' : ''}" title="${h(me().name)} · ${h(ROLE[a.role])}${prim ? ' · Primary role' : ''}"><span class="av side-av" aria-hidden="true">${ini(myId())}</span><span class="side-user-t"><b title="${h(me().name)}">${h(me().name)}</b><small class="side-user-role" title="${h(ROLE[a.role])}"><span class="side-user-rn">${h(ROLE[a.role])}</span>${prim ? '<span class="side-user-prim">Primary</span>' : ''}</small><small class="side-user-ctx">${others > 1 ? 'Switch role · ' + others + ' roles' : a.bundles.length ? '+' + a.bundles.length + ' bundle' + (a.bundles.length > 1 ? 's' : '') : 'Your role'}</small></span><span class="side-user-chev">${ic('chev', 16)}</span></button></div><nav class="side-nav" aria-label="Sections">${items}</nav><div class="side-foot"><button type="button" class="nav side-close" data-a="drawerClose">${ic('x')}<span class="t">Close menu</span></button></div></aside>`;
 }
 // The PHOENIX mark: an ember plume rising from a baseline.
 const MARK = (s = 20) =>
@@ -576,7 +728,7 @@ const MARK = (s = 20) =>
 const crumbsHtml = list =>
   `<ol class="crumbs" aria-label="Breadcrumb">${list.map(([l, r, p], i) => (i < list.length - 1 && r ? `<li>${L(l, r, p, '')}</li>` : `<li><span aria-current="page">${l}</span></li>`)).join('')}</ol>`;
 function topbar() {
-  const unread = S.notifs.filter(n => n.pid === myId() && !n.read).length;
+  const unread = myNotifs().filter(n => !n.read).length;
   return `<header class="top"><button class="iconbtn menubtn" type="button" data-a="drawerToggle" aria-label="Open navigation" aria-controls="side-nav" aria-expanded="${!!UI.drawer}">${ic('menu', 20)}</button><a href="#" class="mbrand" data-a="go" data-r="home" aria-label="PHOENIX home"><span class="mark">${MARK(16)}</span></a>
  <div class="grow"></div>
  ${can('ai') ? `<button type="button" class="btn btn-s btn-sm askbtn ${UI.panel === 'ask' ? 'on' : ''}" data-a="askToggle" aria-label="Ask PHOENIX" aria-expanded="${UI.panel === 'ask'}" aria-controls="assist" title="Ask PHOENIX">${ic('sparkle', 16)}<span class="hide-md">Ask PHOENIX</span></button>` : ''}
@@ -618,7 +770,7 @@ function bottomnav() {
     .join('')}<a href="#" class="bn" data-a="moreNav"><span class="bi">${ic('more', 20)}</span>More</a></nav>`;
 }
 function deniedView(m) {
-  return `<div class="denied card"><span class="tile t-soft" style="width:56px;height:56px;margin:0 auto">${ic('lock', 24)}</span><h1 class="h2" style="margin-top:12px">You do not have access to this area</h1><p class="muted" style="margin-top:8px">Your effective permission for <b>${h(m)}</b> as ${ROLE[role()]} in ${h(ctx()?.name)} is: <b>${LV[lvl(m)] || 'no access'}</b>.</p><p class="cap" style="margin-top:8px">Effective permission = identity + scoped role + context + mandate + object permission + consent + lifecycle state + entitlement. This attempt has been recorded.</p><div style="margin-top:16px">${B('Back to My PHOENIX', 'go', { r: 'home' }, 'btn-p')}</div></div>`;
+  return `<div class="denied card"><span class="tile t-soft" style="width:56px;height:56px;margin:0 auto">${ic('lock', 24)}</span><h1 class="h2" style="margin-top:12px">You do not have access to this area</h1><p class="muted" style="margin-top:8px">Your effective permission for <b>${h(m)}</b> as ${ROLE[role()]} is: <b>${LV[lvl(m)] || 'no access'}</b>.</p><p class="cap" style="margin-top:8px">Effective permission = identity + scoped role + context + mandate + object permission + consent + lifecycle state + entitlement. This attempt has been recorded.</p><div style="margin-top:16px">${B('Back to My PHOENIX', 'go', { r: 'home' }, 'btn-p')}</div></div>`;
 }
 // ---- routes
 const ROUTES = {}; // name:{mod, view}
@@ -653,7 +805,12 @@ function render() {
       if (R.mod && R.mod !== 'any' && !(can(R.mod) || (R.tech && lvl(R.mod).match(/[TM]/)))) {
         audit('Access denied', UI.route, 'Route guard: ' + LV[lvl(R.mod)], 'denied');
         inner = deniedView(R.mod);
+      } else if (routeRec(UI.route, UI.p) && !inScope(ROUTE_REC[UI.route], routeRec(UI.route, UI.p))) {
+        // checked on every open, whatever the link or notice that led here
+        audit('Access denied', UI.route, 'Record is outside the active role (' + ROLE[roleId()] + ')', 'denied');
+        inner = otherRoleView(UI.route, UI.p);
       } else {
+        UI._afterHead = '';
         try {
           inner = R.view();
         } catch (e) {
@@ -731,6 +888,17 @@ function busy(t, fn, ms = 700) {
 // ---- events
 const A = {},
   F = {};
+// Checks the date as soon as it is picked or typed, without re-rendering the rest of the form.
+A.dobCheck = (d, el) => {
+  const box = el.closest('.field');
+  if (!box) return;
+  const v = el.value;
+  const m = !v ? '' : !dobOk(v) ? 'Enter a valid date of birth in the past.' : !adultOk(v) ? UNDERAGE_MSG : '';
+  box.querySelector('.emsg')?.remove();
+  el.classList.toggle('err', !!m);
+  el.setAttribute('aria-invalid', String(!!m));
+  if (m) el.insertAdjacentHTML('afterend', `<span class="emsg" role="alert">${ic('alert', 14)}${m}</span>`);
+};
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-a]');
   if (!el) return;
@@ -904,16 +1072,38 @@ function roleChoices(pid = myId()) {
     });
   return out;
 }
+// Primary role: the first role the person was given (at registration or when the account was created). It stays
+// primary when an administrator or project owner later adds roles. One account and one profile serve every role.
+const primaryOf = (pid = myId()) => {
+  const l = S.assign.filter(x => x.pid === pid);
+  return l.find(x => x.primary) || l[0];
+};
+const isPrimary = (x, pid = x.pid) => !!x && primaryOf(pid)?.role === x.role;
+// The switcher lists roles, primary first. Only active roles can be chosen for work.
+const switchChoices = (pid = myId()) => {
+  const p = primaryOf(pid);
+  return roleChoices(pid).sort((a, b) => (b.role === p?.role) - (a.role === p?.role));
+};
+// ' · Primary role' after the active role's name in headings, when it is the person's primary role.
+const activeRoleTag = () => (isPrimary(asg()) ? ' · Primary role' : '');
+const PRIMARY_TAG = '<span class="pill p-navy role-primary">Primary</span>';
 A.switcher = () => {
-  const list = roleChoices();
+  const list = switchChoices();
   if (list.length < 2) {
     toast('You hold one role.', 'warn');
     render();
     return;
   }
+  const row = x => {
+    const cur = roleId() === x.role;
+    const ok = x.status === 'Active';
+    const n = ok && !cur ? notifsFor(x.role).filter(n => !n.read).length : 0;
+    const body = `<span class="tile t-soft">${ic('user', 18)}</span><span class="col" style="flex:1"><span class="row" style="gap:8px"><b>${h(ROLE[x.role])}</b>${isPrimary(x) ? PRIMARY_TAG : ''}</span><span class="cap">${isPrimary(x) ? 'Your first role' : 'Added role'}${x.bundles.length ? ' · ' + h(x.bundles.join(', ')) : ''}${n ? ' · ' + n + ' unread notification' + (n > 1 ? 's' : '') : ''}</span>${!ok ? '<span class="cap">Not available for work until it is active.</span>' : ''}</span>${cur ? pill('Current', 'p-teal') : pill(x.status)}`;
+    return ok && !cur ? `<button class="demo-acc" type="button" data-a="doSwitch" data-id="${x.id}">${body}</button>` : `<div class="demo-acc is-off" aria-disabled="true"${cur ? ' aria-current="true"' : ''}>${body}</div>`;
+  };
   modal(
     'Switch role',
-    `<p class="muted">My PHOENIX changes to the role you choose. What you can see and do follows that role.</p><div class="col" style="gap:8px">${list.map(x => `<button class="demo-acc" type="button" data-a="doSwitch" data-id="${x.id}"><span class="tile t-soft">${ic('user', 18)}</span><span class="col" style="flex:1"><b>${h(ROLE[x.role])}</b><span class="cap">${x.bundles.length ? h(x.bundles.join(', ')) : 'No extra bundles'}</span></span>${x.id === S.session.aid ? pill('Current', 'p-teal') : pill(x.status)}</button>`).join('')}</div>`,
+    `<p class="muted">Your account and profile stay the same in every role. The menu, dashboard, projects and notifications change to the role you choose; nothing from one role shows in another.</p><div class="col" style="gap:8px">${list.map(row).join('')}</div>`,
   );
 };
 // A policy published in another tab reaches this one straight away.
@@ -927,13 +1117,45 @@ window.addEventListener('storage', e => {
     }
   } catch (x) {}
 });
-A.doSwitch = d => {
+// Unsaved typing in any open form (the page or a dialog).
+const dirtyForms = () =>
+  [...document.querySelectorAll('form[data-f] textarea, form[data-f] input:not([type=hidden])')].some(el =>
+    el.type === 'checkbox' || el.type === 'radio' ? el.checked !== el.defaultChecked : el.value !== el.defaultValue,
+  );
+// Re-check the chosen assignment, then rebuild everything for it: dialogs, panels, drafts and cached screen state are dropped.
+// Unsaved work is never carried into the new context; the person is asked first. then: { r, p } opens a screen after the switch.
+function switchTo(id, then, force) {
+  const a = S.assign.find(x => x.id === id);
+  if (!a || a.pid !== myId() || a.status !== 'Active') {
+    audit('Role switch refused', 'session', id + ' · ' + (a ? a.status : 'unknown'), 'denied');
+    toast('That role is not active, so it cannot be used for work.', 'err');
+    return render();
+  }
+  if (!force && dirtyForms()) {
+    UI.swPending = { id, then };
+    return modal(
+      'Leave unsaved changes?',
+      `<p class="muted">You have unsaved changes as ${h(ROLE[asg().role])}. They are not carried into your ${h(ROLE[a.role])} role. Stay to save them first, or discard them and switch.</p><div class="actions">${B('Stay and save', 'closeM', {}, 'btn-s btn-sm')}${B('Discard and switch', 'doSwitchGo', {}, 'btn-d btn-sm')}</div>`,
+    );
+  }
+  UI.swPending = null;
+  audit('Role switched', 'session', ROLE[asg().role] + ' → ' + ROLE[a.role]);
   resetUI();
-  S.session.aid = d.id;
-  audit('Context switched', 'session', d.id);
+  S.session.aid = a.id;
+  me().lastAid = a.id;
   save();
-  go('home');
-};
+  toast('Now working as ' + ROLE[a.role] + (isPrimary(a) ? ' (primary role)' : '') + '.');
+  go(then ? then.r : 'home', then ? then.p : {});
+}
+A.doSwitch = d => switchTo(d.id);
+A.doSwitchGo = () => UI.swPending && switchTo(UI.swPending.id, UI.swPending.then, true);
+// Shown instead of a record that is outside the active role. Offers a safe switch to a role of yours that covers it.
+function otherRoleView(r, p) {
+  const rec = routeRec(r, p);
+  const a = rec && rolesSeeing(ROUTE_REC[r], rec).find(x => x.role !== roleId());
+  return `<div class="col" style="gap:16px;max-width:640px">${banner('warn', 'Not part of your work as ' + h(ROLE[roleId()]), 'This item belongs to a different role. Items open only in the role whose work includes them.')}<div class="row wrap" style="gap:8px">${a ? B('Switch to ' + h(ROLE[a.role]) + ' and open', 'ctxOpen', { id: a.id, r, pid: (p && p.id) || '' }, 'btn-p') : `<span class="cap">None of your roles includes this item.</span>`}${B('Back to My PHOENIX', 'go', { r: 'home' }, 'btn-s')}</div></div>`;
+}
+A.ctxOpen = d => switchTo(d.id, { r: d.r, p: d.pid ? { id: d.pid } : {} });
 A.moreNav = () =>
   modal(
     'Menu',
@@ -949,12 +1171,27 @@ A.moreNav = () =>
       )}${can('ai') ? `<a href="#" class="nav" data-a="go" data-r="ask">${ic('sparkle')}<span>Ask PHOENIX</span></a>` : ''}${role() !== 'T' ? `<a href="#" class="nav" data-a="go" data-r="privacy">${ic('shield')}<span>Privacy & agreements</span></a>` : ''}<a href="#" class="nav out" data-a="logout">${ic('logout')}<span>Log out</span></a></div>`,
   );
 A.read = d => {
-  const n = S.notifs.find(x => x.id === d.id);
-  if (n) {
-    n.read = true;
-    save();
-    go(n.r, n.p);
+  const n = S.notifs.find(x => x.id === d.id && x.pid === myId());
+  if (!n) return;
+  const rid = n.role || notifRole(n);
+  if (rid && rid !== '*' && rid !== roleId()) {
+    // a notice for another role never opens here: name the role and offer a safe switch
+    const a = roleChoices().find(x => x.role === rid && x.status === 'Active');
+    UI.panel = null;
+    return modal(
+      'Notice for your ' + h(ROLE[rid]) + ' role',
+      `<p class="muted">You are working as ${h(ROLE[roleId()])}.</p>${a ? `<div class="actions">${B('Cancel', 'closeM', {}, 'btn-s btn-sm')}${B('Switch to ' + h(ROLE[rid]) + ' and open', 'notifSwitch', { id: n.id, aid: a.id }, 'btn-p btn-sm')}</div>` : banner('warn', 'Not available', 'That role is no longer active, so the notice cannot be opened.')}`,
+    );
   }
+  n.read = true;
+  save();
+  go(n.r, n.p);
+};
+A.notifSwitch = d => {
+  const n = S.notifs.find(x => x.id === d.id && x.pid === myId());
+  if (!n) return;
+  n.read = true;
+  switchTo(d.aid, { r: n.r, p: n.p });
 };
 A.resetDemo = () =>
   modal(

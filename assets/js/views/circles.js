@@ -1,22 +1,31 @@
 // ---------- CIRCLES (E04, F05, D-03, D-04) ----------
-const eligibleVoter = (c, pid) =>
-  c.members.some(m => m.pid === pid && m.status === 'Active' && ['Project owner', 'Member'].includes(m.role));
+// One eligible member = one vote. The project owner and active Circle members vote; the owner has no extra weight.
+// Facilitators, mentors and observers take part in the discussion but do not vote.
+const VOTER_ROLES = ['Project owner', 'Member'];
+const eligibleVoter = (c, pid) => c.members.some(m => m.pid === pid && m.status === 'Active' && VOTER_ROLES.includes(m.role));
+const eligibleVoters = c => c.members.filter(m => m.status === 'Active' && VOTER_ROLES.includes(m.role));
+// Every poll has exactly three choices, stored by index: Yes (0), No (1), NTA (2). Yes and No carry the creator's text.
+const VOTE_KEYS = ['Yes', 'No', 'NTA'];
+const NTA_TEXT = 'Not applicable — I abstain on this question';
+const YES = 0,
+  NO = 1,
+  NTA = 2;
+// Outcome against all eligible members (not only those who voted): not voting and NTA both count as not approving.
+// Approved when Yes ÷ eligible ≥ threshold. Otherwise a Yes/No tie returns the proposal to Shared for revision
+// and a new vote; anything else is not approved.
 function tally(c, p) {
-  const V = S.settings.voting;
-  const el = c.members.filter(m => m.status === 'Active' && ['Project owner', 'Member'].includes(m.role));
-  const w = m => (m.role === 'Project owner' ? V.ownerWeight : V.memberWeight);
-  const tot = el.reduce((a, m) => a + w(m), 0);
-  const per = p.options.map((o, i) => el.filter(m => p.votes[m.pid] === i).reduce((a, m) => a + w(m), 0));
-  const best = per.indexOf(Math.max(...per));
-  return {
-    tot,
-    per,
-    best,
-    pct: tot ? Math.round((per[best] / tot) * 100) : 0,
-    voted: el.filter(m => p.votes[m.pid] != null).length,
-    eligible: el.length,
-  };
+  const th = S.settings.voting.threshold;
+  const el = eligibleVoters(c);
+  const n = el.length;
+  const per = [YES, NO, NTA].map(i => el.filter(m => p.votes[m.pid] === i).length);
+  const voted = el.filter(m => p.votes[m.pid] != null).length;
+  const pct = n ? Math.round((per[YES] / n) * 100) : 0;
+  const pass = n > 0 && per[YES] * 100 >= th * n;
+  const tie = !pass && voted > 0 && per[YES] === per[NO] && per[YES] > 0;
+  return { eligible: n, per, voted, pct, pass, tie, need: Math.ceil((th * n) / 100), outcome: pass ? 'pass' : tie ? 'tie' : voted ? 'fail' : 'none' };
 }
+const SHARED = 'Shared — revise and re-vote';
+const POLL_PILL = { 'Closed — Approved': 'p-green', 'Closed — Not approved': 'p-amber', 'Closed — No decision': 'p-amber', [SHARED]: 'p-navy', 'Closed — Revised': 'p-grey' };
 // Circles a project owner can create: their own accepted projects that do not have a Circle yet.
 const ownCircleProjects = () =>
   S.projects.filter(p => inCtx(p) && p.owner === myId() && p.status === 'Accepted' && !p.circle);
@@ -39,10 +48,12 @@ const joinBtn = (c, kind = 'circles') => {
 };
 route('circles', 'circles', () => {
   const r = role();
+  UI._afterHead = invitesCard('circles');
   const all = S.circles.filter(inCtx);
   const sees = c => memberOf(c) || ['A', 'O'].includes(r) || c.facilitator === myId() || ['Requested', 'Invited'].includes((memberRec(c) || {}).status);
-  const mine = all.filter(sees);
-  const others = all.filter(c => !sees(c) && !['Archived/Closed'].includes(c.state));
+  // Only Circles that are part of the active role's work; Participants can also discover Circles to join.
+  const mine = all.filter(c => sees(c) && inScope('circles', c));
+  const others = r === 'P' ? all.filter(c => !mine.includes(c) && !memberRec(c) && !['Archived/Closed'].includes(c.state)) : [];
   const ownP = r === 'P' ? ownCircleProjects() : [];
   return (
     head(
@@ -87,7 +98,7 @@ route('circles', 'circles', () => {
     (others.length && !['A', 'O'].includes(r)
       ? '<div class="section-gap"></div>' +
         card(
-          'Other Circles in this programme',
+          'Other Circles you can ask to join',
           'You can see what each Circle is for. Content stays with its members until the facilitator or project owner approves your request.',
           dataView('circles:others', {
             label: 'Circles',
@@ -274,7 +285,7 @@ route('circle', 'circles', () => {
           ['Facilitator', nm(c.facilitator)],
           ['Agreement', h(c.agreement)],
           ['Visibility', h(c.visibility)],
-        ])}<div class="row ws-acts">${B('Decline', 'circleInvite', { id: c.id, v: 'Declined' })}${B('Accept and join', 'circleInvite', { id: c.id, v: 'Active' }, 'btn-p btn-sm')}</div>`,
+        ])}${invPanel('circles', c)}`,
       )
     );
   const paused = c.state === 'Paused/Repair';
@@ -331,31 +342,34 @@ route('circle', 'circles', () => {
         act = B('Request changes', 'commitReview', { c: c.id, id: x.id, v: 'changes' }) + B('Accept work', 'commitReview', { c: c.id, id: x.id, v: 'ok' }, 'btn-p btn-sm');
       return pill(x.status) + act;
     };
-    body = `<div class="g12">${card('Responsibilities and commitments', 'Facilitators assign responsibilities; members make commitments. Assigned work is reviewed before it counts as done.', c.commitments.map(x => lrow(x.assignedBy ? 'flag' : 'calendar', h(x.t), nm(x.by) + (x.assignedBy ? ' · assigned by ' + nm(x.assignedBy) : '') + ' · due ' + fmt(x.due) + dueTag(x.due, x.status === 'Done') + (x.note ? `<span class="cap" style="display:block">Changes requested: ${h(x.note)}</span>` : ''), commitRight(x))).join('') || '<p class="cap">None yet.</p>', noRec ? '' : B(ic('plus', 14) + (mgr ? 'Assign or add' : 'Add commitment'), 'addRec', { id: c.id, k: 'commitments' }), 'c6')}${card('Reflections', '', c.reflections.map(x => lrow('message', h(x.t), nm(x.by) + ' · ' + fmt(x.at))).join('') || '<p class="cap">None yet.</p>', noRec ? '' : B(ic('plus', 14) + 'Add', 'addRec', { id: c.id, k: 'reflections' }), 'c6')}${card('Concerns', 'Routed to the facilitator, and to the Incident/Safety Owner when escalated.', c.concerns.map(x => lrow(x.ret ? 'refresh' : 'alert', h(x.t), (x.anon ? 'Anonymous' : nm(x.by)) + ' · ' + fmt(x.at), pill(x.status) + (mgr && x.status === 'Open' ? B('Resolve', 'resolveConcern', { c: c.id, id: x.id }) + (x.ret ? '' : B('Escalate', 'escalateConcern', { c: c.id, id: x.id })) : ''))).join('') || '<p class="cap">None raised.</p>', isMem && !ro && canRec ? B(ic('plus', 14) + 'Raise concern', 'addRec', { id: c.id, k: 'concerns' }) : '', 'c6')}${card('Decisions', 'Decision history. An approved decision is what moves the project forward.', c.decisions.map(x => lrow('check', h(x.t), fmt(x.at) + ' · ' + h(x.by))).join('') || '<p class="cap">None yet. Decide by weighted vote, or record a facilitator decision.</p>', mgr && !ro ? B(ic('plus', 14) + 'Record decision', 'addRec', { id: c.id, k: 'decisions' }) : '', 'c6')}</div>`;
+    body = `<div class="g12">${card('Responsibilities and commitments', 'Facilitators assign responsibilities; members make commitments. Assigned work is reviewed before it counts as done.', c.commitments.map(x => lrow(x.assignedBy ? 'flag' : 'calendar', h(x.t), nm(x.by) + (x.assignedBy ? ' · assigned by ' + nm(x.assignedBy) : '') + ' · due ' + fmt(x.due) + dueTag(x.due, x.status === 'Done') + (x.note ? `<span class="cap" style="display:block">Changes requested: ${h(x.note)}</span>` : ''), commitRight(x))).join('') || '<p class="cap">None yet.</p>', noRec ? '' : B(ic('plus', 14) + (mgr ? 'Assign or add' : 'Add commitment'), 'addRec', { id: c.id, k: 'commitments' }), 'c6')}${card('Reflections', '', c.reflections.map(x => lrow('message', h(x.t), nm(x.by) + ' · ' + fmt(x.at))).join('') || '<p class="cap">None yet.</p>', noRec ? '' : B(ic('plus', 14) + 'Add', 'addRec', { id: c.id, k: 'reflections' }), 'c6')}${card('Concerns', 'Routed to the facilitator, and to the Incident/Safety Owner when escalated.', c.concerns.map(x => lrow(x.ret ? 'refresh' : 'alert', h(x.t), (x.anon ? 'Anonymous' : nm(x.by)) + ' · ' + fmt(x.at), pill(x.status) + (mgr && x.status === 'Open' ? B('Resolve', 'resolveConcern', { c: c.id, id: x.id }) + (x.ret ? '' : B('Escalate', 'escalateConcern', { c: c.id, id: x.id })) : ''))).join('') || '<p class="cap">None raised.</p>', isMem && !ro && canRec ? B(ic('plus', 14) + 'Raise concern', 'addRec', { id: c.id, k: 'concerns' }) : '', 'c6')}${card('Decisions', 'Decision history. An approved decision is what moves the project forward.', c.decisions.map(x => lrow('check', h(x.t), fmt(x.at) + ' · ' + h(x.by))).join('') || '<p class="cap">None yet. Decide by vote, or record a facilitator decision.</p>', mgr && !ro ? B(ic('plus', 14) + 'Record decision', 'addRec', { id: c.id, k: 'decisions' }) : '', 'c6')}</div>`;
   }
-  if (t.cur === 'polls')
+  if (t.cur === 'polls') {
+    const th = S.settings.voting.threshold;
+    const el = eligibleVoters(c);
+    const amV = eligibleVoter(c, myId());
+    const who = `<section class="poll-elig" aria-label="Who can vote"><div class="poll-elig-h">${ic('users', 16)}<b>Who can vote</b><span class="cap">${el.length} eligible member${el.length === 1 ? '' : 's'} · one vote each</span></div><p class="cap">The project owner and active Circle members each have <b>one vote</b>; the project owner has no extra weight. Facilitators, mentors and observers join the discussion but do not vote. ${amV ? 'You are an eligible voter.' : 'You are not an eligible voter in this Circle.'}</p><p class="cap">${el.map(m => nm(m.pid) + (m.role === 'Project owner' ? ' (project owner)' : '')).join(' · ') || 'No eligible members yet.'}</p><p class="cap">A proposal is <b>approved</b> when Yes votes reach ${th}% of all ${el.length} eligible members (at least ${Math.ceil((th * el.length) / 100)} Yes). NTA and not voting count as not approving. A Yes/No <b>tie</b> returns the proposal to Shared for revision and a new vote.</p></section>`;
     body = card(
-      'Weighted votes',
-      'Project owner counts twice a regular member. Approved when approving weight ÷ total eligible weight ≥ ' +
-        S.settings.voting.threshold +
-        '%.',
-      c.polls
-        .map(p => {
-          const tl = tally(c, p);
-          const mv = p.votes[myId()];
-          const canV = eligibleVoter(c, myId()) && p.status === 'Open' && !ro;
-          return `<article class="poll-item"><header class="poll-h"><span class="tile t-purple" aria-hidden="true">${ic('vote', 16)}</span><b>${h(p.q)}</b>${pill(p.status, { 'Closed — Decided': 'p-green', 'Closed — No decision': 'p-amber' }[p.status])}</header>${p.desc ? `<p class="muted ws-pre poll-desc">${h(p.desc)}</p>` : ''}<p class="cap poll-meta">${p.created ? 'Created ' + fmt(p.created.slice(0, 16)) + (p.by ? ' by ' + nm(p.by) : '') + ' · ' : ''}${p.status === 'Open' ? 'Closes ' : 'Closed '}${fmt(p.closedAt ? p.closedAt.slice(0, 16) : p.closes)} · ${tl.voted} of ${tl.eligible} eligible voters · total eligible weight ${tl.tot}</p>
-  <div class="poll-opts">${p.options.map((o, i) => `<div class="poll-opt${mv === i ? ' is-mine' : ''}${p.status !== 'Open' && i === tl.best && tl.per[i] > 0 ? ' is-lead' : ''}"><div class="poll-ob"><div class="poll-ol"><span>${h(o)}</span><span class="cap">${tl.per[i]} weight · ${tl.tot ? Math.round((tl.per[i] / tl.tot) * 100) : 0}%</span></div><div class="progress poll-bar" aria-hidden="true"><span class="bar" style="width:${tl.tot ? (tl.per[i] / tl.tot) * 100 : 0}%"></span></div></div>${canV ? B(mv === i ? 'Your vote' : 'Vote', 'vote', { c: c.id, p: p.id, i }, mv === i ? 'btn-p btn-sm' : 'btn-s btn-sm') : ''}</div>`).join('')}</div>
-  ${p.result ? `<p class="cap poll-res">Result: ${h(p.result)}</p>` : ''}${p.status === 'Open' && pollMgr ? `<div class="row ws-acts">${B('Close poll and record result', 'closePoll', { c: c.id, p: p.id }, 'btn-p btn-sm')}</div>` : ''}${['Closed — Not approved', 'Closed — No decision'].includes(p.status) && pollMgr ? `<div class="row ws-acts">${B('Modify and re-poll', 'repoll', { c: c.id, p: p.id })}</div>` : ''}${p.status !== 'Open' ? pollReview(c, p) : ''}</article>`;
-        })
-        .join('') ||
-        empty(
-          'vote',
-          'No polls yet',
-          'The project owner or an authorised member can put an important decision to a vote.',
-        ),
-      !ro && pollMgr ? B(ic('plus', 14) + 'Create poll', 'newPoll', { id: c.id }, 'btn-p btn-sm') : '',
+      'Decisions & votes',
+      'One eligible member = one vote. Each member votes once per round.',
+      who +
+        (c.polls
+          .map(p => {
+            const tl = tally(c, p);
+            const mv = p.votes[myId()];
+            const canV = amV && p.status === 'Open' && !ro && mv == null;
+            const opt = i => {
+              const pctOf = tl.eligible ? Math.round((tl.per[i] / tl.eligible) * 100) : 0;
+              return `<div class="poll-opt${mv === i ? ' is-mine' : ''}${p.status !== 'Open' && i === YES && tl.pass ? ' is-lead' : ''}"><div class="poll-ob"><div class="poll-ol"><span><b class="poll-k poll-k-${VOTE_KEYS[i].toLowerCase()}">${VOTE_KEYS[i]}</b>${h(p.options[i])}</span><span class="cap">${tl.per[i]} vote${tl.per[i] === 1 ? '' : 's'} · ${pctOf}% of ${tl.eligible} eligible</span></div><div class="progress poll-bar" aria-hidden="true"><span class="bar" style="width:${pctOf}%"></span></div></div>${canV ? B('Vote ' + VOTE_KEYS[i], 'vote', { c: c.id, p: p.id, i }, 'btn-s btn-sm') : mv === i ? `<span class="pill p-teal">Your vote</span>` : ''}</div>`;
+            };
+            return `<article class="poll-item"><header class="poll-h"><span class="tile t-purple" aria-hidden="true">${ic('vote', 16)}</span><b>${h(p.q)}</b>${p.round > 1 ? `<span class="pill p-grey">Round ${p.round}</span>` : ''}${pill(p.status, POLL_PILL[p.status])}</header>${p.desc ? `<p class="muted ws-pre poll-desc">${h(p.desc)}</p>` : ''}<p class="cap poll-meta">${p.created ? 'Created ' + fmt(p.created.slice(0, 16)) + (p.by ? ' by ' + nm(p.by) : '') + ' · ' : ''}${p.status === 'Open' ? 'Closes ' : 'Closed '}${fmt(p.closedAt ? p.closedAt.slice(0, 16) : p.closes)} · ${tl.voted} of ${tl.eligible} eligible members voted · approval needs ${tl.need} Yes (${th}%)</p>
+  <div class="poll-opts">${[YES, NO, NTA].map(opt).join('')}</div>
+  ${p.status === 'Open' && amV && mv != null ? `<p class="cap poll-res">You voted ${VOTE_KEYS[mv]}. Your vote is locked for this round; if the proposal returns to Shared, you vote again in the next round.</p>` : ''}${p.result ? `<p class="cap poll-res">Result: ${h(p.result)}</p>` : ''}${p.status === SHARED ? banner('info', 'Tie — returned to Shared', 'Yes and No are tied. The project owner or facilitator revises the proposal and opens a new round; every eligible member votes again.') : ''}${p.status === 'Open' && pollMgr ? `<div class="row ws-acts">${B('Close poll and record result', 'closePoll', { c: c.id, p: p.id }, 'btn-p btn-sm')}</div>` : ''}${[SHARED, 'Closed — Not approved', 'Closed — No decision'].includes(p.status) && pollMgr && !ro ? `<div class="row ws-acts">${B(p.status === SHARED ? 'Revise and open re-vote' : 'Modify and re-poll', 'repoll', { c: c.id, p: p.id }, p.status === SHARED ? 'btn-p btn-sm' : 'btn-s btn-sm')}</div>` : ''}${p.status !== 'Open' && p.status !== SHARED ? pollReview(c, p) : ''}</article>`;
+          })
+          .join('') || empty('vote', 'No votes yet', 'The project owner or facilitator can put an important decision to a vote.')),
+      !ro && pollMgr ? B(ic('plus', 14) + 'Create vote', 'newPoll', { id: c.id }, 'btn-p btn-sm') : '',
     );
+  }
   if (t.cur === 'members') {
     const reqs = c.members.map((m, i) => [m, i]).filter(([m]) => m.status === 'Requested');
     body =
@@ -520,7 +534,7 @@ A.addRec = d => {
       decisions: 'Record a decision',
     }[k],
     () =>
-      `<form data-f="rec" class="col" style="gap:14px" novalidate><input type="hidden" name="c" value="${d.id}"><input type="hidden" name="k" value="${k}">${fi('rec', 't', k === 'concerns' ? 'Describe the concern' : k === 'decisions' ? 'Decision' : k === 'commitments' ? 'Responsibility or commitment' : 'Reflection', { type: 'textarea', rows: 3, req: true })}${k === 'commitments' && mgr ? fi('rec', 'owner', 'Responsible member', { type: 'select', req: true, opts: [[myId(), P(myId()).name + ' (me)'], ...mem], help: 'Work you assign to someone else is reviewed by you before it counts as done.' }) : ''}${k === 'commitments' ? fi('rec', 'due', 'Due date', { type: 'date', req: true }) : ''}${k === 'decisions' ? banner('info', '', 'Use this for decisions the Circle agreed in a session. Important project or task-implementation decisions should go to a weighted vote.') : ''}${k === 'concerns' ? fi('rec', 'anon', 'Hide my name from other members (the facilitator still sees it)', { type: 'checkbox' }) + banner('info', '', 'Concerns go to the facilitator. Serious issues are escalated to the Incident/Safety Owner. Visibility is controlled.') : ''}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save</button></div></form>`,
+      `<form data-f="rec" class="col" style="gap:14px" novalidate><input type="hidden" name="c" value="${d.id}"><input type="hidden" name="k" value="${k}">${fi('rec', 't', k === 'concerns' ? 'Describe the concern' : k === 'decisions' ? 'Decision' : k === 'commitments' ? 'Responsibility or commitment' : 'Reflection', { type: 'textarea', rows: 3, req: true })}${k === 'commitments' && mgr ? fi('rec', 'owner', 'Responsible member', { type: 'select', req: true, opts: [[myId(), P(myId()).name + ' (me)'], ...mem], help: 'Work you assign to someone else is reviewed by you before it counts as done.' }) : ''}${k === 'commitments' ? fi('rec', 'due', 'Due date', { type: 'date', req: true }) : ''}${k === 'decisions' ? banner('info', '', 'Use this for decisions the Circle agreed in a session. Important project or task-implementation decisions should go to a Circle vote.') : ''}${k === 'concerns' ? fi('rec', 'anon', 'Hide my name from other members (the facilitator still sees it)', { type: 'checkbox' }) + banner('info', '', 'Concerns go to the facilitator. Serious issues are escalated to the Incident/Safety Owner. Visibility is controlled.') : ''}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save</button></div></form>`,
   );
 };
 F.rec = d => {
@@ -634,74 +648,64 @@ A.escalateConcern = d => {
   toast('Escalated to the Incident/Safety Owner.');
   ok();
 };
-// A poll is a question with two or more options and a closing date and time. Votes are weighted (owner counts twice).
-const pollOpts = () => (UI.pollOpts = UI.pollOpts || ['Approve', 'Do not approve']);
+// A vote is a question with exactly three choices — Yes, No and NTA — and a closing date and time.
+// The creator writes what Yes and No mean; NTA (not applicable / abstain) is fixed. One eligible member = one vote.
 function pollForm(c, base) {
-  const opts = pollOpts();
-  return `<form data-f="poll" class="col" style="gap:14px" novalidate><input type="hidden" name="c" value="${c.id}">${fi('poll', 'q', 'Question', { req: true, ph: 'What should the Circle decide?' })}${fi('poll', 'desc', 'Description (optional)', { type: 'textarea', rows: 2, ph: 'Background, what each option means, links' })}
-  <fieldset class="col" style="gap:8px;border:0;padding:0;margin:0"><legend class="lbl" style="margin-bottom:8px">Options <span class="req">*</span></legend>${opts.map((o, i) => `<div class="row" style="gap:8px"><span class="poll-n">${i + 1}</span><input class="input" name="o${i}" value="${h(o)}" aria-label="Option ${i + 1}" placeholder="Option ${i + 1}">${opts.length > 2 ? `<button type="button" class="btn btn-g btn-sm" data-a="pollOptX" data-i="${i}" aria-label="Remove option ${i + 1}">${ic('x', 14)}</button>` : ''}</div>`).join('')}${fe('poll', 'opts') ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe('poll', 'opts')}</span>` : ''}${opts.length < 8 ? `<div>${B(ic('plus', 14) + 'Add option', 'pollOptAdd', {})}</div>` : ''}</fieldset>
-  ${fi('poll', 'closes', 'Closes on (date and time)', { type: 'datetime-local', req: true })}${banner('info', 'Who votes', 'The project owner and regular members vote; the project owner counts twice. Facilitators and mentors do not vote. An option wins when its weight reaches ' + S.settings.voting.threshold + '% of all eligible weight.')}<div class="actions"><span class="cap">Created ${fmt(now().slice(0, 16))} by ${nm(myId())}</span><button class="btn btn-p" type="submit">${base ? 'Open new poll' : 'Create poll'}</button></div></form>`;
+  const f = 'poll';
+  const v = UI.form.poll || {};
+  const th = S.settings.voting.threshold;
+  const row = (k, n, ph) => {
+    const e = fe(f, n);
+    return `<div class="vote-row"><label class="vote-k vote-k-${k.toLowerCase()}" for="${f}_${n}">${k}</label><div class="vote-in"><input id="${f}_${n}" class="input${e ? ' err' : ''}" name="${n}" value="${h(v[n] ?? '')}" placeholder="${h(ph)}" maxlength="120" aria-invalid="${!!e}" aria-describedby="vote-help">${e ? `<span class="emsg" role="alert">${ic('alert', 14)}${e}</span>` : ''}</div></div>`;
+  };
+  return `<form data-f="poll" class="col" style="gap:14px" novalidate><input type="hidden" name="c" value="${c.id}">${base ? `<input type="hidden" name="base" value="${base.id}">` : ''}${fi(f, 'q', 'Question', { req: true, ph: 'What should the Circle decide?' })}${fi(f, 'desc', 'Description (optional)', { type: 'textarea', rows: 2, ph: 'Background, what is being decided, links' })}
+  <fieldset class="vote-opts"><legend class="lbl">Voting options <span class="req">*</span></legend><p class="help" id="vote-help">Every vote has exactly these three options. Write what Yes and No mean for this question.</p>${row('Yes', 'yes', 'e.g. Approve the proposal')}${row('No', 'no', 'e.g. Do not approve')}<div class="vote-row"><span class="vote-k vote-k-nta" id="vote-nta">NTA</span><div class="vote-in"><p class="vote-fixed" aria-labelledby="vote-nta">${NTA_TEXT}</p><span class="help">Fixed. Counts as taking part, not as approval.</span></div></div></fieldset>
+  ${fi(f, 'closes', 'Closes on (date and time)', { type: 'datetime-local', req: true })}${banner('info', 'Who votes', 'The project owner and active Circle members — one vote each; the project owner has no extra weight. Facilitators and mentors do not vote. Approved when Yes reaches ' + th + '% of all eligible members. A Yes/No tie returns the proposal to Shared for revision and a new vote.')}<div class="actions"><span class="cap">Created ${fmt(now().slice(0, 16))} by ${nm(myId())}</span><button class="btn btn-p" type="submit">${base ? 'Open round ' + ((base.round || 1) + 1) : 'Create vote'}</button></div></form>`;
 }
-const pollSnap = () => {
-  const f = document.querySelector('form[data-f="poll"]');
-  if (!f) return;
-  const x = {};
-  new FormData(f).forEach((v, k) => (x[k] = v));
-  UI.form.poll = { ...(UI.form.poll || {}), q: x.q, desc: x.desc, closes: x.closes };
-  UI.pollOpts = pollOpts().map((o, i) => (x['o' + i] != null ? x['o' + i] : o));
-};
-A.pollOptAdd = () => {
-  pollSnap();
-  pollOpts().push('');
-  render();
-};
-A.pollOptX = d => {
-  pollSnap();
-  pollOpts().splice(+d.i, 1);
-  render();
-};
 A.newPoll = d => {
   clearF('poll');
-  UI.pollOpts = ['Approve', 'Do not approve'];
+  UI.form.poll = { yes: 'Approve', no: 'Do not approve' };
   const c = byId('circles', d.id);
-  modal('Create a weighted poll', () => pollForm(c));
+  modal('Create a vote', () => pollForm(c));
 };
 F.poll = d => {
-  const opts = Object.keys(d)
-    .filter(k => /^o\d+$/.test(k))
-    .sort((a, b) => +a.slice(1) - +b.slice(1))
-    .map(k => d[k].trim())
-    .filter(Boolean);
-  if (!validate('poll', d, { q: ['req'], closes: ['req'] }) || opts.length < 2 || new Set(opts.map(o => o.toLowerCase())).size !== opts.length || (d.closes && d.closes <= now().slice(0, 16))) {
-    UI.err.poll = UI.err.poll || {};
-    if (opts.length < 2) UI.err.poll.opts = 'Enter at least two options.';
-    else if (new Set(opts.map(o => o.toLowerCase())).size !== opts.length) UI.err.poll.opts = 'Each option must be different.';
-    if (d.closes && d.closes <= now().slice(0, 16)) UI.err.poll.closes = 'Choose a closing date and time in the future.';
-    UI.form.poll = { ...(UI.form.poll || {}), ...d };
-    UI.pollOpts = opts.length ? opts : pollOpts();
-    return render();
-  }
+  const yes = (d.yes || '').trim(),
+    no = (d.no || '').trim();
+  const okv = validate('poll', d, {
+    q: ['req'],
+    yes: [['req', 'Write what a Yes vote means.']],
+    no: [['req', 'Write what a No vote means.'], ['fn', { f: v => !v || v.trim().toLowerCase() !== yes.toLowerCase(), m: 'Yes and No must say different things.' }]],
+    closes: ['req', ['fn', { f: v => !v || v > now().slice(0, 16), m: 'Choose a closing date and time in the future.' }]],
+  });
+  if (!okv) return render();
   const c = byId('circles', d.c);
+  const base = d.base ? c.polls.find(x => x.id === d.base) : null;
   const p = {
     id: uid('po'),
+    v: 2,
     q: d.q.trim(),
     desc: (d.desc || '').trim(),
-    options: opts,
+    options: [yes, no, NTA_TEXT],
     closes: d.closes,
     created: now(),
     by: myId(),
     status: 'Open',
     votes: {},
     reviews: [],
+    round: base ? (base.round || 1) + 1 : 1,
+    ...(base ? { prev: base.id } : {}),
   };
+  if (base) {
+    base.status = 'Closed — Revised';
+    base.next = p.id;
+  }
   c.polls.unshift(p);
   c.members
     .filter(m => m.status === 'Active' && m.pid !== myId())
-    .forEach(m => notify(m.pid, (eligibleVoter(c, m.pid) ? 'New vote in ' : 'New poll in ') + c.name + ': ' + p.q, 'circle', { id: c.id, tab: 'polls' }));
-  sysMsg(c, me().name + ' created a poll: ' + p.q);
-  audit('Poll created', c.id, p.q);
+    .forEach(m => notify(m.pid, (eligibleVoter(c, m.pid) ? (base ? 'Re-vote (round ' + p.round + ') in ' : 'New vote in ') : 'New vote you can follow in ') + c.name + ': ' + p.q, 'circle', { id: c.id, tab: 'polls' }));
+  sysMsg(c, me().name + (base ? ' opened round ' + p.round + ' of the vote: ' : ' created a vote: ') + p.q);
+  audit(base ? 'Vote re-opened (new round)' : 'Vote created', c.id, p.q);
   UI.modal = null;
-  UI.pollOpts = null;
   clearF('poll');
   ok();
 };
@@ -730,53 +734,61 @@ F.pfr = d => {
   toast('Final review saved.');
   ok();
 };
+// The guard (guards.js → G.vote) checks eligibility, an open poll, a valid choice and one vote per round.
 A.vote = d => {
   const c = byId('circles', d.c);
   const p = c.polls.find(x => x.id === d.p);
-  if (!eligibleVoter(c, myId())) return deny('not an eligible voter');
-  if (c.state !== 'Active') return deny('Circle is not active');
   p.votes[myId()] = +d.i;
-  audit('Vote cast', p.id, '');
+  audit('Vote cast', p.id, VOTE_KEYS[+d.i]);
   const tl = tally(c, p);
   if (tl.voted === tl.eligible) {
     closePollCore({ c: c.id, p: p.id }, true);
     return;
   }
-  toast('Vote recorded.');
+  toast('Vote recorded: ' + VOTE_KEYS[+d.i] + '. It is locked for this round.');
   ok();
 };
 const closePollCore = (d, auto, silent) => {
   const c = byId('circles', d.c);
   const p = c.polls.find(x => x.id === d.p);
+  if (!p || p.status !== 'Open') return silent ? save() : ok();
   const tl = tally(c, p);
-  const pass = tl.voted > 0 && tl.pct >= S.settings.voting.threshold;
-  p.status = pass ? 'Closed — Decided' : 'Closed — No decision';
+  const th = S.settings.voting.threshold;
+  const counts = `${tl.per[YES]} Yes · ${tl.per[NO]} No · ${tl.per[NTA]} NTA · ${tl.eligible - tl.voted} did not vote — ${tl.eligible} eligible`;
   p.closedAt = now();
-  p.result = pass ? `“${p.options[tl.best]}” · ${tl.pct}% of eligible weight` : `No option reached ${S.settings.voting.threshold}% (highest: “${p.options[tl.best]}”, ${tl.pct}%)`;
-  if (pass)
-    c.decisions.push({ t: p.q + ' → ' + p.options[tl.best], at: today(), by: 'Poll — ' + tl.pct + '% of eligible weight' });
+  p.tally = { yes: tl.per[YES], no: tl.per[NO], nta: tl.per[NTA], eligible: tl.eligible, threshold: th };
+  if (tl.pass) {
+    p.status = 'Closed — Approved';
+    p.result = `Approved — Yes reached ${tl.pct}% of eligible members (threshold ${th}%). ${counts}.`;
+    c.decisions.push({ t: p.q + ' → ' + p.options[YES], at: today(), by: `Vote — ${tl.per[YES]} of ${tl.eligible} eligible members said Yes (${tl.pct}%)` });
+  } else if (tl.tie) {
+    p.status = SHARED;
+    p.result = `Tie — Yes and No both have ${tl.per[YES]}. The proposal returns to Shared for revision and a new vote. ${counts}.`;
+  } else if (tl.voted) {
+    p.status = 'Closed — Not approved';
+    p.result = `Not approved — Yes reached ${tl.pct}% of eligible members; ${th}% (${tl.need} Yes) was needed. ${counts}.`;
+  } else {
+    p.status = 'Closed — No decision';
+    p.result = `No decision — nobody voted. ${counts}.`;
+  }
+  const word = { pass: 'approved', tie: 'tie — returned to Shared for revision', fail: 'not approved', none: 'no decision' }[tl.outcome];
   c.members
     .filter(m => m.status === 'Active')
-    .forEach(m =>
-      notify(m.pid, `Poll closed in ${c.name}: ${pass ? 'decided — ' + p.options[tl.best] : 'no decision'}`, 'circle', {
-        id: c.id,
-        tab: 'polls',
-      }),
-    );
+    .forEach(m => notify(m.pid, `Vote closed in ${c.name}: ${word}`, 'circle', { id: c.id, tab: 'polls' }));
   sysMsg(c, `Vote closed${auto === 'due' ? ' at its closing time' : ''}: ${p.q} — ${p.result}`);
-  audit('Poll closed', p.id, p.status + (auto === 'due' ? ' · closing date reached' : ''));
+  audit('Vote closed', p.id, p.status + (auto === 'due' ? ' · closing date reached' : ''));
   if (silent) return save();
-  toast(auto ? 'All eligible members voted — poll closed. ' + p.status : p.status);
+  toast(auto ? 'All eligible members voted — vote closed: ' + word + '.' : 'Vote closed: ' + word + '.');
   ok();
 };
 A.closePoll = closePollCore;
+// Re-vote: the owner or facilitator revises the proposal and opens a new round; everyone votes again.
 A.repoll = d => {
   const c = byId('circles', d.c);
   const p = c.polls.find(x => x.id === d.p);
   clearF('poll');
-  UI.form.poll = { q: p.q + ' (revised)', desc: p.desc || '' };
-  UI.pollOpts = [...p.options];
-  modal('Modify and re-poll', () => pollForm(c, p));
+  UI.form.poll = { q: p.q.replace(/ \(revised\)$/, '') + ' (revised)', desc: p.desc || '', yes: p.options[YES], no: p.options[NO] };
+  modal(p.status === SHARED ? 'Revise and open a re-vote' : 'Modify and re-poll', () => pollForm(c, p));
 };
 A.memSet = d => {
   const kind = d.kind || 'circles';
@@ -830,7 +842,7 @@ F.invm = d => {
     const rl = d.role || defaultSpaceRole(ctxRole(pid, c.ctx));
     const ex = memberRec(c, pid);
     if (ex) Object.assign(ex, { role: rl, status: 'Invited' });
-    else c.members.push({ pid, role: rl, status: 'Invited' });
+    else c.members.push({ pid, role: rl, status: 'Invited', by: myId(), at: now() });
     notify(pid, 'You were invited to ' + c.name + ' as ' + roleLabel(rl, d.kind), r, { id: c.id });
   });
   sysMsg(c, me().name + ' invited ' + ids.map(p => P(p).name).join(', '));

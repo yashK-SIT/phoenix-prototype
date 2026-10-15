@@ -1,7 +1,7 @@
 /* PHOENIX screens: admin. Built on the tokens and components in ../phoenix.css.
    Covers Programme admin (admin), Organization workspace (org), Metrics & reports (metrics) and the
-   Platform Administrator console (platform, tenants, roles, policies, compassqs) plus their dialogs.
-   Every rule is scoped to an adm-/ops-/tnt-/rol-/pol-/cq- class or to one of these routes. */
+   Platform Administrator console (platform, tenants, roles, policies) plus their dialogs.
+   Every rule is scoped to an adm-/ops-/tnt-/rol-/pol- class or to one of these routes. */
 
 /* ---------- 1. Shared building blocks ---------- */
 .adm-stack {
@@ -970,91 +970,6 @@ div.adm-id {
   font-family: var(--mono);
   font-size: 13px;
   line-height: 20px;
-}
-
-/* ---------- 10. Purpose Compass questions ---------- */
-.cq-n {
-  display: inline-grid;
-  place-items: center;
-  min-width: 26px;
-  height: 24px;
-  border-radius: var(--r-sm);
-  background: var(--sunk);
-  border: 1px solid var(--line-soft);
-  font-family: var(--mono);
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-2);
-}
-.cq-card .tbl td:nth-child(2) {
-  min-width: 280px;
-}
-.cq-set {
-  display: inline-block;
-  font-weight: 600;
-}
-.cq-set.is-same {
-  color: var(--text-3);
-  font-weight: 400;
-}
-.cq-acts {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: nowrap;
-  justify-content: flex-end;
-}
-.cq-move {
-  display: inline-flex;
-}
-.cq-move .btn {
-  width: 32px;
-  padding: 0;
-}
-.cq-move .btn + .btn {
-  margin-left: -1px;
-}
-.cq-move .cq-up {
-  border-radius: var(--r-md) 0 0 var(--r-md);
-}
-.cq-move .cq-dn {
-  border-radius: 0 var(--r-md) var(--r-md) 0;
-}
-.cq-up svg {
-  transform: rotate(180deg);
-}
-.cq-move .btn.is-off,
-.cq-move .btn:disabled {
-  opacity: 0.4;
-}
-.cq-del {
-  color: var(--bad);
-}
-.cq-del:hover {
-  background: var(--bad-bg);
-}
-.cq-note {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-top: var(--s-3);
-  max-width: 90ch;
-}
-.cq-note svg {
-  flex: none;
-  margin-top: 2px;
-}
-@media (max-width: 639px) {
-  .cq-card .tbl td:nth-child(2) {
-    min-width: 0;
-  }
-  .cq-acts {
-    justify-content: flex-start;
-    flex-wrap: wrap;
-  }
-  .cq-move .btn {
-    width: 44px;
-  }
 }
 
 /* ---------- 11. Page-level alignment ---------- */
