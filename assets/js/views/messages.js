@@ -1,4 +1,4 @@
-// ---------- MESSAGES: real-time group chat for Circles, Rope Teams and Action Rooms (D-04, E04, OI-05) ----------
+// ---------- MESSAGES: threaded discussion for Circles, Rope Teams and Action Rooms (D-04, E04, OI-05) ----------
 // One conversation per space. Members only; moderation follows the person's role in that space.
 UI.chat = UI.chat || {};
 const CHAT_KINDS = {
@@ -259,7 +259,7 @@ route('messages', 'any', () => {
   }
   const sel = UI.chat.open && sp.find(x => x.o.id === UI.chat.open.id);
   if (sel) markRead(sel.o);
-  return `<div class="msgshell ${UI.chat.open && sel ? 'has-sel' : ''}"><aside class="mside">${convList(sel)}</aside><div class="mmain">${sel ? (sel.kind === 'pathways' ? pwThread(sel.o) : chatThread(sel.kind, sel.o)) : `<div class="mnone">${empty('message', sp.length ? 'Choose a conversation' : 'No conversations yet', sp.length ? 'Real-time chat with your Circles, Rope Teams and ' + WL() + 's. Messages, files, questions and coordination in one place.' : 'You join a conversation when you become a member of a Circle, Rope Team or ' + WL() + '.')}</div>`}</div></div>`;
+  return `<div class="msgshell ${UI.chat.open && sel ? 'has-sel' : ''}"><aside class="mside">${convList(sel)}</aside><div class="mmain">${sel ? (sel.kind === 'pathways' ? pwThread(sel.o) : chatThread(sel.kind, sel.o)) : `<div class="mnone">${empty('message', sp.length ? 'Choose a conversation' : 'No conversations yet', sp.length ? 'Threaded discussions with your Circles, Rope Teams and ' + WL() + 's. Messages, files, questions and coordination in one place.' : 'You join a conversation when you become a member of a Circle, Rope Team or ' + WL() + '.')}</div>`}</div></div>`;
 });
 // Clicking a conversation's name lists everyone in it, with their role in that space.
 A.chatMembers = d => {
@@ -364,7 +364,7 @@ A.msgHide = d => {
 A.chatQSum = d => {
   const o = byId(d.k, d.c);
   if (!S.settings.aiAvailable) return deny('AI is unavailable right now. Everything else keeps working.');
-  if (consent(myId(), 'ai') !== 'Granted') return deny('AI processing consent is not granted. Turn it on in Privacy & consent.');
+  if (consent(myId(), 'ai') !== 'Granted') return deny('AI processing is off for you, so PHOENIX cannot summarise this chat. You can change this in My records & consent → Optional permissions.');
   const qs = o.chat.filter(m => m.q && !m.ans && !m.hidden);
   S.settings.aiUsed++;
   S.ai.push({ id: uid('aj'), by: myId(), cls: 'A', purpose: 'Summarise unresolved questions · ' + o.name, sources: 'Chat in ' + o.id, consent: 'Granted', model: S.providers.ai.name, status: 'Generated', at: today() });

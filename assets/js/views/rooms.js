@@ -327,11 +327,11 @@ route("room", "rooms", () => {
         "Tasks & milestones",
         x.tasks.filter((k) => k.status === "Proposed").length || null,
       ],
-      ["chat", "Chat", isM && unreadIn(x) ? unreadIn(x) : null],
+      ["chat", "Threaded discussion", isM && unreadIn(x) ? unreadIn(x) : null],
       ["contribs", "Contributions", pendC || null],
       ["dec", "Decisions"],
       ["risk", "Risks & dependencies"],
-      ["change", "Change Objects", x.changes.length || null],
+      ["change", "Changes", x.changes.length || null],
       ["ev", "Evidence"],
       ["members", "Members"],
       ["about", "Charter & lineage"],
@@ -354,7 +354,7 @@ route("room", "rooms", () => {
   if (t.cur === "contribs") body = roomContribs(x, lead, ro);
   if (t.cur === "chat")
     body =
-      `<div class="ws-split ws-chat"><div class="ws-main"><div class="row wrap chatbar"><span class="cap">Group chat for members of this ${WL()}. ${isM ? L("Open in Messages", "messages", { c: x.id, k: "rooms" }) : ""}</span></div>` +
+      `<div class="ws-split ws-chat"><div class="ws-main"><div class="row wrap chatbar"><span class="cap">Threaded discussion for members of this ${WL()} — not real-time chat. ${isM ? L("Open in Messages", "messages", { c: x.id, k: "rooms" }) : ""}</span></div>` +
       chatThread("rooms", x, { embedded: true }) +
       `</div><aside class="ws-rail hide-md" aria-label="Members">${wsTeamCard("rooms", x)}</aside></div>`;
   if (t.cur === "plan")
@@ -483,12 +483,12 @@ route("room", "rooms", () => {
     )}</div>`;
   if (t.cur === "change")
     body = card(
-      "Change Objects",
-      "Proposed → Reviewed → Approved → In Implementation → Completed → Closed. Human approval required before it becomes an approved action record.",
+      "Changes",
+      "Ordinary changes (tasks, schedule, resources) are decided by the project lead. Protected changes (charter, outcome, membership, milestones, evidence rules) need a Faculty/Steward or Programme Administrator. Proposed → Reviewed → Approved → In Implementation → Completed → Closed.",
       x.changes
         .map(
           (c) =>
-            `<article class="co-item"><header class="co-h"><span class="tile t-soft" aria-hidden="true">${ic("layers", 16)}</span><b>${h(c.title)}</b>${pill(c.state)}</header>${dl(
+            `<article class="co-item"><header class="co-h"><span class="tile t-soft" aria-hidden="true">${ic("layers", 16)}</span><b>${h(c.title)}</b>${pill(c.kind === "Ordinary" ? "Ordinary change" : "Protected change", c.kind === "Ordinary" ? "p-grey" : "p-purple")}${pill(c.state)}</header>${dl(
               [
                 ["Context", h(c.context)],
                 ["Intended change", h(c.intended)],
@@ -512,12 +512,12 @@ route("room", "rooms", () => {
         .join("") ||
         empty(
           "layers",
-          "No Change Objects",
+          "No changes proposed",
           "Compose a structured, versioned record of an intended change.",
         ),
       !ro && canPropose
         ? B(
-            ic("plus", 14) + "Compose Change Object",
+            ic("plus", 14) + "Propose a change",
             "coNew",
             { r: x.id },
             "btn-p btn-sm",
@@ -637,8 +637,8 @@ route("room", "rooms", () => {
         : "",
     );
   if (t.cur === "about")
-    body = `<div class="g12">${card("Charter", "", dl([["Purpose / charter", h(x.charter)], ["Expected outcome", h(x.outcome || "—")], ["Lead", nm(x.lead)], ["State", pill(x.state)], x.flags.length && ["Approval flags", x.flags.map(h).join(", ")], ["Primary origin", h(x.origin.type) + " · " + (x.origin.id ? cName(x.origin.id) : "—")], ["Related objects", x.related.map(cName).join(", ") || "—"], ["Linked learning activities and records", x.links.map((l) => pill(l.type, "p-grey") + " " + h(l.label)).join("<br>") || "—"]]), !ro && isM ? B(ic("link", 14) + "Link by reference", "roomLink", { r: x.id }) : "", "c7")}
- ${card("Lifecycle", "Draft · Proposed · Pending approval · Active · Closed", `<div class="col" style="gap:8px">${x.state === "Proposed" && canCreateRoom() ? B("Activate", "roomState", { r: x.id, v: x.flags.length ? "Pending approval" : "Active" }, "btn-p btn-sm") + B("Decline (back to Draft)", "roomDecline", { r: x.id }) : ""}${x.state === "Proposed" && !canCreateRoom() ? '<p class="cap">Proposed. An authorised Faculty/Steward, Project Lead, Partner, Organization Representative or Programme Administrator activates it.</p>' : ""}${x.state === "Pending approval" && (r === "F" || r === "A") ? B("Approve activation", "roomState", { r: x.id, v: "Active" }, "btn-p btn-sm") + B("Decline (back to Draft)", "roomDecline", { r: x.id }) : ""}${x.state === "Draft" && isM ? B("Re-propose", "roomState", { r: x.id, v: "Proposed" }) : ""}${x.declineReason ? banner("warn", "Approval declined", h(x.declineReason)) : ""}${!ro && isM && !pr ? B(ic("refresh", 14) + "Return issue to Circle", "returnTo", { from: "rooms", id: x.id, to: "circle" }) : ""}${!ro && isM ? B(ic("sparkle", 14) + "Start a Learning Harvest", "newHarvest", { scope: x.id }) : ""}${x.state === "Active" && lead && !pr ? B("Close " + WL(), "roomClose", { r: x.id }) : ""}${pr ? `<p class="cap">Final deliverables are submitted from the Overview tab or the ${L("project", "project", { id: pr.id })}. Backward movement is on the Overview tab.</p>` : ""}</div>`, "", "c5")}
+    body = `<div class="g12">${card("Charter", "", dl([["Purpose / charter", h(x.charter)], ["Expected outcome", h(x.outcome || "—")], ["Lead", nm(x.lead)], ["State", pill(x.state)], x.flags.length && ["Approval flags", x.flags.map(h).join(", ")], ["Primary origin", originLink(x)], ["Related objects (linked by reference)", x.related.map(relLink).join(", ") || "—"], ["Sponsors", "Never members because of funding"], ["Linked learning activities and records", x.links.map((l) => pill(l.type, "p-grey") + " " + h(l.label)).join("<br>") || "—"]]), !ro && isM ? B(ic("link", 14) + "Link by reference", "roomLink", { r: x.id }) : "", "c7")}
+ ${card("Lifecycle", "Draft · Proposed · Pending approval · Active · Closed", `<div class="col" style="gap:8px">${x.state === "Proposed" && canCreateRoom() ? B("Activate", "roomState", { r: x.id, v: x.flags.length ? "Pending approval" : "Active" }, "btn-p btn-sm") + B("Decline (back to Draft)", "roomDecline", { r: x.id }) : ""}${x.state === "Proposed" && !canCreateRoom() ? '<p class="cap">Proposed. An authorised Faculty/Steward, Project Lead, Partner, Organization Representative or Programme Administrator activates it.</p>' : ""}${x.state === "Pending approval" && (r === "F" || r === "A") ? B("Approve activation", "roomState", { r: x.id, v: "Active" }, "btn-p btn-sm") + B("Decline (back to Draft)", "roomDecline", { r: x.id }) : ""}${x.state === "Draft" && isM ? B("Re-propose", "roomState", { r: x.id, v: "Proposed" }) : ""}${x.declineReason ? banner("warn", "Approval declined", h(x.declineReason)) : ""}${!ro && isM && !pr ? B(ic("refresh", 14) + "Return issue to Circle", "returnTo", { from: "rooms", id: x.id, to: "circle" }) : ""}${!ro && isM ? B(ic("sparkle", 14) + "Start a Learning Harvest", "newHarvest", { scope: x.id }) : ""}${x.state === "Active" && lead ? B(ic("refresh", 14) + "Continue to a new cycle", "roomContinue", { r: x.id }) : ""}${x.state === "Active" && lead && !pr ? B("Close " + WL(), "roomClose", { r: x.id }) : ""}<p class="cap">Closing or continuing starts a Learning Harvest for this cycle. A person completes it; nothing is harvested automatically.</p>${pr ? `<p class="cap">Final deliverables are submitted from the Overview tab or the ${L("project", "project", { id: pr.id })}. Backward movement is on the Overview tab.</p>` : ""}</div>`, "", "c5")}
  ${returnsCard(x) ? `<div class="c12">${returnsCard(x)}</div>` : ""}</div>`;
   const acts =
     spaceEditBtn("rooms", x) +
@@ -769,6 +769,7 @@ F.ri = (d) => {
       evidence: [],
       ...(d.req === "yes" ? {} : { opt: true }),
       log: [{ at: now(), by: myId(), t: lead ? "Created" : "Proposed" }],
+      acc: d.owner && d.owner !== myId() ? "Pending" : "Accepted",
     });
   if (d.k === "tasks" && !lead)
     x.members
@@ -1099,15 +1100,16 @@ A.msAchieve = (d) => {
 A.coNew = (d) => {
   clearF("co");
   modal(
-    "Compose a Change Object",
+    "Propose a change",
     () =>
-      `<form data-f="co" class="col" style="gap:12px" novalidate><input type="hidden" name="r" value="${d.r}">${fi("co", "title", "Title", { req: true })}${fi("co", "context", "Context", { type: "textarea", rows: 2, req: true })}${fi("co", "intended", "Intended change", { type: "textarea", rows: 2, req: true })}<div class="f2">${fi("co", "stakeholders", "Stakeholders", { req: true })}${fi("co", "parties", "Responsible parties", { req: true })}</div>${fi("co", "outcomes", "Intended outcomes", { req: true })}${fi("co", "success", "Success conditions", { req: true })}<div class="f2">${fi("co", "assumptions", "Assumptions")}${fi("co", "risks", "Risks and dependencies")}</div><div class="f2">${fi("co", "metrics", "Metrics")}${fi("co", "evref", "Evidence references")}</div><div class="actions"><span></span><button class="btn btn-p" type="submit">Propose</button></div></form>`,
+      `<form data-f="co" class="col" style="gap:12px" novalidate><input type="hidden" name="r" value="${d.r}">${fi("co", "kind", "Kind of change", { type: "select", req: true, ph: "Choose", opts: [["Ordinary", "Ordinary — tasks, schedule, resources (the project lead decides)"], ["Protected", "Protected — charter, outcome, membership, milestones or evidence rules (needs Faculty/Steward or Programme Administrator approval)"]] })}${fi("co", "title", "Title", { req: true })}${fi("co", "context", "Context", { type: "textarea", rows: 2, req: true })}${fi("co", "intended", "Intended change", { type: "textarea", rows: 2, req: true })}<div class="f2">${fi("co", "stakeholders", "Stakeholders", { req: true })}${fi("co", "parties", "Responsible parties", { req: true })}</div>${fi("co", "outcomes", "Intended outcomes", { req: true })}${fi("co", "success", "Success conditions", { req: true })}<div class="f2">${fi("co", "assumptions", "Assumptions")}${fi("co", "risks", "Risks and dependencies")}</div><div class="f2">${fi("co", "metrics", "Metrics")}${fi("co", "evref", "Evidence references")}</div><div class="actions"><span></span><button class="btn btn-p" type="submit">Propose</button></div></form>`,
     true,
   );
 };
 F.co = (d) => {
   if (
     !validate("co", d, {
+      kind: ["req"],
       title: ["req"],
       context: ["req"],
       intended: ["req"],
@@ -1219,7 +1221,7 @@ F.rin = (d) => {
     toast(
       "Sponsors cannot be added to a " +
         WL() +
-        ". They receive progress summaries instead.",
+        ". They see approved, funder-safe reports instead.",
       "err",
     );
     return ok();
@@ -1332,6 +1334,27 @@ F.rdc = (d) => {
   audit(WL() + " approval declined", x.id, d.why);
   UI.modal = null;
   clearF("rdc");
+  ok();
+};
+// Primary origin and related objects are shown with links so lineage is visible without copying content.
+const ORIGIN_ROUTE = { circles: "circle", ropes: "rope", rooms: "room", projects: "project", cards: "card", matches: "match" };
+function relLink(id) {
+  const k = ["circles", "ropes", "rooms", "projects", "cards", "matches"].find((c) => byId(c, id));
+  return k ? L(cName(id), ORIGIN_ROUTE[k], { id }) : h(id);
+}
+const originLink = (x) => h(x.origin.type) + (x.origin.id ? " · " + relLink(x.origin.id) : "");
+// Continue: harvest this cycle (human-completed), then start the next cycle with the same members and links.
+A.roomContinue = (d) => {
+  const x = byId("rooms", d.r);
+  const cyc = x.cycle || 1;
+  if (!S.harvests.some((h) => h.scope === x.id && (h.cycle || 1) === cyc && ["Approved", "Released"].includes(h.state))) {
+    toast("Complete this cycle's Learning Harvest first. It records what happened, what did not work and dissent.", "warn");
+    return A.newHarvest({ scope: x.id });
+  }
+  x.cycle = cyc + 1;
+  sysMsg(x, "Cycle " + cyc + " harvested. Cycle " + x.cycle + " started.");
+  audit(WL() + " continued", x.id, "cycle " + x.cycle);
+  toast("Cycle " + x.cycle + " started.");
   ok();
 };
 A.roomClose = (d) => {

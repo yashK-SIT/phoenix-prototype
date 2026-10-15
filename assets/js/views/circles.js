@@ -1,21 +1,123 @@
 // ---------- CIRCLES (E04, F05, D-03, D-04) ----------
-const eligibleVoter = (c, pid) =>
-  c.members.some(m => m.pid === pid && m.status === 'Active' && ['Project owner', 'Member'].includes(m.role));
+// ---- Circle voting (Alpha decision; Build-Freeze BF-03, BF-09, BF-13)
+// One eligible member = one vote. The project owner votes like every other member: no weights, no owner override.
+// Eligibility comes from Circle membership: Observers and members configured as non-voting do not vote, and the
+// facilitator facilitates rather than votes (unless explicitly configured with nonVoting:false).
+// Threshold, quorum, window and reminders are read from S.settings.voting (never hard-coded) and frozen on each
+// poll when it opens, together with the list of eligible voters, which is the single denominator for every figure.
+// AI may check sources and suggest questions on an open proposal; it never passes or fails a vote.
+const VOTE_PARAMS = ['threshold', 'quorum', 'windowDays', 'reminderDays'];
+const voteSettings = () => S.settings.voting || {};
+const voteStatusOf = (c, m) => {
+  if (!m || m.status !== 'Active') return null;
+  const r = spaceRole('circles', c, m.pid);
+  if (r === 'Observer') return 'Observer (non-voting)';
+  if (r === 'Facilitator' && m.nonVoting !== false) return 'Non-voting (facilitator)';
+  if (m.nonVoting) return 'Non-voting';
+  return 'Eligible';
+};
+const eligibleNow = c => c.members.filter(m => voteStatusOf(c, m) === 'Eligible').map(m => m.pid);
+// The denominator: voters snapshotted when the poll opened (older polls fall back to current eligibility).
+const pollVoters = (c, p) => (p && p.eligibleSnap ? p.eligibleSnap : eligibleNow(c));
+// Rule in force for a poll: frozen when it opened; older polls read the current settings.
+const pollRule = p => {
+  const V = voteSettings();
+  return Object.fromEntries(VOTE_PARAMS.map(k => [k, +((p && p.rule && p.rule[k] != null ? p.rule[k] : V[k]) || 0)]));
+};
+const eligibleVoter = (c, pid, p) => {
+  const m = memberRec(c, pid);
+  if (!p) return voteStatusOf(c, m) === 'Eligible';
+  return !!m && m.status === 'Active' && pollVoters(c, p).includes(pid);
+};
+const NEG_OPT = /^(do not|don['’]t|reject|no\b|not\b)/i;
 function tally(c, p) {
-  const V = S.settings.voting;
-  const el = c.members.filter(m => m.status === 'Active' && ['Project owner', 'Member'].includes(m.role));
-  const w = m => (m.role === 'Project owner' ? V.ownerWeight : V.memberWeight);
-  const tot = el.reduce((a, m) => a + w(m), 0);
-  const per = p.options.map((o, i) => el.filter(m => p.votes[m.pid] === i).reduce((a, m) => a + w(m), 0));
-  const best = per.indexOf(Math.max(...per));
+  const R = pollRule(p);
+  const el = pollVoters(c, p);
+  const n = el.length;
+  const per = p.options.map((o, i) => el.filter(pid => p.votes[pid] === i).length);
+  const voted = el.filter(pid => p.votes[pid] != null).length;
+  const order = per.map((v, i) => i).sort((a, b) => per[b] - per[a] || a - b);
+  const best = order[0];
+  const second = order[1];
+  const pctOf = v => (n ? Math.round((v / n) * 100) : 0);
+  const quorumMet = n > 0 && voted * 100 >= R.quorum * n;
+  const tie = second != null && per[best] > 0 && per[best] === per[second];
+  const reaches = n > 0 && per[best] * 100 >= R.threshold * n;
+  const outcome = !quorumMet ? 'noquorum' : tie ? 'tie' : reaches ? 'pass' : 'fail';
   return {
-    tot,
+    el,
+    eligible: n,
+    voted,
     per,
     best,
-    pct: tot ? Math.round((per[best] / tot) * 100) : 0,
-    voted: el.filter(m => p.votes[m.pid] != null).length,
-    eligible: el.length,
+    second,
+    pct: pctOf(per[best]),
+    pctOf,
+    threshold: R.threshold,
+    quorum: R.quorum,
+    quorumMet,
+    // votes an option needs to reach the threshold, and votes cast needed for quorum
+    need: Math.ceil((R.threshold * n) / 100),
+    needQ: Math.ceil((R.quorum * n) / 100),
+    tie,
+    outcome,
   };
+}
+// One wording for the result, used on the poll card, the decision record, the chat note and the audit entry.
+const voteLine = (p, tl) =>
+  `${tl.per[tl.best]} of ${tl.eligible} eligible voted ${tl.tie ? `for each of “${p.options[tl.best]}” and “${p.options[tl.second]}” (${tl.pct}% each)` : `“${p.options[tl.best]}” (${tl.pct}%)`} · threshold ${tl.threshold}% · quorum ${tl.quorum}% ${tl.quorumMet ? 'met' : 'not met'} (${tl.voted} of ${tl.eligible} voted)`;
+const POLL_STATUS = {
+  pass: 'Closed — Approved',
+  fail: 'Closed — Not approved',
+  noquorum: 'Closed — No quorum',
+  tie: 'Closed — Tie: returned to Shared',
+};
+const POLL_PILL = {
+  'Closed — Approved': 'p-green',
+  'Closed — Decided': 'p-green',
+  'Closed — Not approved': 'p-grey',
+  'Closed — No quorum': 'p-amber',
+  'Closed — No decision': 'p-amber',
+  'Closed — Tie: returned to Shared': 'p-amber',
+};
+const REPOLL_STATUSES = ['Closed — Not approved', 'Closed — No quorum', 'Closed — Tie: returned to Shared', 'Closed — No decision'];
+const pendTag = k => { const st = (voteSettings().status || {})[k]; return st === 'Pending WSS decision' ? ' ' + pill(st, 'p-amber') : st && st.startsWith('Recommended') ? ' ' + pill(st, 'p-teal') : ''; };
+function voteRuleStrip(c, p, tl) {
+  const R = pollRule(p);
+  // parameters still pending a WSS decision are tagged on open votes; a closed vote keeps the rule it ran under
+  const pt = k => (p.status === 'Open' ? pendTag(k) : '');
+  const cells = [
+    ['Vote weight', 'Equal — 1 eligible member = 1 vote (frozen)', ''],
+    ['Approval threshold', R.threshold + '% of eligible voters', pt('threshold')],
+    ['Quorum', R.quorum + '% of eligible voters must vote', pt('quorum')],
+    ['Voting window', R.windowDays + ' days', pt('windowDays')],
+    ['Reminder', R.reminderDays + ' days before closing', pt('reminderDays')],
+    ['Eligible voters', tl.eligible + (p.eligibleSnap ? ' · fixed when the vote opened' : ''), ''],
+  ];
+  return `<div class="vote-rule" role="list" aria-label="Voting rule for this poll">${cells.map(([l, v, t]) => `<div role="listitem"><span class="cap">${l}</span><b>${h(v)}</b>${t}</div>`).join('')}</div>`;
+}
+// Who may vote and who has voted. How each person voted is never shown.
+function voterList(c, p, tl) {
+  const rows = tl.el.map(pid => {
+    const m = memberRec(c, pid);
+    const gone = !m || m.status !== 'Active';
+    return `<li class="row" style="gap:8px;justify-content:space-between"><span>${nm(pid)}${pid === c.owner ? ' <span class="cap">project owner · 1 vote</span>' : ''}${gone ? ' <span class="cap">no longer a member</span>' : ''}</span>${pill(p.votes[pid] != null ? 'Voted' : p.status === 'Open' ? 'Not yet' : 'Did not vote', p.votes[pid] != null ? 'p-teal' : 'p-grey')}</li>`;
+  });
+  const others = c.members.filter(m => m.status === 'Active' && !tl.el.includes(m.pid)).map(m => nm(m.pid) + ' — ' + (voteStatusOf(c, m) === 'Eligible' ? 'joined after the vote opened' : voteStatusOf(c, m)));
+  return `<details class="poll-voters"><summary class="cap">Eligible voters (${tl.eligible}) · ${tl.voted} voted · ${tl.eligible - tl.voted} ${p.status === 'Open' ? 'not yet' : 'did not vote'}</summary><ul class="col" style="gap:4px;list-style:none;padding:0;margin:8px 0">${rows.join('') || '<li class="cap">No eligible voters.</li>'}</ul>${others.length ? `<p class="cap">Not voting: ${others.map(h).join('; ')}.</p>` : ''}<p class="cap">Only whether someone has voted is shown, never how they voted.</p></details>`;
+}
+// BF-09: advisory AI source check on an open proposal. It cannot change the vote.
+function aiCheckBlock(c, p, isMem, ro) {
+  const x = p.aiCheck;
+  const res = x
+    ? `<div class="ai-adv">${aiTag('AI draft / advisory')}<p class="cap" style="margin:6px 0">Source check requested by ${nm(x.by)} · ${fmt(x.at.slice(0, 16))}. Advisory only — it cannot pass, fail or change this vote. Members deliberate and vote under the Circle’s human rule.</p><b>Claims that lack a source</b><ul>${x.flags.map(f => `<li>${h(f)}</li>`).join('') || '<li>None found in the proposal text.</li>'}</ul><b>Possible contradictions</b><ul>${(x.contra || []).map(f => `<li>${h(f)}</li>`).join('') || '<li>None detected.</li>'}</ul><b>Suggested questions before voting</b><ul>${x.questions.map(q => `<li>${h(q)}</li>`).join('')}</ul></div>`
+    : '';
+  if (p.status !== 'Open' || !isMem || ro) return res;
+  const okAI = consent(myId(), 'ai') === 'Granted' && S.settings.aiAvailable;
+  const btn = okAI
+    ? B(ic('sparkle', 14) + (x ? 'Run the AI source check again' : 'AI source check (advisory)'), 'aiCheck', { c: c.id, p: p.id })
+    : `<button class="btn btn-s btn-sm" type="button" disabled>${ic('sparkle', 14)}AI source check (advisory)</button><span class="cap">${S.settings.aiAvailable ? 'AI processing is off for you, so the source check is unavailable. Turn it on in ' + L('Privacy & consent', 'privacy') + ' if you want it.' : 'AI is unavailable right now.'} Voting works exactly the same either way.</span>`;
+  return res + `<div class="row wrap ws-acts" style="gap:8px">${btn}</div>`;
 }
 // Circles a project owner can create: their own accepted projects that do not have a Circle yet.
 const ownCircleProjects = () =>
@@ -259,7 +361,7 @@ route('circle', 'circles', () => {
       head(h(c.name), h(c.purpose), pill(c.state), [['Circles', 'circles'], [h(c.name)]]) +
       card(
         'Members only',
-        'Only members see this Circle’s chat, sessions and records.',
+        'Only members see this Circle’s discussion, sessions and records.',
         dl([['Purpose', h(c.purpose)], ['Expected outcome', h(c.outcome || '—')], ['Facilitator', nm(c.facilitator)], ['Project owner', nm(c.owner)], ['Members', c.members.filter(m => m.status === 'Active').length]]) +
           (c.state === 'Active' ? `<div class="row ws-acts">${joinBtn(c)}</div>` : ''),
       )
@@ -284,7 +386,7 @@ route('circle', 'circles', () => {
     'ci_' + c.id,
     [
       ['overview', 'Overview'],
-      ['chat', 'Chat', isMem && unreadIn(c) ? unreadIn(c) : null],
+      ['chat', 'Threaded discussion', isMem && unreadIn(c) ? unreadIn(c) : null],
       ['sessions', 'Sessions', c.sessions.length],
       ['records', 'Reflections & commitments'],
       ['polls', 'Decisions & votes', c.polls.filter(p => p.status === 'Open').length],
@@ -306,7 +408,7 @@ route('circle', 'circles', () => {
   let body = '';
   if (t.cur === 'chat')
     body =
-      `<div class="ws-split ws-chat"><div class="ws-main"><div class="row wrap chatbar"><span class="cap">Real-time chat for members of this Circle. ${isMem ? L('Open in Messages', 'messages', { c: c.id, k: 'circles' }) : ''}</span>${mgr && !ro ? B(ic('sparkle', 14) + 'Draft Circle summary with AI', 'circleSummary', { id: c.id }) : ''}</div>` +
+      `<div class="ws-split ws-chat"><div class="ws-main"><div class="row wrap chatbar"><span class="cap">Threaded discussion for members of this Circle: reply in threads, mark questions, attach files. ${isMem ? L('Open in Messages', 'messages', { c: c.id, k: 'circles' }) : ''}</span>${mgr && !ro ? B(ic('sparkle', 14) + 'Draft Circle summary with AI', 'circleSummary', { id: c.id }) : ''}</div>` +
       chatThread('circles', c, { embedded: true }) +
       `</div><aside class="ws-rail hide-md" aria-label="Members">${wsTeamCard('circles', c)}</aside></div>`;
   if (t.cur === 'sessions')
@@ -331,33 +433,42 @@ route('circle', 'circles', () => {
         act = B('Request changes', 'commitReview', { c: c.id, id: x.id, v: 'changes' }) + B('Accept work', 'commitReview', { c: c.id, id: x.id, v: 'ok' }, 'btn-p btn-sm');
       return pill(x.status) + act;
     };
-    body = `<div class="g12">${card('Responsibilities and commitments', 'Facilitators assign responsibilities; members make commitments. Assigned work is reviewed before it counts as done.', c.commitments.map(x => lrow(x.assignedBy ? 'flag' : 'calendar', h(x.t), nm(x.by) + (x.assignedBy ? ' · assigned by ' + nm(x.assignedBy) : '') + ' · due ' + fmt(x.due) + dueTag(x.due, x.status === 'Done') + (x.note ? `<span class="cap" style="display:block">Changes requested: ${h(x.note)}</span>` : ''), commitRight(x))).join('') || '<p class="cap">None yet.</p>', noRec ? '' : B(ic('plus', 14) + (mgr ? 'Assign or add' : 'Add commitment'), 'addRec', { id: c.id, k: 'commitments' }), 'c6')}${card('Reflections', '', c.reflections.map(x => lrow('message', h(x.t), nm(x.by) + ' · ' + fmt(x.at))).join('') || '<p class="cap">None yet.</p>', noRec ? '' : B(ic('plus', 14) + 'Add', 'addRec', { id: c.id, k: 'reflections' }), 'c6')}${card('Concerns', 'Routed to the facilitator, and to the Incident/Safety Owner when escalated.', c.concerns.map(x => lrow(x.ret ? 'refresh' : 'alert', h(x.t), (x.anon ? 'Anonymous' : nm(x.by)) + ' · ' + fmt(x.at), pill(x.status) + (mgr && x.status === 'Open' ? B('Resolve', 'resolveConcern', { c: c.id, id: x.id }) + (x.ret ? '' : B('Escalate', 'escalateConcern', { c: c.id, id: x.id })) : ''))).join('') || '<p class="cap">None raised.</p>', isMem && !ro && canRec ? B(ic('plus', 14) + 'Raise concern', 'addRec', { id: c.id, k: 'concerns' }) : '', 'c6')}${card('Decisions', 'Decision history. An approved decision is what moves the project forward.', c.decisions.map(x => lrow('check', h(x.t), fmt(x.at) + ' · ' + h(x.by))).join('') || '<p class="cap">None yet. Decide by weighted vote, or record a facilitator decision.</p>', mgr && !ro ? B(ic('plus', 14) + 'Record decision', 'addRec', { id: c.id, k: 'decisions' }) : '', 'c6')}</div>`;
+    body = `<div class="g12">${card('Responsibilities and commitments', 'Facilitators assign responsibilities; members make commitments. Assigned work is reviewed before it counts as done.', c.commitments.map(x => lrow(x.assignedBy ? 'flag' : 'calendar', h(x.t), nm(x.by) + (x.assignedBy ? ' · assigned by ' + nm(x.assignedBy) : '') + ' · due ' + fmt(x.due) + dueTag(x.due, x.status === 'Done') + (x.note ? `<span class="cap" style="display:block">Changes requested: ${h(x.note)}</span>` : ''), commitRight(x))).join('') || '<p class="cap">None yet.</p>', noRec ? '' : B(ic('plus', 14) + (mgr ? 'Assign or add' : 'Add commitment'), 'addRec', { id: c.id, k: 'commitments' }), 'c6')}${role() === 'O' && !isMem ? card('Reflections', '', `<p class="cap">${c.reflections.length} reflection${c.reflections.length === 1 ? '' : 's'} recorded. Private reflections are visible to Circle members only, never to organisation representatives.</p>`, '', 'c6') : card('Reflections', '', c.reflections.map(x => lrow('message', h(x.t), nm(x.by) + ' · ' + fmt(x.at))).join('') || '<p class="cap">None yet.</p>', noRec ? '' : B(ic('plus', 14) + 'Add', 'addRec', { id: c.id, k: 'reflections' }), 'c6')}${card('Concerns', 'Routed to the facilitator, and to the Incident/Safety Owner when escalated.', c.concerns.map(x => lrow(x.ret ? 'refresh' : 'alert', h(x.t), (x.anon ? 'Anonymous' : nm(x.by)) + ' · ' + fmt(x.at), pill(x.status) + (mgr && x.status === 'Open' ? B('Resolve', 'resolveConcern', { c: c.id, id: x.id }) + (x.ret ? '' : B('Escalate', 'escalateConcern', { c: c.id, id: x.id })) : ''))).join('') || '<p class="cap">None raised.</p>', isMem && !ro && canRec ? B(ic('plus', 14) + 'Raise concern', 'addRec', { id: c.id, k: 'concerns' }) : '', 'c6')}${card('Decisions', 'Decision history. An approved decision is what moves the project forward.', c.decisions.map(x => lrow('check', h(x.t), fmt(x.at) + ' · ' + h(x.by))).join('') || '<p class="cap">None yet. Decide by a Circle vote (one eligible member = one vote), or record a facilitator decision.</p>', mgr && !ro ? B(ic('plus', 14) + 'Record decision', 'addRec', { id: c.id, k: 'decisions' }) : '', 'c6')}</div>`;
   }
   if (t.cur === 'polls')
     body = card(
-      'Weighted votes',
-      'Project owner counts twice a regular member. Approved when approving weight ÷ total eligible weight ≥ ' +
-        S.settings.voting.threshold +
-        '%.',
+      'Circle votes',
+      'One eligible member = one vote. The project owner votes like every other member. An option is approved when its votes reach ' +
+        voteSettings().threshold +
+        '% of all eligible voters and the quorum is met. AI can check sources but never passes or fails a vote.',
       c.polls
         .map(p => {
           const tl = tally(c, p);
           const mv = p.votes[myId()];
-          const canV = eligibleVoter(c, myId()) && p.status === 'Open' && !ro;
-          return `<article class="poll-item"><header class="poll-h"><span class="tile t-purple" aria-hidden="true">${ic('vote', 16)}</span><b>${h(p.q)}</b>${pill(p.status, { 'Closed — Decided': 'p-green', 'Closed — No decision': 'p-amber' }[p.status])}</header>${p.desc ? `<p class="muted ws-pre poll-desc">${h(p.desc)}</p>` : ''}<p class="cap poll-meta">${p.created ? 'Created ' + fmt(p.created.slice(0, 16)) + (p.by ? ' by ' + nm(p.by) : '') + ' · ' : ''}${p.status === 'Open' ? 'Closes ' : 'Closed '}${fmt(p.closedAt ? p.closedAt.slice(0, 16) : p.closes)} · ${tl.voted} of ${tl.eligible} eligible voters · total eligible weight ${tl.tot}</p>
-  <div class="poll-opts">${p.options.map((o, i) => `<div class="poll-opt${mv === i ? ' is-mine' : ''}${p.status !== 'Open' && i === tl.best && tl.per[i] > 0 ? ' is-lead' : ''}"><div class="poll-ob"><div class="poll-ol"><span>${h(o)}</span><span class="cap">${tl.per[i]} weight · ${tl.tot ? Math.round((tl.per[i] / tl.tot) * 100) : 0}%</span></div><div class="progress poll-bar" aria-hidden="true"><span class="bar" style="width:${tl.tot ? (tl.per[i] / tl.tot) * 100 : 0}%"></span></div></div>${canV ? B(mv === i ? 'Your vote' : 'Vote', 'vote', { c: c.id, p: p.id, i }, mv === i ? 'btn-p btn-sm' : 'btn-s btn-sm') : ''}</div>`).join('')}</div>
-  ${p.result ? `<p class="cap poll-res">Result: ${h(p.result)}</p>` : ''}${p.status === 'Open' && pollMgr ? `<div class="row ws-acts">${B('Close poll and record result', 'closePoll', { c: c.id, p: p.id }, 'btn-p btn-sm')}</div>` : ''}${['Closed — Not approved', 'Closed — No decision'].includes(p.status) && pollMgr ? `<div class="row ws-acts">${B('Modify and re-poll', 'repoll', { c: c.id, p: p.id })}</div>` : ''}${p.status !== 'Open' ? pollReview(c, p) : ''}</article>`;
+          const canV = eligibleVoter(c, myId(), p) && p.status === 'Open' && !ro;
+          const myVS = voteStatusOf(c, memberRec(c));
+          const prev = p.prev && c.polls.find(x => x.id === p.prev);
+          const next = p.revotedAs && c.polls.find(x => x.id === p.revotedAs);
+          const youNote = p.status !== 'Open' || ro ? '' : canV ? (mv != null ? 'You have voted. You can change your vote until the poll closes.' : 'You are an eligible voter. Your vote counts once, like everyone else’s.') : myVS && myVS !== 'Eligible' ? 'You are ' + myVS.toLowerCase() + ' in this Circle, so you do not vote.' : isMem ? 'You joined after this vote opened, so you are not in its eligible voter list.' : '';
+          return `<article class="poll-item"><header class="poll-h"><span class="tile t-purple" aria-hidden="true">${ic('vote', 16)}</span><b>${h(p.q)}</b>${pill(p.status, POLL_PILL[p.status])}</header>${p.desc ? `<p class="muted ws-pre poll-desc">${h(p.desc)}</p>` : ''}<p class="cap poll-meta">${p.created ? 'Opened ' + fmt(p.created.slice(0, 16)) + (p.by ? ' by ' + nm(p.by) : '') + ' · ' : ''}${p.status === 'Open' ? 'Closes ' : 'Closed '}${fmt(p.closedAt ? p.closedAt.slice(0, 16) : p.closes)}${p.round > 1 ? ' · round ' + p.round + (prev ? ' (re-vote of “' + h(prev.q) + '”)' : '') : ''}${next ? ' · re-voted as “' + h(next.q) + '”' : ''}</p>
+  ${voteRuleStrip(c, p, tl)}
+  <div class="poll-opts">${p.options.map((o, i) => `<div class="poll-opt${mv === i ? ' is-mine' : ''}${p.status !== 'Open' && i === tl.best && tl.per[i] > 0 ? ' is-lead' : ''}"><div class="poll-ob"><div class="poll-ol"><span>${h(o)}</span><span class="cap">${tl.per[i]} of ${tl.eligible} eligible (${tl.pctOf(tl.per[i])}%)</span></div><div class="progress poll-bar" aria-hidden="true"><span class="bar" style="width:${tl.pctOf(tl.per[i])}%"></span></div></div>${canV ? B(mv === i ? 'Your vote' : 'Vote', 'vote', { c: c.id, p: p.id, i }, mv === i ? 'btn-p btn-sm' : 'btn-s btn-sm') : ''}</div>`).join('')}</div>
+  <div class="vote-tally"><span>Votes cast <b>${tl.voted} of ${tl.eligible}</b> eligible</span><span>Quorum ${tl.quorum}%: <b>${tl.quorumMet ? 'met' : p.status === 'Open' ? 'not yet (' + tl.needQ + ' votes needed)' : 'not met'}</b></span><span>Threshold ${tl.threshold}%: <b>${tl.need} of ${tl.eligible} votes</b> for one option</span>${youNote ? `<span>${youNote}</span>` : ''}</div>
+  ${voterList(c, p, tl)}
+  ${p.result ? `<div class="poll-res">${banner(p.status === 'Closed — Approved' ? 'ok' : p.status === 'Closed — Not approved' ? 'info' : 'warn', 'Result: ' + h(p.status.replace('Closed — ', '')), h(p.result))}</div>` : ''}
+  ${aiCheckBlock(c, p, isMem, ro)}${p.status === 'Open' && pollMgr && !ro ? `<div class="row ws-acts">${B('Close poll and record result', 'closePoll', { c: c.id, p: p.id }, 'btn-p btn-sm')}</div>` : ''}${REPOLL_STATUSES.includes(p.status) && !p.revotedAs && pollMgr && !ro ? `<div class="row ws-acts">${B('Modify and re-poll', 'repoll', { c: c.id, p: p.id })}</div>` : ''}${p.status !== 'Open' ? pollReview(c, p) : ''}</article>`;
         })
         .join('') ||
         empty(
           'vote',
-          'No polls yet',
-          'The project owner or an authorised member can put an important decision to a vote.',
+          'No votes yet',
+          'The project owner or the facilitator can put an important decision to a Circle vote.',
         ),
-      !ro && pollMgr ? B(ic('plus', 14) + 'Create poll', 'newPoll', { id: c.id }, 'btn-p btn-sm') : '',
+      !ro && pollMgr ? B(ic('plus', 14) + 'Open a Circle vote', 'newPoll', { id: c.id }, 'btn-p btn-sm') : '',
     );
   if (t.cur === 'members') {
-    const reqs = c.members.map((m, i) => [m, i]).filter(([m]) => m.status === 'Requested');
+    const openPolls = c.polls.filter(p => p.status === 'Open');
+    const reqs =c.members.map((m, i) => [m, i]).filter(([m]) => m.status === 'Requested');
     body =
       (reqs.length
         ? card(
@@ -376,9 +487,12 @@ route('circle', 'circles', () => {
         : '') +
       card(
         'Members',
-        'Each member’s role applies in this Circle only. ' + (memMgr ? 'You can change roles, invite and remove members.' : 'The facilitator and project owner manage membership.'),
+        'Each member’s role applies in this Circle only. ' +
+          (memMgr ? 'You can change roles, invite and remove members.' : 'The facilitator and project owner manage membership.') +
+          ` Voting: <b>${eligibleNow(c).length} eligible voter${eligibleNow(c).length === 1 ? '' : 's'}</b>, one vote each — the project owner included. Observers, members set as non-voting and the facilitator do not vote.` +
+          (openPolls.length ? ` Open vote${openPolls.length > 1 ? 's use' : ' uses'} the voter list fixed when ${openPolls.length > 1 ? 'they' : 'it'} opened: ${openPolls.map(p => '“' + h(p.q) + '” ' + tally(c, p).eligible + ' eligible').join('; ')}.` : ''),
         table(
-          ['Member', 'Role in this Circle', 'Status', ''],
+          ['Member', 'Role in this Circle', 'Vote', 'Status', ''],
           c.members
             .map((m, i) => [m, i])
             .filter(([m]) => m.status !== 'Requested')
@@ -388,6 +502,7 @@ route('circle', 'circles', () => {
               return [
                 `<a href="#" class="lnk" data-a="viewProfile" data-pid="${m.pid}">${nm(m.pid)}</a> <span class="cap">${h(ROLE[ctxRole(m.pid, c.ctx)] || '')}</span>`,
                 memMgr && !ro && !fixed && m.status !== 'Removed' ? roleSelect('memRole', { c: c.id, i, kind: 'circles' }, sr, 'Role of ' + P(m.pid).name) : h(roleLabel(sr, 'circles')),
+                voteStatusOf(c, m) ? pill(voteStatusOf(c, m), voteStatusOf(c, m) === 'Eligible' ? 'p-teal' : 'p-grey') : '<span class="cap">—</span>',
                 pill(m.status),
                 memMgr && !ro && !fixed && ['Active', 'Invited'].includes(m.status)
                   ? CB('Remove', 'memSet', { c: c.id, i, v: 'Removed' }, 'Remove ' + P(m.pid).name + ' from this Circle? They lose access to its chat and records.')
@@ -520,7 +635,7 @@ A.addRec = d => {
       decisions: 'Record a decision',
     }[k],
     () =>
-      `<form data-f="rec" class="col" style="gap:14px" novalidate><input type="hidden" name="c" value="${d.id}"><input type="hidden" name="k" value="${k}">${fi('rec', 't', k === 'concerns' ? 'Describe the concern' : k === 'decisions' ? 'Decision' : k === 'commitments' ? 'Responsibility or commitment' : 'Reflection', { type: 'textarea', rows: 3, req: true })}${k === 'commitments' && mgr ? fi('rec', 'owner', 'Responsible member', { type: 'select', req: true, opts: [[myId(), P(myId()).name + ' (me)'], ...mem], help: 'Work you assign to someone else is reviewed by you before it counts as done.' }) : ''}${k === 'commitments' ? fi('rec', 'due', 'Due date', { type: 'date', req: true }) : ''}${k === 'decisions' ? banner('info', '', 'Use this for decisions the Circle agreed in a session. Important project or task-implementation decisions should go to a weighted vote.') : ''}${k === 'concerns' ? fi('rec', 'anon', 'Hide my name from other members (the facilitator still sees it)', { type: 'checkbox' }) + banner('info', '', 'Concerns go to the facilitator. Serious issues are escalated to the Incident/Safety Owner. Visibility is controlled.') : ''}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save</button></div></form>`,
+      `<form data-f="rec" class="col" style="gap:14px" novalidate><input type="hidden" name="c" value="${d.id}"><input type="hidden" name="k" value="${k}">${fi('rec', 't', k === 'concerns' ? 'Describe the concern' : k === 'decisions' ? 'Decision' : k === 'commitments' ? 'Responsibility or commitment' : 'Reflection', { type: 'textarea', rows: 3, req: true })}${k === 'commitments' && mgr ? fi('rec', 'owner', 'Responsible member', { type: 'select', req: true, opts: [[myId(), P(myId()).name + ' (me)'], ...mem], help: 'Work you assign to someone else is reviewed by you before it counts as done.' }) : ''}${k === 'commitments' ? fi('rec', 'due', 'Due date', { type: 'date', req: true }) : ''}${k === 'decisions' ? banner('info', '', 'Use this for decisions the Circle agreed in a session. Important project or task-implementation decisions should go to a Circle vote (one eligible member = one vote).') : ''}${k === 'concerns' ? fi('rec', 'anon', 'Hide my name from other members (the facilitator still sees it)', { type: 'checkbox' }) + banner('info', '', 'Concerns go to the facilitator. Serious issues are escalated to the Incident/Safety Owner. Visibility is controlled.') : ''}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save</button></div></form>`,
   );
 };
 F.rec = d => {
@@ -634,13 +749,24 @@ A.escalateConcern = d => {
   toast('Escalated to the Incident/Safety Owner.');
   ok();
 };
-// A poll is a question with two or more options and a closing date and time. Votes are weighted (owner counts twice).
+// A poll is a question with two or more options and a closing date and time. One eligible member = one vote.
 const pollOpts = () => (UI.pollOpts = UI.pollOpts || ['Approve', 'Do not approve']);
+const pollDefaultClose = () => new Date(Date.now() + (+voteSettings().windowDays || 7) * 864e5).toISOString().slice(0, 16);
+function pollRulesBanner(c) {
+  const V = voteSettings();
+  const n = eligibleNow(c).length;
+  const pend = VOTE_PARAMS.filter(k => (V.status || {})[k] === 'Pending WSS decision'); // Recommended defaults are not pending
+  return banner(
+    'info',
+    'Who votes and how it is decided',
+    `One eligible member = one vote; the project owner votes like everyone else and has no override. Observers, members set as non-voting and the facilitator do not vote. <b>${n} eligible voter${n === 1 ? '' : 's'}</b> right now — this list is fixed when the vote opens and is the denominator for every figure. An option is approved when its votes reach <b>${V.threshold}%</b> of eligible voters and at least <b>${V.quorum}%</b> of them have voted. Voting window ${V.windowDays} days; a reminder goes to members who have not voted ${V.reminderDays} days before closing. If the top options tie, the proposal goes back: ${h(String(V.tie || 'Return to Shared for revision and re-vote'))}, or human escalation. AI can check sources and suggest questions but never passes or fails a vote.${pend.length ? ' <span class="cap">Threshold, quorum, window and reminder timing are pending a WSS decision and may change for future votes; the values above are frozen on this vote when it opens.</span>' : ''}`,
+  );
+}
 function pollForm(c, base) {
   const opts = pollOpts();
-  return `<form data-f="poll" class="col" style="gap:14px" novalidate><input type="hidden" name="c" value="${c.id}">${fi('poll', 'q', 'Question', { req: true, ph: 'What should the Circle decide?' })}${fi('poll', 'desc', 'Description (optional)', { type: 'textarea', rows: 2, ph: 'Background, what each option means, links' })}
+  return `<form data-f="poll" class="col" style="gap:14px" novalidate><input type="hidden" name="c" value="${c.id}"><input type="hidden" name="prev" value="${base ? base.id : ''}">${base ? banner('warn', 'Re-vote of an earlier poll', '“' + h(base.q) + '” closed as ' + h(base.status.replace('Closed — ', '')) + '. Revise the question or options before opening the new round; the earlier result stays on record.') : ''}${fi('poll', 'q', 'Question', { req: true, ph: 'What should the Circle decide?' })}${fi('poll', 'desc', 'Description (optional)', { type: 'textarea', rows: 2, ph: 'Background, what each option means, links' })}
   <fieldset class="col" style="gap:8px;border:0;padding:0;margin:0"><legend class="lbl" style="margin-bottom:8px">Options <span class="req">*</span></legend>${opts.map((o, i) => `<div class="row" style="gap:8px"><span class="poll-n">${i + 1}</span><input class="input" name="o${i}" value="${h(o)}" aria-label="Option ${i + 1}" placeholder="Option ${i + 1}">${opts.length > 2 ? `<button type="button" class="btn btn-g btn-sm" data-a="pollOptX" data-i="${i}" aria-label="Remove option ${i + 1}">${ic('x', 14)}</button>` : ''}</div>`).join('')}${fe('poll', 'opts') ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe('poll', 'opts')}</span>` : ''}${opts.length < 8 ? `<div>${B(ic('plus', 14) + 'Add option', 'pollOptAdd', {})}</div>` : ''}</fieldset>
-  ${fi('poll', 'closes', 'Closes on (date and time)', { type: 'datetime-local', req: true })}${banner('info', 'Who votes', 'The project owner and regular members vote; the project owner counts twice. Facilitators and mentors do not vote. An option wins when its weight reaches ' + S.settings.voting.threshold + '% of all eligible weight.')}<div class="actions"><span class="cap">Created ${fmt(now().slice(0, 16))} by ${nm(myId())}</span><button class="btn btn-p" type="submit">${base ? 'Open new poll' : 'Create poll'}</button></div></form>`;
+  ${fi('poll', 'closes', 'Closes on (date and time)', { type: 'datetime-local', req: true, help: 'Defaults to the configured ' + voteSettings().windowDays + '-day voting window.' })}${pollRulesBanner(c)}<div class="actions"><span class="cap">Opened ${fmt(now().slice(0, 16))} by ${nm(myId())}</span><button class="btn btn-p" type="submit">${base ? 'Open the re-vote' : 'Open vote'}</button></div></form>`;
 }
 const pollSnap = () => {
   const f = document.querySelector('form[data-f="poll"]');
@@ -663,8 +789,9 @@ A.pollOptX = d => {
 A.newPoll = d => {
   clearF('poll');
   UI.pollOpts = ['Approve', 'Do not approve'];
+  UI.form.poll = { closes: pollDefaultClose() };
   const c = byId('circles', d.id);
-  modal('Create a weighted poll', () => pollForm(c));
+  modal('Open a Circle vote', () => pollForm(c));
 };
 F.poll = d => {
   const opts = Object.keys(d)
@@ -682,6 +809,15 @@ F.poll = d => {
     return render();
   }
   const c = byId('circles', d.c);
+  const voters = eligibleNow(c);
+  if (!voters.length) {
+    UI.form.poll = { ...(UI.form.poll || {}), ...d };
+    UI.pollOpts = opts;
+    toast('This Circle has no eligible voters yet. Add members before opening a vote.', 'warn');
+    return render();
+  }
+  const prev = d.prev && c.polls.find(x => x.id === d.prev);
+  const V = voteSettings();
   const p = {
     id: uid('po'),
     q: d.q.trim(),
@@ -693,13 +829,19 @@ F.poll = d => {
     status: 'Open',
     votes: {},
     reviews: [],
+    // frozen for this vote: who may vote (the denominator) and the rule in force when it opened
+    eligibleSnap: voters,
+    rule: Object.fromEntries(VOTE_PARAMS.map(k => [k, +V[k]])),
+    round: prev ? (prev.round || 1) + 1 : 1,
+    prev: prev ? prev.id : null,
   };
+  if (prev) prev.revotedAs = p.id;
   c.polls.unshift(p);
   c.members
     .filter(m => m.status === 'Active' && m.pid !== myId())
-    .forEach(m => notify(m.pid, (eligibleVoter(c, m.pid) ? 'New vote in ' : 'New poll in ') + c.name + ': ' + p.q, 'circle', { id: c.id, tab: 'polls' }));
-  sysMsg(c, me().name + ' created a poll: ' + p.q);
-  audit('Poll created', c.id, p.q);
+    .forEach(m => notify(m.pid, (voters.includes(m.pid) ? 'Vote opened in ' + c.name + ' — you have one vote: ' : 'Circle vote opened in ' + c.name + ' (you do not vote): ') + p.q, 'circle', { id: c.id, tab: 'polls' }));
+  sysMsg(c, me().name + (prev ? ' opened a re-vote (round ' + p.round + '): ' : ' opened a vote: ') + p.q + ' · ' + voters.length + ' eligible voters, one vote each');
+  audit(prev ? 'Poll re-opened as new round' : 'Poll created', c.id, p.q + ' · ' + voters.length + ' eligible · threshold ' + p.rule.threshold + '% · quorum ' + p.rule.quorum + '% · window ' + p.rule.windowDays + ' days' + (prev ? ' · re-vote of ' + prev.id : ''));
   UI.modal = null;
   UI.pollOpts = null;
   clearF('poll');
@@ -733,10 +875,11 @@ F.pfr = d => {
 A.vote = d => {
   const c = byId('circles', d.c);
   const p = c.polls.find(x => x.id === d.p);
-  if (!eligibleVoter(c, myId())) return deny('not an eligible voter');
+  if (!p || p.status !== 'Open') return deny('this vote is closed');
+  if (!eligibleVoter(c, myId(), p)) return deny('not an eligible voter for this vote');
   if (c.state !== 'Active') return deny('Circle is not active');
   p.votes[myId()] = +d.i;
-  audit('Vote cast', p.id, '');
+  audit('Vote cast', p.id, 'one vote · ' + tally(c, p).voted + ' of ' + tally(c, p).eligible + ' eligible have voted');
   const tl = tally(c, p);
   if (tl.voted === tl.eligible) {
     closePollCore({ c: c.id, p: p.id }, true);
@@ -748,23 +891,37 @@ A.vote = d => {
 const closePollCore = (d, auto, silent) => {
   const c = byId('circles', d.c);
   const p = c.polls.find(x => x.id === d.p);
+  if (!p || p.status !== 'Open') return silent ? undefined : ok();
+  // freeze the denominator and the rule on older polls that predate the snapshot
+  if (!p.eligibleSnap) p.eligibleSnap = pollVoters(c, p);
+  if (!p.rule) p.rule = pollRule(p);
   const tl = tally(c, p);
-  const pass = tl.voted > 0 && tl.pct >= S.settings.voting.threshold;
-  p.status = pass ? 'Closed — Decided' : 'Closed — No decision';
+  const win = p.options[tl.best];
+  const line = voteLine(p, tl);
+  const pass = tl.outcome === 'pass';
+  // a passing "Do not approve" option is a decision, recorded as not approved
+  p.status = pass && NEG_OPT.test(win) ? POLL_STATUS.fail : POLL_STATUS[tl.outcome];
   p.closedAt = now();
-  p.result = pass ? `“${p.options[tl.best]}” · ${tl.pct}% of eligible weight` : `No option reached ${S.settings.voting.threshold}% (highest: “${p.options[tl.best]}”, ${tl.pct}%)`;
-  if (pass)
-    c.decisions.push({ t: p.q + ' → ' + p.options[tl.best], at: today(), by: 'Poll — ' + tl.pct + '% of eligible weight' });
+  p.result =
+    tl.outcome === 'pass'
+      ? `Decided “${win}”: ${line}.`
+      : tl.outcome === 'tie'
+        ? `Tie between “${win}” and “${p.options[tl.second]}”: ${line}. ${voteSettings().tie || 'Return to Shared for revision and re-vote'}, or escalate to a human decision (facilitator or Faculty/Steward).`
+        : tl.outcome === 'noquorum'
+          ? `No quorum, no decision: ${line}.`
+          : `No option reached the ${tl.threshold}% threshold: ${line}.`;
+  // only an approving result is recorded as a Circle decision (it is what moves the project forward)
+  if (p.status === POLL_STATUS.pass) c.decisions.push({ t: p.q + ' → ' + win, at: today(), by: 'Circle vote — ' + line });
   c.members
     .filter(m => m.status === 'Active')
     .forEach(m =>
-      notify(m.pid, `Poll closed in ${c.name}: ${pass ? 'decided — ' + p.options[tl.best] : 'no decision'}`, 'circle', {
+      notify(m.pid, `Vote closed in ${c.name}: ${p.status.replace('Closed — ', '')}${pass ? ' — ' + win : ''}`, 'circle', {
         id: c.id,
         tab: 'polls',
       }),
     );
   sysMsg(c, `Vote closed${auto === 'due' ? ' at its closing time' : ''}: ${p.q} — ${p.result}`);
-  audit('Poll closed', p.id, p.status + (auto === 'due' ? ' · closing date reached' : ''));
+  audit('Poll closed', p.id, p.status + ' · ' + line + (auto === 'due' ? ' · closing date reached' : auto ? ' · all eligible voters voted' : ''));
   if (silent) return save();
   toast(auto ? 'All eligible members voted — poll closed. ' + p.status : p.status);
   ok();
@@ -774,9 +931,55 @@ A.repoll = d => {
   const c = byId('circles', d.c);
   const p = c.polls.find(x => x.id === d.p);
   clearF('poll');
-  UI.form.poll = { q: p.q + ' (revised)', desc: p.desc || '' };
+  UI.form.poll = { q: p.q.replace(/ \(revised\)$/, '') + ' (revised)', desc: p.desc || '', closes: pollDefaultClose() };
   UI.pollOpts = [...p.options];
   modal('Modify and re-poll', () => pollForm(c, p));
+};
+// Run before every render (see tick() in journey.js): closes a vote at its closing time and sends the one
+// configured reminder to eligible members who have not voted yet.
+function pollTick(c, p) {
+  if (p.status !== 'Open' || !p.closes) return;
+  const end = p.closes.length > 10 ? p.closes : p.closes + 'T23:59';
+  if (end < now().slice(0, 16)) return closePollCore({ c: c.id, p: p.id }, 'due', true);
+  const rd = pollRule(p).reminderDays;
+  if (p.reminded || !(rd > 0) || new Date(end + ':00Z') - Date.now() > rd * 864e5) return;
+  p.reminded = now();
+  const todo = pollVoters(c, p).filter(pid => p.votes[pid] == null && eligibleVoter(c, pid, p));
+  todo.forEach(pid => notify(pid, 'Reminder: the vote “' + p.q + '” in ' + c.name + ' closes ' + fmt(end) + '. You have one vote.', 'circle', { id: c.id, tab: 'polls' }));
+  audit('Vote reminder sent', p.id, todo.length + ' of ' + pollVoters(c, p).length + ' eligible not yet voted · ' + rd + ' days before closing');
+}
+// BF-09: advisory source check. Reads the proposal text only; never touches status, votes or the result.
+A.aiCheck = d => {
+  const c = byId('circles', d.c);
+  const p = c && c.polls.find(x => x.id === d.p);
+  if (!p || p.status !== 'Open') return deny('the source check runs on an open vote only');
+  if (consent(myId(), 'ai') !== 'Granted' || !S.settings.aiAvailable)
+    return deny(S.settings.aiAvailable ? 'AI processing consent is not granted — voting still works without it' : 'AI is unavailable right now — voting still works');
+  busy('Checking the proposal for sources and contradictions…', () => {
+    const text = [p.q, p.desc].filter(Boolean).join('. ');
+    const sentences = text.split(/(?<=[.!?])\s+|\n+/).map(x => x.trim()).filter(x => x.length > 12);
+    const claim = x => /\d|more|fewer|less|most|best|cheaper|faster|safer|always|never|all |every|because/i.test(x);
+    const sourced = x => /https?:|source|according to|\.pdf|\bsee\b|\[\d+\]|survey report|data from/i.test(x);
+    const flags = sentences.filter(x => claim(x) && !sourced(x)).slice(0, 4);
+    const contra = [];
+    if (p.options.length > 2) contra.push('Several options may overlap; check that members read each one the same way.');
+    p.aiCheck = {
+      by: myId(),
+      at: now(),
+      flags,
+      contra,
+      questions: [
+        ...flags.slice(0, 2).map(f => 'What evidence supports “' + (f.length > 80 ? f.slice(0, 77) + '…' : f) + '”, and can it be linked before the vote closes?'),
+        'Who would be affected by “' + p.options[0] + '”, and have they been asked?',
+        'What would change your mind before the vote closes?',
+      ],
+    };
+    S.ai.push({ id: uid('aj'), by: myId(), cls: 'B', purpose: 'Proposal source check (advisory) · ' + c.name, sources: 'Proposal text of ' + p.id, consent: 'Granted', model: S.providers.ai.name, status: 'Advisory', at: today() });
+    S.settings.aiUsed++;
+    audit('AI source check (advisory)', p.id, flags.length + ' claim' + (flags.length === 1 ? '' : 's') + ' without a source · vote unchanged (' + tally(c, p).voted + ' of ' + tally(c, p).eligible + ' voted)');
+    toast('AI source check ready. It is advisory and does not change the vote.');
+    ok();
+  });
 };
 A.memSet = d => {
   const kind = d.kind || 'circles';

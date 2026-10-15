@@ -1,264 +1,350 @@
-// ---------- SPONSOR PROJECT FUNDING (5.5, D-02, F10) ----------
+// ---------- SPONSOR AREA (BF-08 · Doc 1 §6.6) ----------
+// Sponsor Alpha: seat pools and utilisation, approved initiatives, approved evidence summaries, funder-safe Harvests,
+// aggregate programme signals, invoices and receipts. Staged project funding, pitches, tranches, progress summaries,
+// reallocation and sponsor ↔ owner messaging are outside the Alpha (their handlers stay, and guards.js denies them).
+// Commercial entitlement never creates workspace membership, participant-level access or authority.
 const STAGE_ORDER = ['Circle', 'Rope Team', 'Room', 'Final review', 'Closed'];
 const stageReached = (p, stage) => p.stage && STAGE_ORDER.indexOf(p.stage) >= STAGE_ORDER.indexOf(stage);
-const sponsorMatch = (p, ints) => (p.tags || []).filter(t => ints.includes(t.toLowerCase()));
-function sponsorProgress(p) {
-  const rm = byId('rooms', p.room);
-  const ms = rm ? rm.milestones : [];
-  return h(stageLabel(p.stage || 'Accepted')) + ' stage' + (ms.length ? ' · ' + ms.filter(m => m.status === 'Achieved').length + ' of ' + ms.length + ' milestones achieved' : '');
+// ---- small-number suppression: any count or bucket below 5 is shown as "Fewer than 5" (tables, totals, charts)
+const SUPP_MIN = 5;
+const SUPP = '<span class="suppressed">Fewer than 5</span>';
+const isSupp = n => Number(n) < SUPP_MIN;
+const sup = n => (isSupp(n) ? SUPP : Number(n).toLocaleString('en-US'));
+// A share is suppressed when either the part or the whole is a small number.
+const supPct = (n, base) => (isSupp(n) || isSupp(base) ? SUPP : Math.round((n / base) * 100) + '%');
+// One bar per bucket; a suppressed bucket shows no bar length.
+const supBar = (label, n, max) =>
+  `<div class="seat-meter"><div class="seat-meter-h"><b>${label}</b><span class="cap">${sup(n)}</span></div><div class="progress" role="img" aria-label="${h(String(label).replace(/<[^>]+>/g, ''))}: ${isSupp(n) ? 'fewer than 5' : n}"><div class="bar" style="width:${isSupp(n) || !max ? 0 : Math.round((n / max) * 100)}%"></div></div></div>`;
+// ---- seat pools: sponsors see aggregates only. `assigned` names the seat holders for administrators.
+const poolAssigned = sp => (sp.assignedCount != null ? sp.assignedCount : sp.assigned.length);
+const poolActive = sp =>
+  sp.activeCount != null
+    ? sp.activeCount
+    : sp.assigned.filter(pid => {
+        const e = S.ents.find(e => e.pid === pid && e.source.includes(sp.id));
+        return !e || e.state === 'Active';
+      }).length;
+const myPools = () => S.seatPools.filter(s => s.sponsor === myId());
+const daysLeft = d => Math.round((new Date(d) - new Date(today())) / 864e5);
+const ctxNameOf = id => (S.contexts.find(c => c.id === id) || {}).name || '';
+// ---- what a sponsor may see
+// Approved, active evidence cleared for funder reports (evidence.js owns the release rule when evReleasedTo exists).
+function sponsorCleared() {
+  const xs =
+    typeof evReleasedTo === 'function'
+      ? evReleasedTo('Funder report')
+      : S.evidence.filter(e => e.review === 'Approved' && /funder/i.test(e.release || ''));
+  return xs.filter(e => e.review === 'Approved' && (e.lifecycle || 'Active') === 'Active');
 }
-function sponsorProjects(all) {
-  const ints = (S.interests[myId()] || []).map(x => x.toLowerCase());
-  return S.projects.filter(p => inCtx(p) && p.status === 'Accepted' && p.stage !== 'Closed' && (all || sponsorMatch(p, ints).length));
-}
-function sponsorBrief(p) {
-  const ev = S.evidence
-    .filter(e => e.linked.includes(p.id) || e.linked.includes(p.room) || e.linked.includes(p.circle))
-    .filter(e => e.release === 'Approved for funder release');
+// Harvests cleared for funders (never personal Harvests). evidence.js owns the rule when hvReleasedTo exists.
+const funderHarvests = () =>
+  (typeof hvReleasedTo === 'function' ? hvReleasedTo('Funder report') : S.harvests.filter(x => x.state === 'Approved' && x.release === 'Released')).filter(x => !x.personal);
+const HV_FUNDER_SECTIONS = ['What happened', 'Evidence and outcomes', 'Learning', 'Forward movement'];
+// Approved projects in the sponsor's programme, as aggregate status only.
+const sponsorInitProjects = () =>
+  S.projects.filter(p => inCtx(p) && (p.status === 'Accepted' || String(p.status).startsWith('Closed — Approved')));
+const PLAIN_STAGE = {
+  Circle: 'Forming the team and agreeing scope',
+  'Rope Team': 'Planning with mentor support',
+  Room: 'Delivering the work',
+  'Final review': 'In final review',
+  Closed: 'Completed',
+};
+const plainStage = p => PLAIN_STAGE[p.stage] || 'Getting started';
+const projMilestones = p => (byId('rooms', p.room) || { milestones: [] }).milestones || [];
+const projSpaces = p => [p.id, p.circle, p.rope, p.room].filter(Boolean);
+const evProject = e => S.projects.find(p => projSpaces(p).some(id => (e.linked || []).includes(id)));
+const myStoryReqs = () => S.releases.filter(x => x.requester === myId() && x.kind === 'story');
+const dueInvoices = () => S.payments.filter(p => p.pid === myId() && p.state === 'Invoice due');
+const NEVER_SPONSOR =
+  'Private participant profiles, Purpose Compass responses, private reflections and discussions, mentor notes, AI conversations or unapproved evidence. Sponsors are never members of Circles, Rope Teams or Action Workspaces.';
+
+route('funding', 'funding', () => {
+  if (role() !== 'S') return sponsorshipOverview();
+  const t = tabs(
+    'fund',
+    [
+      ['seats', 'Seat utilisation'],
+      ['initiatives', 'Approved initiatives'],
+      ['reports', 'Funder-safe reports'],
+      ['invoices', 'Invoices & receipts', dueInvoices().length || null],
+    ],
+    UI.p.tab,
+  );
+  const body = { seats: sponsorSeats, initiatives: sponsorInitiatives, reports: sponsorReports, invoices: sponsorInvoices }[t.cur]();
   return (
-    dl([
-      ['Overview', h(p.title) + ' · ' + h(p.type)],
-      ['Problem / need', h(p.sections ? p.sections[0].text : p.desc || '—')],
-      ['Objectives and expected outcomes', `<span class="pre-line">${h(p.sections ? p.sections[1].text : '—')}</span>`],
-      ['Requirements', h(p.sections ? p.sections[2].text.split('\n')[0] : '—')],
-      ['Areas', (p.tags || []).map(t => pill(t, 'p-grey')).join(' ') || '—'],
-      ['Funding requirement', p.fundingNeed ? money('USD', p.fundingNeed) : 'Not stated'],
-      ['Progress', sponsorProgress(p)],
-      ['Status', pill(p.status) + ' ' + (p.stage ? pill(p.stage === 'Room' ? WL() : p.stage, SC[p.stage]) : '')],
-      [
-        'Team',
-        'Project owner + ' +
-          (byId('circles', p.circle) || { members: [] }).members.length +
-          ' Circle members (names not shared)',
-      ],
-      ['Skills involved', h(p.sections ? p.sections[3].text.split('\n')[0] : '—')],
-      ['Approved evidence', ev.map(e => h(e.title) + ' (' + e.level + ')').join(', ') || 'None released to funders'],
-    ]) +
-    banner(
-      'info',
+    head(
+      'Sponsorship',
+      'What your support enabled: seats, approved initiatives, approved evidence and funder-safe reporting. Commercial entitlement never creates authority or access to participants’ work.',
+    ) +
+    t.html +
+    `<div class="fund-stack">${body}</div>`
+  );
+});
+function sponsorSeats() {
+  const pools = myPools();
+  const live = pools.filter(s => s.status === 'Active');
+  const tot = live.reduce((a, s) => a + s.total, 0),
+    asg = live.reduce((a, s) => a + poolAssigned(s), 0),
+    act = live.reduce((a, s) => a + poolActive(s), 0);
+  const kpi = (l, v) => `<div class="kpi"><span class="lt">${l}</span><span class="fig">${v}</span></div>`;
+  return (
+    (live.length
+      ? `<div class="kpis fund-kpis">${kpi('Seats purchased', tot.toLocaleString('en-US'))}${kpi('Assigned', sup(asg))}${kpi('Active', sup(act))}${kpi('Utilisation', supPct(act, tot))}</div>`
+      : '') +
+    (pools
+      .map(sp => {
+        const as = poolAssigned(sp),
+          ac = poolActive(sp),
+          d = daysLeft(sp.until);
+        const pending = sp.status !== 'Active';
+        return card(
+          `Seat pool · ${h(ctxNameOf(sp.ctx))}`,
+          `${sp.total} seats · valid until ${fmt(sp.until)}${!pending && d >= 0 ? ' · ' + d + ' days left' : ''}`,
+          (pending
+            ? banner('info', 'Awaiting invoice payment', 'This pool activates when the Finance Owner confirms the invoice is paid.')
+            : `<div class="seat-meter"><div class="seat-meter-h"><span class="fig">${sup(ac)}<span class="fig-of"> / ${sp.total}</span></span><span class="cap">seats active · utilisation ${supPct(ac, sp.total)}</span></div><div class="progress" role="img" aria-label="${isSupp(ac) ? 'Fewer than 5' : ac} of ${sp.total} seats active"><div class="bar" style="width:${isSupp(ac) ? 0 : Math.round((ac / sp.total) * 100)}%"></div></div></div>`) +
+            dl([
+              ['Purchased', sp.total.toLocaleString('en-US')],
+              ['Assigned', pending ? '—' : sup(as)],
+              ['Active', pending ? '—' : sup(ac)],
+              ['Available', pending ? sp.total.toLocaleString('en-US') : Math.max(0, sp.total - as).toLocaleString('en-US')],
+              ['Validity', fmt(sp.until) + (d >= 0 && d <= 60 && !pending ? ' ' + pill('Expiring soon', 'p-amber') : '')],
+              ['Status', pill(sp.status)],
+              sp.invoice && ['Invoice', `<span class="mono">${h(sp.invoice)}</span>`],
+            ]) +
+            `<p class="cap bill-note">Seats are assigned by the programme team through invitations. You see counts only, never names, profiles or activity.</p>`,
+          pending ? '' : B('Request more seats', 'checkout', { id: 'pd5' }),
+          'bill-pool',
+        );
+      })
+      .join('') || empty('card', 'No seat pools yet', 'Buy sponsored seats by invoice. The pool activates when the invoice is paid.', B('Buy seats by invoice', 'checkout', { id: 'pd5' }, 'btn-p btn-sm'))) +
+    card(
+      'More seats or a donation',
       '',
-      'Sponsor-visible information only. Private profiles, Purpose Compass, conversations and unapproved evidence are never shown.',
+      `<div class="row wrap">${B('Buy seats by invoice', 'checkout', { id: 'pd5' }, 'btn-p btn-sm')}${B('Donate', 'checkout', { id: 'pd6' })}</div><p class="cap bill-note">A donation grants no entitlement. Sponsors receive approved, aggregate reporting only.</p>`,
+    ) +
+    banner('info', 'What seat sponsorship never gives', 'Membership of any Circle, Rope Team or ' + WL() + ', access to participants or their records, or any governance power. Paying never restores access that was revoked.')
+  );
+}
+function sponsorInitiatives() {
+  const ps = sponsorInitProjects();
+  const ev = sponsorCleared();
+  const inits = S.initiatives.filter(i => i.status === 'Published');
+  return (
+    card(
+      'Programme initiatives',
+      'Published by the Programme Administrator for sponsors.',
+      inits.map(i => lrow('megaphone', h(i.title), h(i.summary) + `<span class="cap"> · Published ${fmt(i.at)}</span>`)).join('') ||
+        empty('megaphone', 'No initiatives published yet', 'The Programme Administrator publishes initiative summaries for sponsors.'),
+      '',
+      'hm-list',
+    ) +
+    card(
+      'Approved projects',
+      'Aggregate status only: no workspace access, member lists or messaging. Counts below 5 show as “Fewer than 5”.',
+      table(
+        ['Project', 'Programme', 'Where it is now', 'Milestones achieved', 'Approved evidence'],
+        ps.map(p => {
+          const ms = projMilestones(p);
+          return [
+            '<b>' + h(p.title) + '</b>',
+            h(ctxNameOf(p.ctx)),
+            h(plainStage(p)),
+            ms.length ? ms.filter(m => m.status === 'Achieved').length + ' of ' + ms.length : '<span class="cap">None set yet</span>',
+            sup(ev.filter(e => projSpaces(p).some(id => (e.linked || []).includes(id))).length),
+          ];
+        }),
+        'No approved projects in this programme yet.',
+      ),
+      '',
+      'sp-tbl',
     )
   );
 }
-route('funding', 'funding', () => {
-  const r = role();
-  if (r === 'S') {
-    const t = tabs(
-      'fund',
-      [
-        ['discover', 'Discover projects'],
-        ['pitches', 'Pitches', S.pitches.filter(p => p.to === myId() && p.status === 'Sent').length],
-        ['funded', 'My funding'],
-        ['initiatives', 'Initiatives', S.initiatives.filter(i => i.status === 'Published').length],
-      ],
-      UI.p.tab,
-    );
-    const ints = (S.interests[myId()] || []).map(x => x.toLowerCase());
-    let body = '';
-    if (t.cur === 'discover') {
-      // all eligible projects not yet funded by me; "Matching my interests" is a standard filter, on by default
-      const ps = sponsorProjects(true).filter(p => !S.funding.some(f => f.project === p.id && f.sponsor === myId()));
-      if (!UI.dv['fund:discover']) UI.dv['fund:discover'] = { f: { show: 'match' } };
-      body =
-        card('Projects you can fund', 'Your interests: ' + (ints.map(h).join(', ') || 'none set') + '. Matching is by stated interest only. No automated funding decisions.', dataView('fund:discover', {
-          label: 'projects',
-          items: ps,
-          search: p => p.title + ' ' + (p.type || '') + ' ' + (p.tags || []).join(' '),
-          quick: { label: 'Stage', options: ['Circle', 'Rope Team', 'Room'].filter(x => ps.some(p => p.stage === x)).map(x => [x, stageLabel(x)]), test: (p, v) => p.stage === v },
-          filters: [
-            { key: 'show', label: 'Show', options: [['match', 'Matching my interests']], test: p => sponsorMatch(p, ints).length > 0 },
-            { key: 'area', label: 'Area', options: PROJECT_AREAS.map(a => [a, a]), test: (p, v) => (p.tags || []).includes(v) },
-            { key: 'need', label: 'Funding requirement', options: [['yes', 'States a funding requirement'], ['no', 'No amount stated']], test: (p, v) => (v === 'yes' ? !!p.fundingNeed : !p.fundingNeed) },
-          ],
-          sorts: [
-            ['need', 'Funding requirement, highest first', (a, b) => (b.fundingNeed || 0) - (a.fundingNeed || 0)],
-            ['match', 'Best interest match', (a, b) => sponsorMatch(b, ints).length - sponsorMatch(a, ints).length],
-            ['stage', 'Furthest stage', (a, b) => STAGE_ORDER.indexOf(b.stage) - STAGE_ORDER.indexOf(a.stage)],
-            ['title', 'Title', (a, b) => a.title.localeCompare(b.title)],
-          ],
-          row: p => {
-            const saved = (S.saved[myId()] || []).includes(p.id);
-            return {
-              lead: `<span class="tile t-soft" aria-hidden="true">${ic('folder', 18)}</span>`,
-              title: h(p.title),
-              sub: 'Stage: ' + stageLabel(p.stage || '—') + (sponsorMatch(p, ints).length ? ' · matches your interest in ' + sponsorMatch(p, ints).map(h).join(', ') : ''),
-              meta: [sponsorProgress(p), (p.tags || []).map(t => pill(t, 'p-grey')).join(' '), `<details class="fdisc-more"><summary>${ic('file', 14)}Sponsor brief</summary><div class="fdisc-brief">${sponsorBrief(p)}</div></details>`],
-              badges: `<span class="fdv-need"><span class="fig-l">Funding requirement</span><span class="fig">${p.fundingNeed ? money('USD', p.fundingNeed) : 'Not stated'}</span></span>`,
-              primary: saved ? pill('Saved', 'p-teal') : B('Express interest', 'fundInterest', { id: p.id }, 'btn-p btn-sm'),
-              menu: (saved ? '' : B(ic('check', 16) + 'Save', 'fundSave', { id: p.id }, 'menu-i')) + B(ic('message', 16) + 'Message project owner', 'dmOpen', { pid: p.owner, project: p.id }, 'menu-i'),
-            };
-          },
-          empty: ['folder', 'No projects match these filters', 'Remove a filter (for example “Show: Matching my interests”), or update your funding interests.', ''],
-        }));
-    }
-    if (t.cur === 'pitches')
-      body = (() => {
-        const pis = S.pitches.filter(p => p.to === myId());
-        return card('Pitches received', '', dataView('fund:pitches', {
-          label: 'pitches',
-          items: pis,
-          search: pi => byId('projects', pi.project).title + ' ' + P(pi.from).name + ' ' + pi.text,
-          quick: { label: 'Status', options: [...new Set(pis.map(pi => pi.status))].map(v => [v, v]), test: (pi, v) => pi.status === v },
-          sorts: [
-            ['new', 'Newest first', (a, b) => String(b.at).localeCompare(String(a.at))],
-            ['amt', 'Amount, highest first', (a, b) => b.amount - a.amount],
-          ],
-          row: pi => {
-            const p = byId('projects', pi.project);
-            return {
-              lead: `<span class="tile t-soft" aria-hidden="true">${ic('send', 18)}</span>`,
-              title: 'Pitch: ' + h(p.title),
-              sub: 'From ' + nm(pi.from) + ' · ' + fmt(pi.at) + ' · requested ' + money('USD', pi.amount),
-              meta: [`<span class="fpitch-q">${h(pi.text)}</span>`, `<details class="fdisc-more"><summary>${ic('file', 14)}Sponsor brief</summary><div class="fdisc-brief">${sponsorBrief(p)}</div></details>`],
-              badges: pill(pi.status) + `<span class="fdv-need"><span class="fig-l">Requested</span><span class="fig">${money('USD', pi.amount)}</span></span>`,
-              primary:
-                pi.status === 'Sent'
-                  ? B('Fund this project', 'fundInterest', { id: p.id, pitch: pi.id, amount: pi.amount }, 'btn-p btn-sm')
-                  : B(ic('message', 14) + 'Message', 'dmOpen', { pid: pi.from, project: p.id }),
-              menu:
-                pi.status === 'Sent'
-                  ? B(ic('message', 16) + 'Message', 'dmOpen', { pid: pi.from, project: p.id }, 'menu-i') +
-                    B(ic('check', 16) + 'Save', 'pitchDecide', { id: pi.id, v: 'Saved' }, 'menu-i') +
-                    '<div class="menu-sep"></div>' +
-                    B(ic('x', 16) + 'Decline', 'pitchDecide', { id: pi.id, v: 'Declined' }, 'menu-i danger')
-                  : '',
-            };
-          },
-          empty: ['send', 'No pitches', '', ''],
-        }));
-      })();
-    if (t.cur === 'initiatives') body = initiativesView();
-    if (t.cur === 'funded')
-      body =
-        S.funding
-          .filter(f => f.sponsor === myId())
-          .map(f => fundCard(f))
-          .join('') || empty('coin', 'No funding yet', '');
-    body = `<div class="fund-stack">${body}</div>`;
-    return (
-      head('Projects & funding', 'Funds are released stage by stage, each against the owner’s progress summary.') +
-      t.html +
-      body
-    );
-  }
-  const fs = S.funding.filter(f => {
-    const p = byId('projects', f.project);
-    return p && inCtx(p) && (r === 'A' || (r === 'F' && stewardOf(p)) || p.owner === myId());
-  });
-  const mine = S.projects.filter(p => p.owner === myId() && p.status === 'Accepted' && inCtx(p));
+function sponsorReports() {
+  const c = ctxId();
+  const ev = sponsorCleared();
+  const hv = funderHarvests();
+  const parts = [...new Set(S.assign.filter(a => a.ctx === c && a.status === 'Active' && roleBase(a.role) === 'P').map(a => a.pid))];
+  const inCircle = parts.filter(pid => S.circles.some(ci => ci.ctx === c && ci.state === 'Active' && memberOf(ci, pid))).length;
+  const ach = S.rooms.filter(r => r.ctx === c).flatMap(r => r.milestones || []).filter(m => m.status === 'Achieved').length;
+  const ps = sponsorInitProjects();
+  const buckets = ['Circle', 'Rope Team', 'Room', 'Final review', 'Closed'].map(s => [s === 'Room' ? WL() : s === 'Closed' ? 'Completed' : s, ps.filter(p => (p.stage || 'Circle') === s).length]);
+  const max = Math.max(1, ...buckets.map(b => b[1]));
+  const reqs = myStoryReqs();
+  const mdef = id => h((S.metrics.find(m => m.id === id) || {}).def || '');
   return (
-    head(
-      'Funding',
-      r === 'P'
-        ? 'Pitch sponsors and submit a progress summary at each funded stage.'
-        : 'Stage-wise sponsor funding in this context.',
-      r === 'P' && mine.length ? B(ic('send', 16) + 'Pitch a sponsor', 'pitchNew', {}, 'btn-p') : '',
-    ) +
-    `<div class="fund-stack">${fundTotals(fs)}${
-      fs.map(f => fundCard(f)).join('') ||
-      empty('coin', 'No funding', 'When a sponsor agrees to fund a project, the three tranches appear here.')
-    }${
-      r === 'P'
-        ? card(
-            'Pitches sent',
-            '',
-            dataView('fund:sent', {
-              label: 'pitches',
-              items: S.pitches.filter(p => p.from === myId()),
-              search: p => [String(cName(p.project)).replace(/<[^>]+>/g, ''), P(p.to).name, p.status].join(' '),
-              quick: { label: 'Status', options: [...new Set(S.pitches.filter(p => p.from === myId()).map(p => p.status))].map(v => [v, v]), test: (p, v) => p.status === v },
-              sorts: [
-                ['new', 'Newest first', (a, b) => String(b.at).localeCompare(String(a.at))],
-                ['amt', 'Amount', (a, b) => b.amount - a.amount],
-              ],
-              defaultSort: 'new',
-              row: p => ({
-                lead: `<span class="tile t-soft" aria-hidden="true">${ic('send', 18)}</span>`,
-                title: cName(p.project),
-                sub: 'To ' + nm(p.to),
-                meta: ['Amount <b>' + money('USD', p.amount) + '</b>', p.at ? 'Sent ' + fmt(p.at) : ''],
-                badges: pill(p.status),
-              }),
-              empty: ['send', 'No pitches sent yet', 'Use “Pitch a sponsor” to send one.', ''],
-            }),
-            '',
-            'fund-pitches',
-          )
-        : ''
-    }</div>`
-  );
-});
-function fundCard(f) {
-  const p = byId('projects', f.project);
-  const r = role();
-  const isS = f.sponsor === myId(),
-    isO = p.owner === myId();
-  return card(
-    h(p.title),
-    `${nm(f.sponsor)} · ${h(S.orgs.find(o => o.id === f.org)?.name || '')} · ${money(f.currency, f.total)} · ${h(f.status)}`,
-    (() => {
-      const rel = f.tranches
-        .filter(t => ['Released', 'Summary submitted', 'Summary accepted', 'On hold'].includes(t.state))
-        .reduce((a, t) => a + t.amount, 0);
-      const seg = { Committed: 'is-c', Released: 'is-r', 'Summary submitted': 'is-r', 'Summary accepted': 'is-a', 'On hold': 'is-h' };
-      return `<div class="fsum"><div class="fsum-i"><span class="fig-l">Committed</span><span class="fig">${money(f.currency, f.total)}</span></div><div class="fsum-i"><span class="fig-l">Released</span><span class="fig">${money(f.currency, rel)}</span></div><div class="fsum-i"><span class="fig-l">Still to release</span><span class="fig">${money(f.currency, f.total - rel)}</span></div></div><div class="ftr-w"><div class="ftr-h"><span class="lbl">Released</span><span class="cap">${money(f.currency, rel)} of ${money(f.currency, f.total)}</span></div><div class="ftr" role="img" aria-label="Released ${h(f.currency)} ${rel} of ${h(f.currency)} ${f.total}">${f.tranches.map((t, i) => `<span class="ftr-s ${seg[t.state] || 'is-c'}" style="flex-grow:${t.amount || 1}"><i></i><span class="ftr-l">${i + 1} · ${h(stageLabel(t.stage))}</span></span>`).join('')}</div></div>`;
-    })() +
-      (f.status !== 'Agreement signed' && f.status !== 'Fully released'
-        ? `<div class="col fsetup">${banner('info', 'Funding set-up', 'Funding request → required approval → funding agreement.')}${dl(
-            [
-              ['Request', pill(f.status)],
-              ['Approval', f.approvedBy ? nm(f.approvedBy) : 'Programme Administrator (Finance Owner)'],
-            ],
-          )}${r === 'A' && hasB('Finance Owner') && f.status === 'Requested' ? B('Approve funding request', 'fundApprove', { id: f.id }, 'btn-p btn-sm') : ''}${isS && f.status === 'Approved — agreement pending' ? B('Sign funding agreement', 'fundSign', { id: f.id }, 'btn-p btn-sm') : ''}</div>`
-        : '') +
+    card(
+      'Programme signals',
+      'Aggregate only, for ' + h(ctxNameOf(c)) + '. Counts below 5 are shown as “Fewer than 5” in tables, totals and charts.',
       table(
-        ['Tranche', 'Stage', 'Amount', 'State', 'Owner progress summary', ''],
-        f.tranches.map((t, i) => {
-          const prevOk = i === 0 || f.tranches[i - 1].state === 'Summary accepted';
-          const reached = stageReached(p, t.stage);
-          let act = '';
-          if (['Agreement signed', 'Fully released'].includes(f.status)) {
-            if (isS && t.state === 'Committed')
-              act =
-                prevOk && reached
-                  ? B('Release tranche', 'tranche', { f: f.id, i, v: 'Released' }, 'btn-p btn-sm')
-                  : `<span class="cap">${!prevOk ? 'Waiting for previous summary' : 'Project not yet at this stage'}</span>`;
-            if (isO && ['Released', 'On hold'].includes(t.state))
-              act = B(
-                t.state === 'On hold' ? 'Add information' : 'Submit progress summary',
-                'summary',
-                { f: f.id, i },
-                'btn-p btn-sm',
-              );
-            if (isS && t.state === 'Summary submitted')
-              act =
-                B('Put on hold', 'tranche', { f: f.id, i, v: 'On hold' }) +
-                B('Accept summary', 'tranche', { f: f.id, i, v: 'Summary accepted' }, 'btn-p btn-sm');
-          }
-          return [
-            `<b>Tranche ${i + 1}</b>`,
-            stageLabel(t.stage),
-            money(f.currency, t.amount),
-            pill(t.state),
-            h(t.summary || '—') + (t.hold ? `<div class="cap">On hold: ${h(t.hold)}</div>` : ''),
-            act,
-          ];
-        }),
-      ) +
-      `<p class="cap fund-note">Funding decisions are always made by humans.</p>`,
-    '',
-    'fund-card',
+        ['Signal', 'Value', 'How it is counted'],
+        [
+          ['Participants in the programme', sup(parts.length), 'Active participant roles in this programme'],
+          ['Circle participation', supPct(inCircle, parts.length), mdef('m2')],
+          ['Milestones achieved', sup(ach), mdef('m6')],
+          ['Action-to-evidence coverage', isSupp(ach) ? SUPP : typeof metric === 'function' ? h(String(metric('m7'))) : '—', mdef('m7')],
+          ['Approved evidence summaries', sup(ev.length), 'Approved evidence cleared for funder reports'],
+          ['Funder-safe Harvests', sup(hv.length), 'Learning Harvests released to funders'],
+        ],
+      ),
+      '',
+      'sp-tbl',
+    ) +
+    card('Approved projects by stage', 'Each bar is a count of approved projects. Small buckets show no bar.', buckets.map(([l, n]) => supBar(h(l), n, max)).join(''), '', 'sp-bars') +
+    card(
+      'Approved evidence summaries',
+      'Cleared for funder reports by the evidence owner and a disclosure review. Summaries only: no names, files or private context.',
+      ev
+        .map(e => {
+          const p = evProject(e);
+          const open = reqs.find(x => x.ev === e.id && !['Declined by owner', 'Withheld after disclosure review', 'Released'].includes(x.status));
+          return lrow(
+            'award',
+            h(e.title),
+            [h(e.claim || ''), h(e.type || ''), e.level ? 'Support level ' + h(e.level) : '', p ? 'Project: ' + h(p.title) : ''].filter(Boolean).join(' · '),
+            open ? pill('Story requested', 'p-grey') : B('Request an identifiable story', 'storyReq', { id: e.id }),
+          );
+        })
+        .join('') || empty('award', 'No approved evidence summaries yet', 'Evidence appears here only after its owner authorises a funder release and the disclosure review clears it.'),
+      '',
+      'hm-list',
+    ) +
+    card(
+      'Funder-safe Harvests',
+      'Learning Harvests the Programme Administrator released to funders. Only the funder-safe sections are shown.',
+      hv
+        .map(x => `<details class="fdisc-more"><summary>${ic('sparkle', 14)}<b>${h(x.scopeName)}</b> <span class="cap">· ${h(x.trigger || '')}</span></summary>${dl(HV_FUNDER_SECTIONS.filter(k => x.sections && x.sections[k]).map(k => [h(k), h(x.sections[k])]))}</details>`)
+        .join('') || empty('sparkle', 'No Harvests released to funders yet', 'A Harvest appears here only after the Programme Administrator approves a funder release.'),
+      '',
+      'hm-list',
+    ) +
+    (reqs.length
+      ? card(
+          'Your story requests',
+          'Each request is decided by the participant first, then by the Trust/Data Steward. Sponsorship has no bearing on the decision.',
+          table(
+            ['Evidence', 'Requested', 'Status'],
+            reqs.map(x => [h((byId('evidence', x.ev) || {}).title || '—'), fmt(x.at), pill(x.status)]),
+          ),
+          '',
+          'sp-tbl',
+        )
+      : '') +
+    banner('info', 'What sponsors never receive', NEVER_SPONSOR)
   );
 }
-// Totals across the funding agreements shown on this page (single currency only; mixed currencies are not summed).
-function fundTotals(fs) {
-  if (fs.length < 2 || fs.some(f => f.currency !== fs[0].currency)) return '';
-  const c = fs[0].currency;
-  const rel = fs.reduce((a, f) => a + f.tranches.filter(t => ['Released', 'Summary submitted', 'Summary accepted', 'On hold'].includes(t.state)).reduce((b, t) => b + t.amount, 0), 0);
-  const tot = fs.reduce((a, f) => a + f.total, 0);
-  return `<div class="kpis fund-kpis"><div class="kpi"><span class="lt">Funding agreements</span><span class="fig">${fs.length}</span></div><div class="kpi"><span class="lt">Committed</span><span class="fig">${money(c, tot)}</span></div><div class="kpi"><span class="lt">Released</span><span class="fig">${money(c, rel)}</span></div></div>`;
+function sponsorInvoices() {
+  const items = S.payments.filter(p => p.pid === myId() && !p.dup);
+  return (
+    card(
+      'Invoices and receipts',
+      'Issued by the payment provider. PHOENIX never sees card details.',
+      dataView('fund:invoices', {
+        label: 'invoices and receipts',
+        items,
+        search: p => [p.ref || p.id, (byId('products', p.product) || {}).name || p.product, p.note || '', p.state].join(' '),
+        quick: { label: 'Status', options: [...new Set(items.map(p => p.state))].map(v => [v, v]), test: (p, v) => p.state === v },
+        sorts: [
+          ['new', 'Newest first', (a, b) => String(b.at).localeCompare(String(a.at))],
+          ['old', 'Oldest first', (a, b) => String(a.at).localeCompare(String(b.at))],
+        ],
+        defaultSort: 'new',
+        layout: 'table',
+        dense: true,
+        columns: [
+          { label: 'Reference', cell: p => `<span class="mono" style="white-space:nowrap">${h(p.ref || p.id)}</span>` },
+          { label: 'Item', cell: p => h((byId('products', p.product) || {}).name || p.product) + (p.note ? `<div class="cap">${h(p.note)}</div>` : '') },
+          { label: 'Amount', cell: p => h(p.amount || '—') },
+          { label: 'Status', cell: p => pill(p.state) + (p.due && p.state === 'Invoice due' ? `<div class="cap">Due ${fmt(p.due)}</div>` : '') },
+          { label: 'Date', sort: 'new', cell: p => fmt(p.at) },
+          { label: '', cell: p => (p.state === 'Invoice due' ? B('Pay on provider page', 'invPay', { id: p.id }, 'btn-p btn-sm') : '') },
+        ],
+        empty: ['inbox', 'No invoices or receipts yet', 'Seat-pool invoices and donation receipts appear here once the provider issues them.', ''],
+      }),
+      B('Buy seats by invoice', 'checkout', { id: 'pd5' }) + B('Donate', 'checkout', { id: 'pd6' }),
+      'bill-tx',
+    ) + `<p class="cap bill-note">A donation grants no entitlement. Payment never buys authority, visibility, matching priority or access to participants’ work.</p>`
+  );
 }
+// Programme Administrator view of the same boundary (sponsors have their own tabs above).
+function sponsorshipOverview() {
+  const pools = S.seatPools.filter(s => inCtx(s));
+  return (
+    head('Sponsorship', 'Sponsors buy seat pools, donate and receive approved, aggregate reporting. Staged project funding, pitches and tranches are outside the Alpha.') +
+    `<div class="fund-stack">${card(
+      'Seat pools in this programme',
+      'Aggregate counts as sponsors see them.',
+      table(
+        ['Sponsor', 'Seats', 'Assigned', 'Active', 'Valid until', 'Status'],
+        pools.map(s => [nm(s.sponsor), s.total, sup(poolAssigned(s)), sup(poolActive(s)), fmt(s.until), pill(s.status)]),
+        'No seat pools yet.',
+      ),
+      can('payments') ? L('Manage seat pools', 'billing', { tab: 'seats' }) : '',
+      'sp-tbl',
+    )}${card(
+      'Sponsor reporting',
+      '',
+      dl([
+        ['Published initiatives', S.initiatives.filter(i => i.status === 'Published').length],
+        ['Approved evidence cleared for funders', sponsorCleared().length],
+        ['Harvests released to funders', funderHarvests().length],
+        ['Identifiable-story requests open', S.releases.filter(x => x.kind === 'story' && !['Declined by owner', 'Withheld after disclosure review', 'Released'].includes(x.status)).length],
+      ]),
+      role() === 'A' ? L('Sponsor initiatives', 'admin', { tab: 'initiatives' }) : '',
+    )}${banner('info', 'Outside the Alpha', 'Project pitches, staged funding tranches, progress summaries, funding reallocation and sponsor ↔ owner messaging.')}</div>`
+  );
+}
+// ---- a sponsor asks for an identifiable story: a separate release request, decided by the participant, then the
+// Trust/Data Steward. It never grants direct access.
+A.storyReq = d => {
+  const e = byId('evidence', d.id);
+  clearF('story');
+  modal(
+    'Request an identifiable story',
+    () =>
+      `<form data-f="story" class="col fgap" novalidate><input type="hidden" name="id" value="${e.id}"><p class="cap">About: <b>${h(e.title)}</b></p>${fi('story', 'use', 'Where the story would be used', { type: 'select', req: true, ph: 'Select', opts: ['Funder report to our board', 'Annual report', 'Public communication'] })}${fi('story', 'why', 'Why you are asking', { type: 'textarea', rows: 3, req: true, help: 'The participant reads this when deciding.' })}${banner('info', 'How this is decided', 'The participant decides first. If they agree, the Trust/Data Steward reviews disclosure. Nothing identifiable is shared unless both approve, and your sponsorship has no bearing on either decision.')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send request</button></div></form>`,
+  );
+};
+F.story = d => {
+  if (!validate('story', d, { use: ['req'], why: ['req', ['min', 20]] })) return render();
+  const e = byId('evidence', d.id);
+  const org = (S.orgs.find(o => o.id === me().org) || {}).name || 'Sponsor';
+  const x = {
+    id: uid('rr'),
+    ev: e.id,
+    requester: myId(),
+    kind: 'story',
+    aud: 'Funder report',
+    audience: 'Identifiable story for ' + org + ' · ' + d.use,
+    purpose: d.why,
+    status: 'Awaiting owner decision',
+    at: today(),
+  };
+  S.releases.push(x);
+  notify(e.owner, 'Release request: ' + org + ' asks to tell an identifiable story about “' + e.title + '”. You decide.', 'evidence', { id: e.id });
+  S.assign
+    .filter(a => a.ctx === ctxId() && a.status === 'Active' && (a.bundles || []).includes('Trust/Data Steward'))
+    .forEach(a => notify(a.pid, 'Story request recorded (owner decides first): ' + e.title, 'evidence', { id: e.id }));
+  audit('Identifiable story requested', e.id, x.audience);
+  UI.modal = null;
+  clearF('story');
+  toast('Request sent. The participant decides first, then the Trust/Data Steward.');
+  ok();
+};
+// Simulated provider-hosted invoice payment.
+A.invPay = d => {
+  const p = S.payments.find(x => x.id === d.id && x.pid === myId());
+  if (!p) return deny('invoice not found');
+  p.state = 'Paid';
+  p.paidAt = today();
+  audit('Invoice paid (provider-hosted)', p.ref || p.id, '');
+  toast('Invoice paid. A receipt is available from the provider.');
+  ok();
+};
+// ---- Retired for the Alpha (BF-08): staged project funding, pitches, tranches and progress summaries.
+// Handlers are kept so older references still resolve; guards.js denies every one of them.
 A.fundSave = d => {
   (S.saved[myId()] = S.saved[myId()] || []).push(d.id);
   audit('Project saved by sponsor', d.id, '');
@@ -430,14 +516,13 @@ route('billing', 'payments', () => {
     'bill',
     [
       ['access', 'My access'],
-      r === 'S' && ['sponsor', 'Seat pools & donations'],
       r === 'O' && ['org', 'Institution seats'],
       r === 'A' && ['products', 'Products'],
       r === 'A' && ['ents', 'Entitlements'],
       r === 'A' && ['seats', 'Seat pools'],
       r === 'A' && ['events', 'Payment events'],
     ],
-    UI.p.tab || (r === 'A' ? 'products' : r === 'O' ? 'org' : r === 'S' ? 'sponsor' : 'access'),
+    UI.p.tab || (r === 'A' ? 'products' : r === 'O' ? 'org' : 'access'),
   );
   let body = '';
   if (t.cur === 'access') {
@@ -512,7 +597,9 @@ route('billing', 'payments', () => {
   )}
   <div class="c12">${banner('info', 'Never dependent on payment', 'Consent controls, withdrawal, correction, appeal, incident reporting, your own records, permitted export and privacy rights. Payment never buys reviewer status, authority, visibility or matching priority.')}</div></div>`;
   }
-  if (t.cur === 'sponsor' || t.cur === 'org') {
+  if (r === 'S' && t.cur === 'access')
+    body = banner('info', 'Your sponsorship', `Seat pools, utilisation, invoices and receipts are under ${L('Sponsorship', 'funding', { tab: 'seats' })}. Sponsors see seat counts only, never seat holders.`) + body;
+  if (t.cur === 'org') {
     const pools = S.seatPools.filter(s => s.sponsor === myId());
     body =
       pools
@@ -976,6 +1063,8 @@ A.seatAssign = d => {
 F.sa = d => {
   const sp = byId('seatPools', d.sp);
   sp.assigned.push(d.pid);
+  if (sp.assignedCount != null) sp.assignedCount++;
+  if (sp.activeCount != null) sp.activeCount++;
   S.ents.push({
     id: uid('en'),
     pid: d.pid,
@@ -993,10 +1082,14 @@ F.sa = d => {
 A.seat = d => {
   const sp = byId('seatPools', d.sp);
   const e = S.ents.find(e => e.pid === d.pid && e.source.includes(sp.id));
+  const wasActive = !e || e.state === 'Active';
   if (d.v === 'release') {
     sp.assigned = sp.assigned.filter(p => p !== d.pid);
     if (e) e.state = 'Cancelled';
+    if (sp.assignedCount != null) sp.assignedCount = Math.max(0, sp.assignedCount - 1);
   } else if (e) e.state = d.v;
+  // keep the sponsor-facing aggregate in step with the named change
+  if (sp.activeCount != null) sp.activeCount = Math.max(0, sp.activeCount + (d.v === 'Active' ? (wasActive ? 0 : 1) : wasActive ? -1 : 0));
   notify(d.pid, 'Your sponsored seat was ' + (d.v === 'release' ? 'released' : d.v === 'Active' ? 'reactivated' : 'suspended'), 'billing');
   audit('Seat ' + d.v, sp.id, d.pid);
   ok();
@@ -1015,7 +1108,8 @@ F.pkg = d => {
 A.poolActivate = d => {
   const sp = byId('seatPools', d.id);
   sp.status = 'Active';
-  notify(sp.sponsor, 'Your seat pool is active: ' + sp.total + ' seats until ' + fmt(sp.until), 'billing');
+  const isSp = S.assign.some(a => a.pid === sp.sponsor && roleBase(a.role) === 'S');
+  notify(sp.sponsor, 'Your seat pool is active: ' + sp.total + ' seats until ' + fmt(sp.until), isSp ? 'funding' : 'billing', isSp ? { tab: 'seats' } : {});
   audit('Seat pool activated against invoice', sp.id, 'Finance Owner');
   toast('Seat pool activated.');
   ok();

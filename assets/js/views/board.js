@@ -51,8 +51,11 @@ function taskReviewer(x) {
 // The assignee, project owner or facilitator moves work between To do, In progress and Review.
 // Only a reviewer moves Review → Done (or sends it back), and only a reviewer reopens Done work.
 const taskWorker = (x, k) => isLead(x) || role() === 'A' || (k.owner === myId() && k.status !== 'Proposed');
+// A task begins only after its assignee accepts it (Build-Freeze review: "Tasks begin after assignee acceptance").
+const taskPending = k => k.acc === 'Pending';
 function taskTargets(x, k) {
   if (x.state !== 'Active' || k.status === 'Declined') return [];
+  if (taskPending(k)) return [];
   if (k.status === 'Proposed') return isLead(x) || role() === 'A' ? ['Proposed', 'To do', 'In progress'] : [];
   const t = new Set([k.status]);
   if (k.status !== 'Done' && taskWorker(x, k)) ['To do', 'In progress', 'Review'].forEach(v => t.add(v));
@@ -77,7 +80,7 @@ const dueChip = k =>
 function kbCard(x, k) {
   const drag = taskCanMove(x, k);
   return `<article class="kb-card pr-${(k.prio || 'Medium').toLowerCase()} ${k.status === 'Done' ? 'is-done' : ''}" data-a="taskView" data-r="${x.id}" data-id="${k.id}" data-s="${h((k.t + ' ' + (k.desc || '') + ' ' + taskKey(x, k) + ' ' + P(k.owner).name).toLowerCase())}" ${drag ? 'draggable="true"' : ''} tabindex="0" role="button" aria-label="${h(taskKey(x, k) + ': ' + k.t + ', ' + k.status + ', assigned to ' + P(k.owner).name)}">
-  <div class="kb-top">${drag ? '<span class="kb-grip" aria-hidden="true" title="Drag to move, or open the card to change its status"></span>' : ''}<div class="kb-title">${h(k.t)}</div></div>${k.status === 'Proposed' && k.by ? `<div class="cap">Proposed by ${nm(k.by)}</div>` : ''}
+  <div class="kb-top">${drag ? '<span class="kb-grip" aria-hidden="true" title="Drag to move, or open the card to change its status"></span>' : ''}<div class="kb-title">${h(k.t)}</div></div>${k.status === 'Proposed' && k.by ? `<div class="cap">Proposed by ${nm(k.by)}</div>` : ''}${taskPending(k) ? `<div class="kb-acc">${pill('Awaiting acceptance', 'p-amber')}</div>` : k.acc === 'Declined by assignee' ? `<div class="kb-acc">${pill('Declined by assignee', 'p-red')}</div>` : ''}
   <div class="kb-meta">${prioTag(k.prio)}<span class="kb-key">${h(taskKey(x, k))}</span>${dueChip(k)}${(k.log || []).length > 1 ? `<span class="kb-c" title="${k.log.length} updates">${ic('message', 12)}${k.log.length}</span>` : ''}${(k.evidence || []).length ? `<span class="kb-c" title="${k.evidence.length} supporting evidence">${ic('award', 12)}${k.evidence.length}</span>` : ''}${k.opt ? '<span class="kb-c" title="Optional deliverable">Optional</span>' : ''}<span class="grow"></span><span class="av kb-av" title="Assignee: ${nm(k.owner)}">${ini(k.owner)}</span></div></article>`;
 }
 function taskBoard(x, lead, ro) {
@@ -244,7 +247,7 @@ A.taskView = d => {
     `<span class="kb-key tk-key">${h(taskKey(x, k))}</span>${h(k.t)}`,
     () =>
       `<form data-f="tke" class="tk-detail" novalidate><input type="hidden" name="r" value="${x.id}"><input type="hidden" name="id" value="${k.id}">
-  <div class="tk-main">${k.status === 'Proposed' ? banner('info', 'Proposed by ' + nm(k.by), lead ? 'Approve it into a column, or decline it.' : 'The project owner or facilitator approves it before it is scheduled.') : ''}${edit && lead ? fi('tke', 't', 'Title', { req: true }) : ''}${edit ? fi('tke', 'desc', 'Description', { type: 'textarea', rows: 5, ph: 'Add detail, acceptance criteria or links' }) : `<div><span class="lbl">Description</span><p class="muted tk-desc">${h(k.desc) || '<span class="cap">No description.</span>'}</p></div>`}
+  <div class="tk-main">${k.status === 'Proposed' ? banner('info', 'Proposed by ' + nm(k.by), lead ? 'Approve it into a column, or decline it.' : 'The project owner or facilitator approves it before it is scheduled.') : ''}${taskPending(k) ? (mine ? banner('warn', 'Accept this task to start work', 'You were assigned this task by ' + nm(k.by) + '. Work begins only after you accept. You can decline with a reason.') + `<div class="row wrap tk-accrow">${B(ic('check', 14) + 'Accept task', 'taskAccept', { r: x.id, id: k.id, v: 'Accepted' }, 'btn-p btn-sm')}${B('Decline', 'taskAccept', { r: x.id, id: k.id, v: 'Declined by assignee' })}</div>` : banner('info', 'Waiting for ' + nm(k.owner) + ' to accept', 'The task cannot move until the assignee accepts it.')) : k.acc === 'Declined by assignee' ? banner('warn', 'Declined by ' + nm(k.owner), (k.accNote ? h(k.accNote) + ' · ' : '') + 'Reassign it or change the task.') : ''}${edit && lead ? fi('tke', 't', 'Title', { req: true }) : ''}${edit ? fi('tke', 'desc', 'Description', { type: 'textarea', rows: 5, ph: 'Add detail, acceptance criteria or links' }) : `<div><span class="lbl">Description</span><p class="muted tk-desc">${h(k.desc) || '<span class="cap">No description.</span>'}</p></div>`}
   ${delivBlock(x, k, edit, lead)}
   <div class="tk-act"><h3 class="h3">Activity</h3>${(k.log || []).length ? `<ol class="mtl ws-tl">${k.log.slice().reverse().map(l => `<li class="done"><span class="mtl-dot">${ic('check', 12)}</span><div class="col"><b>${h(l.t)}</b><span class="cap">${nm(l.by)} · ${fmt(l.at)}</span></div></li>`).join('')}</ol>` : '<p class="cap">No activity recorded yet.</p>'}</div></div>
   <aside class="tk-side">${edit ? fi('tke', 'status', 'Status', { type: 'select', opts: stOpts }) : `<div><span class="lbl">Status</span>${pill(k.status)}</div>`}${edit && lead ? fi('tke', 'owner', 'Assignee', { type: 'select', opts: mem }) : `<div><span class="lbl">Assignee</span><span class="row" style="gap:6px"><span class="av kb-av">${ini(k.owner)}</span>${nm(k.owner)}</span></div>`}${edit && lead ? fi('tke', 'prio', 'Priority', { type: 'select', opts: TASK_PRIOS }) + fi('tke', 'due', 'Due date', { type: 'date' }) : `<div><span class="lbl">Priority</span>${prioTag(k.prio)}</div><div><span class="lbl">Due</span>${fmt(k.due)}${dueTag(k.due, k.status === 'Done')}</div>`}<div><span class="lbl">${k.status === 'Proposed' ? 'Proposed by' : 'Created by'}</span>${k.by ? nm(k.by) : '—'}</div><div><span class="lbl">${WL()}</span>${h(x.name)}</div>
@@ -344,4 +347,16 @@ A.myTaskOpen = d => {
   UI.tab['ar_' + d.r] = 'plan';
   window.scrollTo(0, 0);
   A.taskView(d);
+};
+
+A.taskAccept = d => {
+  const x = byId('rooms', d.r);
+  const k = x.tasks.find(t => t.id === d.id);
+  k.acc = d.v;
+  (k.log = k.log || []).push({ at: now(), by: myId(), t: d.v === 'Accepted' ? 'Accepted by the assignee' : 'Declined by the assignee' });
+  if (k.by && k.by !== myId()) notify(k.by, (d.v === 'Accepted' ? 'Task accepted: ' : 'Task declined: ') + k.t + ' (' + me().name + ')', 'room', { id: x.id, tab: 'plan' });
+  audit('Task ' + (d.v === 'Accepted' ? 'accepted' : 'declined') + ' by assignee', k.id, k.t);
+  UI.modal = null;
+  toast(d.v === 'Accepted' ? 'Task accepted. You can start work.' : 'Task declined. The lead has been told.');
+  ok();
 };

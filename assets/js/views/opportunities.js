@@ -243,12 +243,58 @@ A.cardState = d => {
   audit('Card state', c.id, from + ' → ' + d.v);
   ok();
 };
+// ---- Match Brief layout (Build-Freeze review §5.1): Why suggested → source fields → missing information →
+// readiness gaps → uncertainty → permission/authority status → restrictions → recommended next human action →
+// "Do not introduce yet" reason. No single match score; never personality, belief, health, worth or trust.
+function mbGates(m) {
+  const c = m.card && byId('cards', m.card);
+  const active = pid => S.assign.some(x => x.pid === pid && x.ctx === (m.ctx || ctxId()) && x.status === 'Active');
+  const mand = pid => {
+    const x = S.assign.find(y => y.pid === pid && roleBase(y.role) === 'C' && y.ctx === (m.ctx || ctxId()));
+    return !x || (x.mandate && x.mandate.valid && x.mandate.until >= today());
+  };
+  return [
+    ['Matching consent — ' + P(m.a).name, consent(m.a, 'matching') === 'Granted'],
+    ['Matching consent — ' + P(m.b).name, consent(m.b, 'matching') === 'Granted'],
+    ['Both have an active role in this context', active(m.a) && active(m.b)],
+    ['Valid role or mandate', mand(m.a) && mand(m.b)],
+    ['Opportunity open and not expired', !c || (c.status === 'Active' && c.expires >= today())],
+    ['No unresolved safety or governance flag', !(m.blockers || []).some(b => /safety|governance|flag/i.test(b))],
+  ];
+}
+function mbSources(m) {
+  const c = m.card && byId('cards', m.card);
+  const shared = pid => S.claims.filter(x => x.pid === pid && x.vis !== 'Only me' && x.state === 'Current').map(x => x.field + ': ' + x.value);
+  return [
+    c && ['Opportunity Card', `${h(c.kind)} “${h(c.title)}” · ${h(c.cat || '')} · open until ${fmt(c.expires)}`],
+    [P(m.a).name + ' — fields allowed for matching', shared(m.a).map(h).join('; ') || '<span class="cap">None shared</span>'],
+    [P(m.b).name + ' — fields allowed for matching', shared(m.b).map(h).join('; ') || '<span class="cap">None shared</span>'],
+    ['Context', h(ctxName(m.ctx || ctxId()))],
+  ].filter(Boolean);
+}
+function mbBody(m) {
+  const gates = mbGates(m);
+  const sec = (n, t, body) => `<section class="mb-sec"><h2 class="h3"><span class="mb-n">${n}</span>${t}</h2>${body}</section>`;
+  return card(
+    'Match Brief',
+    'Explains why a connection is suggested, what supports it, what is missing and what a person decides next. Not a score.',
+    `<div class="col mb-secs">
+    ${sec(1, 'Why suggested', table(['Dimension', 'Rationale'], Object.entries(m.fit).map(([k, v]) => [`<b>${h(k)}</b>`, h(v)])) + (m.ai ? `<div class="mb-ai">${aiTag('AI draft / advisory — the steward reviews it')}</div>` : ''))}
+    ${sec(2, 'Source fields', dl(mbSources(m)))}
+    ${sec(3, 'What is missing', (m.gaps || []).length ? `<ul class="mb-ul">${m.gaps.map(g => `<li>${h(g)}</li>`).join('')}</ul>` : '<p class="cap">Nothing recorded as missing.</p>')}
+    ${sec(4, 'Readiness gaps', `<ul class="gate">${gates.map(([t, ok_]) => `<li class="${ok_ ? 'ok' : ''}"><span class="gate-ic">${ic(ok_ ? 'check' : 'alert', 14)}</span><span>${h(t)}</span></li>`).join('')}</ul>`)}
+    ${sec(5, 'Uncertainty', `<p>${h(m.uncertainty)}</p>${(m.questions || []).length ? `<p class="cap">Suggested questions: ${m.questions.map(h).join(' · ')}</p>` : ''}`)}
+    ${sec(6, 'Permission and authority', dl([['Reviewed by', m.steward ? nm(m.steward) + ' (Steward)' : 'No steward assigned'], ['Status', pill(m.status)], ['Who decides', 'The steward approves the brief; each party consents for themselves. AI cannot approve.']]))}
+    ${sec(7, 'Restrictions', `<p class="cap">No contact details before both parties consent. Only fields each person allowed for matching are used. Never used: personality or psychological state, religion or political belief, health, deservingness, moral worth, trustworthiness, or any universal synergy or coherence score.</p>`)}
+    ${sec(8, 'Recommended next human action', `<p><b>${h(m.next)}</b></p><p class="cap">Recommended by the steward review; nothing happens until a person acts.</p>`)}
+    ${sec(9, 'Do not introduce yet', m.blockers.length ? banner('err', 'Not ready to introduce', m.blockers.map(h).join('; ') + '.') : '<p class="cap">No reason to hold the introduction.</p>')}
+    </div>`,
+  );
+}
 function makeBrief(a, b, card, origin) {
-  const ca = S.consents[a] || {},
-    cb = S.consents[b] || {};
   const blockers = [];
-  if (ca.matching !== 'Granted') blockers.push('No matching consent from ' + P(a).name);
-  if (cb.matching !== 'Granted') blockers.push('No matching consent from ' + P(b).name);
+  if (consent(a, 'matching') !== 'Granted') blockers.push('No matching consent from ' + P(a).name);
+  if (consent(b, 'matching') !== 'Granted') blockers.push('No matching consent from ' + P(b).name);
   if (card.expires < today()) blockers.push('Opportunity card expired');
   const steward = cardSteward(card);
   const cl = S.claims.filter(c => c.pid === a && c.vis !== 'Only me' && c.state === 'Current');
@@ -272,6 +318,7 @@ function makeBrief(a, b, card, origin) {
     questions: ['What would a first conversation cover?'],
     next: 'Steward to review and decide.',
     ai: consent(a, 'ai') === 'Granted' && S.settings.aiAvailable,
+    ctx: card.ctx || ctxId(),
     consentA: null,
     consentB: null,
     outcome: null,
@@ -435,17 +482,8 @@ route('match', 'matching', () => {
       : '') +
     (m.project ? banner('info', 'Collaborator invitation for a defined requirement', `Project: <b>${cName(m.project)}</b> · Requirement: <b>${h(m.requirement)}</b> · Expected contribution: ${h(m.contribution)}. The collaborator can accept or decline without obligation.`) : '') +
     `<div class="g12">
- ${card(
-   'Why suggested — fit dimensions',
-   'Actual rationale and source data, not a score.',
-   table(
-     ['Dimension', 'Rationale'],
-     Object.entries(m.fit).map(([k, v]) => [`<b>${h(k)}</b>`, h(v)]),
-   ) + (m.ai ? `<div class="mb-ai">${aiTag('Rationale drafted by AI — steward must review')}</div>` : ''),
-   '',
-   'c8',
- )}
- <aside class="c4 col mb-side">${card('Readiness', '', dl([['Gaps', m.gaps.map(h).join('<br>') || 'None'], ['Uncertainty', h(m.uncertainty)], ['Suggested questions', m.questions.map(h).join('<br>') || '—'], ['Next human action', h(m.next)], ['Consent', `${nm(m.a)}: ${pill(m.consentA || 'Pending')}<br>${nm(m.b)}: ${pill(m.consentB || 'Pending')}`], m.outcome && ['Outcome', h(m.outcome)]]))}
+ <div class="c8 col" style="gap:16px">${mbBody(m)}</div>
+ <aside class="c4 col mb-side">${card('Consent', 'Contact details are released only after both parties consent.', dl([[nm(m.a), pill(m.consentA || 'Pending')], [nm(m.b), pill(m.consentB || 'Pending')], m.outcome && ['Outcome', h(m.outcome)]]))}
  ${stw && ['In steward review', 'Clarification requested'].includes(m.status) ? card('Steward decision', '', `<div class="col opp-stack">${B(ic('edit', 14) + 'Edit brief', 'mbEdit', { id: m.id })}${B('Request clarification', 'mbState', { id: m.id, v: 'Clarification requested' })}${B('Reject', 'mbState', { id: m.id, v: 'Rejected' })}${m.blockers.length ? `<button class="btn btn-p btn-sm" disabled>Approve</button>` : B('Approve and request consent', 'mbState', { id: m.id, v: 'Awaiting consent' }, 'btn-p btn-sm')}</div>`) : ''}
  ${party && m.status === 'Awaiting consent' && !m[myC] ? card('Your consent', 'Contact details are released only after both parties consent.', `<div class="row wrap">${B('Decline', 'mbConsent', { id: m.id, v: 'Declined' })}${B('Consent to introduction', 'mbConsent', { id: m.id, v: 'Consented' }, 'btn-p btn-sm')}</div>`) : ''}
  ${party && m.status === 'Introduced' && m.project ? card('Collaborator invitation', '', `<p class="muted">${m.b === myId() ? 'Your invitation to the project ' + WL() + ' explains the requirement and expected contribution. Accept or decline it without obligation.' : nm(m.b) + ' has been invited with a defined responsibility: ' + h(m.requirement) + '.'}</p>${byId('projects', m.project)?.room ? L('Open ' + WL(), 'room', { id: byId('projects', m.project).room }, 'btn btn-s btn-sm') : '<p class="cap">The invitation is sent when the ' + WL() + ' is created.</p>'}`) : ''}

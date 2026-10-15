@@ -12,7 +12,7 @@ const MODULES = {
   aireq: ['AI-drafted requirements', 'AI help when defining a project'],
   projects: ['Projects', 'Project definition, review and stages'],
   circles: ['Circles', 'Collaboration spaces'],
-  voting: ['Voting', 'Weighted votes in Circles'],
+  voting: ['Voting', 'Equal-vote decisions in Circles'],
   ropeteams: ['Rope Teams', 'Mentoring and support groups'],
   rooms: ['Action Rooms', 'Execution spaces and task board'],
   opportunities: ['Opportunities', 'Needs, offers and Opportunity Cards'],
@@ -22,7 +22,7 @@ const MODULES = {
   harvest: ['Learning Harvests', 'Reflection and learning capture'],
   ai: ['Ask PHOENIX (AI)', 'Private AI assistant'],
   payments: ['Access & billing', 'Products, seats and payments'],
-  funding: ['Funding', 'Sponsor funding and tranches'],
+  funding: ['Sponsorship', 'Seats, approved initiatives, funder-safe reports and invoices'],
   metrics: ['Metrics & reports', 'Programme metrics'],
   governance: ['Governance & incidents', 'Concerns and incidents'],
   admin: ['Programme administration', 'Users, agreements, configuration'],
@@ -433,7 +433,9 @@ route('roles', 'platform', () => {
   const people = id => S.assign.filter(a => a.role === id && a.status === 'Active').length;
   const mods = r => Object.values(r.perms).filter(v => v && v !== '-').length;
   return (
-    head('Role management', 'Primary roles and what each can do, module by module. Changes apply immediately to everyone holding the role.', B(ic('plus', 16) + 'Create role', 'roleNew', {}, 'btn-p')) +
+    head('Roles & bundles', 'Approved role and capability-bundle definitions. The Platform Administrator applies changes that WSS and the accountable owner have approved; it does not create governance rules on its own.') +
+    card('Specialist capability bundles', 'Capabilities attached to a person in a context, not personas. A plain Programme Administrator or Facilitator does not inherit them.', table(['Bundle', 'What it can do', 'What it must not imply', 'Approved by'], S.bundles.map(b => [`<b>${h(b.name)}</b>`, h(b.desc), h(b.limit || ''), h(b.approval)]))) +
+    '<div class="section-gap"></div>' +
     card(
       'Primary roles',
       'Seeded roles reflect the specification; custom roles follow the workflow rules of the role they behave as.',
@@ -492,7 +494,7 @@ function roleDetail(r) {
       `<div class="tblwrap"><table class="tbl permtbl"><thead><tr><th scope="col">Module</th><th scope="col">Permissions</th><th scope="col">Effective</th></tr></thead><tbody>${rows}</tbody></table></div>`,
       ro
         ? ''
-        : `${r.system && dirty ? B(ic('refresh', 14) + 'Reset to default', 'roleReset', { id: r.id }) : ''}<button class="btn btn-p btn-sm" type="submit">${ic('check', 14)}Save permissions</button>`,
+        : `<div class="field rol-ref"><label class="lbl" for="rperm_ref">Approved change reference <span class="req">*</span></label><input id="rperm_ref" name="ref" class="input" placeholder="e.g. WSS-DR-014" value="${h(fv('rperm', 'ref', ''))}"><span class="help">The Platform Administrator applies role and bundle definitions approved by WSS and the accountable owner; it does not define governance on its own.</span></div>${r.system && dirty ? B(ic('refresh', 14) + 'Reset to default', 'roleReset', { id: r.id }) : ''}<button class="btn btn-p btn-sm" type="submit">${ic('check', 14)}Apply approved change</button>`,
       'adm-panel',
     )}</form>` +
     '<div class="section-gap"></div>' +
@@ -612,13 +614,16 @@ function polGroups() {
 }
 const polAffected = g => S.assign.filter(a => a.ctx === g.ctx && a.status === 'Active' && g.roles.includes(roleBase(a.role)));
 const polAccepted = g => polAffected(g).filter(a => S.accepts.some(x => x.pid === a.pid && x.ag === g.id));
-const ctxName = id => h((S.contexts.find(c => c.id === id) || {}).name || id);
-route('policies', 'platform', () => {
+const ctxNameH = id => h(ctxName(id));
+// Policies and agreements are governed by the Trust/Data Steward bundle (doc 1 §6.8–6.9), not by the technical
+// Platform Administrator, who implements approved configuration only.
+route('policies', 'any', () => {
+  if (!hasB('Trust/Data Steward')) return deniedView('agreements');
   const g0 = UI.p.id && byId('agreements', UI.p.id);
   if (g0) return policyPage(g0);
   const gs = polGroups();
   return (
-    head('Policies & agreements', 'Each policy has versions. Publishing a new version asks everyone it applies to to review the changes and accept them before they continue.') +
+    head('Policies & agreements', 'Trust/Data Steward · approved wording only. A version takes effect on its effective date; a version for a future date is shown as upcoming and gates nothing early. A material change pauses only participation in that context; rights routes stay open. Optional purposes always stay separate from the required agreement.') +
     card(
       `Policy groups <span class="adm-n">${gs.length}</span>`,
       '',
@@ -640,7 +645,7 @@ route('policies', 'platform', () => {
         row: x => ({
           lead: `<span class="tile t-soft" aria-hidden="true">${ic('file', 18)}</span>`,
           title: L(h(x.type), 'policies', { id: (x.act || x.vs[0]).id }),
-          sub: ctxName(x.ctx) + ' · applies to ' + (x.act || x.vs[0]).roles.map(r => h(ROLE[r] || r)).join(', '),
+          sub: ctxNameH(x.ctx) + ' · applies to ' + (x.act || x.vs[0]).roles.map(r => h(ROLE[r] || r)).join(', '),
           meta: [
             x.act ? `<span class="pol-ver">v${x.act.ver}</span> effective ${fmt(x.act.effective)}` : 'None published',
             x.act ? (a => `<span class="pol-acc"><span class="ops-num">${a[0]} of ${a[1]} accepted</span><span class="progress" aria-hidden="true"><span class="bar" style="width:${a[1] ? Math.round((100 * a[0]) / a[1]) : 0}%"></span></span></span>`)([polAccepted(x.act).length, polAffected(x.act).length]) : '',
@@ -662,7 +667,7 @@ function policyPage(g) {
   const shown = (UI.p.v && byId('agreements', UI.p.v)) || act || g;
   const roles = (act || g).roles.map(r => h(ROLE[r] || r)).join(', ');
   return (
-    head(h(grp.type), ctxName(grp.ctx) + ' · applies to ' + roles, draft ? '' : B(ic('plus', 16) + 'New version', 'polNew', { id: (act || g).id }, 'btn-p'), [['Policies & agreements', 'policies'], [h(grp.type)]]) +
+    head(h(grp.type), ctxNameH(grp.ctx) + ' · applies to ' + roles, draft ? '' : B(ic('plus', 16) + 'New version', 'polNew', { id: (act || g).id }, 'btn-p'), [['Policies & agreements', 'policies'], [h(grp.type)]]) +
     (draft
       ? card(
           'Draft v' + draft.ver + ' — not published',
@@ -746,12 +751,15 @@ A.polCmp = d => {
 
 // ---------- PURPOSE COMPASS QUESTIONS: managed by the Platform Administrator ----------
 // Add, edit, delete and reorder at any time. Deleting stops the question being asked; existing answers are kept.
-route('compassqs', 'platform', () => {
+// Purpose Compass wording is configured by the Programme Administrator within WSS-approved text (doc 1 §6.7).
+route('compassqs', 'any', () => {
+  if (role() !== 'A') return deniedView('admin');
   const qs = compassQs();
   const sets = [...new Set(qs.map(q => q.set))];
   const last = qs.length - 1;
   return (
-    head('Purpose Compass questions', 'The questions people answer in the Purpose Compass, in the order they are asked. Changes apply the next time someone opens the Compass; existing answers are kept.', B(ic('plus', 16) + 'Add question', 'cqNew', {}, 'btn-p')) +
+    head('Purpose Compass settings', 'IKIGAI-inspired reflective questions — never scored. The six minimum questions (PC1–PC6) are asked at onboarding; the rest are asked later, in context. Wording changes use WSS-approved text; existing answers are kept.', B(ic('plus', 16) + 'Add question', 'cqNew', {}, 'btn-p')) +
+    banner('info', 'No score, no hidden inference', 'There is no purpose, coherence, IKIGAI, personality or worth score. The raw hurdle answer (PC3) stays private to the participant by default.') +
     card(
       'Active questions',
       qs.length + ' question' + (qs.length === 1 ? '' : 's') + ' in ' + sets.length + ' set' + (sets.length === 1 ? '' : 's') + '. Questions in the same set appear together on one screen.',

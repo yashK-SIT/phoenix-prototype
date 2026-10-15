@@ -2,7 +2,7 @@
 function seed() {
   const d = s => s; // ISO strings
   const S = {
-    v: 5,
+    v: 6,
     session: null,
     seq: 1000,
     settings: {
@@ -10,11 +10,21 @@ function seed() {
       aiQuota: 200,
       aiUsed: 37,
       voting: {
-        ownerWeight: 2,
-        memberWeight: 1,
+        // Frozen by the Alpha: one eligible member = one vote. No owner multiplier, no AI override.
+        weight: 'Equal',
         threshold: 60,
-        eligible: 'Participant members',
-        abstain: 'Counts as not approving',
+        quorum: 50,
+        windowDays: 7,
+        reminderDays: 2,
+        tie: 'Return to Shared for revision and re-vote',
+        // Recommended Alpha defaults (BF-13 Action Pack): threshold 60%, quorum 50%, 7-day window, reminder at 2 days.
+        status: { threshold: 'Recommended (WSS)', quorum: 'Recommended (WSS)', windowDays: 'Recommended (WSS)', reminderDays: 'Recommended (WSS)' },
+      },
+      // BF-11 / BF-12: recommended Alpha positions from the Build-Freeze Action Pack (Doc 2).
+      decisions: {
+        device: { value: 'Responsive web: desktop/tablet fully accepted; core participant flows usable at 360–390 px without horizontal scroll', status: 'Recommended (WSS)' },
+        entry: { value: 'Invitation-only core, plus Request access → programme approval → normal invitation (no account until invited)', status: 'Recommended (WSS)' },
+        age: { value: 'Age confirmation (attestation) — no date of birth collected', status: 'Recommended (WSS)' },
       },
       maxFileMB: 100,
       inviteValidityDays: 14,
@@ -38,7 +48,7 @@ function seed() {
         id: 'uni',
         name: 'University / Community',
         status: 'Active',
-        labels: { workspace: 'Action Room', circle: 'Circle', rope: 'Rope Team' },
+        labels: { workspace: 'Action Workspace', circle: 'Circle', rope: 'Rope Team' },
         compassOptional: true,
         flows: ['F01', 'F02', 'F03', 'F04', 'F05', 'F06', 'F07', 'F08', 'F09', 'F10', 'F11', 'F12'],
         evidenceTypes: 'A–J',
@@ -58,7 +68,7 @@ function seed() {
         id: 'we',
         name: "Women's Empowerment",
         status: 'Active',
-        labels: { workspace: 'Action Room', circle: 'Circle', rope: 'Rope Team' },
+        labels: { workspace: 'Project Room', circle: 'Circle', rope: 'Rope Team' },
         compassOptional: true,
         flows: ['F01', 'F02', 'F03', 'F04', 'F05', 'F06', 'F07', 'F08', 'F09', 'F11', 'F12'],
         evidenceTypes: 'A–D, G, I',
@@ -66,9 +76,9 @@ function seed() {
       },
       {
         id: 'ext',
-        name: 'Fourth pack (extensibility)',
+        name: 'Community Climate Action (fourth pack)',
         status: 'Draft',
-        labels: { workspace: 'Action Room', circle: 'Circle', rope: 'Rope Team' },
+        labels: { workspace: 'Coherence Cell', circle: 'Climate Circle', rope: 'Rope Team' },
         compassOptional: false,
         flows: ['F01', 'F02', 'F03', 'F05', 'F08', 'F12'],
         evidenceTypes: 'A–J',
@@ -138,7 +148,13 @@ function seed() {
         email: 'grace@demo.phoenix',
         verified: true,
         status: 'Active',
+        org: 'o1',
       },
+      { id: 'p13', name: 'Kofi Mensah', display: 'Kofi', email: 'kofi@demo.phoenix', verified: true, status: 'Active' },
+      { id: 'p14', name: 'Nadia Hassan', display: 'Nadia', email: 'nadia@demo.phoenix', verified: true, status: 'Active' },
+      { id: 'p15', name: 'Omar Farouk', display: 'Omar', email: 'omar@demo.phoenix', verified: true, status: 'Active' },
+      { id: 'p16', name: 'Lin Chen', display: 'Lin', email: 'lin@demo.phoenix', verified: true, status: 'Active' },
+      { id: 'p17', name: 'Rosa Diaz', display: 'Rosa', email: 'rosa@demo.phoenix', verified: true, status: 'Active' },
     ],
     pw: {},
     assign: [
@@ -166,7 +182,7 @@ function seed() {
         role: 'F',
         ctx: 'c1',
         status: 'Active',
-        bundles: ['Reviewer', 'Project Lead'],
+        bundles: ['Reviewer'],
         onb: { agreement: true, consents: true, profile: true, compass: true },
       },
       {
@@ -222,7 +238,7 @@ function seed() {
         role: 'A',
         ctx: 'c1',
         status: 'Active',
-        bundles: ['Finance Owner', 'Trust/Data Steward', 'Incident/Safety Owner', 'AI Owner', 'Reviewer'],
+        bundles: [],
         onb: { agreement: true, consents: true, profile: true, compass: true },
       },
       {
@@ -264,13 +280,20 @@ function seed() {
       {
         id: 'a12',
         pid: 'p12',
-        role: 'M',
+        role: 'O',
         ctx: 'c1',
         status: 'Pending role approval',
         bundles: [],
-        onb: { agreement: false, consents: false, profile: false, compass: false },
+        onb: { agreement: false, consents: false, profile: false, compass: true },
         approval: [{ at: '2026-09-29T10:00:00Z', by: 'system', note: 'Sensitive role — approval requested' }],
       },
+      // plain Facilitator (no Reviewer bundle): proves a Facilitator does not inherit evidence approval
+      { id: 'a13', pid: 'p13', role: 'F', ctx: 'c1', status: 'Active', bundles: [], onb: { agreement: true, consents: true, profile: true, compass: true } },
+      // specialist capability bundles, each held by a separate person so authority can be tested independently
+      { id: 'a14', pid: 'p14', role: 'A', ctx: 'c1', status: 'Active', bundles: ['Trust/Data Steward'], onb: { agreement: true, consents: true, profile: true, compass: true } },
+      { id: 'a15', pid: 'p15', role: 'A', ctx: 'c1', status: 'Active', bundles: ['Finance Owner'], onb: { agreement: true, consents: true, profile: true, compass: true } },
+      { id: 'a16', pid: 'p16', role: 'A', ctx: 'c1', status: 'Active', bundles: ['AI Owner'], onb: { agreement: true, consents: true, profile: true, compass: true } },
+      { id: 'a17', pid: 'p17', role: 'A', ctx: 'c1', status: 'Active', bundles: ['Incident/Safety Owner'], onb: { agreement: true, consents: true, profile: true, compass: true } },
     ],
     invites: [
       {
@@ -429,7 +452,7 @@ function seed() {
         type: 'Participant Agreement',
         ctx: 'c2',
         ver: 1,
-        status: 'Active',
+        status: 'Superseded',
         effective: '2026-05-01',
         roles: ['P'],
       },
@@ -447,10 +470,21 @@ function seed() {
         type: 'Participant Agreement',
         ctx: 'c1',
         ver: 3,
-        status: 'Draft',
+        status: 'Scheduled',
         effective: '2026-11-01',
         roles: ['P'],
-        summary: 'Adds research use of anonymised reflections (material change).',
+        summary: 'Adds research use of anonymised reflections, as part of the separate Research and evaluation choice (material change). Optional purposes stay separate.',
+        material: true,
+      },
+      {
+        id: 'g12',
+        type: 'Participant Agreement',
+        ctx: 'c2',
+        ver: 2,
+        status: 'Active',
+        effective: '2026-10-10',
+        roles: ['P'],
+        summary: 'Adds a community photo-consent clause for Seva Hub events (material change). Optional purposes stay separate.',
         material: true,
       },
     ],
@@ -567,18 +601,37 @@ function seed() {
         pid: 'p1',
         field: 'Skills',
         value: 'Systems mapping',
-        source: 'AI proposal after approved evidence ev1',
+        source: 'AI proposal after approved evidence “Ward 7 heat survey results”',
+        src: { r: 'evidence', p: { id: 'ev1' }, label: 'Ward 7 heat survey results' },
         prov: 'AI-proposed',
+        aud: 'Only me',
         status: 'Pending',
+        at: '2026-09-22T09:00',
       },
       {
         id: 'cd2',
         pid: 'p1',
         field: 'Completed milestone',
-        value: 'Join a Circle',
-        source: 'Pathway milestone',
+        value: 'Join or link a Circle or Rope Team',
+        source: 'Pathway milestone: step 1 of “Climate project foundations”',
+        src: { r: 'pathway', p: {}, label: 'Climate project foundations · step 1' },
         prov: 'Activity-derived',
+        aud: 'Only me',
         status: 'Pending',
+        at: '2026-09-15T18:20',
+      },
+      // BF-06 example: approved climate-project evidence → an evidence-supported capability candidate
+      {
+        id: 'cd3',
+        pid: 'p1',
+        field: 'Capability',
+        value: 'Stakeholder mapping',
+        source: 'Approved evidence “Ward 7 heat survey results” (E2, approved by Dr Asha Rao)',
+        src: { r: 'evidence', p: { id: 'ev1' }, label: 'Ward 7 heat survey results' },
+        prov: 'Evidence-supported',
+        aud: 'Only me',
+        status: 'Pending',
+        at: '2026-09-21T16:00',
       },
     ],
     compass: {
@@ -633,17 +686,32 @@ function seed() {
         name: 'Climate project foundations',
         status: 'Approved',
         steps: [
-          'Join a Circle',
+          'Join or link a Circle or Rope Team',
           'Define and submit a project',
           'Upload first evidence',
           'Complete a Learning Harvest reflection',
+          'Complete the testimony consent check',
+        ],
+        // optional parallel step rules (FR-F04): type, prerequisites (step indexes), completion/evidence rule
+        rules: [
+          { type: 'Mandatory', rule: 'Active membership of a Circle or Rope Team (either one)' },
+          { type: 'Mandatory', pre: [0], rule: 'Project submitted for Steward review' },
+          { type: 'Mandatory', pre: [1], rule: 'One evidence record linked to your project', prior: true },
+          { type: 'Mandatory', pre: [2], rule: 'A Learning Harvest reflection about your project, submitted' },
+          { type: 'Conditional', pre: [], cond: 'Only if your evidence includes identifiable people (interview notes, testimony or photos)', rule: 'Consent recorded for each identifiable person' },
         ],
       },
       {
         id: 't2',
         name: 'Stakeholder engagement',
         status: 'Approved',
-        steps: ['Map stakeholders', 'Run two interviews', 'Share findings in a Circle'],
+        steps: ['Map stakeholders', 'Run two interviews', 'Share findings in a Circle', 'Share findings with a partner organisation'],
+        rules: [
+          { type: 'Mandatory', rule: 'A stakeholder map shared with your mentor', prior: true },
+          { type: 'Mandatory', pre: [0], rule: 'Notes from two interviews' },
+          { type: 'Mandatory', pre: [1], rule: 'Findings posted in a Circle session' },
+          { type: 'Optional', pre: [1], rule: 'A short note on what the partner said' },
+        ],
       },
       {
         id: 't3',
@@ -662,18 +730,33 @@ function seed() {
         mode: '1 · Pre-approved template',
         state: 'Current',
         by: 'p2',
+        proposedAt: '2026-09-03T10:00',
+        acceptedAt: '2026-09-04T09:12',
+        acceptedBy: 'p1',
+        // step rules: type, prerequisites (step indexes), completion/evidence rule; states are derived (pwStepState)
         steps: [
           {
-            t: 'Join a Circle',
+            t: 'Join or link a Circle or Rope Team',
+            type: 'Mandatory',
+            pre: [],
+            rule: 'Active membership of a Circle or Rope Team (either one)',
             done: true,
             doneBy: 'p1',
             doneAt: '2026-09-15T18:20',
             note: 'Joined the Ward 7 Cooling Circle and attended the scoping session.',
             files: [{ n: 'circle-welcome-screenshot.png', mb: 0.4 }],
           },
-          { t: 'Define and submit a project', done: false },
-          { t: 'Upload first evidence', done: false },
-          { t: 'Complete a Learning Harvest reflection', done: false },
+          { t: 'Define and submit a project', type: 'Mandatory', pre: [0], rule: 'Project submitted for Steward review', done: false },
+          { t: 'Upload first evidence', type: 'Mandatory', pre: [1], rule: 'One evidence record linked to your project', prior: true, done: false },
+          { t: 'Complete a Learning Harvest reflection', type: 'Mandatory', pre: [2], rule: 'A Learning Harvest reflection about your project, submitted', done: false },
+          {
+            t: 'Complete the testimony consent check',
+            type: 'Conditional',
+            pre: [],
+            cond: 'Only if your evidence includes identifiable people (interview notes, testimony or photos)',
+            rule: 'Consent recorded for each identifiable person',
+            done: false,
+          },
         ],
         activity: [
           { at: '2026-09-03T10:00', by: 'p2', t: 'Proposed from the approved template “Climate project foundations” (mode 1, no review needed)' },
@@ -708,10 +791,12 @@ function seed() {
         mode: '2 · Adapted pathway',
         state: 'Proposed to participant',
         by: 'p3',
+        proposedAt: '2026-09-29T11:05',
         steps: [
-          { t: 'Map stakeholders', done: false },
-          { t: 'Run two interviews', done: false },
-          { t: 'Share findings in a Circle', done: false },
+          { t: 'Map stakeholders', type: 'Mandatory', pre: [], rule: 'A stakeholder map shared with your mentor', prior: true, done: false },
+          { t: 'Run two interviews', type: 'Mandatory', pre: [0], rule: 'Notes from two interviews', done: false },
+          { t: 'Share findings in a Circle', type: 'Mandatory', pre: [1], rule: 'Findings posted in a Circle session', done: false },
+          { t: 'Share findings with a partner organisation', type: 'Optional', pre: [1], rule: 'A short note on what the partner said', done: false },
         ],
         activity: [
           { at: '2026-09-29T11:05', by: 'p3', t: 'Adapted the approved template “Stakeholder engagement” (mode 2) and proposed it to the participant' },
@@ -731,14 +816,13 @@ function seed() {
         status: 'Accepted',
         stage: 'Rope Team',
         stewards: ['p2'],
-        supportPath: 'Circle → Rope Team → Room',
+        supportPath: 'Start in a Circle',
         circle: 'ci1',
         rope: 'rt1',
         room: null,
         sections: null,
         clar: [],
         submitted: '2026-09-12',
-        funding: 'fu1',
         history: [
           { at: '2026-09-12', t: 'Submitted for review' },
           { at: '2026-09-14', t: 'Accepted by Dr Asha Rao; support path set' },
@@ -799,7 +883,7 @@ function seed() {
         status: 'Accepted',
         stage: 'Room',
         stewards: ['p2'],
-        supportPath: 'Circle → Rope Team → Room',
+        supportPath: 'Start in a Circle',
         circle: 'ci2',
         rope: null,
         room: 'ar1',
@@ -845,7 +929,7 @@ function seed() {
           { pid: 'p9', role: 'Member', status: 'Active' },
           { pid: 'p10', role: 'Member', status: 'Active' },
           { pid: 'p2', role: 'Facilitator', status: 'Active' },
-          { pid: 'p3', role: 'Mentor (invited)', status: 'Active' },
+          { pid: 'p3', role: 'Mentor (invited)', status: 'Active', nonVoting: true },
         ],
         chat: [
           { id: 'm101', by: 'p2', at: '2026-09-15T09:00', t: 'Welcome to the Circle. Please add your availability for session 1.' },
@@ -876,24 +960,53 @@ function seed() {
           { id: 'cm2', by: 'p1', t: 'Finalise survey questions', due: '2026-09-25', status: 'Done' },
         ],
         concerns: [],
-        decisions: [{ t: 'Survey 40 streets in Ward 7', at: '2026-09-18', by: 'Poll po0 — approved 71%' }],
+        decisions: [{ t: 'Survey 40 streets in Ward 7', at: '2026-09-18', by: 'Circle vote — 2 of 3 eligible voted “Approve” (67%) · threshold 60% · quorum 50% met (3 of 3 voted)' }],
+        // Circle votes: one eligible member = one vote. eligibleSnap is the voter list fixed when each vote opened
+        // (the owner p1 and members p9, p10; the facilitator p2 and the non-voting mentor p3 do not vote).
         polls: [
+          {
+            id: 'po2',
+            q: 'Which pilot streets do we survey first? (revised)',
+            desc: 'Second round after the first vote missed quorum. The north cluster gets more afternoon sun, so heat exposure is higher there. The south cluster has fewer street trees than any other part of Ward 7. Street list: see Survey-plan-v1.pdf, page 2.',
+            options: ['North cluster (streets 1–20)', 'South cluster (streets 21–40)'],
+            created: '2026-10-12T09:00',
+            by: 'p1',
+            closes: '2026-10-19T09:00',
+            status: 'Open',
+            votes: { p9: 0 },
+            eligibleSnap: ['p1', 'p9', 'p10'],
+            rule: { threshold: 60, quorum: 50, windowDays: 7, reminderDays: 2 },
+            round: 2,
+            prev: 'po1',
+            reviews: [],
+          },
           {
             id: 'po1',
             q: 'Which pilot streets do we survey first?',
             options: ['North cluster (streets 1–20)', 'South cluster (streets 21–40)'],
+            created: '2026-09-30T16:10',
+            by: 'p2',
             closes: '2026-10-06',
-            status: 'Open',
+            closedAt: '2026-10-06T23:59',
+            status: 'Closed — No quorum',
             votes: { p9: 0 },
+            eligibleSnap: ['p1', 'p9', 'p10'],
+            rule: { threshold: 60, quorum: 50, windowDays: 7, reminderDays: 2 },
+            result: 'No quorum, no decision: 1 of 3 eligible voted “North cluster (streets 1–20)” (33%) · threshold 60% · quorum 50% not met (1 of 3 voted).',
+            revotedAs: 'po2',
+            reviews: [],
           },
           {
             id: 'po0',
             q: 'Survey 40 streets in Ward 7?',
             options: ['Approve', 'Do not approve'],
             closes: '2026-09-18',
+            closedAt: '2026-09-18T17:00',
             status: 'Closed — Approved',
             votes: { p1: 0, p9: 0, p10: 1 },
-            result: '71% approving weight',
+            eligibleSnap: ['p1', 'p9', 'p10'],
+            rule: { threshold: 60, quorum: 50, windowDays: 7, reminderDays: 2 },
+            result: 'Decided “Approve”: 2 of 3 eligible voted “Approve” (67%) · threshold 60% · quorum 50% met (3 of 3 voted).',
           },
         ],
         pause: null,
@@ -1081,7 +1194,7 @@ function seed() {
         tasks: [
           { id: 'tk1', key: 1, t: 'Recruit 6 volunteers', owner: 'p10', due: '2026-09-01', status: 'Done', prio: 'Medium', desc: 'Two per Saturday shift, briefed on the photo protocol.', by: 'p10', log: [{ at: '2026-09-11T09:00', by: 'p10', t: 'Created and assigned to Ana Lopez' }, { at: '2026-09-21T10:00', by: 'p10', t: 'Moved from To do to Done' }] },
           { id: 'tk2', key: 2, t: 'Collect canopy data — streets 1–25', owner: 'p1', due: '2026-10-10', status: 'In progress', prio: 'High', desc: 'Photograph each street from both ends; log canopy cover on the survey sheet.', by: 'p10', log: [{ at: '2026-09-12T09:00', by: 'p10', t: 'Created and assigned to Mary Ellis' }, { at: '2026-09-22T10:00', by: 'p1', t: 'Moved from To do to In progress' }] },
-          { id: 'tk3', key: 3, t: 'Produce canopy layer', owner: 'p4', due: '2026-10-20', status: 'To do', prio: 'High', desc: 'GIS layer with four canopy-cover bands.', by: 'p10', log: [{ at: '2026-09-13T09:00', by: 'p10', t: 'Created and assigned to Leah Park' }] },
+          { id: 'tk3', key: 3, t: 'Produce canopy layer', owner: 'p4', due: '2026-10-20', status: 'To do', acc: 'Pending', prio: 'High', desc: 'GIS layer with four canopy-cover bands.', by: 'p10', log: [{ at: '2026-09-13T09:00', by: 'p10', t: 'Created and assigned to Leah Park' }] },
           { id: 'tk4', key: 4, t: 'Blur faces in streets 1–10 photos', owner: 'p10', due: '2026-10-08', status: 'In progress', prio: 'Urgent', desc: 'Required before the evidence can be approved.', by: 'p10', log: [{ at: '2026-09-14T09:00', by: 'p10', t: 'Created and assigned to Ana Lopez' }, { at: '2026-09-24T10:00', by: 'p10', t: 'Moved from To do to In progress' }] },
           { id: 'tk5', key: 5, t: 'Draft planting-site shortlist', owner: 'p2', due: '2026-10-28', status: 'To do', prio: 'Low', desc: '', by: 'p10', log: [{ at: '2026-09-15T09:00', by: 'p10', t: 'Created and assigned to Dr Asha Rao' }] },
         ],
@@ -1100,7 +1213,7 @@ function seed() {
         ],
         deps: [{ id: 'dp1', t: 'GreenGrid GIS licence', on: 'GreenGrid Ltd', state: 'Confirmed' }],
         resources: [{ t: '12 temperature loggers', from: 'Excelsior University', status: 'Committed' }],
-        wins: [{ t: 'Survey plan approved by ward council', status: 'Approved' }],
+        wins: [{ t: 'Survey plan approved by ward council', status: 'Approved', release: 'Programme', at: '2026-09-28' }],
         changes: [
           {
             id: 'co1',
@@ -1378,7 +1491,8 @@ function seed() {
         reviewer: 'p2',
         limits: 'Single survey round; no partner confirmation.',
         lifecycle: 'Active',
-        release: 'Internal (workspace audience)',
+        conf: 'Programme',
+        release: 'Not cleared',
         history: [
           { at: '2026-09-20', t: 'Submitted' },
           { at: '2026-09-21', t: 'Approved at E2 by Dr Asha Rao' },
@@ -1398,6 +1512,7 @@ function seed() {
         consent: 'Contains identifiable testimony — participant consent recorded',
         sens: 'High',
         vis: 'Only me + reviewer',
+        conf: 'Restricted',
         retention: 'Programme duration',
         review: 'Submitted',
         level: 'E0',
@@ -1419,6 +1534,7 @@ function seed() {
         source: 'Field photos',
         purpose: 'Milestone evidence',
         consent: 'May contain identifiable people',
+        conf: 'Programme',
         sens: 'Medium',
         vis: 'Room',
         retention: 'Programme duration',
@@ -1453,11 +1569,51 @@ function seed() {
         reviewer: 'p2',
         limits: '',
         lifecycle: 'Active',
-        release: 'Approved for funder release',
+        conf: 'Programme',
+        release: 'Cleared: Funder report; Organisation report',
+        cleared: [
+          { aud: 'Funder report', at: '2026-09-04', by: 'p14', conf: 'Programme' },
+          { aud: 'Organisation report', at: '2026-09-04', by: 'p14', conf: 'Programme' },
+        ],
         history: [
           { at: '2026-08-28', t: 'Submitted' },
-          { at: '2026-08-30', t: 'Approved at E4' },
-          { at: '2026-09-02', t: 'Funder release authorised by owner' },
+          { at: '2026-08-30', t: 'Review: Submitted → Approved' },
+          { at: '2026-08-30', t: 'Evidence Support: E0 → E4' },
+          { at: '2026-09-02', t: 'Release: owner authorised Funder report and Organisation report — awaiting Trust/Data Steward disclosure review' },
+          { at: '2026-09-04', t: 'Release: Not cleared → Cleared: Funder report; Organisation report — disclosure review by Nadia' },
+        ],
+      },
+      // BF-04 example: approved and well supported, yet restricted and not cleared for any outside audience
+      {
+        id: 'ev5',
+        owner: 'p1',
+        title: 'Resident heat-diary excerpts',
+        type: 'I · Testimony / lived experience',
+        claim: 'Older residents on Mill Lane report sleeping outdoors on hot nights',
+        linked: ['ci1'],
+        format: 'File upload',
+        file: 'heat-diaries.pdf',
+        sizeMB: 1.1,
+        source: 'Resident diaries',
+        purpose: 'Project evidence',
+        consent: 'Identifiable testimony — participant consent recorded',
+        sens: 'High',
+        vis: 'Circle',
+        retention: 'Programme duration',
+        review: 'Approved',
+        level: 'E2',
+        conf: 'Restricted',
+        reviewer: 'p2',
+        limits: 'Six diaries from one street; not representative of the ward.',
+        lifecycle: 'Active',
+        release: 'Not cleared',
+        cleared: [],
+        comments: [],
+        history: [
+          { at: '2026-09-26', t: 'Submitted · Support E0 · Confidentiality Programme · Lifecycle Active · Release not cleared' },
+          { at: '2026-09-28', by: 'p2', t: 'Review: Submitted → Approved' },
+          { at: '2026-09-28', by: 'p2', t: 'Evidence Support: E0 → E2' },
+          { at: '2026-09-28', by: 'p2', t: 'Confidentiality: Programme → Restricted — names and addresses appear in the diaries' },
         ],
       },
     ],
@@ -1466,7 +1622,7 @@ function seed() {
         id: 'rr1',
         ev: 'ev1',
         requester: 'p2',
-        audience: 'Sponsor progress summary (Hartwell Foundation)',
+        audience: 'Funder report (Hartwell Foundation)',
         status: 'Awaiting owner decision',
         at: '2026-09-30',
       },
@@ -1591,6 +1747,7 @@ function seed() {
         },
         contrib: [],
         release: 'Funder release requested',
+        dissent: [{ by: 'p1', at: '2026-09-03', kind: 'Dissent', t: 'Council contact was led by one partner; residents on streets 7–10 were not consulted before the plan was approved.' }],
         versions: [],
       },
     ],
@@ -1735,10 +1892,14 @@ function seed() {
         sponsor: 'p6',
         org: 'o5',
         ctx: 'c1',
-        total: 20,
+        total: 100,
+        // Aggregate seat counts shown to the sponsor (BF-08). `assigned` is the named subset only administrators see.
+        assignedCount: 88,
+        activeCount: 82,
         assigned: ['p1', 'p11'],
         until: '2027-03-31',
         status: 'Active',
+        invoice: 'INV-2026-007',
       },
       {
         id: 'sp2',
@@ -1780,41 +1941,48 @@ function seed() {
         processed: false,
         dup: true,
       },
-    ],
-    funding: [
+      // Sponsor invoices and receipts (Hartwell Foundation). Amounts are sample figures.
       {
-        id: 'fu1',
-        sponsor: 'p6',
-        org: 'o5',
-        project: 'pr1',
-        total: 9000,
-        currency: 'USD',
-        status: 'Agreement signed',
-        agreement: 'Hartwell funding agreement FA-07',
-        tranches: [
-          {
-            stage: 'Circle',
-            amount: 3000,
-            state: 'Summary accepted',
-            summary: 'Circle formed, scope agreed, 40 streets approved by poll.',
-          },
-          { stage: 'Rope Team', amount: 3000, state: 'Released', summary: '' },
-          { stage: 'Room', amount: 3000, state: 'Committed', summary: '' },
-        ],
+        id: 'evt_0901',
+        pid: 'p6',
+        product: 'pd5',
+        type: 'invoice_paid',
+        state: 'Paid',
+        at: '2026-04-02',
+        processed: true,
+        ref: 'INV-2026-007',
+        amount: 'USD 9,500 (sample)',
+        note: '100 sponsored seats · Excelsior Climate Programme · until 31 Mar 2027',
+      },
+      {
+        id: 'evt_0955',
+        pid: 'p6',
+        product: 'pd6',
+        type: 'payment_succeeded',
+        state: 'Successful',
+        at: '2026-06-15',
+        processed: true,
+        ref: 'RCPT-2026-031',
+        amount: 'USD 500 (sample)',
+        note: 'Donation receipt · no entitlement',
+      },
+      {
+        id: 'evt_1010',
+        pid: 'p6',
+        product: 'pd5',
+        type: 'invoice_issued',
+        state: 'Invoice due',
+        at: '2026-10-01',
+        due: '2026-10-31',
+        processed: true,
+        ref: 'INV-2026-019',
+        amount: 'USD 1,900 (sample)',
+        note: '20 additional sponsored seats · Spring 2027 cohort',
       },
     ],
-    pitches: [
-      {
-        id: 'pi1',
-        from: 'p10',
-        to: 'p6',
-        project: 'pr5',
-        amount: 6000,
-        status: 'Sent',
-        at: '2026-09-28',
-        text: 'Canopy data for 25 streets; planting plan for 5 sites.',
-      },
-    ],
+    // Staged project funding, pitches and tranches are outside the Alpha commercial boundary (BF-08).
+    funding: [],
+    pitches: [],
     interests: { p6: ['Urban heat', 'Tree canopy', 'Community energy'] },
     saved: { p6: [] },
     incidents: [
@@ -1855,7 +2023,7 @@ function seed() {
         to: 'rt1',
         by: 'p1',
         at: '2026-09-26',
-        t: 'Circle agreed the scope (40 streets, approved by weighted vote at 71%). Open items for the Rope Team: volunteer rota and GIS layer structure.',
+        t: 'Circle agreed the scope (40 streets, approved by Circle vote: 2 of 3 eligible voted Approve, 67%). Open items for the Rope Team: volunteer rota and GIS layer structure.',
       },
     ],
     metrics: [
@@ -1970,43 +2138,23 @@ function seed() {
       { at: '2026-10-01T02:00', status: 'Completed', size: '1.8 GB' },
       { at: '2026-09-15', status: 'Restore test passed', size: '—' },
     ],
+    // Specialist bundles are capabilities attached to a person in a context, not personas (doc 1 §6.9).
     bundles: [
-      {
-        name: 'Reviewer',
-        desc: 'Validate evidence and evidence-linked milestones; approve AI/custom pathways; review consequential AI outputs.',
-        approval: 'Programme/Org Admin',
-      },
-      {
-        name: 'Project Lead',
-        desc: 'Create, assign and approve tasks and milestones; complete Learning Harvests.',
-        approval: 'Circle/Workspace Owner within delegated limits',
-      },
-      {
-        name: 'Trust/Data Steward',
-        desc: 'Define consent policy and material-change rules; view consent settings.',
-        approval: 'Programme/Org Admin',
-      },
-      {
-        name: 'Finance Owner',
-        desc: 'Approve and configure products and prices; audit and reconcile payments.',
-        approval: 'Programme/Org Admin',
-      },
-      {
-        name: 'AI Owner',
-        desc: 'Model and prompt evaluation; controlled AI configuration.',
-        approval: 'Programme/Org Admin',
-      },
-      {
-        name: 'Incident/Safety Owner',
-        desc: 'Receive escalated concerns and incidents; record decisions and remedies.',
-        approval: 'Programme/Org Admin',
-      },
+      { name: 'Reviewer', desc: 'Approve evidence, evidence-linked milestones and custom or AI-drafted pathways where assigned.', limit: 'Not general programme authority.', approval: 'Programme/Org Admin' },
+      { name: 'Project Lead', desc: 'Assign and approve tasks and milestones in a workspace; complete Learning Harvests.', limit: 'Only inside the workspace it is granted for.', approval: 'Circle/Workspace Owner within delegated limits' },
+      { name: 'Trust/Data Steward', desc: 'Define approved consent, agreement and data policy and protected governance rules; release disclosure review.', limit: 'Not technical operations or participant ownership.', approval: 'WSS' },
+      { name: 'Finance Owner', desc: 'Approve products, pricing and financial operations in scope; reconcile payments.', limit: 'Payment never grants governance or content rights.', approval: 'WSS' },
+      { name: 'AI Owner', desc: 'Manage approved AI use cases, the source registry and evaluation.', limit: 'Cannot make user or governance decisions.', approval: 'WSS' },
+      { name: 'Incident/Safety Owner', desc: 'Triage, pause, remedy and route appeals.', limit: 'No automated sanctions.', approval: 'WSS' },
     ],
     supportQueries: [{ id: 'sq1', by: 'p11', t: 'How do I finish my Purpose Compass?', status: 'Open' }],
-    announcements: [],
+    announcements: [
+      { id: 'an1', t: 'Community heat-mapping workshop · Sat 24 Oct, 10:00 · Ward 7 library', to: 'all', ctx: 'c1', by: 'p7', at: '2026-10-08', kind: 'Programme event' },
+      { id: 'an2', t: 'Spring 2027 cohort: applications open to existing participants until 30 Nov', to: 'all', ctx: 'c1', by: 'p7', at: '2026-10-05', kind: 'Programme announcement' },
+    ],
   };
   S.people.forEach(p => (S.pw[p.id] = 'demo1234'));
-  ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10', 'p11'].forEach(pid => {
+  ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10', 'p11', 'p13', 'p14', 'p15', 'p16', 'p17'].forEach(pid => {
     S.consents[pid] = {
       ai: 'Granted',
       matching: 'Granted',
@@ -2018,6 +2166,9 @@ function seed() {
     };
   });
   S.consents.p10.matching = 'Declined';
+  // G4 / BF-02 demo: Mary declines AI processing; manual core flows stay available.
+  S.consents.p1.ai = 'Declined';
+  S.consents.p1.history.push({ at: '2026-09-02', t: 'AI processing declined; all other optional purposes unchanged' });
   S.consents.p11 = {
     ai: 'Declined',
     matching: 'Declined',
@@ -2034,6 +2185,9 @@ function seed() {
         S.accepts.push({ pid: a.pid, ag: g.id, at: '2026-09-01T10:00:00Z', receipt: 'RCPT-' + a.id.toUpperCase() });
     }
   });
+  // Mary accepted Riverside v1 only, so the material v2 update (in force since 10 Oct) waits for her there.
+  S.accepts = S.accepts.filter(x => !(x.pid === 'p1' && x.ag === 'g12'));
+  S.accepts.push({ pid: 'p1', ag: 'g9', at: '2026-05-10T10:00:00Z', receipt: 'RCPT-A1B-V1' });
   S.notifs = [
     {
       id: 'n1',
@@ -2047,7 +2201,7 @@ function seed() {
     {
       id: 'n2',
       pid: 'p1',
-      t: 'Release request: use “Ward 7 heat survey results” in a sponsor progress summary',
+      t: 'Release request: use “Ward 7 heat survey results” in a funder report',
       r: 'evidence',
       p: { id: 'ev1' },
       read: false,
@@ -2056,8 +2210,8 @@ function seed() {
     {
       id: 'n3',
       pid: 'p1',
-      t: 'Tranche 2 released for Rope Team stage. Progress summary due at end of stage.',
-      r: 'funding',
+      t: 'Hartwell Foundation sponsored seat renewed for Excelsior Climate Programme until 31 Mar 2027.',
+      r: 'privacy',
       p: {},
       read: false,
       at: '2026-09-26',
@@ -2101,9 +2255,9 @@ function seed() {
     {
       id: 'n8',
       pid: 'p6',
-      t: 'New pitch from Ana Lopez: “Ward 3 tree canopy survey”',
+      t: 'Approved evidence summary ready: “Ward 7 heat survey results” (funder-safe)',
       r: 'funding',
-      p: {},
+      p: { tab: 'reports' },
       read: false,
       at: '2026-09-28',
     },
@@ -2127,6 +2281,19 @@ function seed() {
       at: '2026-09-30',
     },
   ];
+  // Seed notices belong to the recipient's assignment in Excelsior unless stated.
+  const nAid = { n6: 'a3' };
+  S.notifs.forEach(n => {
+    const a = S.assign.find(x => x.id === nAid[n.id]) || S.assign.find(x => x.pid === n.pid && x.ctx === 'c1') || S.assign.find(x => x.pid === n.pid);
+    if (a) {
+      n.aid = a.id;
+      n.ctx = a.ctx;
+    }
+  });
+  S.notifs.unshift(
+    { id: 'n12', pid: 'p3', t: 'Riverside Seva Hub: your Seva Circle meets on Saturday at 10:00', r: 'circles', p: {}, read: false, at: '2026-10-02', aid: 'a3b', ctx: 'c2' },
+    { id: 'n13', pid: 'p1', t: 'Riverside Seva Hub: Participant Agreement v2 is in force — review it to continue there', r: 'home', p: {}, read: false, at: '2026-10-10', aid: 'a1b', ctx: 'c2' },
+  );
   S.audit = [
     {
       at: '2026-10-01T09:00',

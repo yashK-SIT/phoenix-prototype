@@ -84,6 +84,11 @@ const G = {
   poll: d => isOwnerOrFac(d.c) || 'only the project owner or facilitator can open a poll',
   closePoll: d => isOwnerOrFac(d.c) || 'only the project owner or facilitator can close a poll',
   repoll: d => isOwnerOrFac(d.c) || 'only the project owner or facilitator can re-poll',
+  // BF-09: advisory AI source check on an open Circle vote; any active member, never changes the vote
+  aiCheck: d => {
+    const c = byId('circles', d.c);
+    return (!!c && memberOf(c) && c.state === 'Active') || 'only members of an active Circle run the AI source check';
+  },
   chat: d => {
     const o = byId(d.kind, d.c);
     return (o && memberOf(o) && o.state === 'Active') || 'you can post only as an active member of an active space';
@@ -166,11 +171,14 @@ const G = {
     const x = byId('rooms', d.r);
     const c = x && x.changes.find(y => y.id === d.id);
     if (!c) return 'not found';
+    // Ordinary changes (tasks, schedule, resources) are the project lead's call; protected changes (charter, outcome,
+    // membership, milestones, evidence rules) need a Faculty/Steward or Programme Administrator.
+    const prot = c.kind !== 'Ordinary';
     if (['Reviewed'].includes(d.v))
-      return role() === 'F' || hasB('Reviewer') || 'only a Faculty/Steward or Reviewer can review';
+      return (!prot && roomLead(d.r)) || role() === 'F' || hasB('Reviewer') || 'only a Faculty/Steward or Reviewer can review a protected change';
     if (d.v === 'Approved')
       return (
-        ['F', 'A'].includes(role()) || 'human approval by a Faculty/Steward or Programme Administrator is required'
+        (!prot && roomLead(d.r)) || ['F', 'A'].includes(role()) || 'a protected change needs human approval by a Faculty/Steward or Programme Administrator'
       );
     return roomLead(d.r) || 'only the project lead can move implementation forward';
   },
@@ -221,50 +229,65 @@ const G = {
   // evidence
   evr: d => {
     const e = byId('evidence', d.id);
-    return (
-      (e && e.owner !== myId() && (role() === 'F' || hasB('Reviewer'))) ||
-      'only a Reviewer who is not the submitter can review evidence'
-    );
+    return (e && e.owner !== myId() && hasB('Reviewer')) || 'only a person holding the Reviewer bundle, who is not the submitter, can review evidence';
   },
   evResub: d => byId('evidence', d.id)?.owner === myId() || 'only the submitter can resubmit',
   evWithdraw: d => byId('evidence', d.id)?.owner === myId() || 'only the owner can withdraw evidence',
   relNew: d => byId('evidence', d.id)?.owner === myId() || 'only the owner can authorise a release',
+  // confidentiality: the owner sets it; a Reviewer (not the owner) may raise it. Comments: anyone who can see it.
+  evConf: d => {
+    const e = byId('evidence', d.id);
+    return (e && (e.owner === myId() || hasB('Reviewer'))) || 'only the owner or a Reviewer can change confidentiality';
+  },
+  evcf: d => {
+    const e = byId('evidence', d.id);
+    return (e && (e.owner === myId() || hasB('Reviewer'))) || 'only the owner or a Reviewer can change confidentiality';
+  },
+  evc: d => {
+    const e = byId('evidence', d.id);
+    return (e && evVisible(e) && !['S', 'O'].includes(role())) || 'only people who can see this evidence can comment on it';
+  },
+  hvRelNo: () => hasB('Trust/Data Steward') || 'only the Trust/Data Steward withholds a release',
   relDecide: d => {
     const x = byId('releases', d.id);
     if (!x) return 'not found';
     const e = byId('evidence', x.ev);
     if (['Released', 'Withheld after disclosure review'].includes(d.v))
-      return role() === 'A' || 'only a Programme Administrator completes disclosure review';
+      return hasB('Trust/Data Steward') || 'only the Trust/Data Steward completes disclosure review for a release';
     return e.owner === myId() || 'only the evidence owner decides on a release';
   },
   repoDelOk: () => role() === 'A' || 'only a Programme Administrator approves deletion',
   // harvest
   hvRel: d =>
     d.v === 'Released'
-      ? role() === 'A' || 'only a Programme Administrator approves public/funder release'
+      ? hasB('Trust/Data Steward') || 'only the Trust/Data Steward authorises a public or funder release'
       : canComplete() || 'only an authorised Facilitator, Reviewer or Project Lead can request release',
   hvCand: () => canComplete() || 'only an authorised Facilitator, Reviewer or Project Lead can offer candidates',
   // pathway & profile
-  pwReview: () => hasB('Reviewer') || 'only an authorised Reviewer approves mode 3 pathways',
+  pwReview: () => hasB('Reviewer') || 'only an authorised Reviewer approves custom or AI-drafted pathways',
   pwAccept: d => byId('pathways', d.id)?.pid === myId() || 'only the participant can accept their pathway',
   pwChange: d => byId('pathways', d.id)?.pid === myId() || 'only the participant can request a change',
   pwStep: d => byId('pathways', d.id)?.pid === myId() || 'only the participant completes their own steps',
   proposePathway: () => ['F', 'M'].includes(role()) || 'only a facilitator or mentor proposes pathways',
   cand: d => byId('candidates', d.id)?.pid === myId() || 'only the participant decides on their profile',
   // funding & payments
-  tranche: d => byId('funding', d.f)?.sponsor === myId() || 'only the sponsor releases tranches or reviews summaries',
-  summary: d =>
-    byId('projects', byId('funding', d.f)?.project)?.owner === myId() ||
-    'only the project owner submits progress summaries',
-  sum: d =>
-    byId('projects', byId('funding', d.f)?.project)?.owner === myId() ||
-    'only the project owner submits progress summaries',
-  fundApprove: () => hasB('Finance Owner') || 'only the Finance Owner approves funding requests',
-  fundSign: d => byId('funding', d.id)?.sponsor === myId() || 'only the sponsor signs the funding agreement',
-  fundInterest: () => role() === 'S' || 'only sponsors can request to fund',
-  fr: () => role() === 'S' || 'only sponsors can request to fund',
-  pitchNew: () => role() === 'P' || 'only project owners pitch sponsors',
-  pit: d => byId('projects', d.project)?.owner === myId() || 'you can pitch only your own project',
+  // BF-08: staged project funding, tranches, progress summaries and pitches are outside the Alpha boundary.
+  tranche: () => 'Staged project funding and pitches are outside the Alpha',
+  hold: () => 'Staged project funding and pitches are outside the Alpha',
+  summary: () => 'Staged project funding and pitches are outside the Alpha',
+  sum: () => 'Staged project funding and pitches are outside the Alpha',
+  fundApprove: () => 'Staged project funding and pitches are outside the Alpha',
+  fundSign: () => 'Staged project funding and pitches are outside the Alpha',
+  fundInterest: () => 'Staged project funding and pitches are outside the Alpha',
+  fundSave: () => 'Staged project funding and pitches are outside the Alpha',
+  fr: () => 'Staged project funding and pitches are outside the Alpha',
+  pitchNew: () => 'Staged project funding and pitches are outside the Alpha',
+  pit: () => 'Staged project funding and pitches are outside the Alpha',
+  pitchDecide: () => 'Staged project funding and pitches are outside the Alpha',
+  // A sponsor asks for an identifiable story only through a separate release request (owner, then Trust/Data Steward).
+  storyReq: d => (role() === 'S' && sponsorCleared().some(e => e.id === d.id)) || 'only a sponsor can request a story, and only about evidence already cleared for funder reports',
+  story: d => (role() === 'S' && sponsorCleared().some(e => e.id === d.id)) || 'only a sponsor can request a story, and only about evidence already cleared for funder reports',
+  invPay: d => S.payments.some(p => p.id === d.id && p.pid === myId() && p.state === 'Invoice due') || 'only the invoiced sponsor pays this invoice',
   prodRel: () => hasB('Finance Owner') || 'only the Finance Owner approves and releases products',
   prodRetire: () => hasB('Finance Owner') || 'only the Finance Owner retires products',
   prodNew: () => role() === 'A' || 'only a Programme Administrator drafts products',
@@ -273,9 +296,10 @@ const G = {
   entRevoke: () => role() === 'A' || 'only an authorised administrator revokes access',
   reconcile: () => hasB('Finance Owner') || 'only the Finance Owner reconciles payments',
   poolNew: () => role() === 'A' || 'only Finance/Programme Administration creates seat pools',
+  // Sponsors see seat counts only (BF-08): naming or changing individual seat holders stays with the programme / institution.
   seatAssign: d =>
-    byId('seatPools', d.sp)?.sponsor === myId() || role() === 'A' || 'only the seat assigner can assign seats',
-  seat: d => byId('seatPools', d.sp)?.sponsor === myId() || role() === 'A' || 'only the seat assigner can change seats',
+    (byId('seatPools', d.sp)?.sponsor === myId() && role() !== 'S') || role() === 'A' || 'only the programme or institution assigns seats; sponsors see seat counts only',
+  seat: d => (byId('seatPools', d.sp)?.sponsor === myId() && role() !== 'S') || role() === 'A' || 'only the programme or institution changes seats; sponsors see seat counts only',
   // administration
   roleDecide: d => {
     const a = byId('assign', d.id);
@@ -314,12 +338,28 @@ const G = {
   vote: d => (d.c ? true : role() === 'A' || 'only a Programme Administrator changes the voting rule'),
   cfgRestore: () => role() === 'A' || 'only a Programme Administrator restores configuration',
   packAct: () => role() === 'A' || 'only a Programme Administrator activates packs',
+  // build-freeze configuration: pack envelope, voting parameters, versions, organisation requests
+  packCfg: () => role() === 'A' || 'only a Programme Administrator configures packs',
+  pkc: () => role() === 'A' || 'only a Programme Administrator configures packs',
+  votecfg: () => role() === 'A' || 'only a Programme Administrator changes voting parameters (vote weight is frozen)',
+  cfgSave: () => role() === 'A' || 'only a Programme Administrator saves configuration versions',
+  cfgExport: () => ['A', 'T'].includes(role()) || 'only administrators export configuration',
+  orgrq: () => role() === 'O' || 'only an Organization Representative sends organisation requests',
+  orgReqDecide: d => (role() === 'A' && (S.orgReqs || []).some(r => r.id === d.id && r.ctx === ctxId() && r.status === 'Open')) || 'only a Programme Administrator in this context decides organisation requests',
+  helpq: () => !!S.session || 'sign in to contact support',
+  taskAccept: d => {
+    const x = byId('rooms', d.r);
+    const k = x && x.tasks.find(t => t.id === d.id);
+    return (k && k.owner === myId() && k.acc === 'Pending' && x.state === 'Active') || 'only the assignee accepts or declines a task assigned to them';
+  },
+  roomContinue: d => roomLead(d.r) || 'only the project lead continues a ' + WL() + ' into a new cycle',
+  accessDecide: d => (role() === 'A' && (S.accessReqs || []).some(r => r.id === d.id && r.ctx === ctxId() && r.status === 'Awaiting approval')) || 'only a Programme Administrator in that programme decides access requests',
+  roleDecide: d => {
+    const a = byId('assign', d.id);
+    return (a && a.pid !== myId() && (role() === 'A' || (role() === 'O' && a.ctx === ctxId()))) || 'only a Programme Administrator, or the Organization Representative for that context, approves roles — never their own';
+  },
   srcToggle: () => hasB('AI Owner') || 'only the AI Owner approves AI sources',
-  aiRev: () =>
-    role() === 'F' ||
-    hasB('AI Owner') ||
-    hasB('Reviewer') ||
-    'only an authorised reviewer releases consequential AI outputs',
+  aiRev: () => hasB('AI Owner') || hasB('Reviewer') || 'only the AI Owner or a Reviewer releases consequential AI outputs',
   ann: () => role() === 'A' || 'only a Programme Administrator sends announcements',
   // platform
   ctxAdmin: () => role() === 'T' || 'not permitted',
@@ -378,6 +418,9 @@ const activeMember = (kind, id) => {
 Object.assign(G, {
   mentorReq: d => {
     const m = byId('mentorReqs', d.id);
+    // re-authorised against the active role and context: a Mentor Request is answered only as Mentor in its context
+    if (m && role() !== 'M') return 'switch to your Mentor role to answer a Mentor Request';
+    if (m && !mentorReqVisible(m)) return 'this Mentor Request belongs to another context; switch to it first';
     return (m && m.status === 'Pending' && (m.to === myId() || (m.open && role() === 'M'))) || 'only the requested mentor can respond';
   },
   msgHide: d => (d.k === 'circles' ? isFac(d.c) : ropeMod(d.c)) || 'only the facilitator or mentor moderates this chat',
@@ -539,14 +582,34 @@ Object.assign(G, {
     return (c && (sCan('circles', c, 'card') || isFac(c.id))) || 'only contributing members of that Circle can create cards from it';
   },
   // pathway
-  pwStep: d => {
+  // step rules (FR-F04): a Blocked step (prerequisite still open) cannot be completed — see pwStepGuard in views/profile.js
+  pwStep: d => pwStepGuard(d),
+  pws: d => pwStepGuard(d),
+  pwStepSet: d => {
     const p = byId('pathways', d.id);
-    return (p && p.pid === myId() && p.state === 'Current' && p.steps[d.i] && !p.steps[d.i].done) || 'only the participant completes open steps of their current pathway';
+    const s = p && p.steps[d.i];
+    if (!s || p.pid !== myId() || p.state !== 'Current') return 'only the participant changes steps of their current pathway';
+    if (d.v !== 'undo' && pwStepState(p, +d.i).st === 'Blocked') return 'this step is blocked — ' + pwStepState(p, +d.i).why;
+    return d.v === 'undo' || !pwClosed(s) || 'this step is already ' + pwStepState(p, +d.i).st.toLowerCase();
   },
-  pws: d => {
+  pwPrior: d => {
     const p = byId('pathways', d.id);
-    return (p && p.pid === myId() && p.state === 'Current' && p.steps[d.i] && !p.steps[d.i].done) || 'only the participant completes open steps of their current pathway';
+    const s = p && p.steps[d.i];
+    return (s && ['F', 'M'].includes(role()) && p.pid !== myId() && pwCanView(p) && p.state === 'Current' && s.prior && !pwClosed(s)) || 'only a facilitator or mentor of this participant recommends prior evidence, on steps that allow it';
   },
+  pwpe: d => G.pwPrior(d),
+  pwPriorDecide: d => {
+    const p = byId('pathways', d.id);
+    const s = p && p.steps[d.i];
+    return (s && p.pid === myId() && s.rec && s.rec.status === 'Awaiting participant' && !pwClosed(s)) || 'only the participant accepts or declines a recommendation on their pathway';
+  },
+  pwDecline: d => byId('pathways', d.id)?.pid === myId() && byId('pathways', d.id).state === 'Proposed to participant' || 'only the participant declines a pathway proposed to them',
+  pwdc: d => G.pwDecline(d),
+  // profile change candidates and evolution suggestions: only the person decides
+  candDlg: d => byId('candidates', d.id)?.pid === myId() || 'only the participant decides on their profile',
+  ce: d => (byId('candidates', d.id)?.pid === myId() && byId('candidates', d.id).status !== 'Accepted') || 'only the participant decides on their profile',
+  evoDlg: d => (byId('evolution', d.id)?.pid === myId() && byId('evolution', d.id).status === 'Pending') || 'only the person whose profile it is can accept, edit or reject a suggested change',
+  evoe: d => G.evoDlg(d),
   pwr: () => hasB('Reviewer') || 'only an authorised Reviewer returns mode 3 pathways',
   pwRevise: d => {
     const p = byId('pathways', d.id);
@@ -564,23 +627,24 @@ Object.assign(G, {
   tenantNew: platformOnly('manages organizations'),
   tnt: platformOnly('manages organizations'),
   tenantState: platformOnly('suspends or reactivates organizations'),
-  roleNew: platformOnly('creates roles'),
-  rnew: platformOnly('creates roles'),
+  roleNew: () => 'new roles are created only from a WSS-approved change; the Platform Administrator applies approved definitions',
+  rnew: () => 'new roles are created only from a WSS-approved change; the Platform Administrator applies approved definitions',
   roleEdit: platformOnly('edits roles'),
   redit: platformOnly('edits roles'),
-  rperm: platformOnly('changes role permissions'),
+  rperm: d => (role() === 'T' && !!String(d.ref || '').trim()) || 'a permission change needs the reference of an approved WSS change',
   roleReset: platformOnly('resets role permissions'),
   roleState: platformOnly('archives or restores roles'),
-  polNew: platformOnly('writes policies'),
-  polEdit: platformOnly('writes policies'),
-  poled: platformOnly('writes policies'),
-  polPublish: platformOnly('publishes policies'),
-  polDel: platformOnly('deletes policy drafts'),
-  cqNew: platformOnly('manages Purpose Compass questions'),
-  cqEdit: platformOnly('manages Purpose Compass questions'),
-  cq: platformOnly('manages Purpose Compass questions'),
-  cqMove: platformOnly('manages Purpose Compass questions'),
-  cqDel: platformOnly('manages Purpose Compass questions'),
+  // Trust/Data Steward governs agreement and consent policy; the Programme Administrator configures Compass wording.
+  polNew: () => hasB('Trust/Data Steward') || 'only the Trust/Data Steward writes policies',
+  polEdit: () => hasB('Trust/Data Steward') || 'only the Trust/Data Steward writes policies',
+  poled: () => hasB('Trust/Data Steward') || 'only the Trust/Data Steward writes policies',
+  polPublish: () => hasB('Trust/Data Steward') || 'only the Trust/Data Steward publishes policies',
+  polDel: () => hasB('Trust/Data Steward') || 'only the Trust/Data Steward deletes policy drafts',
+  cqNew: () => role() === 'A' || 'only the Programme Administrator configures Purpose Compass wording',
+  cqEdit: () => role() === 'A' || 'only the Programme Administrator configures Purpose Compass wording',
+  cq: () => role() === 'A' || 'only the Programme Administrator configures Purpose Compass wording',
+  cqMove: () => role() === 'A' || 'only the Programme Administrator configures Purpose Compass wording',
+  cqDel: () => role() === 'A' || 'only the Programme Administrator configures Purpose Compass wording',
 });
 // ---- Rope Team documents; project owners create their own Action Room; milestone validation
 // Mentor Requests form a Rope Team, so they are not raised on the Circle → Room path.
@@ -669,8 +733,9 @@ Object.assign(G, {
   dmOpen: d => {
     const p = byId('projects', d.project);
     if (!p) return 'project not found';
-    if (role() === 'S') return d.pid === p.owner || 'sponsors message the project owner';
-    return (p.owner === myId() && S.assign.some(a => a.pid === d.pid && roleBase(a.role) === 'S')) || 'only the project owner messages a sponsor about this project';
+    // BF-08: no automatic sponsor ↔ project-owner messaging in the Alpha, from either side.
+    if (role() === 'S' || S.assign.some(a => a.pid === d.pid && roleBase(a.role) === 'S')) return 'Staged project funding and pitches are outside the Alpha';
+    return 'only the project owner messages a sponsor about this project';
   },
   editSession: d => (isFac(d.c) && activeSpace('circles', d.c)) || 'only the project owner or facilitator edits sessions in an active Circle',
   pwNew: () => roleBase(role()) === 'P' || 'only participants create their own pathway',
@@ -690,6 +755,21 @@ Object.assign(G, {
   pwd: d => {
     const p = byId('pathways', d.id);
     return (p && p.reviewer === myId() && (p.state === 'In review' || (d.v === 'Rejected' && p.state === 'Clarification requested'))) || 'only the assigned reviewer decides on this pathway';
+  },
+});
+// Bundle and mandate assignment had no guard entry: protect them like other role management.
+Object.assign(G, {
+  bund: d => {
+    const a = byId('assign', d.id);
+    return (a && a.pid !== myId() && (role() === 'A' || (role() === 'O' && a.ctx === ctxId()))) || 'only an administrator in this context assigns capability bundles';
+  },
+  mand: d => {
+    const a = byId('assign', d.id);
+    return (a && (role() === 'A' || (role() === 'O' && a.ctx === ctxId()))) || 'only an administrator in this context records mandates';
+  },
+  mandRevoke: d => {
+    const a = byId('assign', d.id);
+    return (a && (role() === 'A' || (role() === 'O' && a.ctx === ctxId()))) || 'only an administrator in this context revokes mandates';
   },
 });
 // Wrap handlers. Same key may exist in A (click) and F (form submit); both are guarded.

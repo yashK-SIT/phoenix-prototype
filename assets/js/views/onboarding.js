@@ -27,123 +27,45 @@ const PURPOSES = [
   ],
   ['ext', 'External-system exchange', 'Allow exchange with connected external systems, such as a learning platform.'],
 ];
+// Purpose Compass: IKIGAI-inspired reflective questions, not psychometric. PC1–PC6 are the minimum asked at
+// onboarding (Build-Freeze review §4.1, BF-10); everything else is asked later, in context. Nothing is scored.
 const COMPASS = [
-  [
-    'PC1',
-    'Orientation and meaning',
-    'What matters most to you right now in this programme, community or stage of your life?',
-    'Private',
-  ],
-  [
-    'PC2',
-    'North Star / outcome',
-    'What outcome do you want to achieve in the next 3–12 months?',
-    'Private · share with chosen support roles',
-  ],
-  [
-    'PC3',
-    'Blockers, without diagnosis',
-    'What could prevent or slow you down?',
-    'High-restriction · explicit sharing only',
-  ],
-  [
-    'PC4',
-    'Capacity / pathway realism',
-    'How much time can you realistically commit?',
-    'Private · matching/pathway roles only if shared',
-  ],
-  ['PC5', 'First milestone', 'What is your first meaningful milestone?', 'Contextual'],
-  ['PC6', 'Participant-defined success', 'What would success look like?', 'Private'],
-  [
-    'PC7',
-    'What you bring',
-    'What skills, knowledge, experience, relationships, resources or strengths do you bring?',
-    'Private',
-  ],
+  ['PC1', 'Orientation / meaning', 'What matters most to you right now in this programme, community or stage of your life?', 'Private'],
+  ['PC2', 'Goal / current direction', 'What would you like to accomplish, contribute to or become more capable of over the next 3–6 months?', 'Private · share with chosen support roles'],
+  ['PC3', 'Main hurdle', 'What is the main hurdle currently making that difficult?', 'High-restriction · private by default'],
+  ['PC4', 'Capacity / pathway realism', 'How much time can you realistically commit?', 'Private · matching/pathway roles only if shared'],
+  ['PC5', 'First actionable milestone', 'What is one meaningful milestone you could realistically reach in the next 2–4 weeks?', 'Contextual'],
+  ['PC6', 'Participant-defined evidence', 'What would help you know you are making meaningful progress?', 'Private'],
+  ['PC7', 'Strengths and capabilities', 'What skills, lived experience and relationships do you wish to contribute?', 'Private'],
   ['PC8', 'Learning interest', 'What would you most like to learn or become better at?', 'Private'],
-  [
-    'PC9',
-    'Contribution context',
-    'What issues, communities, causes or opportunities are you most interested in contributing to?',
-    'Private',
-  ],
-  [
-    'PC10',
-    'Support / need',
-    'What people, resources, relationships or forms of support would help you progress?',
-    'Private',
-  ],
-  [
-    'PC11',
-    'Opportunity preference',
-    'Which opportunities are most relevant now: learning, service, mentoring, leadership, research, project work, livelihood, entrepreneurship, community action?',
-    'Private',
-  ],
-  [
-    'PC12',
-    'Practical constraints',
-    'Are there working preferences or constraints the platform should respect (schedule, location, language, accessibility, collaboration format)?',
-    'Private',
-  ],
+  ['PC9', 'Contribution themes', 'What issues, communities, causes or opportunities are you most interested in contributing to?', 'Private'],
+  ['PC10', 'Support needs', 'What people, resources or forms of support would help you progress?', 'Private'],
+  ['PC11', 'Opportunity preferences', 'Which opportunities are most relevant now: learning, service, mentoring, leadership, research, project work, livelihood, entrepreneurship, community action?', 'Private'],
+  ['PC12', 'Practical constraints', 'Are there working preferences or constraints the platform should respect (schedule, location, language, accessibility, collaboration format)?', 'Private'],
 ];
 // ---- Purpose Compass Baseline: Purpose plus six question sets, the starting point of the journey.
 // Answers live in S.compass[pid] beside PC1–PC12; PC keys keep their meaning, the other keys hold the extra sub-questions.
 // [key, question, required, help] — the seeded questions. At run time the questions live in S.compassQs and are
 // managed by the Platform Administrator (Purpose Compass screen); answers stay in S.compass[pid] under each question id.
 const BL_SEED = [
-  { id: 'purpose', n: 'Purpose', d: 'Where your journey starts.', q: [['PC1', 'What matters most to you right now in this programme, community or stage of your life?', 1]] },
   {
     id: 'B1',
-    n: 'Outcome — 3–12 months',
+    n: 'What matters and where you are heading',
+    d: 'In your own words. You author your direction; PHOENIX only structures it.',
     q: [
-      ['PC2', 'What outcome do you want to achieve in the next 3–12 months?', 1],
-      ['PC6', 'What would success look like?', 1],
+      ['PC1', COMPASS[0][2], 1],
+      ['PC2', COMPASS[1][2], 1],
+      ['PC3', COMPASS[2][2], 1, 'Private by default. Never shown to organisation representatives, sponsors or AI unless you share it.'],
     ],
   },
   {
     id: 'B2',
-    n: 'What you bring',
+    n: 'Making it realistic',
+    d: 'Turns your direction into a first step you choose.',
     q: [
-      ['PC7', 'What skills, knowledge, experience, relationships, resources or strengths do you bring?', 1],
-      ['skills', 'What existing skills should be captured?', 0, 'Comma-separated, e.g. survey design, Spanish-language outreach. Saved to your profile as self-declared skills, visible only to you until you change it.'],
-    ],
-  },
-  {
-    id: 'B3',
-    n: 'Blockers',
-    q: [
-      ['PC3', 'What could prevent or slow you down?', 1],
-      ['risks', 'What risks, dependencies or support gaps do you have?', 0],
-    ],
-  },
-  {
-    id: 'B4',
-    n: 'How you learn',
-    q: [
-      ['learnHow', 'How do you learn best?', 1],
-      ['learnSupport', 'What kind of guidance, practice, feedback, mentoring or resources help you learn?', 0],
-    ],
-  },
-  {
-    id: 'B5',
-    n: 'Constraints',
-    d: 'What should be considered when planning your journey. Fill in only what is relevant to you.',
-    q: [
-      ['PC4', 'Availability — how much time can you realistically commit?', 1],
-      ['cLoc', 'Location', 0],
-      ['cTech', 'Technology / access', 0],
-      ['cFin', 'Financial constraints', 0],
-      ['cCare', 'Care responsibilities', 0],
-      ['cAcc', 'Accessibility requirements', 0],
-      ['cOther', 'Other personal or practical constraints', 0],
-    ],
-  },
-  {
-    id: 'B6',
-    n: 'First milestone & who to involve',
-    q: [
-      ['PC5', 'What is your first meaningful milestone?', 1],
-      ['involve', 'Who needs to be involved, consulted, supported or invited?', 0],
+      ['PC4', COMPASS[3][2], 1],
+      ['PC5', COMPASS[4][2], 1],
+      ['PC6', COMPASS[5][2], 1],
     ],
   },
 ];
@@ -156,7 +78,8 @@ const BL_VIS = {
   involve: 'Contextual',
 };
 const blVisSeed = k => (COMPASS.find(c => c[0] === k) || [])[3] || BL_VIS[k] || 'Private';
-const COMPASS_VIS = ['Private', 'Private · share with chosen support roles', 'Contextual', 'High-restriction · explicit sharing only', 'Only me until I change it in Profile'];
+const COMPASS_LATER = 'Asked later, in context (optional)';
+const COMPASS_VIS = ['Private', 'Private · share with chosen support roles', 'Contextual', 'High-restriction · private by default', 'High-restriction · explicit sharing only', 'Only me until I change it in Profile'];
 const COMPASS_TYPES = [
   ['textarea', 'Long answer'],
   ['text', 'Short answer'],
@@ -170,7 +93,7 @@ function seedCompassQs() {
     ),
   );
   COMPASS.filter(([id]) => !out.some(q => q.id === id)).forEach(([id, , q, vis]) =>
-    out.push({ id, text: q, set: 'Asked later, in context', setNote: '', help: '', req: false, type: 'textarea', onb: false, vis }),
+    out.push({ id, text: q, set: COMPASS_LATER, setNote: 'Optional. Answer when it helps a pathway, opportunity or support conversation.', help: '', req: false, type: 'textarea', onb: false, vis }),
   );
   return out.map((q, i) => ({ ...q, order: i + 1 }));
 }
@@ -349,17 +272,15 @@ function polDiffHtml(prev, cur) {
       .join('') || '<p class="cap">The wording is unchanged.</p>'
   }${same > 0 && rows.length ? `<p class="cap">${same} section${same > 1 ? 's' : ''} unchanged.</p>` : ''}</div>`;
 }
-// Seed wording. Participant Agreement v1/v2 in the first programme kept the separate optional choices; every other
-// policy covers how PHOENIX may use information within the agreement itself.
+// Seed wording. Every agreement keeps the optional purposes OUT of the required terms (BF-02): accepting the
+// agreement never grants AI, research, cross-organisation, public/funder or external-exchange use.
 function polSeedText(g) {
-  const legacy = g.type === 'Participant Agreement' && g.ctx === 'c1' && g.ver < 3;
-  const use = legacy
-    ? 'AI processing, matching, research, cross-organisation sharing, public or funder release and external exchange are separate choices you make after accepting. Saying no never blocks the core collaboration features.' +
-      (g.ver === 2 ? ' AI processing is one of these optional choices: AI only drafts, and every draft stays a draft until a person accepts it.' : '')
-    : 'By accepting this agreement you agree that PHOENIX may use AI to draft summaries and suggestions (every AI output stays a draft until a person accepts it); consider your profile for steward-reviewed matches (each introduction still needs your consent); use de-identified activity to evaluate and improve the programme; share named items with collaborators in other organisations; release approved stories or evidence to funders (each release still needs your approval); and exchange data with connected systems such as a learning platform.';
-  const rights = legacy
-    ? 'You can correct information, withdraw any optional purpose, export your authorised records and request deletion.'
-    : 'You can correct information, export your authorised records and request deletion at any time.';
+  const v3 = g.type === 'Participant Agreement' && g.ver >= 3;
+  const use =
+    'AI processing, research and evaluation, cross-organisation sharing, public or funder release and external-system exchange are five separate optional choices. You make each one yourself, after accepting, and can change it at any time. Saying no never blocks the core collaboration features: your pathway, Circles, Rope Teams, tasks and evidence keep working.' +
+    (g.ver === 2 || v3 ? ' AI only drafts, and every draft stays a draft until a person accepts it.' : '') +
+    (v3 ? ' New in this version: research use of anonymised reflections is part of the separate Research and evaluation choice. If you have not granted it, your reflections are not used.' : '');
+  const rights = 'You can correct information, grant, decline or withdraw any optional purpose, export your authorised records, appeal a decision and request deletion at any time — including while an agreement update is waiting for you.';
   return [
     '## About this agreement',
     `This ${g.type} sets out how you take part in PHOENIX and how your information is handled.`,
@@ -375,31 +296,38 @@ function polSeedText(g) {
     'Records are kept for the programme duration plus the period set in the retention policy, then deleted or anonymised.',
   ].join('\n');
 }
-// Shown over the app when a policy that applies to the signed-in person has a new version they have not accepted.
-// The current policy is shown first; the comparison with the previous version opens only on request.
+// Onboarding route E: a material agreement change pauses only participation in the affected context. It is shown in
+// place of the work screen; the menu stays usable and own records, consent, correction, appeal, export, Help and
+// Report a concern stay open.
 function policyGate(g) {
   const prev = polPrev(g);
   const cmp = UI.tab.agrCmp === g.id;
-  return `<div class="pgate" role="presentation"><div class="pgate-m" role="dialog" aria-modal="true" aria-labelledby="pgate-t"><header class="pgate-h"><span class="over">Policy update</span><h2 class="h2" id="pgate-t">${h(g.type)} — version ${g.ver}</h2><p class="cap">Effective ${fmt(g.effective)}. Read the current policy and confirm to continue.</p></header>
-  <div class="pgate-b"><div class="col" style="gap:16px"><div class="kv"><div class="col"><span class="cap">Policy</span><b>${h(g.type)}</b></div><div class="col"><span class="cap">Version</span><b>v${g.ver}</b></div><div class="col"><span class="cap">Effective</span><b>${fmt(g.effective)}</b></div></div>
+  const links = [['privacy', 'My records & consent'], ['profile', 'Profile'], ['help', 'Help & support'], ['incidents', 'Report a concern']];
+  return `${head('Agreement update to review', `${h(g.type)} v${g.ver} took effect on ${fmt(g.effective)} in ${h(ctxName(g.ctx))}.`)}
+  ${banner('warn', 'Participation in this context is paused until you review it', 'Only the work areas of this context wait for your answer. Your records, consent choices, correction, appeal, export, Help and Report a concern stay available.')}
+  <div class="row wrap pgate-rights">${links.map(([r, l]) => B(ic('chevr', 14) + l, 'go', { r }, 'btn-s btn-sm')).join('')}</div>
+  <section class="card col" style="gap:16px"><div class="kv"><div class="col"><span class="cap">Policy</span><b>${h(g.type)}</b></div><div class="col"><span class="cap">Version</span><b>v${g.ver}</b></div><div class="col"><span class="cap">Effective</span><b>${fmt(g.effective)}</b></div></div>
   <div class="row wrap" style="gap:8px">${B(ic('download', 16) + 'Download policy', 'polDownload', { id: g.id })}${prev ? B(ic('eye', 16) + (cmp ? 'Hide differences' : 'Compare with previous policy'), 'agrCmp', { id: g.id }, 'btn-s btn-sm', `aria-expanded="${cmp}"`) : ''}</div>
   ${cmp ? `<section class="col" style="gap:8px"><h3 class="h3">What changed since v${prev.ver}</h3>${g.summary ? `<p class="muted">${h(g.summary)}</p>` : ''}${polDiffHtml(prev, g)}</section>` : ''}
-  <section class="col pgate-pol"><h3 class="h3">Current policy</h3>${polBody(g)}</section></div></div>
-  <form data-f="agr" class="pgate-f" novalidate><input type="hidden" name="g" value="${g.id}"><input type="hidden" name="mode" value="update">${fi('agr', 'a1', `I have read and accept <b>${h(g.type)} v${g.ver}</b>.`, { type: 'checkbox', req: true })}<div class="actions">${B('Sign out', 'logout', {}, 'btn-s')}<button class="btn btn-p" type="submit">Accept and continue</button></div></form></div></div>`;
+  <section class="col pgate-pol"><h3 class="h3">Current policy</h3>${polBody(g)}</section>
+  ${banner('info', 'Your optional permissions are unchanged', 'Accepting this agreement does not switch on AI, research, cross-organisation sharing, public/funder release or external exchange. Change those any time in My records & consent.')}
+  <form data-f="agr" class="col" novalidate><input type="hidden" name="g" value="${g.id}"><input type="hidden" name="mode" value="update">${fi('agr', 'a1', `I have read and accept <b>${h(g.type)} v${g.ver}</b>.`, { type: 'checkbox', req: true })}<div class="actions">${B('Not now', 'go', { r: 'privacy' }, 'btn-s')}<button class="btn btn-p" type="submit">Accept and continue</button></div></form></section>`;
 }
 function onbTop(cur, steps) {
   return `<header class="onb-top"><div class="row onb-brand"><span class="mark">${MARK(20)}</span><span class="wm hide-sm"><b>PHOENIX</b><span>Foundation Alpha</span></span></div><nav class="steps" aria-label="Onboarding progress">${steps.map((l, i) => `${i ? '<span class="sline"></span>' : ''}<div class="step ${i < cur ? 'done' : i === cur ? 'cur' : ''}"><span class="n">${i < cur ? ic('check', 14) : i + 1}</span><span class="st">${l}</span></div>`).join('')}</nav><div class="row">${roleChoices().length > 1 ? B('Switch role', 'switcher', {}, 'btn-g btn-sm') : ''}${B('Save and exit', 'logout', {}, 'btn-g btn-sm hide-sm')}</div></header>`;
 }
+// Onboarding route A: invitation -> verify email -> required agreement -> separate optional permissions ->
+// minimum profile -> minimum Purpose Compass (participants) -> role activates -> My PHOENIX with a first next action.
 function ONB() {
   const a = asg();
-  // Optional processing purposes are covered by the agreement; there is no separate permissions step.
-  a.onb.consents = true;
   const isP = roleBase(a.role) === 'P';
-  const steps = ['Account', 'Agreement', 'Profile'].concat(isP ? ['Purpose Compass'] : []);
-  const cur = !a.onb.agreement ? 1 : !a.onb.profile ? 2 : 3;
+  const steps = ['Account', 'Agreement', 'Optional permissions', 'Profile'].concat(isP ? ['Purpose Compass'] : []);
+  const cur = !a.onb.agreement ? 1 : !a.onb.consents ? 2 : !a.onb.profile ? 3 : 4;
   let body;
-  if (cur === 1) {
-    const g = S.agreements.find(g => g.ctx === a.ctx && g.status === 'Active' && g.roles.includes(roleBase(a.role)));
+  if (cur === 2) {
+    body = consentStep(steps);
+  } else if (cur === 1) {
+    const g = agrFor(a.ctx, roleBase(a.role));
     if (!g) {
       a.onb.agreement = true;
       save();
@@ -408,24 +336,24 @@ function ONB() {
     const prev = polPrev(g);
     const f = 'agr';
     body = `${UI.p.notnow ? banner('info', 'You can come back to this later', 'Access starts once you accept. Until then this is the only screen available.') : ''}
-  <div class="col onb-h"><p class="over">Step 2 of ${steps.length}</p><h1 class="h1">Review your agreement</h1><p class="sub">This agreement applies to your role. It also covers how PHOENIX may process your information.</p></div>
+  <div class="col onb-h"><p class="over">Step 2 of ${steps.length}</p><h1 class="h1">Review your agreement</h1><p class="sub">This agreement applies to your role in ${h(ctxName(a.ctx))}. Optional uses of your information are separate choices on the next step.</p></div>
   <section class="card col onb-card"><div class="kv onb-meta"><div class="col"><span class="cap">Agreement</span><b>${h(g.type)}</b></div><div class="col"><span class="cap">Version</span><b>v${g.ver}</b></div><div class="col"><span class="cap">Effective</span><b>${fmt(g.effective)}</b></div></div>
-  <div class="scrollbox" tabindex="0" aria-label="Agreement text"><div class="col onb-pol">${polBody(g)}<p class="cap">Approved wording is published by the Platform Administrator after WSS Trust/Data Steward and legal review.</p></div></div>
+  <div class="scrollbox" tabindex="0" aria-label="Agreement text"><div class="col onb-pol">${polBody(g)}<p class="cap">Approved wording is published by the Trust/Data Steward after WSS legal review.</p></div></div>
   <div class="row wrap onb-tools">${B(ic('download', 16) + 'Download policy', 'polDownload', { id: g.id })}${B(ic('eye', 16) + (UI.tab.agrCmp === g.id ? 'Hide comparison' : 'Compare policy with prior'), 'agrCmp', { id: g.id }, 'btn-s btn-sm', `aria-expanded="${UI.tab.agrCmp === g.id}"`)}</div>
   ${UI.tab.agrCmp === g.id ? `<div class="col onb-cmp">${prev ? `<h2 class="h3">What changed since v${prev.ver}</h2>${g.summary ? `<p class="muted">${h(g.summary)}</p>` : ''}` : ''}${polDiffHtml(prev, g)}</div>` : ''}
   <form data-f="agr" class="col onb-agr" id="agrf" novalidate>${fi(f, 'a1', `I have read and accept <b>${h(g.type)} v${g.ver}</b>.`, { type: 'checkbox', req: true })}${fi(f, 'a2', 'I accept the PHOENIX service terms.', { type: 'checkbox', req: true })}<input type="hidden" name="g" value="${g.id}"><span class="help">A dated receipt of your acceptance is stored in Privacy & agreements.</span>
   <div class="actions">${B('Not now', 'agrNotNow', {}, 'btn-s')}<button class="btn btn-p" type="submit">Accept and continue</button></div></form></section>`;
-  } else if (cur === 2) {
+  } else if (cur === 3) {
     const f = 'prof';
     const pr = S.profiles[myId()] || {};
-    body = `<div class="col onb-h"><p class="over">Step 3 of ${steps.length}</p><h1 class="h1">Your minimum profile</h1><p class="sub">Just the basics. Each field shows who can see it. Every save creates a version.</p></div>${errSum(f)}
+    body = `<div class="col onb-h"><p class="over">Step 4 of ${steps.length}</p><h1 class="h1">Your minimum profile</h1><p class="sub">Just the basics. Each field shows who can see it. Every save creates a version.</p></div>${errSum(f)}
   <form data-f="prof" class="card col onb-card" novalidate><div class="f2">${fi(f, 'name', 'Full name', { value: me().name, ro: true, vis: 'You and authorised administration' })}${fi(f, 'display', 'Display name', { value: me().display, ro: true, vis: 'Your collaboration contexts', help: 'Set when your account was created.' })}</div>
   ${me().org ? fi(f, 'aff', 'Organisation / affiliation', { value: S.orgs.find(o => o.id === me().org).name, ro: true, vis: 'Context-visible' }) : ''}
   ${fi(f, 'bio', 'Short biography', { type: 'textarea', rows: 3, max: 400, value: pr.bio, help: 'Optional · up to 400 characters', vis: 'Your choice — default: your collaboration contexts' })}
   ${fi(f, 'interests', 'Interests', { value: '', ph: 'Comma-separated, e.g. urban heat, food resilience', help: 'Optional' })}
   ${role() === 'S' ? fi(f, 'sponsorInt', 'Funding interests', { req: true, ph: 'e.g. Urban heat, tree canopy', help: 'Used to show you matching projects. Not shared with participants.' }) : ''}
   ${banner('info', '', 'Skills, availability and other details are asked for later, only when a workflow needs them.')}
-  <div class="actions">${B(ic('chevl', 16) + 'Back', 'onbBack', { s: 'agreement' }, 'btn-g')}<button class="btn btn-p" type="submit">Save and continue</button></div></form>`;
+  <div class="actions">${B(ic('chevl', 16) + 'Back', 'onbBack', { s: 'consents' }, 'btn-g')}<button class="btn btn-p" type="submit">Save and continue</button></div></form>`;
   } else {
     const f = 'pc';
     const ans = S.compass[myId()] || {};
@@ -443,12 +371,12 @@ function ONB() {
     }
     const st = Math.max(0, Math.min(UI.tab.pcStep || 0, n - 1));
     const set = sets[st];
-    body = `<div class="col onb-h"><p class="over">Step 4 of 4 · Purpose Compass Baseline</p><h1 class="h1">Set your starting point</h1><p class="sub">A few short question sets. Nothing here is scored, and nothing is used to infer sensitive traits. Your answers become the context for your ${WL()}s and Learning Harvests.</p></div>
+    body = `<div class="col onb-h"><p class="over">Step 5 of 5 · Purpose Compass</p><h1 class="h1">Set your current direction</h1><p class="sub">Six short reflective questions, inspired by IKIGAI. Nothing here is scored or used to infer traits; there is no purpose, coherence or worth score. Your answers become your own context for your pathway, opportunities and Learning Harvests.</p></div>
   <div class="col onb-prog"><div class="row onb-prog-h"><span class="lbl">Set ${st + 1} of ${n}</span><span class="cap">${Math.round((st / n) * 100)}% complete</span></div><div class="progress"><span class="bar" style="width:${(st / n) * 100}%"></span></div></div>
   ${errSum(f)}<form data-f="pc" class="card col onb-card" novalidate><input type="hidden" name="set" value="${st}"><div class="col onb-h"><span class="over">Question set ${st + 1}</span><h2 class="h2">${h(set.n)}</h2>${set.d ? `<p class="cap">${h(set.d)}</p>` : ''}</div>
   ${set.q.map(q => blField(f, q, ans)).join('')}
   ${st === 0 ? `<div class="col onb-have"><span class="lbl">Already in your profile</span>${dl([['Interests', h(claimVals(myId(), 'Interests') || '—')], ['Role assignments', `<div class="col onb-roles">${blRoles(myId())}</div>`]])}<span class="help">Role assignments and their expiry are set by your administrator.</span></div>` : ''}
-  ${st === n - 1 ? banner('ok', '', 'Your North Star appears on My PHOENIX as your self-declared direction. You can review and change the whole baseline any time in Profile → Purpose Compass.') : ''}
+  ${st === n - 1 ? banner('ok', '', 'Your answers appear on My PHOENIX as “My purpose / current direction”, self-declared. Strengths, learning interests, support needs and opportunity preferences are asked later, only when they help. Change anything in Profile → Purpose Compass.') : ''}
   <div class="actions">${st ? B(ic('chevl', 16) + 'Previous', 'pcPrev', {}, 'btn-g') : B(ic('chevl', 16) + 'Back', 'onbBack', { s: 'profile' }, 'btn-g')}<div class="row wrap">${B('Save and finish later', 'logout', {}, 'btn-s')}<button class="btn btn-p" type="submit">${st === n - 1 ? 'Finish and go to My PHOENIX' : 'Next'}</button></div></div></form>`;
   }
   return `<div class="onb">${onbTop(cur, steps)}<main class="onb-body">${body}</main></div>`;
@@ -467,9 +395,8 @@ F.agr = d => {
   const g = byId('agreements', d.g);
   S.accepts.push({ pid: myId(), ag: g.id, at: now(), receipt: 'RCPT-' + uid(''), role: a.role });
   a.onb.agreement = true;
-  a.onb.consents = true;
   const c = (S.consents[myId()] = S.consents[myId()] || { history: [] });
-  (c.history = c.history || []).push({ at: now(), t: `Processing purposes covered by ${g.type} v${g.ver}` });
+  (c.history = c.history || []).push({ at: now(), t: `Accepted ${g.type} v${g.ver} (required). Optional purposes unchanged.` });
   audit(upd ? 'Policy update accepted' : 'Agreement accepted', g.id, g.type + ' v' + g.ver);
   clearF('agr');
   UI.p = upd ? UI.p : {};
@@ -505,6 +432,7 @@ A.agrNotNow = () => {
 A.onbBack = d => {
   const a = asg();
   if (d.s === 'agreement') a.onb.agreement = false;
+  if (d.s === 'consents') a.onb.consents = false;
   if (d.s === 'profile') a.onb.profile = false;
   ok();
 };
@@ -579,4 +507,37 @@ F.pc = d => {
   toast('Welcome to PHOENIX. Your baseline and North Star are set.');
   save();
   go('home');
+};
+
+// ---- BF-02 optional permissions step: five purposes, each answered on its own; nothing is pre-ticked.
+const consentLabel = k => (OPT_PURPOSES.find(x => x[0] === k) || [k, k === 'matching' ? 'Matching visibility' : k])[1];
+const consentChoice = (f, k, l, t, cur) =>
+  `<fieldset class="cons-row${fe(f, k) ? ' err' : ''}"><legend><b>${h(l)}</b></legend><p class="cap">${h(t)}</p><div class="seg cons-seg" role="radiogroup" aria-label="${h(l)}">${['Granted', 'Declined']
+    .map(v => `<label class="cons-opt"><input type="radio" name="${k}" value="${v}" ${fv(f, k, cur[k] === 'Granted' || cur[k] === 'Declined' ? cur[k] : '') === v ? 'checked' : ''}><span>${v === 'Granted' ? 'Allow' : 'Do not allow'}</span></label>`)
+    .join('')}</div>${fe(f, k) ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe(f, k)}</span>` : ''}</fieldset>`;
+function consentStep(steps) {
+  const f = 'cons';
+  const cur = S.consents[myId()] || {};
+  return `<div class="col onb-h"><p class="over">Step 3 of ${steps.length}</p><h1 class="h1">Your optional permissions</h1><p class="sub">These are separate from your agreement. Choose each one yourself. Saying no never blocks your pathway, Circles, Rope Teams, tasks or evidence, and you can change any choice later in My records & consent.</p></div>${errSum(f)}
+  <form data-f="cons" class="card col onb-card" novalidate><h2 class="h3">Five optional purposes</h2>${OPT_PURPOSES.map(([k, l, t]) => consentChoice(f, k, l, t, cur)).join('')}
+  <h2 class="h3">Matching</h2>${consentChoice(f, 'matching', 'Matching visibility', 'Lets a steward consider the profile fields you allow when suggesting a Match Brief. Contact details are never shared before both sides consent.', cur)}
+  <span class="help">Each choice is stored with a date and kept in your consent history.</span>
+  <div class="actions">${B(ic('chevl', 16) + 'Back', 'onbBack', { s: 'agreement' }, 'btn-g')}<button class="btn btn-p" type="submit">Save my choices</button></div></form>`;
+}
+F.cons = d => {
+  const keys = [...OPT_PURPOSES.map(x => x[0]), 'matching'];
+  const rules = {};
+  keys.forEach(k => (rules[k] = [['req', 'Choose Allow or Do not allow.']]));
+  if (!validate('cons', d, rules)) return render();
+  const c = (S.consents[myId()] = S.consents[myId()] || { history: [] });
+  c.history = c.history || [];
+  keys.forEach(k => {
+    if (c[k] !== d[k]) c.history.push({ at: now(), t: `${consentLabel(k)}: ${c[k] || 'Not asked'} → ${d[k]}` });
+    c[k] = d[k];
+  });
+  asg().onb.consents = true;
+  audit('Optional permissions recorded', myId(), keys.map(k => k + '=' + d[k]).join(', '));
+  clearF('cons');
+  toast('Your choices are saved. You can change them any time.');
+  ok();
 };

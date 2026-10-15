@@ -18,23 +18,32 @@ A.closePanel = closePanel;
 const notifDay = d => (d === today() ? 'Today' : d === new Date(Date.now() - 864e5).toISOString().slice(0, 10) ? 'Yesterday' : 'Earlier');
 function notifMenu() {
   const ns = S.notifs.filter(n => n.pid === myId());
-  const un = ns.filter(n => !n.read).length;
-  const list = UI.notifF === 'unread' ? ns.filter(n => !n.read) : ns;
+  const here = ns.filter(notifHere);
+  const away = ns.filter(n => !notifHere(n));
+  const un = here.filter(n => !n.read).length;
+  const unAway = away.filter(n => !n.read).length;
+  const pickL = l => (UI.notifF === 'unread' ? l.filter(n => !n.read) : l);
+  const item = (n, other) => {
+    const x = other ? notifAsg(n) : null;
+    return `<button type="button" class="nitem ${n.read ? '' : 'unread'}${other ? ' is-away' : ''}" data-a="read" data-id="${n.id}"><span class="ndot2" aria-hidden="true"></span><span class="nitem-b">${other ? `<span class="nctx">${ic('building', 12)}${h(x ? asgLabel(x) : 'Another role')}</span>` : ''}<span class="nt">${h(n.t)}</span><span class="cap">${fmt(n.at)}${other ? ' · opens after a switch' : ''}</span></span>${n.read ? '' : '<span class="sr">Unread</span>'}</button>`;
+  };
   let lastGroup = '';
-  const rows = list
+  const rows = pickL(here)
     .map(n => {
       const g = notifDay(n.at);
       const head = g !== lastGroup ? `<div class="ngroup">${g}</div>` : '';
       lastGroup = g;
-      return `${head}<button type="button" class="nitem ${n.read ? '' : 'unread'}" data-a="read" data-id="${n.id}"><span class="ndot2" aria-hidden="true"></span><span class="nitem-b"><span class="nt">${h(n.t)}</span><span class="cap">${fmt(n.at)}</span></span>${n.read ? '' : '<span class="sr">Unread</span>'}</button>`;
+      return head + item(n, false);
     })
     .join('');
+  const awayRows = pickL(away).map(n => item(n, true)).join('');
   const f = (v, l, c) => `<button type="button" class="${UI.notifF === v ? 'on' : ''}" data-a="notifFilter" data-v="${v}" aria-pressed="${UI.notifF === v}">${l}<span class="cnt">${c}</span></button>`;
   return `<div class="nmenu" id="notif-menu" role="dialog" aria-label="Notifications">
   <div class="nmenu-h"><b>Notifications</b>${un ? B(ic('check', 14) + 'Mark all as read', 'readAll', {}, 'btn-g btn-sm') : ''}</div>
-  <div class="nmenu-tabs seg" role="group" aria-label="Show">${f('all', 'All', ns.length)}${f('unread', 'Unread', un)}</div>
-  <div class="nmenu-list">${rows || `<div class="nmenu-empty">${empty('bell', UI.notifF === 'unread' ? 'You are all caught up' : 'No notifications yet', UI.notifF === 'unread' ? 'Nothing unread.' : 'Activity in your Circles, reviews, approvals and payments appears here.')}</div>`}</div>
-  <div class="nmenu-foot">Invitations, approvals and payment changes also go by email.</div></div>`;
+  <div class="nmenu-ctx cap">${ic('building', 12)}${h(asgLabel(asg()))}</div>
+  <div class="nmenu-tabs seg" role="group" aria-label="Show">${f('all', 'All', here.length)}${f('unread', 'Unread', un)}</div>
+  <div class="nmenu-list">${rows || `<div class="nmenu-empty">${empty('bell', UI.notifF === 'unread' ? 'You are all caught up' : 'No notifications yet', UI.notifF === 'unread' ? 'Nothing unread in this role and context.' : 'Activity in your Circles, reviews, approvals and payments appears here.')}</div>`}${awayRows ? `<div class="ngroup">Other roles and contexts${unAway ? ` · ${unAway} unread` : ''}</div>${awayRows}` : ''}</div>
+  <div class="nmenu-foot">Notices for another role or context open only after a switch. Invitations, approvals and payment changes also go by email.</div></div>`;
 }
 A.notifToggle = () => {
   UI.panel = UI.panel === 'notif' ? null : 'notif';
@@ -46,7 +55,7 @@ A.notifFilter = d => {
   render();
 };
 A.readAll = () => {
-  S.notifs.filter(n => n.pid === myId()).forEach(n => (n.read = true));
+  S.notifs.filter(n => n.pid === myId() && notifHere(n)).forEach(n => (n.read = true));
   ok();
 };
 document.addEventListener('mousedown', e => {
@@ -63,7 +72,7 @@ function userMenu() {
   return `<div class="umenu" id="user-menu" role="menu" aria-label="Account">
   <div class="umenu-h"><span class="av">${ini(myId())}</span><div class="umenu-id"><b>${h(me().name)}</b><span class="cap umenu-mail">${h(me().email)}</span><span class="cap">${h(ROLE[a.role] || a.role)}${c ? ' · ' + h(c.name) : ''}</span></div></div>
   <div class="umenu-theme"><span class="cap">Theme</span><div class="seg" role="group" aria-label="Theme">${['light', 'dark', 'system'].map(t => `<button type="button" data-a="setTheme" data-v="${t}" aria-pressed="${(UI.theme || 'light') === t}">${t[0].toUpperCase() + t.slice(1)}</button>`).join('')}</div></div>
-  <div class="umenu-list"><button type="button" role="menuitem" class="umenu-i${UI.route === 'profile' ? ' on' : ''}" data-a="userGo" data-r="profile">${ic('user', 18)}<span>View profile</span></button>${role() !== 'T' ? `<button type="button" role="menuitem" class="umenu-i${UI.route === 'privacy' ? ' on' : ''}" data-a="userGo" data-r="privacy">${ic('shield', 18)}<span>Privacy & agreements</span></button>` : ''}<button type="button" role="menuitem" class="umenu-i out" data-a="logout">${ic('logout', 18)}<span>Log out</span></button></div></div>`;
+  <div class="umenu-list"><button type="button" role="menuitem" class="umenu-i${UI.route === 'profile' ? ' on' : ''}" data-a="userGo" data-r="profile">${ic('user', 18)}<span>View profile</span></button>${role() !== 'T' ? `<button type="button" role="menuitem" class="umenu-i${UI.route === 'privacy' ? ' on' : ''}" data-a="userGo" data-r="privacy">${ic('shield', 18)}<span>My records & consent</span></button>` : ''}<button type="button" role="menuitem" class="umenu-i out" data-a="logout">${ic('logout', 18)}<span>Log out</span></button></div></div>`;
 }
 A.userToggle = () => {
   UI.panel = UI.panel === 'user' ? null : 'user';
@@ -147,7 +156,7 @@ function askDrawer() {
   const notice = !up
     ? banner('warn', 'AI is temporarily unavailable', 'Your question cannot be processed right now. Everything else in PHOENIX keeps working.')
     : !okAI
-      ? banner('info', 'AI processing is off for you', `Turn it on in ${L('Privacy & consent', 'privacy')} to use Ask PHOENIX. Declining never blocks anything else.`)
+      ? banner('info', 'AI processing is off for you', `Ask PHOENIX needs AI processing of your own records, so it is unavailable. Everything else keeps working. You can change this in ${L('My records & consent', 'privacy', { tab: 'consent' })}.`)
       : '';
   return `<aside class="assist" id="assist" role="complementary" aria-label="Ask PHOENIX">
   <header class="assist-h"><span class="aav big" aria-hidden="true">${ic('sparkle', 16)}</span><div class="assist-ht"><b>Ask PHOENIX</b><span class="cap">Private to you · nothing changes on your record</span></div><button type="button" class="iconbtn" data-a="closePanel" aria-label="Close Ask PHOENIX">${ic('x')}</button></header>

@@ -60,7 +60,8 @@ function inboxItems() {
           { id: p.id },
         ]),
       );
-  if (r === "F" || hasB("Reviewer"))
+  // Evidence approval needs the Reviewer bundle; a plain Facilitator does not inherit it (BF-05).
+  if (hasB("Reviewer"))
     S.evidence
       .filter((e) => e.review === "Submitted" && e.owner !== me_)
       .forEach((e) =>
@@ -283,20 +284,6 @@ function nextAction() {
         "evidence",
         { id: rr.ev },
       ];
-    const fu = S.funding.find(
-      (f) =>
-        byId("projects", f.project).owner === pid &&
-        f.tranches.some((t) => t.state === "Released"),
-    );
-    if (fu) {
-      const t = fu.tranches.find((t) => t.state === "Released");
-      return [
-        `Submit the ${t.stage} stage progress summary`,
-        "Your sponsor needs it before the next tranche.",
-        "funding",
-        {},
-      ];
-    }
     const rv = myRopes().flatMap((rt) =>
       (rt.reviews || [])
         .filter(
@@ -339,7 +326,7 @@ function nextAction() {
           (p) =>
             p.status === "Open" &&
             p.votes[pid] == null &&
-            eligibleVoter(c, pid),
+            eligibleVoter(c, pid, p),
         )
         .map((p) => [c, p]),
     )[0];
@@ -376,11 +363,16 @@ function nextAction() {
       (p) => p.pid === pid && inCtx(p) && p.state === "Current",
     );
     if (cur) {
-      const i = cur.steps.findIndex((s) => !s.done);
+      // pathway step rules (FR-F04): a recommendation waiting for the participant first, then the deterministic
+      // next step — the lowest-numbered required step whose prerequisites are complete
+      const ri = cur.steps.findIndex((s) => s.rec && s.rec.status === "Awaiting participant" && !pwClosed(s));
+      if (ri >= 0)
+        return [`Accept or decline a recommendation for step ${ri + 1}`, `${nm(cur.steps[ri].rec.by)} recommends that prior evidence satisfies “${h(cur.steps[ri].t)}”. Nothing changes unless you accept.`, "pathway", {}];
+      const i = pwNext(cur);
       if (i >= 0)
         return [
-          `Complete step ${i + 1} of your pathway`,
-          h(cur.steps[i].t),
+          cur.steps[i].type === "Conditional" && !cur.steps[i].applies ? `Check whether step ${i + 1} of your pathway applies` : `Complete step ${i + 1} of your pathway`,
+          `${h(cur.steps[i].t)} · chosen by rule: the lowest-numbered required step whose prerequisites are complete`,
           "pathway",
           {},
         ];
@@ -393,7 +385,8 @@ function nextAction() {
     ];
   }
   if (r === "M") {
-    const m = S.mentorReqs.find((x) => x.to === pid && x.status === "Pending");
+    // BF-01: only surface Mentor Requests that belong to the active context
+    const m = S.mentorReqs.find((x) => x.to === pid && x.status === "Pending" && mentorReqVisible(x));
     if (m)
       return [
         "Respond to a Mentor Request",
@@ -423,8 +416,6 @@ function nextAction() {
         "rope",
         { id: s[0].id, tab: "support" },
       ];
-  }
-  if (r === "C" || r === "P") {
   }
   if (r === "C") {
     const mb = S.matches.find(
@@ -467,34 +458,39 @@ function nextAction() {
       ];
   }
   if (r === "S") {
-    const t = S.funding
-      .filter((f) => f.sponsor === pid)
-      .flatMap((f) => f.tranches.map((t, i) => [f, t, i]))
-      .find(([f, t]) => t.state === "Summary submitted");
-    if (t)
-      return [
-        "Review a progress summary",
-        cName(t[0].project) + " · " + stageLabel(t[1].stage) + " stage",
-        "funding",
-        { tab: "funded" },
-      ];
-    const pi = S.pitches.find((p) => p.to === pid && p.status === "Sent");
-    if (pi)
-      return [
-        "Review a new pitch",
-        cName(pi.project) + " · from " + nm(pi.from),
-        "funding",
-        { tab: "pitches" },
-      ];
-    const ap = S.funding.find(
-      (f) => f.sponsor === pid && f.status === "Approved — agreement pending",
+    // Sponsor Alpha (BF-08): invoices, seats and funder-safe reporting only.
+    const inv = S.payments.find(
+      (p) => p.pid === pid && p.state === "Invoice due",
     );
-    if (ap)
+    if (inv)
       return [
-        "Sign a funding agreement",
-        cName(ap.project),
+        "Invoice due",
+        h(inv.ref || inv.id) +
+          (inv.due ? " · due " + fmt(inv.due) : "") +
+          (inv.note ? " · " + h(inv.note) : ""),
         "funding",
-        { tab: "funded" },
+        { tab: "invoices" },
+      ];
+    const exp = S.seatPools.find(
+      (s) =>
+        s.sponsor === pid &&
+        s.status === "Active" &&
+        s.until >= today() &&
+        (new Date(s.until) - new Date(today())) / 864e5 <= 60,
+    );
+    if (exp)
+      return [
+        "Seats expiring soon",
+        exp.total + " sponsored seats end on " + fmt(exp.until) + ".",
+        "funding",
+        { tab: "seats" },
+      ];
+    if (sponsorCleared().length || funderHarvests().length)
+      return [
+        "Funder-safe report ready",
+        "Approved evidence summaries and programme signals cleared for your reporting.",
+        "funding",
+        { tab: "reports" },
       ];
   }
   if (r === "O") {
@@ -635,7 +631,7 @@ function metric(id) {
     case "m10": {
       const sp = S.seatPools.filter((s) => s.ctx === c);
       const t = sp.reduce((a, s) => a + s.total, 0),
-        u = sp.reduce((a, s) => a + s.assigned.length, 0);
+        u = sp.reduce((a, s) => a + (s.assignedCount ?? s.assigned.length), 0);
       return t ? Math.round((u / t) * 100) + "%" : "No data yet";
     }
   }
@@ -675,6 +671,13 @@ function nextCard() {
   const [t, s, rt, p] = nextAction();
   return `<section class="card accent hm-next${rt === "home" ? " is-clear" : ""}" aria-labelledby="hm-next-t"><div class="hm-next-b"><span class="over">Next action</span><h2 class="h2" id="hm-next-t">${t}</h2><p class="muted">${s}</p></div>${rt !== "home" ? `<div class="hm-next-a">${B("Open" + ic("arrow", 16), "go", { r: rt, ...p }, "btn-p")}</div>` : ""}<p class="cap hm-next-n">${ic("info", 14)}Chosen by rule from your pending steps, tasks, decisions and reviews — not an AI ranking.</p></section>`;
 }
+// An agreement version published for a future date is announced, not enforced, until it takes effect (route E).
+function upcomingAgr() {
+  const g = agrUpcoming(ctxId(), role());
+  return g
+    ? banner("info", `${h(g.type)} v${g.ver} takes effect on ${fmt(g.effective)}`, `${h(g.summary || "")} Nothing is paused before then. ${L("Review it now", "privacy", { tab: "consent" })}`) + '<div style="height:12px"></div>'
+    : "";
+}
 function homeP() {
   const pid = myId(),
     cp = S.compass[pid] || {};
@@ -712,7 +715,7 @@ function homeP() {
     c.polls
       .filter(
         (p) =>
-          p.status === "Open" && p.votes[pid] == null && eligibleVoter(c, pid),
+          p.status === "Open" && p.votes[pid] == null && eligibleVoter(c, pid, p),
       )
       .forEach((p) =>
         pend.push(
@@ -806,9 +809,10 @@ function homeP() {
           "btn-p",
         ),
     ) +
+    upcomingAgr() +
     `<div class="hm">
  <div class="hm-top">
- <section class="card hm-ns" aria-labelledby="hm-ns-t"><div class="hm-ns-h"><span class="over" id="hm-ns-t">My North Star</span><span class="row hm-ns-tools"><span class="vis">${ic("lock", 14)}Only you</span>${B(ic("edit", 14) + "Edit", "go", { r: "profile", tab: "compass" }, "btn-g btn-sm", 'aria-label="Edit Purpose Compass"')}</span></div><p class="hm-ns-q${cp.PC2 ? "" : " is-unset"}">${cp.PC2 ? "“" + h(cp.PC2) + "”" : "Set your goal in the Purpose Compass."}</p><dl class="hm-ns-facts"><div><dt>What matters most</dt><dd>${h(cp.PC1 || "—")}</dd></div><div><dt>First milestone</dt><dd>${h(cp.PC5 || "—")}</dd></div></dl><p class="cap hm-ns-n">Your self-declared direction. Never scored.</p></section>
+ <section class="card hm-ns" aria-labelledby="hm-ns-t"><div class="hm-ns-h"><span class="over" id="hm-ns-t">My purpose / current direction</span><span class="row hm-ns-tools"><span class="vis">${ic("lock", 14)}Only you</span>${B(ic("edit", 14) + "Edit", "go", { r: "profile", tab: "compass" }, "btn-g btn-sm", 'aria-label="Edit Purpose Compass"')}</span></div><p class="hm-ns-q${cp.PC2 ? "" : " is-unset"}">${cp.PC2 ? "“" + h(cp.PC2) + "”" : "Set your goal in the Purpose Compass."}</p><dl class="hm-ns-facts"><div><dt>What matters most</dt><dd>${h(cp.PC1 || "—")}</dd></div><div><dt>First milestone</dt><dd>${h(cp.PC5 || "—")}</dd></div></dl><p class="cap hm-ns-n">Your self-declared direction. Never scored.</p></section>
  ${nextCard()}</div>
  ${hmStrip([stat("s-purple", "t-purple", "folder", projects.length, "My projects", projects.filter((p) => p.status === "Clarification requested").length + " need clarification", "projects"), stat("s-teal", "t-teal", "users", myCircles().length + myRopes().length + myRooms().length, "Collaborations", `${myCircles().length} Circle${myCircles().length === 1 ? "" : "s"} · ${myRopes().length} Rope Team${myRopes().length === 1 ? "" : "s"} · ${myRooms().length} ${WL()}${myRooms().length === 1 ? "" : "s"}`, "circles"), stat("s-slate", "t-navy", "flag", pend.length, "Pending decisions", "Nothing takes effect until you decide", "home"), stat("s-mist", "t-soft", "award", ev.filter((e) => e.review === "Approved").length, "Evidence approved", ev.filter((e) => e.review === "Submitted").length + " awaiting review", "evidence")], "Your summary")}
  ${hmCols(
@@ -864,10 +868,10 @@ function homeP() {
    B(ic("upload", 16) + "Upload evidence", "go", { r: "newevidence" }),
    "hm-tbl",
  )}`,
-   `${card("My pathway", pw ? h(pw.name) : "", pw ? `<div class="hm-prog"><div class="progress"><span class="bar" style="width:${(pw.steps.filter((s) => s.done).length / pw.steps.length) * 100}%"></span></div><span class="cap">${pw.steps.filter((s) => s.done).length} of ${pw.steps.length}</span></div><ol class="hm-steps">${pw.steps.map((s, i) => `<li class="${s.done ? "done" : i === pw.steps.findIndex((x) => !x.done) ? "cur" : ""}"><span class="hm-step-m" aria-hidden="true">${s.done ? ic("check", 12) : i + 1}</span><span class="hm-step-t"><b>${h(s.t)}</b>${s.done ? `<span class="cap">Done</span>` : i === pw.steps.findIndex((x) => !x.done) ? `<span class="cap">Next milestone</span>` : ""}</span></li>`).join("")}</ol>` : empty("route", "No current pathway", "A facilitator or mentor may propose one. You decide whether to accept it."), pw ? L("Open", "pathway") : "", "hm-list")}
+   `${card("My pathway", pw ? h(pw.name) : "", pw ? `<div class="hm-prog"><div class="progress"><span class="bar" style="width:${(pwProg(pw).n / pw.steps.length) * 100}%"></span></div><span class="cap">${pwProg(pw).n} of ${pw.steps.length}</span></div><ol class="hm-steps">${pw.steps.map((s, i) => { const x = pwStepState(pw, i); return `<li class="${pwClosed(s) ? "done" : x.st === "Current" ? "cur" : ""}"><span class="hm-step-m" aria-hidden="true">${pwClosed(s) ? ic("check", 12) : i + 1}</span><span class="hm-step-t"><b>${h(s.t)}</b><span class="cap">${h(s.type || "Mandatory")} · ${x.st === "Current" ? "Next step (by rule)" : h(x.st)}${x.st === "Blocked" ? " — " + h(x.why) : ""}${s.rec && s.rec.status === "Awaiting participant" && !pwClosed(s) ? " · recommendation waiting for you" : ""}</span></span></li>`; }).join("")}</ol>` : empty("route", "No current pathway", "A facilitator or mentor may propose one. You decide whether to accept it."), pw ? L("Open", "pathway") : "", "hm-list")}
  ${card("Collaborations", "In this context", [...myCircles().map((c) => hrow("users", h(c.name), "Circle · " + c.members.length + " members" + (unreadIn(c) ? " · " + unreadIn(c) + " unread" : ""), unr(c) + pill(c.state) + " " + L("Open", "circle", { id: c.id }), "t-purple")), ...myRopes().map((c) => hrow("route", h(c.name), "Rope Team · mentor " + (c.mentor ? nm(c.mentor) : "—") + (unreadIn(c) ? " · " + unreadIn(c) + " unread" : ""), unr(c) + pill(c.state) + " " + L("Open", "rope", { id: c.id }), "t-teal")), ...myRooms().map((c) => hrow("room", h(c.name), WL(), pill(c.state) + " " + L("Open", "room", { id: c.id }), "t-navy"))].join("") || empty("users", "No collaborations yet", "When a steward accepts your project, they create a Circle and invite you."), "", "hm-list")}
  ${card("Opportunities for you", "Cards visible to you", opps.map((c) => hrow("megaphone", h(c.title), h(c.kind) + " · expires " + fmt(c.expires), L("View", "card", { id: c.id }))).join("") || empty("megaphone", "No open opportunities", "New cards for your audience appear here."), L("Browse", "opportunities"), "hm-list")}
- <section class="card hm-ask"><div class="hm-ask-h"><span class="tile t-soft" aria-hidden="true">${ic("sparkle", 18)}</span><div><b>Ask PHOENIX</b><p class="cap">${consent(pid, "ai") === "Granted" ? "Private answers from approved sources. Nothing is saved to your record." : "AI processing is off. You can turn it on in Privacy & consent."}</p></div></div>${B("What should I do next to reach my milestone?", "askPreset", { q: "What should I do next to reach my milestone?" }, "btn-s")}</section>`,
+ <section class="card hm-ask"><div class="hm-ask-h"><span class="tile t-soft" aria-hidden="true">${ic("sparkle", 18)}</span><div><b>Ask PHOENIX</b><p class="cap">${consent(pid, "ai") === "Granted" ? "Private answers from approved sources. Nothing is saved to your record." : `AI processing is off for you, so Ask PHOENIX is unavailable. Everything else keeps working. You can change this in ${L("My records & consent", "privacy", { tab: "consent" })}.`}</p></div></div>${consent(pid, "ai") === "Granted" ? B("What should I do next to reach my milestone?", "askPreset", { q: "What should I do next to reach my milestone?" }, "btn-s") : `<button type="button" class="btn btn-s" disabled title="AI processing is off for you">What should I do next to reach my milestone?</button>`}</section>`,
  )}</div>`
   );
 }
@@ -920,15 +924,15 @@ function homeF() {
     head(
       "My PHOENIX",
       `Facilitator / Steward · ${h(ctx().name)}`,
-      B("Project reviews", "go", { r: "projects" }, "btn-p"),
+      B("Review inbox", "go", { r: "inbox" }, "btn-p"),
     ) +
     `<div class="hm">
  <div class="hm-top">
  <section class="card hm-ns hm-purpose" aria-labelledby="hm-pp-t"><span class="over" id="hm-pp-t">Programme purpose</span><p class="hm-ns-q">${h(ctx().name)}: move climate ideas from learning to accountable local action.</p><div class="hm-spaces">${[["Circles", myCircles().length, "circles", "t-purple", "users"], ["Rope Teams", S.ropes.filter((r) => inCtx(r) && memberOf(r)).length, "ropeteams", "t-teal", "route"], [WL() + "s", myRooms().length, "rooms", "t-navy", "room"]].map(([l, n, r, t, i]) => `<a href="#" data-a="go" data-r="${r}"><span class="tile ${t}" aria-hidden="true">${ic(i, 16)}</span><b>${n}</b><span>${l}</span></a>`).join("")}</div><p class="cap hm-ns-n">Spaces you facilitate or belong to in this programme.</p></section>${nextCard()}</div>
- ${hmStrip([stat("s-purple", "t-purple", "folder", subs.length, "Project submissions", "Awaiting review or clarification", "projects"), stat("s-teal", "t-teal", "link", S.matches.filter((m) => m.steward === pid && m.status === "In steward review").length, "Match Briefs", "Awaiting your review", "matches"), stat("s-slate", "t-navy", "award", new Set([...S.evidence.filter((e) => e.review === "Submitted" && e.owner !== pid).map((e) => e.id), ...msMine.map(([, , it]) => it.ev)]).size, "Evidence to review", msMine.length ? msMine.length + " for milestones you steward" : "Set status and E0–E4", "evidence", { tab: "queue" }), stat("s-mist", "t-soft", "route", S.pathways.filter((x) => x.reviewer === pid && x.state === "In review").length, "Pathways to review", "Assigned to you", "pathway")], "Your review queue")}
+ ${hmStrip([stat("s-purple", "t-purple", "folder", subs.length, "Project submissions", "Awaiting review or clarification", "projects"), stat("s-teal", "t-teal", "link", S.matches.filter((m) => m.steward === pid && m.status === "In steward review").length, "Match Briefs", "Awaiting your review", "matches"), ...(hasB("Reviewer") ? [stat("s-slate", "t-navy", "award", S.evidence.filter((e) => e.review === "Submitted" && e.owner !== pid && inCtx(e)).length, "Evidence to review", "Reviewer bundle · set status and E0–E4", "evidence", { tab: "queue" })] : msMine.length ? [stat("s-slate", "t-navy", "award", msMine.length, "Milestone evidence", "Comment only — approval needs the Reviewer bundle", "evidence", { tab: "queue" })] : []), stat("s-mist", "t-soft", "route", S.pathways.filter((x) => x.reviewer === pid && x.state === "In review").length, "Pathways to review", "Assigned to you", "pathway")], "Your review queue")}
  ${hmCols(
    `${myTasksCard()}
- ${msMine.length ? card("Milestone evidence to review", "Approve every piece before you validate the milestone.", msMine.map(([x, m, it]) => lrow("award", h(byId("evidence", it.ev)?.title || it.ev), "For “" + h(m.t) + "” · " + h(x.name) + " · added by " + nm(it.by), B("Review", "msRev", { r: x.id, id: m.id, i: msItems(m).indexOf(it) }, "btn-p btn-sm"))).join(""), L("Review queue", "evidence", { tab: "queue" }), "hm-list") : ""}
+ ${msMine.length ? card("Milestone evidence", hasB("Reviewer") ? "Approve every piece before you validate the milestone." : "You can comment as Facilitator / Steward. Approving evidence needs the Reviewer bundle.", msMine.map(([x, m, it]) => lrow("award", h(byId("evidence", it.ev)?.title || it.ev), "For “" + h(m.t) + "” · " + h(x.name) + " · added by " + nm(it.by), B(hasB("Reviewer") ? "Review" : "Open", "msRev", { r: x.id, id: m.id, i: msItems(m).indexOf(it) }, hasB("Reviewer") ? "btn-p btn-sm" : "btn-s btn-sm"))).join(""), hasB("Reviewer") ? L("Review queue", "evidence", { tab: "queue" }) : "", "hm-list") : ""}
  ${card("Project submissions", "", subs.map((p) => hrow("folder", h(p.title), nm(p.owner) + " · " + pill(p.status) + (projAnswered(p) ? " " + pill("Owner replied", "p-navy") : ""), L("Review", "project", { id: p.id }))).join("") || empty("check", "No submissions waiting", ""), subs.length ? `<span class="cnt">${subs.length}</span>` : "", "hm-list")}
  ${card("Upcoming commitments", "", commits.join("") || empty("calendar", "No open commitments", ""), commits.length ? `<span class="cnt">${commits.length}</span>` : "", "hm-list")}`,
    `${card("Participants needing attention", "From Rope Team support indicators (activity-derived or participant-reported)", attention.join("") || empty("users", "No one flagged", ""), "", "hm-list")}
@@ -937,7 +941,8 @@ function homeF() {
   );
 }
 function homeM() {
-  const reqs = S.mentorReqs.filter((m) => m.to === myId());
+  // only requests that belong to the active context (BF-01)
+  const reqs = S.mentorReqs.filter((m) => m.to === myId() && mentorReqVisible(m));
   const review = myRopes()
     .filter((rt) => rt.mentor === myId())
     .flatMap((rt) =>
@@ -1160,7 +1165,7 @@ function homeO() {
     head(
       "My PHOENIX",
       `Organization Representative · ${h(S.orgs.find((o) => o.id === me().org)?.name || "")}`,
-      B("Organization workspace", "go", { r: "org" }, "btn-p"),
+      B("People & cohorts", "go", { r: "org", tab: "users" }, "btn-p"),
     ) +
     `<div class="hm">
  ${hmStrip([stat("s-purple", "t-purple", "mail", inv.filter((i) => ["Pending", "Resent"].includes(i.status)).length, "Invitations pending", inv.filter((i) => i.status === "Accepted").length + " accepted", "org", { tab: "invites" }), stat("s-teal", "t-teal", "users", metric("m2"), "Circle participation", "Aggregate", "metrics"), stat("s-slate", "t-navy", "flag", metric("m6"), "Milestones completed", "Aggregate", "metrics"), stat("s-mist", "t-soft", "card", S.seatPools.filter((s) => s.sponsor === myId()).reduce((a, s) => a + s.assigned.length, 0) + "/" + S.seatPools.filter((s) => s.sponsor === myId()).reduce((a, s) => a + s.total, 0), "Institution seats", "Assigned / total", "org")], "Your organization summary")}
@@ -1184,79 +1189,84 @@ function homeO() {
   );
 }
 function homeS() {
-  const ints = S.interests[myId()] || [];
-  const match = sponsorProjects(false);
-  const fu = S.funding.filter((f) => f.sponsor === myId());
-  const pit = S.pitches.filter((p) => p.to === myId());
-  const seats = S.seatPools.filter((s) => s.sponsor === myId());
+  // Sponsor Alpha (BF-08, Doc 1 §6.6): seats, approved initiatives, approved evidence summaries, funder-safe
+  // reports and invoices. Aggregate only; counts below 5 are suppressed (helpers in funding.js).
+  const seats = myPools();
+  const live = seats.filter((s) => s.status === "Active");
+  const tot = live.reduce((a, s) => a + s.total, 0);
+  const act = live.reduce((a, s) => a + poolActive(s), 0);
+  const ev = sponsorCleared();
+  const hv = funderHarvests();
+  const projs = sponsorInitProjects();
+  const inits = S.initiatives.filter((i) => i.status === "Published");
+  const pays = S.payments
+    .filter((p) => p.pid === myId() && !p.dup)
+    .sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  const due = pays.filter((p) => p.state === "Invoice due");
   return (
     head(
       "My PHOENIX",
       "Sponsor / Funder · " +
         h(S.orgs.find((o) => o.id === me().org)?.name || ""),
-      B("Projects & funding", "go", { r: "funding" }, "btn-p"),
+      B("Funder-safe reports", "go", { r: "funding", tab: "reports" }, "btn-p"),
     ) +
     `<div class="hm">
  <div class="hm-top solo">${nextCard()}</div>
- ${hmStrip([hmFig("t-soft", "folder", match.length, "Matching projects", ints.length ? ints.map(h).join(", ") : ""), hmFig("t-soft", "send", pit.length, "Pitches received", ""), hmFig("t-soft", "coin", fu.length, "Funded projects", "Tranche status below"), hmFig("t-soft", "card", seats.reduce((a, s) => a + s.assigned.length, 0) + "/" + seats.reduce((a, s) => a + s.total, 0), "Sponsored seats", "Assigned / total")], "Your funding summary")}
+ ${hmStrip([stat("s-mist", "t-soft", "card", sup(act) + " / " + tot.toLocaleString("en-US"), "Active sponsored seats", "Utilisation " + supPct(act, tot), "funding", { tab: "seats" }), stat("s-purple", "t-purple", "folder", inits.length + projs.length, "Approved initiatives", inits.length + " initiative" + (inits.length === 1 ? "" : "s") + " · " + projs.length + " project" + (projs.length === 1 ? "" : "s"), "funding", { tab: "initiatives" }), stat("s-teal", "t-teal", "award", sup(ev.length), "Approved evidence summaries", "Cleared for funder reports", "funding", { tab: "reports" }), stat("s-slate", "t-navy", "coin", due.length, "Invoices due", due.length ? "Due " + fmt(due[0].due || due[0].at) : "Nothing outstanding", "funding", { tab: "invoices" })], "Your sponsorship summary")}
  ${hmCols(
-   `${card("Projects matching your interests", ints.map(h).join(", "), match.map((p) => hrow("folder", h(p.title), "Stage: " + h(stageLabel(p.stage || "—")) + " · " + (p.tags || []).map(h).join(", "), `${B(ic("message", 14), "dmOpen", { pid: p.owner, project: p.id }, "btn-s btn-sm", 'aria-label="Message project owner" title="Message project owner"')}${L("View sponsor brief", "funding", { tab: "discover" })}`)).join("") || empty("folder", "No matching projects", ""), "", "hm-list")}
+   `${card(
+     "Seat utilisation",
+     "Counts only: sponsors never see who holds a seat",
+     seats
+       .map((s) => {
+         const a = poolActive(s);
+         return s.status === "Active"
+           ? `<div class="hm-seat"><div class="row hm-seat-h"><b>${sup(a)} of ${s.total} seats active</b><span class="cap">${supPct(a, s.total)}</span></div><div class="progress"><span class="bar" style="width:${isSupp(a) ? 0 : Math.round((a / s.total) * 100)}%"></span></div><span class="cap">${h(ctxNameOf(s.ctx))} · valid until ${fmt(s.until)}</span></div>`
+           : hrow("card", s.total + " seats · " + h(ctxNameOf(s.ctx)), "Awaiting invoice payment", pill(s.status));
+       })
+       .join("") || empty("card", "No seat pools", "Buy sponsored seats by invoice.", B("Buy seats by invoice", "checkout", { id: "pd5" }, "btn-p btn-sm")),
+     L("Seat utilisation", "funding", { tab: "seats" }),
+     "hm-list",
+   )}
  ${card(
-   "Funding and tranche status",
-   "",
-   table(
-     ["Project", "Total", "Tranche 1", "Tranche 2", "Tranche 3"],
-     fu.map((f) => [
-       cName(f.project),
-       money(f.currency, f.total),
-       ...f.tranches.map((t) => pill(t.state)),
-     ]),
-   ),
-   "",
-   "hm-tbl",
- )}
- ${card(
-   "Approved outcomes",
-   "Aggregate and funder-released only",
-   dl([
-     [
-       "Evidence released to funders",
-       S.evidence.filter((e) => e.release === "Approved for funder release")
-         .length,
-     ],
-     [
-       "Milestones achieved in funded projects",
-       S.funding
-         .filter((f) => f.sponsor === myId())
-         .reduce(
-           (a, f) =>
-             a +
-             (
-               byId("rooms", byId("projects", f.project)?.room) || {
-                 milestones: [],
-               }
-             ).milestones.filter((m) => m.status === "Achieved").length,
-           0,
-         ),
-     ],
-   ]),
-   L("Approved evidence", "evidence"),
-   "hm-list hm-kvs",
- )}`,
-   `${card("Pitches received", "", pit.map((p) => hrow("send", cName(p.project), "From " + nm(p.from) + " · " + money("USD", p.amount), pill(p.status))).join("") || empty("send", "No pitches", ""), L("Open", "funding", { tab: "pitches" }), "hm-list")}
- ${card(
-   "Seat utilisation",
-   "",
-   seats
-     .map(
-       (s) =>
-         `<div class="hm-seat"><div class="row hm-seat-h"><b>${s.assigned.length} of ${s.total} seats assigned</b><span class="cap">${Math.round((s.assigned.length / s.total) * 100)}%</span></div><div class="progress"><span class="bar" style="width:${(s.assigned.length / s.total) * 100}%"></span></div><span class="cap">${h(S.contexts.find((c) => c.id === s.ctx).name)} · until ${fmt(s.until)}</span></div>`,
-     )
-     .join("") || empty("card", "No seat pools", ""),
-   "",
+   "Approved initiatives",
+   "Aggregate status only",
+   [
+     ...inits.map((i) => hrow("megaphone", h(i.title), "Initiative · published " + fmt(i.at))),
+     ...projs.map((p) => {
+       const ms = projMilestones(p);
+       return hrow("folder", h(p.title), h(plainStage(p)) + (ms.length ? " · " + ms.filter((m) => m.status === "Achieved").length + " of " + ms.length + " milestones achieved" : ""));
+     }),
+   ].join("") || empty("folder", "No approved initiatives yet", ""),
+   L("All initiatives", "funding", { tab: "initiatives" }),
    "hm-list",
  )}
- ${banner("info", "What sponsors never receive", "Private participant profiles, Purpose Compass responses, private discussions, mentor notes, AI conversations or unapproved evidence.")}`,
+ ${card(
+   "Approved evidence summaries",
+   "Cleared for funder reports by the owner and a disclosure review",
+   ev.map((e) => hrow("award", h(e.title), [h(e.type || ""), e.level ? "Support level " + h(e.level) : ""].filter(Boolean).join(" · "))).join("") || empty("award", "No approved evidence summaries yet", ""),
+   L("Funder-safe reports", "funding", { tab: "reports" }),
+   "hm-list",
+ )}`,
+   `${card(
+     "Funder-safe reports",
+     "",
+     dl([
+       ["Approved evidence summaries", sup(ev.length)],
+       ["Funder-safe Harvests", sup(hv.length)],
+       ["Programme signals", "Aggregate, small numbers suppressed"],
+     ]),
+     L("Open reports", "funding", { tab: "reports" }),
+     "hm-list hm-kvs",
+   )}
+ ${card(
+   "Invoices and receipts",
+   "",
+   pays.slice(0, 3).map((p) => hrow("coin", h(p.ref || p.id), h((byId("products", p.product) || {}).name || p.product) + (p.amount ? " · " + h(p.amount) : ""), pill(p.state))).join("") || empty("coin", "No invoices yet", ""),
+   L("All invoices", "funding", { tab: "invoices" }),
+   "hm-list",
+ )}
+ ${banner("info", "What sponsors never receive", "Private participant profiles, Purpose Compass responses, private discussions, mentor notes, AI conversations or unapproved evidence. Sponsors are never members of Circles, Rope Teams or Action Workspaces.")}`,
  )}</div>`
   );
 }
@@ -1271,7 +1281,7 @@ function homeA() {
     head(
       "My PHOENIX",
       `Programme Administrator · ${h(ctx().name)}`,
-      B("Programme admin", "go", { r: "admin" }, "btn-p"),
+      B("Approval inbox", "go", { r: "admin", tab: "requests" }, "btn-p"),
     ) +
     `<div class="hm">
  ${hmStrip([stat("s-purple", "t-purple", "inbox", S.projects.filter((p) => inCtx(p) && p.status === "Submitted" && !p.stewards.length).length + S.pathways.filter((p) => inCtx(p) && pwNeedsSteward(p)).length, "Review requests", "Projects and pathways needing a reviewer", "admin", { tab: "requests" }), stat("s-teal", "t-teal", "user", pend.length, "Role requests", "Awaiting approval", "admin", { tab: "users" }), stat("s-slate", "t-navy", "alert", S.incidents.filter((i) => i.state !== "Closed").length, "Open incidents", "", "incidents"), stat("s-mist", "t-soft", "card", S.ents.filter((e) => e.state === "Grace").length, "Payments in grace", "", "billing")], "Programme queues")}

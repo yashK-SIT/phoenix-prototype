@@ -1,17 +1,25 @@
 // ---------- PUBLIC: F01 access ----------
 const PUB = {};
 const authWrap = (inner, wide) =>
-  `<div class="auth"><aside class="auth-side"><div class="brand"><span class="mark">${MARK(22)}</span><span class="wm"><b>PHOENIX</b><span>Foundation Alpha</span></span></div><div class="col auth-story"><p class="auth-lead">From purpose to <em>collaboration</em>, action, evidence and learning.</p><p class="auth-copy">One account across every programme you take part in. You decide what is shared, with whom, and for what purpose.</p><ol class="auth-path" aria-label="How a project moves through PHOENIX"><li class="k-circle"><span class="n">1</span><b>Circle</b><span>Agree the problem and the scope together.</span></li><li class="k-rope"><span class="n">2</span><b>Rope Team</b><span>A mentor helps the team get the requirements right.</span></li><li class="k-room"><span class="n">3</span><b>Action Room</b><span>Plan the work, deliver it and record the evidence.</span></li></ol></div><div class="col auth-notes"><div class="row">${ic('shield', 16)}<span>No personal information is public by default.</span></div><div class="row">${ic('lock', 16)}<span>AI, research and sharing permissions are separate and optional.</span></div></div></aside><main class="auth-main"><div class="mhead"><span class="mark">${MARK(20)}</span><span class="wm"><b>PHOENIX</b><span>Foundation Alpha</span></span></div><section class="auth-card ${wide ? 'wide' : ''}">${inner}</section><p class="cap auth-foot">Prototype · data is stored only in this browser · <a href="#" class="cap" data-a="resetDemo">Reset demo data</a></p></main></div>`;
+  `<div class="auth"><aside class="auth-side"><div class="brand"><span class="mark">${MARK(22)}</span><span class="wm"><b>PHOENIX</b><span>Foundation Alpha</span></span></div><div class="col auth-story"><p class="auth-lead">From purpose to <em>collaboration</em>, action, evidence and learning.</p><p class="auth-copy">One account across every programme you take part in. You decide what is shared, with whom, and for what purpose.</p><ul class="auth-path" aria-label="Three kinds of space, entered in any order"><li class="k-circle"><span class="n">${ic('users', 14)}</span><b>Circle</b><span>Shared learning, sensemaking and decisions.</span></li><li class="k-rope"><span class="n">${ic('route', 14)}</span><b>Rope Team</b><span>Small mentoring, support and accountability.</span></li><li class="k-room"><span class="n">${ic('room', 14)}</span><b>Action Workspace</b><span>Tasks, milestones, risks and evidence.</span></li></ul><p class="auth-copy">Separate, linked spaces. Start in whichever fits; nothing is converted into anything else.</p></div><div class="col auth-notes"><div class="row">${ic('shield', 16)}<span>No personal information is public by default.</span></div><div class="row">${ic('lock', 16)}<span>AI, research, sharing, release and exchange are five separate optional choices.</span></div></div></aside><main class="auth-main"><div class="mhead"><span class="mark">${MARK(20)}</span><span class="wm"><b>PHOENIX</b><span>Foundation Alpha</span></span></div><section class="auth-card ${wide ? 'wide' : ''}">${inner}</section><p class="cap auth-foot">Prototype · data is stored only in this browser · <a href="#" class="cap" data-a="resetDemo">Reset demo data</a></p></main></div>`;
+// BF-05: one clean account per baseline role plus one per specialist bundle, so every consequential action can be
+// shown succeeding for the authorised account and refused for a similar unauthorised one.
 const DEMO = [
-  ['p1', 'a1', 'Participant (2 contexts)'],
-  ['p2', 'a2', 'Facilitator / Steward + Reviewer'],
-  ['p3', 'a3', 'Mentor (+ Participant in Seva Hub)'],
+  ['p1', 'a1', 'Participant · Excelsior + Riverside (2 contexts)'],
+  ['p3', 'a3', 'Mentor · Excelsior + Participant · Riverside'],
+  ['p13', 'a13', 'Facilitator / Steward (plain, no bundles)'],
+  ['p2', 'a2', 'Facilitator / Steward + Reviewer bundle'],
   ['p4', 'a4', 'Partner / Collaborator'],
+  ['p5', 'a5', 'Organization Representative'],
   ['p6', 'a6', 'Sponsor / Funder'],
-  ['p7', 'a7', 'Programme Admin + specialist bundles'],
+  ['p7', 'a7', 'Programme Administrator (plain, no bundles)'],
   ['p8', 'a8', 'Platform Administrator'],
+  ['p14', 'a14', 'Trust/Data Steward bundle'],
+  ['p15', 'a15', 'Finance Owner bundle'],
+  ['p16', 'a16', 'AI Owner bundle'],
+  ['p17', 'a17', 'Incident/Safety Owner bundle'],
   ['p11', 'a11', 'Participant — onboarding unfinished'],
-  ['p12', 'a12', 'Mentor — role awaiting approval'],
+  ['p12', 'a12', 'Org Representative — role awaiting approval'],
 ];
 PUB.login = () => {
   const f = 'login';
@@ -28,7 +36,7 @@ PUB.login = () => {
  <div class="row auth-keep"><label class="row"><input class="chk" type="checkbox" name="keep">Keep me signed in</label>${L('Forgot password?', 'forgot', {}, 'cap lnk')}</div>
  <button class="btn btn-p btn-block" type="submit">Sign in</button></form>
  <div class="divider">or</div>
- <div class="col auth-alt"><p>New to PHOENIX? ${L('Create an account', 'register')}</p><p class="cap">Participants and Sponsors can register directly. Every other role joins by invitation.</p>${B(ic('mail', 16) + 'I have an invitation link', 'go', { r: 'invite' }, 'btn-s')}</div>
+ <div class="col auth-alt"><p>New to PHOENIX? ${L('Request access', 'apply')}</p><p class="cap">Accounts are created from an invitation. Requesting access does not create an account: a programme administrator reviews it and, if approved, sends you a normal invitation.</p>${B(ic('mail', 16) + 'I have an invitation link', 'go', { r: 'invite' }, 'btn-s')}</div>
  ${B(ic('link', 16) + 'Arrive from the LMS (demo deep link)', 'go', { r: 'lms' }, 'btn-g btn-sm')}<details class="auth-demo"><summary>Demo accounts (password: demo1234)</summary><p class="cap">One-click demo sign-in skips two-step verification. Signing in with email and password as an administrator asks for a code (use 123456).</p><div class="col auth-demo-l">${DEMO.filter(([pid]) => S.assign.some(a => a.pid === pid)).map(([pid, aid, l]) => `<button type="button" class="demo-acc" data-a="demoLogin" data-pid="${pid}"><span class="av">${ini(pid)}</span><span class="col demo-acc-t"><b>${nm(pid)}</b><span class="cap">${l}</span></span>${ic('chevr', 16)}</button>`).join('')}</div>${createdList()}</details>`);
 };
 // Accounts created in this browser (registration or Programme admin) are listed with the demo accounts and,
@@ -72,8 +80,18 @@ A.loginPick = d => {
 let fails = {};
 function startSession(p, mfaDone) {
   const list = S.assign.filter(a => a.pid === p.id);
-  let a = list.find(x => x.status === 'Active') || list[0];
+  // First sign-in uses the invited context (first assignment); afterwards the last-used valid context.
+  let a = (p.lastAid && list.find(x => x.id === p.lastAid && asgUsable(x))) || list.find(x => asgUsable(x)) || list[0];
   if (UI.pre?.mfaPid) delete UI.pre.mfaPid;
+  // Route B: an existing verified person accepting a second invitation gains a contextual role assignment, never a
+  // second account. The same role in the same context is not added twice.
+  const dup = UI.pre?.addRole && list.find(x => x.role === UI.pre.addRole.role && x.ctx === UI.pre.addRole.ctx);
+  if (dup) {
+    if (UI.pre.addRole.inv && byId('invites', UI.pre.addRole.inv)) byId('invites', UI.pre.addRole.inv).status = 'Accepted';
+    UI.pre = null;
+    a = asgUsable(dup) ? dup : a;
+    toast(`You already hold ${asgLabel(dup)}. No new role was added.`, 'warn');
+  }
   if (UI.pre?.addRole && UI.pre.addRole.email === p.email) {
     const r = UI.pre.addRole;
     const na = {
@@ -164,6 +182,8 @@ const selfRole = r => (['P', 'S'].includes(r) ? r : 'P');
 PUB.register = () => {
   const f = 'reg';
   const inv = UI.pre?.invite ? byId('invites', UI.pre.invite) : null;
+  // Invitation-only: without a valid invitation the person requests access instead (no account is created).
+  if (!inv) return PUB.apply();
   const r = fv(f, 'role', inv ? inv.role : 'P');
   const exists = UI.p.exists;
   return authWrap(
@@ -188,9 +208,10 @@ PUB.register = () => {
          )}</div><p class="cap">Facilitators, Mentors, Partners and Organization Representatives join by invitation only.</p></fieldset>`
  }
  <div class="f2">${fi(f, 'name', 'Full name', { req: true, auto: 'name' })}${fi(f, 'display', 'Display name', { req: true })}</div>
- <div class="f2">${inv ? fi(f, 'email', 'Email address', { value: inv.email, ro: true, help: 'From your invitation' }) : fi(f, 'email', 'Email address', { type: 'email', req: true, auto: 'email' })}${dobField(f, undefined, { vis: '' })}</div>
+ <div class="f2">${inv ? fi(f, 'email', 'Email address', { value: inv.email, ro: true, help: 'From your invitation' }) : fi(f, 'email', 'Email address', { type: 'email', req: true, auto: 'email' })}</div>
  <div class="f2">${fi(f, 'pw', 'Password', { type: 'password', req: true, auto: 'new-password' })}${fi(f, 'pw2', 'Confirm password', { type: 'password', req: true, auto: 'new-password' })}</div>
  <p class="help auth-pwhelp">At least 10 characters, including a number.</p>
+ ${ageConfirm(f)}
  <button class="btn btn-p btn-block" type="submit">Create account</button></form>
  <p class="cap">Already have an account? ${L('Sign in', 'login')}</p>`,
     true,
@@ -208,7 +229,7 @@ F.reg = d => {
     name: ['req'],
     display: ['req'],
     email: ['req', 'email'],
-    dob: dobRules(true),
+    age: [['req', 'Confirm that you meet the age requirement.']],
     pw: [
       'req',
       [
@@ -231,7 +252,7 @@ F.reg = d => {
     name: d.name.trim(),
     display: d.display.trim(),
     email: d.email.trim(),
-    dob: d.dob,
+    ageConfirmed: today(),
     verified: false,
     createdVia: 'registration',
     createdAt: now(),
@@ -400,3 +421,37 @@ PUB.lms = () =>
   authWrap(
     `<h1 class="h1">Arriving from your learning platform</h1><p class="muted">Deep link received for <b>Ward 7 Cooling Circle</b>. PHOENIX checks your own sign-in and permissions — the LMS does not grant access.</p>${banner('info', 'Return route kept', h(S.settings.lms.returnUrl))}${B('Sign in to continue', 'go', { r: 'login' }, 'btn-p btn-block')}`,
   );
+
+// ---- BF-12 entry: age confirmation (attestation), never a date of birth unless WSS/legal requires it
+const ageConfirm = f => { const st = (S.settings.decisions || {}).age?.status || 'Recommended (WSS)'; return `<div class="field">${fi(f, 'age', 'I confirm I meet the minimum age for this programme.', { type: 'checkbox', req: true })}<span class="help">${pill(st, st.includes('Pending') ? 'p-amber' : 'p-teal')} Age confirmation instead of a date of birth; the adult threshold is set by the programme policy.</span></div>`; };
+// ---- Request access (Apply-to-Join): collects a request only. A programme administrator approves it and PHOENIX
+// sends a normal single-use invitation. An unapproved applicant has no account and cannot sign in.
+PUB.apply = () => {
+  const f = 'apply';
+  if (UI.p.sent)
+    return authWrap(`<div class="col auth-h"><h1 class="h1">Request received</h1><p class="sub">Thank you. A programme administrator will review your request. If it is approved you will receive a normal invitation email to create your account. Until then there is no account to sign in to.</p></div>${B('Back to sign in', 'go', { r: 'login' }, 'btn-s')}`);
+  const progs = S.contexts.filter(c => c.kind !== 'Platform' && c.status === 'Active');
+  return authWrap(
+    `<div class="col auth-h"><p class="over">Request access</p><h1 class="h1">Ask to join a programme</h1><p class="sub">We only ask for what is needed to review your request. This does not create an account.</p></div>
+  ${banner('info', '', 'Already invited? Use the link in your invitation email instead.')}
+  ${errSum(f)}<form data-f="apply" class="col auth-form" novalidate>
+  <div class="f2">${fi(f, 'name', 'Full name', { req: true, auto: 'name' })}${fi(f, 'email', 'Email address', { type: 'email', req: true, auto: 'email' })}</div>
+  ${fi(f, 'ctx', 'Programme of interest', { type: 'select', req: true, ph: 'Choose a programme', opts: progs.map(c => [c.id, c.name]) })}
+  ${fi(f, 'as', 'I would like to take part as', { type: 'select', req: true, opts: [['P', 'Participant'], ['S', 'Sponsor / Funder']] })}
+  ${fi(f, 'why', 'Why you would like to join (optional)', { type: 'textarea', rows: 2, max: 400 })}
+  ${ageConfirm(f)}
+  <button class="btn btn-p btn-block" type="submit">Send request</button></form>
+  <p class="cap">Have an account? ${L('Sign in', 'login')}</p>`,
+    true,
+  );
+};
+F.apply = d => {
+  if (!validate('apply', d, { name: ['req'], email: ['req', 'email'], ctx: ['req'], as: ['req'], age: [['req', 'Confirm that you meet the age requirement.']] })) return render();
+  (S.accessReqs = S.accessReqs || []).unshift({ id: uid('ar'), name: d.name.trim(), email: d.email.trim().toLowerCase(), ctx: d.ctx, role: d.as === 'S' ? 'S' : 'P', why: (d.why || '').trim(), at: today(), status: 'Awaiting approval', ageConfirmed: true });
+  S.assign.filter(a => roleBase(a.role) === 'A' && a.ctx === d.ctx && a.status === 'Active').forEach(a => notify(a.pid, 'Access request from ' + d.name.trim(), 'admin', { tab: 'requests' }, a.id));
+  audit('Access requested (no account created)', d.email, ctxName(d.ctx));
+  clearF('apply');
+  UI.p = { sent: 1 };
+  save();
+  render();
+};

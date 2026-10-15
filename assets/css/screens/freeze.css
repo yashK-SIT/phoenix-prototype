@@ -1,0 +1,121 @@
+/* Build-freeze additions (WSS review, Oct 2026): role + context switcher, context-labelled notices, consent
+   choices, pathway step rules, evidence state dimensions, vote eligibility, Help, Explore board, collaborations. */
+
+/* ---- persistent role + context switcher in the header */
+.ctxbtn {
+  display: inline-grid;
+  grid-template-columns: auto auto;
+  grid-template-rows: auto auto;
+  column-gap: var(--s-2);
+  align-items: center;
+  text-align: left;
+  min-height: 40px;
+  padding: 3px var(--s-3) 3px var(--s-3);
+  margin-right: var(--s-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  max-width: 420px;
+}
+.ctxbtn:hover { border-color: var(--line-strong); }
+.ctxbtn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.ctxbtn-k { grid-column: 1; grid-row: 1; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.2; }
+.ctxbtn b { grid-column: 1; grid-row: 2; font-size: var(--fs-sm); line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ctxbtn-c { grid-column: 2; grid-row: 1 / span 2; display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: var(--r-full); background: var(--primary-soft); color: var(--primary-text); font-size: var(--fs-xs); font-weight: 600; white-space: nowrap; max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+.ctxbtn-ch { display: none; }
+@media (max-width: 760px) {
+  .ctxbtn { max-width: 150px; padding: 3px 8px; }
+  .ctxbtn-k { display: none; }
+  .ctxbtn-c { display: none; }
+  .ctxbtn b { grid-row: 1 / span 2; }
+}
+
+/* ---- switcher list */
+.demo-acc.is-off { opacity: 0.62; cursor: not-allowed; }
+.notice-q { display: flex; gap: var(--s-2); align-items: flex-start; padding: var(--s-3); margin: var(--s-3) 0; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface-2); }
+
+/* ---- notifications: context label for other roles/contexts */
+.nmenu-ctx { display: flex; align-items: center; gap: 6px; padding: 0 var(--s-4) var(--s-2); }
+.nctx { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; padding: 1px 8px; margin-bottom: 2px; border-radius: var(--r-full); background: var(--warn-bg); color: var(--amber-700); border: 1px solid var(--warn-bd); font-size: var(--fs-xs); font-weight: 600; }
+.nitem.is-away .nt { color: var(--text-2); }
+
+/* ---- agreement update gate (affected functions only) */
+.pgate-rights { gap: var(--s-2); margin: var(--s-3) 0 var(--s-4); }
+
+/* ---- optional permissions (BF-02) */
+.cons-row { border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--s-3) var(--s-4); margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 4px var(--s-4); align-items: center; }
+.cons-row legend { padding: 0 4px; margin-left: -4px; }
+.cons-row > .cap { grid-column: 1; margin: 0; }
+.cons-row .cons-seg { grid-column: 2; grid-row: 1 / span 2; }
+.cons-row.err { border-color: var(--bad-bd); }
+.cons-row .emsg { grid-column: 1 / -1; }
+.cons-seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r-full); overflow: hidden; }
+.cons-opt { position: relative; }
+.cons-opt input { position: absolute; opacity: 0; inset: 0; cursor: pointer; }
+.cons-opt span { display: inline-block; padding: 6px 14px; font-size: var(--fs-sm); font-weight: 600; color: var(--text-2); }
+.cons-opt input:checked + span { background: var(--primary); color: var(--on-primary); }
+.cons-opt input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: -2px; }
+.cons-state { display: flex; flex-wrap: wrap; gap: var(--s-2); align-items: center; }
+@media (max-width: 600px) {
+  .cons-row { grid-template-columns: 1fr; }
+  .cons-row .cons-seg { grid-column: 1; grid-row: auto; justify-self: start; }
+}
+
+/* ---- Help & support */
+.help-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--s-4); }
+.help-tile { display: flex; flex-direction: column; gap: var(--s-3); }
+
+/* ---- Explore board and collaborations */
+.board-f { margin-bottom: var(--s-4); }
+.board-list { display: grid; gap: var(--s-3); }
+.board-i { display: flex; gap: var(--s-4); align-items: flex-start; }
+.board-b { flex: 1; gap: 2px; min-width: 0; }
+.board-src { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; }
+.board-n { display: flex; gap: 6px; align-items: flex-start; margin-top: var(--s-4); }
+@media (max-width: 600px) {
+  .board-i { flex-wrap: wrap; }
+}
+
+/* ---- evidence: five independent dimensions (BF-04) */
+.ev-dims { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); overflow: hidden; }
+.ev-dims > div { padding: var(--s-3) var(--s-4); border-right: 1px solid var(--line-soft); display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.ev-dims > div:last-child { border-right: 0; }
+.ev-dims .lbl { font-size: var(--fs-xs); color: var(--text-3); text-transform: none; }
+@media (max-width: 900px) {
+  .ev-dims { grid-template-columns: 1fr 1fr; }
+  .ev-dims > div { border-bottom: 1px solid var(--line-soft); }
+}
+
+/* ---- pathway step rules (doc 1 §8, FR-F04) */
+.pw-step-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; align-items: center; }
+.pw-why { display: block; margin-top: 4px; color: var(--text-2); font-size: var(--fs-sm); }
+.pw-legend { display: flex; flex-wrap: wrap; gap: 6px var(--s-3); align-items: center; }
+
+/* ---- circle vote: eligibility and result breakdown (BF-03) */
+.vote-rule { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--s-2); margin: var(--s-3) 0; }
+.vote-rule > div { padding: var(--s-2) var(--s-3); border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--surface-2); display: flex; flex-direction: column; gap: 2px; }
+.vote-rule b { font-size: var(--fs-sm); }
+.vote-tally { display: flex; flex-wrap: wrap; gap: 6px var(--s-4); font-size: var(--fs-sm); color: var(--text-2); margin: var(--s-2) 0; }
+.vote-tally b { color: var(--text); }
+.ai-adv { border: 1px dashed var(--line-strong); border-radius: var(--r-md); padding: var(--s-3); background: var(--surface-2); margin: var(--s-2) 0; }
+
+/* ---- decisions still open with WSS */
+.pending-dec { display: inline-flex; align-items: center; gap: 4px; }
+.cfg-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--s-4); }
+
+/* ---- sponsor */
+.sp-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--s-3); }
+.suppressed { color: var(--text-3); font-style: italic; }
+
+/* ---- Match Brief sections (fixed order) */
+.mb-secs { gap: var(--s-5); }
+.mb-sec h2 { display: flex; align-items: center; gap: var(--s-2); margin-bottom: var(--s-2); }
+.mb-n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: var(--r-full); background: var(--primary-soft); color: var(--primary-text); font-size: var(--fs-xs); font-weight: 700; flex: none; }
+.mb-ul { margin: 0; padding-left: 18px; }
+/* ---- task acceptance */
+.kb-acc { margin-top: 4px; }
+.tk-accrow { gap: var(--s-2); margin: var(--s-2) 0 var(--s-3); }
+.adm-vrow { gap: var(--s-3); align-items: center; padding: var(--s-2) 0; }

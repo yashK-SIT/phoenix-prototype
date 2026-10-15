@@ -40,7 +40,9 @@ F.mrq = d => {
   toast(m.open ? 'Open request sent to mentors in this programme.' : 'Mentor Request sent.');
   ok();
 };
-const mentorReqVisible = m => m.to === myId() || m.from === myId() || (m.open && role() === 'M' && inCtx(byId('projects', m.project) || {}));
+// BF-01: requests are shown only in the context they belong to (the project's context), never across contexts.
+const mentorReqCtx = m => (byId('projects', m.project) || {}).ctx || m.ctx;
+const mentorReqVisible = m => (!mentorReqCtx(m) || mentorReqCtx(m) === ctxId()) && (m.to === myId() || m.from === myId() || (m.open && role() === 'M'));
 // The Rope Team facilitator is the steward who raised the request; if the project owner raised it, the project's steward
 // (or the Circle facilitator) joins as facilitator instead.
 const ropeFacilitator = (pr, m, circle) => {
@@ -619,11 +621,12 @@ F.esc = d => {
 A.reqFinal = d => {
   const x = byId('ropes', d.id);
   x.reqFinal = true;
-  sysMsg(x, 'Requirements finalised by the mentor — ready for the ' + WL());
+  // Doc 1 §6.2: mentors support and recommend; they do not finalise or approve.
+  sysMsg(x, 'Support recommendation recorded by the mentor. The team decides what to do with it.');
   const pr = byId('projects', x.project);
-  if (pr) pr.history.push({ at: today(), t: 'Requirements finalised in the Rope Team' });
-  x.members.filter(m => m.role === 'Facilitator').forEach(m => notify(m.pid, 'Requirements finalised in ' + x.name + ' — ready for ' + WL(), 'rope', { id: x.id, tab: 'about' }));
-  audit('Requirements finalised', x.id, '');
+  if (pr) pr.history.push({ at: today(), t: 'Mentor support recommendation recorded in the Rope Team' });
+  x.members.filter(m => m.role === 'Facilitator').forEach(m => notify(m.pid, 'Mentor recommendation recorded in ' + x.name, 'rope', { id: x.id, tab: 'about' }));
+  audit('Mentor support recommendation recorded', x.id, '');
   ok();
 };
 A.ropeClose = d => {
@@ -632,7 +635,7 @@ A.ropeClose = d => {
   modal(
     'Close ' + h(x.name),
     () =>
-      `<form data-f="rcl" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${x.id}">${!x.reqFinal ? banner('warn', 'Requirements are not finalised', 'Closing now means the project continues without a finalised Rope Team outcome.') : ''}${fi('rcl', 'outcome', 'Outcome and anything carried forward', { type: 'textarea', rows: 3, req: true })}${banner('info', '', 'The Rope Team becomes read-only. Contributions, reviews and reports stay in the project record. Private mentor notes are not copied anywhere.')}<div class="actions"><span></span><button class="btn btn-d" type="submit">Close Rope Team</button></div></form>`,
+      `<form data-f="rcl" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${x.id}">${!x.reqFinal ? banner('info', 'No support recommendation recorded yet', 'You can still close. Private mentoring notes stay in this Rope Team and are never carried forward.') : ''}${fi('rcl', 'outcome', 'Outcome and anything carried forward', { type: 'textarea', rows: 3, req: true })}${banner('info', '', 'The Rope Team becomes read-only. Contributions, reviews and reports stay in the project record. Private mentor notes are not copied anywhere.')}<div class="actions"><span></span><button class="btn btn-d" type="submit">Close Rope Team</button></div></form>`,
   );
 };
 F.rcl = d => {

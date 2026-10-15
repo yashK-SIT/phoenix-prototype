@@ -12,7 +12,7 @@ const SPACE_ROLES = [
 ];
 const SPACE_ROLE_HELP = {
   "Project owner":
-    "Owns the project. Leads the work, manages the Circle with the facilitator, and joins votes with double weight.",
+    "Owns the project. Leads the work, manages the Circle with the facilitator, and votes with one vote like every other eligible member.",
   Facilitator:
     "Faculty/Steward for this space. Facilitates, moderates, approves and reviews.",
   Member:
@@ -70,7 +70,9 @@ const SPACE_CAN = {
   circles: {
     post: ALL_BUT_OBS,
     record: ALL_BUT_OBS,
-    vote: ["Project owner", "Member"],
+    // reference only: Circle vote eligibility is decided by voteStatusOf() in circles.js (Observers, the
+    // facilitator and members set as non-voting do not vote; everyone else has exactly one vote)
+    vote: ["Project owner", "Member", "Mentor", "Partner", "Reviewer"],
     poll: ["Project owner", "Facilitator"],
     facilitate: ["Project owner", "Facilitator"],
     members: ["Project owner", "Facilitator"],
@@ -353,7 +355,7 @@ function spaceHead(kind, o, sub, crumbs, actions = '') {
   }
   if (kind === 'ropes') {
     const rv = o.reviews || [];
-    prog.push(frac('Work reviewed', rv.filter(v => v.status !== 'Awaiting review').length, rv.length), fact('Requirements', o.reqFinal ? pill('Finalised', 'p-green') : pill('Not finalised', 'p-grey')));
+    prog.push(frac('Work reviewed', rv.filter(v => v.status !== 'Awaiting review').length, rv.length), fact('Support recommendation', o.reqFinal ? pill('Recorded', 'p-green') : pill('Not yet', 'p-grey')));
   }
   if (kind === 'circles') {
     const open = (o.polls || []).filter(p => p.status === 'Open').length;

@@ -18,17 +18,103 @@ const LEVELS = [
   ['E3', 'Corroborated'],
   ['E4', 'Independently verified'],
 ];
-const REVIEW = ['Submitted', 'Needs Revision', 'Approved', 'Rejected', 'Insufficient', 'Restricted', 'Withdrawn'];
-const evVisible = e =>
-  e.owner === myId() ||
-  role() === 'F' ||
-  hasB('Reviewer') ||
-  role() === 'A' ||
-  (e.review === 'Approved' &&
-    e.linked.some(l => {
-      const o = byId('circles', l) || byId('rooms', l) || byId('ropes', l);
-      return o && memberOf(o);
-    }));
+// ---- five independent dimensions (BF-04). Review status is quality only; confidentiality, lifecycle and release are
+// separate fields and are never stored as a review status.
+const REVIEW = ['Submitted', 'In review', 'Needs Revision', 'Approved', 'Rejected', 'Insufficient'];
+// What a Reviewer can record. Submitted is set by the owner (upload or resubmit).
+const REVIEW_OUTCOMES = [
+  ['In review', 'In review — still assessing'],
+  ['Needs Revision', 'Needs revision — the owner revises and resubmits'],
+  ['Approved', 'Approved — it supports the claim at the level below'],
+  ['Rejected', 'Rejected — it does not support the claim'],
+  ['Insufficient', 'Insufficient — not enough to assess'],
+];
+const CONF = [
+  ['Programme', 'Seen by members of the linked spaces and programme staff.'],
+  ['Restricted', 'Seen only by the owner, Reviewers, facilitators of the linked space and the Trust/Data Steward. Left out of funder and public use unless a release explicitly covers it.'],
+  ['Confidential', 'Seen only by the owner, Reviewers and the Trust/Data Steward. Left out of every aggregate unless a release explicitly covers it.'],
+];
+const CONF_PILL = { Programme: 'p-teal', Restricted: 'p-amber', Confidential: 'p-red' };
+const CONF_SHORT = { Programme: 'Linked-space members and programme staff', Restricted: 'Owner, Reviewers, space facilitators, Trust/Data Steward', Confidential: 'Owner, Reviewers, Trust/Data Steward' };
+const confRank = c => Math.max(0, CONF.findIndex(x => x[0] === c));
+const confMeaning = c => (CONF.find(x => x[0] === c) || [])[1] || '';
+const LIFECYCLE = ['Active', 'Superseded', 'Withdrawn', 'Archived'];
+// Release is a separate decision per audience; these are the audiences other screens ask about.
+const REL_AUD = ['Funder report', 'Public showcase', 'Organisation report'];
+const REL_AUD_LABEL = { 'Funder report': 'Funder report (Hartwell Foundation)', 'Public showcase': 'Public programme showcase', 'Organisation report': 'Organisation report' };
+const relAudOf = s => (REL_AUD.includes(s) ? s : /funder|sponsor/i.test(s || '') ? 'Funder report' : /public/i.test(s || '') ? 'Public showcase' : /organi[sz]ation/i.test(s || '') ? 'Organisation report' : 'Funder report');
+// A clearance covers the confidentiality the record had when the Trust/Data Steward cleared it; raising it later
+// takes the record back out of that audience.
+const evClear = (e, aud) => (e.cleared || []).find(c => c.aud === aud && confRank(e.conf) <= confRank(c.conf));
+const evRelStr = e => ((e.cleared || []).length ? 'Cleared: ' + e.cleared.map(c => c.aud).join('; ') : 'Not cleared');
+// Records that may appear in a report for `audience` ('Funder report' | 'Public showcase' | 'Organisation report'):
+// approved, active, cleared for that audience at (or above) the record's current confidentiality, and the owner has
+// not withdrawn public/funder consent. Other screens (sponsor reports, metrics) use this; nothing else counts as released.
+function evReleasedTo(audience, list = S.evidence) {
+  return (list || []).filter(e => e.review === 'Approved' && e.lifecycle === 'Active' && !!evClear(e, audience) && consent(e.owner, 'public') !== 'Withdrawn');
+}
+// One history entry per dimension that changed.
+const evHist = (e, dim, from, to, note) => {
+  (e.history = e.history || []).push({ at: today(), dim, by: myId(), t: `${dim}: ${from || '—'} → ${to}${note ? ' — ' + note : ''}` });
+};
+const evStewards = () => [...new Set(S.assign.filter(a => (a.bundles || []).includes('Trust/Data Steward') && a.status !== 'Revoked').map(a => a.pid))];
+const evMember = e =>
+  (e.linked || []).some(l => {
+    const o = byId('circles', l) || byId('rooms', l) || byId('ropes', l);
+    return o && memberOf(o);
+  });
+// Who can see a record depends on its confidentiality, not on its review status.
+const evVisible = e => {
+  if (!e) return false;
+  if (e.owner === myId() || hasB('Reviewer') || hasB('Trust/Data Steward')) return true;
+  if (e.conf === 'Confidential') return false;
+  if (e.conf === 'Restricted') return role() === 'F' && evMember(e);
+  if (role() === 'F' || role() === 'A') return true;
+  // members see approved evidence in their spaces; mentors also see shared evidence still in review, to comment on it
+  return e.lifecycle !== 'Withdrawn' && evMember(e) && (e.review === 'Approved' || role() === 'M');
+};
+// Older records stored confidentiality ('Restricted') and lifecycle ('Withdrawn') as review statuses, and one
+// release string. Runs from migrate().
+function evMigrate() {
+  const priorReview = e =>
+    [...(e.history || [])]
+      .reverse()
+      .map(x => REVIEW.find(r => String(x.t || '').toLowerCase().startsWith(r.toLowerCase())))
+      .find(Boolean) || 'Submitted';
+  (S.evidence || []).forEach(e => {
+    e.history = e.history || [];
+    if (!CONF.some(c => c[0] === e.conf)) e.conf = e.sens === 'High' || /only me/i.test(e.vis || '') ? 'Restricted' : 'Programme';
+    if (e.review === 'Restricted' || e.review === 'Confidential') {
+      const was = e.review;
+      e.review = priorReview(e);
+      evHist(e, 'Review', was, e.review, '“' + was + '” is a confidentiality setting, not a review outcome');
+      if (confRank(was) > confRank(e.conf)) {
+        evHist(e, 'Confidentiality', e.conf, was, 'moved out of the review status');
+        e.conf = was;
+      }
+    }
+    if (e.review === 'Withdrawn') {
+      e.review = priorReview(e);
+      evHist(e, 'Review', 'Withdrawn', e.review, '“Withdrawn” is a lifecycle state, not a review outcome');
+      if (e.lifecycle !== 'Withdrawn') evHist(e, 'Lifecycle', e.lifecycle || 'Active', 'Withdrawn', 'moved out of the review status');
+      e.lifecycle = 'Withdrawn';
+    }
+    if (!REVIEW.includes(e.review)) e.review = 'Submitted';
+    if (!LIFECYCLE.includes(e.lifecycle)) e.lifecycle = 'Active';
+    if (!Array.isArray(e.cleared)) e.cleared = /approved for funder|^released/i.test(e.release || '') ? [{ aud: 'Funder report', at: (e.history.find(x => /release/i.test(x.t)) || {}).at || today(), by: null, conf: e.conf }] : [];
+    e.release = evRelStr(e);
+    e.comments = e.comments || [];
+  });
+  (S.releases || []).forEach(x => (x.aud = x.aud || relAudOf(x.audience)));
+  (S.harvests || []).forEach(x => {
+    x.dissent = x.dissent || (x.contrib || []).filter(c => /^(Dissent|Missing voice):/.test(c.t)).map(c => ({ by: c.by, at: c.at || today(), kind: c.t.split(':')[0], t: c.t.replace(/^[^:]+:\s*/, '') }));
+    if (!Array.isArray(x.cleared)) {
+      x.cleared = x.release === 'Released' ? [{ aud: 'Funder report', at: today(), by: null }] : [];
+      if (x.release === 'Funder release requested') x.relReq = 'Funder report';
+    }
+    x.release = hvRelStr(x);
+  });
+}
 // An Action Room belongs to the project that names it, the project it was created from, the project of the Circle or
 // Rope Team whose decision created it, or a related project.
 const roomProject = x =>
@@ -53,47 +139,50 @@ route('evidence', 'evidence', () => {
     return evDetail(e);
   }
   if (['S', 'O'].includes(r)) {
-    const ap = S.evidence.filter(e => e.review === 'Approved' && (r === 'O' || e.release.includes('funder')));
+    // Only evidence cleared for this audience by a separate release decision; never every approved record.
+    const aud = r === 'S' ? 'Funder report' : 'Organisation report';
+    const ap = evReleasedTo(aud);
     return (
       head(
-        'Approved evidence',
-        r === 'S'
-          ? 'Approved for funder release only. Small or distinctive groups are suppressed.'
-          : 'Aggregate view of approved evidence.',
+        'Cleared evidence',
+        `Approved, active evidence that a Trust/Data Steward has cleared for the ${aud.toLowerCase()} audience. Approval alone never releases evidence. Groups smaller than 2 are suppressed.`,
       ) +
       table(
-        ['Type', 'Approved items', 'Highest level'],
-        Object.entries(ap.reduce((a, e) => ((a[e.type] = a[e.type] || []).push(e), a), {})).map(([k, v]) => [
-          h(k),
-          v.length < 2 && r === 'S' ? '<span class="cap">Suppressed (fewer than 2)</span>' : v.length,
-          v
-            .map(x => x.level)
-            .sort()
-            .pop(),
-        ]),
-        'No approved evidence to show.',
+        ['Type', 'Cleared items', 'Highest support level'],
+        Object.entries(ap.reduce((a, e) => ((a[e.type] = a[e.type] || []).push(e), a), {})).map(([k, v]) =>
+          v.length < 2
+            ? [h(k), '<span class="suppressed">Suppressed (fewer than 2)</span>', '<span class="suppressed">Suppressed</span>']
+            : [
+                h(k),
+                v.length,
+                v
+                  .map(x => x.level)
+                  .sort()
+                  .pop(),
+              ],
+        ),
+        'No evidence has been cleared for this audience.',
       )
     );
   }
+  const inQueue = e => ['Submitted', 'In review'].includes(e.review) && e.lifecycle === 'Active' && e.owner !== myId();
   const t = tabs('ev', [
     ['mine', 'My evidence', S.evidence.filter(e => e.owner === myId()).length],
-    (r === 'F' || hasB('Reviewer')) && [
-      'queue',
-      'Review queue',
-      S.evidence.filter(e => e.review === 'Submitted' && e.owner !== myId()).length,
-    ],
-    ['all', 'Visible to me'],
+    hasB('Reviewer') && ['queue', 'Review queue', S.evidence.filter(inQueue).length],
+    ['all', r === 'M' ? 'Shared with me' : 'Visible to me'],
   ]);
   const base =
     t.cur === 'mine'
       ? S.evidence.filter(e => e.owner === myId())
       : t.cur === 'queue'
-        ? S.evidence.filter(e => e.review === 'Submitted' && e.owner !== myId())
+        ? S.evidence.filter(inQueue)
         : S.evidence.filter(evVisible);
   return (
     head(
-      'Evidence',
-      'Review status, support level, confidentiality, lifecycle and release are separate. Approval never implies release.',
+      r === 'M' ? 'Evidence comments' : 'Evidence',
+      r === 'M'
+        ? 'Comment on evidence shared in your spaces. Mentors comment; only a Reviewer approves.'
+        : 'Review status, support level, confidentiality, lifecycle and release are separate. Approval never implies release.',
       can('evidence', 'CRM') ? B(ic('upload', 16) + 'Upload evidence', 'go', { r: 'newevidence' }, 'btn-p') : '',
     ) +
     t.html +
@@ -121,7 +210,9 @@ function evTable(list, withProject, key = 'evidence') {
       withProject && { key: 'project', label: 'Project', options: [...dvOpts(list, e => evProjects(e).map(p => p.id), id => byId('projects', id).title), ...(list.some(e => !evProjects(e).length) ? [['none', 'Not linked to a project']] : [])], test: (e, v) => (v === 'none' ? !evProjects(e).length : evProjects(e).some(p => p.id === v)) },
       { key: 'type', label: 'Evidence type', options: EV_TYPES.filter(x => list.some(e => e.type === x)).map(x => [x, x]), test: (e, v) => e.type === v },
       { key: 'level', label: 'Evidence Support Level', options: LEVELS.map(([k, v]) => [k, k + ' — ' + v]), test: (e, v) => e.level === v },
-      { key: 'release', label: 'Release', options: dvOpts(list, e => e.release), test: (e, v) => e.release === v },
+      { key: 'conf', label: 'Confidentiality', options: CONF.map(([k]) => [k, k]), test: (e, v) => e.conf === v },
+      { key: 'life', label: 'Lifecycle', options: LIFECYCLE.map(k => [k, k]), test: (e, v) => e.lifecycle === v },
+      { key: 'release', label: 'Release', options: [['none', 'Not cleared'], ...REL_AUD.map(a => [a, 'Cleared: ' + a])], test: (e, v) => (v === 'none' ? !(e.cleared || []).length : (e.cleared || []).some(c => c.aud === v)) },
     ].filter(Boolean),
     sorts: [
       ['title', 'Title', (a, b) => a.title.localeCompare(b.title)],
@@ -139,9 +230,9 @@ function evTable(list, withProject, key = 'evidence') {
         withProject && evProjectName(e) ? 'Project <b>' + evProjectName(e) + '</b>' : '',
         (e.linked || []).length ? 'Linked to ' + (e.linked || []).map(cName).join(', ') : '',
         evLevel(e.level),
-        `<span class="ev-rel ${e.release === 'Not released' ? 'is-no' : ''}">${h(e.release)}</span>`,
+        `<span class="ev-rel ${(e.cleared || []).length ? '' : 'is-no'}">${h(e.release)}</span>`,
       ],
-      badges: pill(e.review),
+      badges: pill(e.review) + (e.conf && e.conf !== 'Programme' ? pill(e.conf, CONF_PILL[e.conf]) : '') + (e.lifecycle && e.lifecycle !== 'Active' ? pill(e.lifecycle) : ''),
       primary: L('Open', 'evidence', { id: e.id }, 'btn btn-s btn-sm'),
     }),
     empty: ['award', 'No evidence here yet', 'Evidence you upload, or can see, appears here.', ''],
@@ -163,25 +254,74 @@ function evDelivRow(e) {
   const ks = S.rooms.flatMap(x => x.tasks.filter(k => (k.evidence || []).includes(e.id)).map(k => [x, k]));
   return ks.length && ['Supports deliverable', ks.map(([x, k]) => L(h(k.t), 'room', { id: x.id, tab: 'plan' }) + ` <span class="cap">· ${h(x.name)}</span>`).join('<br>')];
 }
+// The five dimensions, side by side. None of them implies another.
+function evDims(e) {
+  const life = e.lifecycle || 'Active';
+  const live = e.review === 'Approved' && life === 'Active';
+  const rel = (e.cleared || []).length
+    ? e.cleared.map(c => `<span class="ev-rel">Cleared: ${h(c.aud)}</span>${evClear(e, c.aud) ? '' : `<span class="cap">Covers ${h(c.conf)} only — not in effect while ${h(e.conf)}</span>`}`).join('') + (live ? '' : '<span class="cap">Not in effect: only approved, active evidence is released</span>')
+    : '<span class="ev-rel is-no">Not cleared</span><span class="cap">No audience outside the programme</span>';
+  return `<div class="ev-dims" aria-label="Evidence status">${[
+    ['Review status', pill(e.review) + '<span class="cap">Quality review</span>'],
+    ['Evidence Support', evLevel(e.level) + `<span class="cap">${h((LEVELS.find(l => l[0] === e.level) || [])[1] || '')}</span>`],
+    ['Confidentiality', pill(e.conf, CONF_PILL[e.conf]) + `<span class="cap" title="${h(confMeaning(e.conf))}">${h(CONF_SHORT[e.conf] || '')}</span>`],
+    ['Lifecycle', pill(life) + `<span class="cap">${life === 'Active' ? 'In use' : life === 'Withdrawn' ? 'Withdrawn by the owner; history kept' : life === 'Superseded' ? 'Replaced by a newer item' : 'Kept for the record only'}</span>`],
+    ['Release', rel],
+  ]
+    .map(([k, v]) => `<div><span class="lbl">${k}</span>${v}</div>`)
+    .join('')}</div>`;
+}
+// Release is decided per audience: the owner authorises, then the Trust/Data Steward completes disclosure review.
+function evReleaseCard(e, rr) {
+  const live = e.review === 'Approved' && e.lifecycle === 'Active';
+  const rows = REL_AUD.map(a => {
+    const c = (e.cleared || []).find(x => x.aud === a);
+    const xs = rr.filter(x => (x.aud || relAudOf(x.audience)) === a);
+    const ask = xs.find(x => x.status === 'Awaiting owner decision');
+    const inRev = xs.find(x => x.status === 'Owner authorised — disclosure review');
+    const last = xs[xs.length - 1];
+    const covered = !!evClear(e, a);
+    const st = c ? `Cleared ${fmt(c.at)}${c.conf && c.conf !== 'Programme' ? ' · covers ' + h(c.conf) + ' content' : ''}${covered ? '' : ' · not in effect while ' + h(e.conf)}` : ask ? 'Requested by ' + nm(ask.requester) + ' — awaiting your decision' : inRev ? 'Authorised by you — in disclosure review' : last ? h(last.status) : 'Not cleared';
+    const act = ask
+      ? B('Decline', 'relDecide', { id: ask.id, v: 'Declined by owner' }) + B('Authorise', 'relDecide', { id: ask.id, v: 'Owner authorised — disclosure review' }, 'btn-p btn-sm')
+      : !covered && !inRev && live
+        ? B('Request clearance', 'relNew', { id: e.id, aud: a })
+        : '';
+    return `<div class="lrow ev-rr"><div class="lt"><b>${h(a)}</b><p class="cap">${st}</p></div>${act}</div>`;
+  }).join('');
+  return card(
+    'Release',
+    'A separate decision for each audience. Approval never releases evidence.',
+    rows +
+      (live ? '' : '<p class="cap">Only approved, active evidence can be cleared for an audience.</p>') +
+      (consent(myId(), 'public') !== 'Granted' ? banner('warn', '', `Your public/funder release permission is ${h(consent(myId(), 'public').toLowerCase())}. Turn it on in ${L('Privacy & consent', 'privacy')} before you authorise a release.`) : '') +
+      (e.conf !== 'Programme' ? banner('info', '', `This record is ${h(e.conf)}. It stays out of funder and public reports unless the Trust/Data Steward's clearance explicitly covers ${h(e.conf)} content.`) : ''),
+  );
+}
+function evCommentsCard(e) {
+  const can_ = evVisible(e) && !['S', 'O'].includes(role()) && e.lifecycle === 'Active';
+  const list = (e.comments || []).map(c => `<li class="tl"><span class="cap">${nm(c.by)} · ${fmt(c.at)}</span><p style="white-space:pre-line">${h(c.t)}</p></li>`).join('');
+  return card(
+    'Evidence comments',
+    'Feedback from mentors, facilitators and project members. A comment never changes the review status.',
+    (list ? `<ol class="timeline ev-hist">${list}</ol>` : '<p class="cap">No comments yet.</p>') +
+      (can_ ? `<form data-f="evc" class="col ev-form" novalidate style="margin-top:12px"><input type="hidden" name="id" value="${e.id}">${fi('evc', 't', 'Add a comment', { type: 'textarea', rows: 2, req: true, max: 1000 })}<div class="actions"><span class="cap">Seen by everyone who can see this evidence.</span><button class="btn btn-s" type="submit">Post comment</button></div></form>` : ''),
+  );
+}
 function evDetail(e) {
   const own = e.owner === myId();
-  const rev = (role() === 'F' || hasB('Reviewer')) && !own;
+  const reviewable = e.lifecycle === 'Active' && ['Submitted', 'In review', 'Needs Revision'].includes(e.review);
+  const rev = hasB('Reviewer') && !own;
   const rr = S.releases.filter(x => x.ev === e.id);
+  const confBtn = (own || rev) && e.lifecycle === 'Active' && (own || e.conf !== 'Confidential') ? B(own ? 'Change confidentiality' : 'Raise confidentiality', 'evConf', { id: e.id }) : '';
   return (
     crumbsHtml([
       ['Evidence', 'evidence'],
       [h(e.title)],
     ]) +
-    `<div class="shead-main ev-head"><span class="tile" aria-hidden="true">${ic(evGlyph(e), 20)}</span><div class="shead-t"><div class="shead-kind">Evidence · ${h(e.type)}</div><div class="row wrap ev-ttl"><h1 class="h1">${h(e.title)}</h1>${pill(e.review)}</div><div class="shead-meta"><span>Project · ${evProjects(e).map(p => h(p.title)).join(', ') || 'Not linked to a project'}</span><span>${nm(e.owner)}</span><span>${h(e.format || 'File upload')}</span></div></div>${evEditable(e) ? `<div class="shead-a">${B(ic('edit', 14) + 'Edit', 'evEdit', { id: e.id })}</div>` : ''}</div>` +
-    `<ul class="ev-facts" aria-label="Status">${[
-      ['Review status', pill(e.review)],
-      ['Evidence Support Level', evLevel(e.level) + `<span class="cap">${h((LEVELS.find(l => l[0] === e.level) || [])[1] || '')}</span>`],
-      ['Lifecycle', pill(e.lifecycle)],
-      ['Release permission', `<span class="ev-rel ${e.release === 'Not released' ? 'is-no' : ''}">${h(e.release)}</span>`],
-    ]
-      .map(([k, v]) => `<li><span class="ev-fk">${k}</span><span class="ev-fv">${v}</span></li>`)
-      .join('')}</ul>` +
-    `<div class="g12 ev-body"><div class="c8 col ev-main">${card(
+    `<div class="shead-main ev-head"><span class="tile" aria-hidden="true">${ic(evGlyph(e), 20)}</span><div class="shead-t"><div class="shead-kind">Evidence · ${h(e.type)}</div><div class="row wrap ev-ttl"><h1 class="h1">${h(e.title)}</h1></div><div class="shead-meta"><span>Project · ${evProjects(e).map(p => h(p.title)).join(', ') || 'Not linked to a project'}</span><span>${nm(e.owner)}</span><span>${h(e.format || 'File upload')}</span></div></div>${evEditable(e) ? `<div class="shead-a">${B(ic('edit', 14) + 'Edit', 'evEdit', { id: e.id })}</div>` : ''}</div>` +
+    evDims(e) +
+    `<div class="g12 ev-body" style="margin-top:16px"><div class="c8 col ev-main">${card(
       'Evidence record',
       '',
       `<p class="ev-claim-lead"><span class="ev-fk">Claim</span>${h(e.claim)}</p>` +
@@ -196,34 +336,37 @@ function evDetail(e) {
         ['Owner', nm(e.owner)],
         ['Source', h(e.source)],
         ['Purpose', h(e.purpose)],
-        ['Visibility', h(e.vis)],
+        ['Confidentiality', h(e.conf) + ' — ' + h(confMeaning(e.conf))],
         ['Retention', h(e.retention)],
         ['Linked to', e.linked.map(cName).join(', ')],
         ['Reviewer', e.reviewer ? nm(e.reviewer) : '—'],
         ['Limitations / uncertainty', h(e.limits || '—')],
       ]),
-      '',
+      confBtn,
       'ev-meta',
-    )}</div>
- <aside class="c4 col ev-side">${evMilestonesCard(e)}${rev && ['Submitted', 'Needs Revision'].includes(e.review) ? card('Review', 'You set the status and level. Approval does not release it.', evReviewForm(e), '', 'accent') : ''}
- ${own && e.review === 'Needs Revision' ? card('Revise and resubmit', 'History is kept.', B('Resubmit', 'evResub', { id: e.id }, 'btn-p btn-block')) : ''}
- ${own && !['Withdrawn'].includes(e.review) ? card('Release to a new audience', 'Moving evidence to a new audience or purpose is a new release decision.', (rr.length ? rr.map(x => `<div class="lrow ev-rr"><div class="lt"><b>${h(x.audience)}</b><p class="cap">${h(x.status)}</p></div>${x.status === 'Awaiting owner decision' ? B('Decline', 'relDecide', { id: x.id, v: 'Declined by owner' }) + B('Authorise', 'relDecide', { id: x.id, v: 'Owner authorised — disclosure review' }, 'btn-p btn-sm') : ''}</div>`).join('') : '') + (e.review === 'Approved' ? B('Authorise funder / public release', 'relNew', { id: e.id }, 'btn-s btn-block') : '<p class="cap">Only approved evidence can be released.</p>') + (e.sens === 'High' ? banner('warn', '', 'Contains identifiable or sensitive content. Explicit authorisation is required, and a human disclosure review follows.') : '')) : ''}
- ${own && e.review !== 'Withdrawn' ? CB('Withdraw evidence', 'evWithdraw', { id: e.id }, 'Withdraw this evidence? It leaves review and any release stops. History is kept.') : ''}
+    )}${evCommentsCard(e)}</div>
+ <aside class="c4 col ev-side">${evMilestonesCard(e)}${rev && reviewable ? card('Review', 'Quality review only. Confidentiality and release are separate decisions; approval does not release it.', evReviewForm(e), '', 'accent') : ''}
+ ${!rev && !own && role() === 'F' && reviewable ? card('Review', '', '<p class="cap">Approving or rejecting evidence needs the Reviewer bundle. You can comment on it.</p>') : ''}
+ ${own && e.review === 'Needs Revision' && e.lifecycle === 'Active' ? card('Revise and resubmit', 'History is kept.', B('Resubmit', 'evResub', { id: e.id }, 'btn-p btn-block')) : ''}
+ ${own ? evReleaseCard(e, rr) : ''}
+ ${own && e.lifecycle === 'Active' ? CB('Withdraw evidence', 'evWithdraw', { id: e.id }, 'Withdraw this evidence? Its lifecycle becomes Withdrawn: it leaves review and stops counting in any release. Its review status and history are kept.') : ''}
  ${
-   role() === 'A'
+   hasB('Trust/Data Steward')
      ? rr
          .filter(x => x.status === 'Owner authorised — disclosure review')
-         .map(x =>
-           card(
-             'Disclosure review',
-             'Small or distinctive groups and sensitive narratives are suppressed, combined or withheld.',
-             `<b>${h(x.audience)}</b><div class="row ev-dr">${B('Withhold', 'relDecide', { id: x.id, v: 'Withheld after disclosure review' })}${B('Release', 'relDecide', { id: x.id, v: 'Released' }, 'btn-p btn-sm')}</div>`,
-           ),
-         )
+         .map(x => {
+           const aud = x.aud || relAudOf(x.audience);
+           const covers = e.conf !== 'Programme';
+           return card(
+             'Disclosure review — Trust/Data Steward',
+             'Small or distinctive groups and sensitive narratives are suppressed, combined or withheld before release.',
+             `<b>${h(REL_AUD_LABEL[aud] || aud)}</b><p class="cap">Requested ${fmt(x.at)} · ${h(e.review)} · ${h(e.lifecycle)} · ${h(e.conf)}</p>${covers ? banner('warn', '', `This record is ${h(e.conf)}. Releasing it means your clearance explicitly covers ${h(e.conf)} content for this audience.`) : ''}<div class="row ev-dr">${B('Withhold', 'relDecide', { id: x.id, v: 'Withheld after disclosure review' })}${e.review === 'Approved' && e.lifecycle === 'Active' ? B(covers ? 'Release — covers ' + h(e.conf) + ' content' : 'Release', 'relDecide', { id: x.id, v: 'Released', cover: e.conf }, 'btn-p btn-sm') : '<span class="cap">Only approved, active evidence can be released.</span>'}</div>`,
+           );
+         })
          .join('')
      : ''
  }
- ${card('History', 'Review and release decisions, newest last', `<ol class="timeline ev-hist">${e.history.map(x => `<li class="tl"><span class="cap">${fmt(x.at)}</span><p>${h(x.t)}</p></li>`).join('')}</ol>`)}</aside></div>`
+ ${card('History', 'Each entry names the dimension that changed, newest last', `<ol class="timeline ev-hist">${e.history.map(x => `<li class="tl"><span class="cap">${fmt(x.at)}${x.by ? ' · ' + nm(x.by) : ''}</span><p>${h(x.t)}</p></li>`).join('')}</ol>`)}</aside></div>`
   );
 }
 // The Steward's queue of milestone evidence, across the Action Rooms they steward.
@@ -269,26 +412,58 @@ function evMilestonesCard(e) {
       .join(''),
   );
 }
-// Used on the evidence page and from an Action Room milestone.
+// Used on the evidence page. Quality outcomes only; confidentiality can be raised here as a separate decision.
 const evReviewForm = e =>
-  `<form data-f="evr" class="col ev-form" novalidate><input type="hidden" name="id" value="${e.id}">${fi('evr', 'review', 'Review status', { type: 'select', req: true, opts: REVIEW.filter(x => x !== 'Submitted' && x !== 'Withdrawn'), ph: 'Select', help: 'Approved lets the linked milestone be validated as achieved.' })}${fi('evr', 'level', 'Evidence Support Level', { type: 'select', req: true, opts: LEVELS.map(([k, v]) => [k, k + ' — ' + v]), value: e.level })}${fi('evr', 'limits', 'Limitations or uncertainty', { type: 'textarea', rows: 3, req: true, value: e.limits })}${fi('evr', 'comment', 'Comment to submitter', { type: 'textarea', rows: 2 })}<button class="btn btn-p" type="submit">Save review</button></form>`;
+  `<form data-f="evr" class="col ev-form" novalidate><input type="hidden" name="id" value="${e.id}">${fi('evr', 'review', 'Review status', { type: 'select', req: true, opts: REVIEW_OUTCOMES, ph: 'Select', help: 'Quality only. Approved lets a linked milestone be validated as achieved; it does not release the evidence.' })}${fi('evr', 'level', 'Evidence Support Level', { type: 'select', req: true, opts: LEVELS.map(([k, v]) => [k, k + ' — ' + v]), value: e.level })}${fi('evr', 'limits', 'Limitations or uncertainty', { type: 'textarea', rows: 3, req: true, value: e.limits })}${fi('evr', 'comment', 'Comment to submitter', { type: 'textarea', rows: 2 })}${
+    e.conf !== 'Confidential'
+      ? `<p style="margin-top:6px"><b>Confidentiality — a separate decision</b></p><p class="cap">Now ${h(e.conf)}: ${h(CONF_SHORT[e.conf] || '')}.</p>${fi('evr', 'conf', 'Raise confidentiality (optional)', { type: 'select', ph: 'No change', opts: CONF.filter(([k]) => confRank(k) > confRank(e.conf)).map(([k, m]) => [k, k + ' — ' + m]) })}${fi('evr', 'confWhy', 'Reason for raising it', { type: 'textarea', rows: 2, help: 'Required if you raise it. The owner is told; it is recorded as its own history entry.' })}`
+      : ''
+  }<button class="btn btn-p" type="submit">Save review</button></form>`;
+// Freeze proof (BF-04): only quality outcomes can be stored as a review status. Anything else is refused and audited.
+function evReviewRefused(e, v) {
+  const why = CONF.some(c => c[0] === v)
+    ? `“${v}” is a confidentiality setting, not a review status. Set confidentiality separately.`
+    : v === 'Withdrawn'
+      ? '“Withdrawn” is a lifecycle state the owner sets, not a review status.'
+      : `“${v}” is not a review status. Use one of: ${REVIEW_OUTCOMES.map(o => o[0]).join(', ')}.`;
+  audit('Evidence review refused', e ? e.id : '—', why, 'denied');
+  toast('Not saved: ' + why, 'err');
+  render();
+  return false;
+}
 // Records a review on the evidence itself. Used by the evidence page and by the Steward's milestone review.
 function evApplyReview(e, review, level, limits, comment) {
+  if (!e || !REVIEW_OUTCOMES.some(o => o[0] === review)) return evReviewRefused(e, review);
+  if (e.lifecycle !== 'Active') {
+    audit('Evidence review refused', e.id, 'lifecycle is ' + e.lifecycle, 'denied');
+    toast('Not saved: this evidence is ' + e.lifecycle.toLowerCase() + ', so it is not under review.', 'err');
+    render();
+    return false;
+  }
+  const was = e.review;
+  const wasLvl = e.level;
   e.review = review;
   e.level = level;
   e.limits = limits;
   e.reviewer = myId();
-  e.history.push({ at: today(), t: `${review} at ${level} by ${me().name}${comment ? ': ' + comment : ''}` });
-  if (review === 'Approved')
+  if (was !== review) evHist(e, 'Review', was, review, comment);
+  if (wasLvl !== level) evHist(e, 'Evidence Support', wasLvl, level);
+  if (was === review && wasLvl === level && comment) evHist(e, 'Review', was, review, comment);
+  // Approval suggests a profile change; the participant decides. One pending suggestion per evidence item.
+  if (review === 'Approved' && !S.candidates.some(c => c.ev === e.id && c.status === 'Pending')) {
+    const verified = hasB('Reviewer') && +String(level).slice(1) >= 3;
     S.candidates.push({
       id: uid('cd'),
       pid: e.owner,
+      ev: e.id,
       field: 'Capability',
       value: e.claim,
-      source: 'Approved evidence ' + e.title,
-      prov: 'Evidence-supported',
+      source: `Evidence “${e.title}” approved at ${level} by ${me().name}`,
+      prov: verified ? 'Reviewer-verified' : 'Evidence-supported',
       status: 'Pending',
     });
+    notify(e.owner, 'A profile change suggested by your approved evidence is waiting for your decision', 'profile', { tab: 'cand' });
+  }
   if (/negative|harm|unintended/i.test(limits))
     S.assign
       .filter(a => a.bundles.includes('Incident/Safety Owner'))
@@ -296,29 +471,85 @@ function evApplyReview(e, review, level, limits, comment) {
         notify(a.pid, 'Material negative finding recorded on evidence ' + e.title, 'evidence', { id: e.id }),
       );
   notify(e.owner, `Evidence review: “${e.title}” — ${review} (${level})${comment ? ': ' + comment : ''}`, 'evidence', { id: e.id });
-  audit('Evidence reviewed', e.id, review + ' ' + level);
+  audit('Evidence reviewed', e.id, 'Review ' + review + ' · Support ' + level);
+  return true;
+}
+// Changes confidentiality and records it as its own decision. Reviewers may only raise it.
+function evSetConf(e, to, why) {
+  const from = e.conf;
+  if (from === to) return false;
+  e.conf = to;
+  evHist(e, 'Confidentiality', from, to, why);
+  if (e.owner !== myId()) notify(e.owner, `${me().name} raised the confidentiality of “${e.title}” to ${to}: ${why}`, 'evidence', { id: e.id });
+  (e.cleared || []).filter(c => confRank(to) > confRank(c.conf)).forEach(c => notify(e.owner, `“${e.title}” is now ${to}; its ${c.aud} clearance no longer covers it`, 'evidence', { id: e.id }));
+  audit('Evidence confidentiality changed', e.id, from + ' → ' + to);
+  return true;
 }
 F.evr = d => {
-  if (!validate('evr', d, { review: ['req'], level: ['req'], limits: ['req'] })) return render();
   const e = byId('evidence', d.id);
-  evApplyReview(e, d.review, d.level, d.limits, d.comment || '');
+  if (d.review && !REVIEW_OUTCOMES.some(o => o[0] === d.review)) return evReviewRefused(e, d.review);
+  const raise = d.conf && CONF.some(c => c[0] === d.conf) && confRank(d.conf) > confRank(e.conf);
+  if (!validate('evr', d, { review: ['req'], level: ['req'], limits: ['req'], ...(raise ? { confWhy: [['req', 'Say why you are raising it.']] } : {}) })) return render();
+  if (d.conf && !raise) {
+    UI.err.evr = { conf: 'A Reviewer can only raise confidentiality.' };
+    return render();
+  }
+  if (!evApplyReview(e, d.review, d.level, d.limits, d.comment || '')) return;
+  if (raise) evSetConf(e, d.conf, d.confWhy.trim());
   msEvidenceReviewed(e);
   clearF('evr');
   UI.modal = null;
-  toast('Review saved.');
+  toast('Review saved.' + (raise ? ' Confidentiality raised to ' + d.conf + '.' : ''));
+  ok();
+};
+// ---- confidentiality: the owner sets it; a Reviewer may raise it with a reason. Never a review status.
+A.evConf = d => {
+  const e = byId('evidence', d.id);
+  const own = e.owner === myId();
+  clearF('evcf');
+  modal(
+    own ? 'Change confidentiality' : 'Raise confidentiality',
+    () =>
+      `<form data-f="evcf" class="col ev-form" novalidate>${errSum('evcf')}<input type="hidden" name="id" value="${e.id}"><p class="cap">Now ${h(e.conf)}. This does not change the review status, support level or release decisions.</p>${fi('evcf', 'conf', 'Confidentiality', { type: 'select', req: true, value: own ? e.conf : '', ph: own ? '' : 'Select', opts: CONF.filter(([k]) => own || confRank(k) > confRank(e.conf)).map(([k, m]) => [k, k + ' — ' + m]) })}${fi('evcf', 'why', 'Reason', { type: 'textarea', rows: 2, req: !own, help: own ? 'Optional. Recorded in the history.' : 'Required. The owner is told.' })}${(e.cleared || []).length ? banner('info', '', 'Raising it takes the record out of any audience whose clearance does not cover the new level.') : ''}<div class="actions">${B('Cancel', 'closeM')}<button class="btn btn-p" type="submit">Save</button></div></form>`,
+  );
+};
+F.evcf = d => {
+  const e = byId('evidence', d.id);
+  const own = e.owner === myId();
+  if (!validate('evcf', d, { conf: ['req'], ...(own ? {} : { why: [['req', 'Say why you are raising it.']] }) })) return render();
+  if (!CONF.some(c => c[0] === d.conf)) return evReviewRefused(e, d.conf);
+  if (!own && confRank(d.conf) <= confRank(e.conf)) {
+    audit('Evidence confidentiality refused', e.id, 'a Reviewer can only raise confidentiality', 'denied');
+    UI.err.evcf = { conf: 'A Reviewer can only raise confidentiality.' };
+    return render();
+  }
+  UI.modal = null;
+  clearF('evcf');
+  toast(evSetConf(e, d.conf, (d.why || '').trim()) ? 'Confidentiality set to ' + d.conf + '.' : 'No change.');
+  ok();
+};
+// ---- comments: mentors, facilitators and members who can see the evidence; no state change
+F.evc = d => {
+  if (!validate('evc', d, { t: ['req'] })) return render();
+  const e = byId('evidence', d.id);
+  (e.comments = e.comments || []).push({ id: uid('ec'), by: myId(), at: today(), t: d.t.trim() });
+  [e.owner, e.reviewer].filter(p => p && p !== myId()).forEach(p => notify(p, `${me().name} commented on the evidence “${e.title}”`, 'evidence', { id: e.id }));
+  audit('Evidence comment', e.id, 'comment added');
+  clearF('evc');
+  toast('Comment posted.');
   ok();
 };
 // ---- the evidence owner edits its description while it is under review; approved evidence is not edited
 // (upload a new item instead), so a review never silently stops matching what was reviewed
-const evEditable = e => !!e && e.owner === myId() && ['Submitted', 'Needs Revision'].includes(e.review);
+const evEditable = e => !!e && e.owner === myId() && e.lifecycle === 'Active' && ['Submitted', 'In review', 'Needs Revision'].includes(e.review);
 A.evEdit = d => {
   const e = byId('evidence', d.id);
   clearF('eve');
-  UI.form.eve = { title: e.title, type: e.type, claim: e.claim || '', source: e.source || '' };
+  UI.form.eve = { title: e.title, type: e.type, claim: e.claim || '', source: e.source || '', conf: e.conf };
   modal(
     'Edit evidence',
     () =>
-      `<form data-f="eve" class="col ev-form" novalidate>${errSum('eve')}<input type="hidden" name="id" value="${e.id}">${fi('eve', 'title', 'Title', { req: true, max: 120 })}<div class="f2">${fi('eve', 'type', 'Evidence type', { type: 'select', req: true, opts: EV_TYPES })}${fi('eve', 'source', 'Source', { req: true })}</div>${fi('eve', 'claim', 'Claim or metric it supports', { req: true })}${banner('info', '', 'The file, link or text itself is not changed here. Your reviewer is told what changed.')}<div class="actions">${B('Cancel', 'closeM')}<button class="btn btn-p" type="submit">Save changes</button></div></form>`,
+      `<form data-f="eve" class="col ev-form" novalidate>${errSum('eve')}<input type="hidden" name="id" value="${e.id}">${fi('eve', 'title', 'Title', { req: true, max: 120 })}<div class="f2">${fi('eve', 'type', 'Evidence type', { type: 'select', req: true, opts: EV_TYPES })}${fi('eve', 'source', 'Source', { req: true })}</div>${fi('eve', 'claim', 'Claim or metric it supports', { req: true })}${fi('eve', 'conf', 'Confidentiality', { type: 'select', req: true, opts: CONF.map(([k, m]) => [k, k + ' — ' + m]), help: 'Who can see it. Separate from the review status.' })}${banner('info', '', 'The file, link or text itself is not changed here. Your reviewer is told what changed.')}<div class="actions">${B('Cancel', 'closeM')}<button class="btn btn-p" type="submit">Save changes</button></div></form>`,
   );
 };
 F.eve = d => {
@@ -326,58 +557,77 @@ F.eve = d => {
   const e = byId('evidence', d.id);
   const next = { title: d.title.trim(), type: d.type, claim: d.claim.trim(), source: d.source.trim() };
   const ch = changedFields(e, next, { title: 'title', type: 'type', claim: 'claim', source: 'source' });
+  const confCh = d.conf && CONF.some(c => c[0] === d.conf) && d.conf !== e.conf;
   UI.modal = null;
   clearF('eve');
-  if (!ch.length) {
+  if (!ch.length && !confCh) {
     toast('No changes to save.');
     return ok();
   }
-  Object.assign(e, next);
-  e.history.push({ at: today(), t: 'Edited by the owner: ' + ch.join(', ') });
+  if (ch.length) {
+    Object.assign(e, next);
+    e.history.push({ at: today(), by: myId(), t: 'Edited by the owner: ' + ch.join(', ') });
+    audit('Evidence edited', e.id, ch.join(', '));
+  }
+  if (confCh) evSetConf(e, d.conf, 'set by the owner');
   if (e.reviewer && e.reviewer !== myId()) notify(e.reviewer, 'Evidence edited by ' + me().name + ': ' + e.title, 'evidence', { id: e.id });
-  audit('Evidence edited', e.id, ch.join(', '));
   toast('Evidence updated.');
   ok();
 };
 A.evResub = d => {
   const e = byId('evidence', d.id);
+  if (e.lifecycle !== 'Active' || e.review !== 'Needs Revision') return deny('only active evidence that needs revision can be resubmitted', e.id);
+  evHist(e, 'Review', e.review, 'Submitted', 'resubmitted after revision');
   e.review = 'Submitted';
-  e.history.push({ at: today(), t: 'Resubmitted after revision' });
   if (e.reviewer) notify(e.reviewer, 'Evidence resubmitted: ' + e.title, 'evidence', { id: e.id });
   msEvidenceResubmitted(e);
   audit('Evidence resubmitted', e.id, '');
   ok();
 };
+// Withdrawing changes the lifecycle only. The review status and the clearances stay on record; nothing withdrawn is
+// released (evReleasedTo needs an active record).
 A.evWithdraw = d => {
   const e = byId('evidence', d.id);
-  e.review = 'Withdrawn';
+  if (e.lifecycle === 'Withdrawn') return ok();
+  evHist(e, 'Lifecycle', e.lifecycle, 'Withdrawn', 'withdrawn by the owner');
   e.lifecycle = 'Withdrawn';
-  e.release = 'Not released';
-  e.history.push({ at: today(), t: 'Withdrawn by owner' });
-  audit('Evidence withdrawn', e.id, '');
+  S.releases.filter(x => x.ev === e.id && ['Awaiting owner decision', 'Owner authorised — disclosure review'].includes(x.status)).forEach(x => (x.status = 'Stopped — evidence withdrawn'));
+  audit('Evidence withdrawn', e.id, 'lifecycle only');
+  toast('Withdrawn. It no longer counts in any release; its history is kept.');
   ok();
 };
+const evReleasable = e => e && e.review === 'Approved' && e.lifecycle === 'Active';
 A.relNew = d => {
+  const e = byId('evidence', d.id);
   clearF('rel');
+  const noC = consent(myId(), 'public') !== 'Granted';
   modal(
     'Authorise a release',
     () =>
-      `<form data-f="rel" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${d.id}">${fi('rel', 'aud', 'Audience and purpose', { type: 'select', req: true, opts: ['Funder report (Hartwell Foundation)', 'Public programme showcase', 'Organisation report'], ph: 'Select' })}${consent(myId(), 'public') !== 'Granted' ? banner('warn', 'Public/funder release permission is off', `Turn it on in ${L('Privacy & consent', 'privacy')} first.`) : ''}${fi('rel', 'ok', 'I authorise this specific release', { type: 'checkbox', req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit" ${consent(myId(), 'public') !== 'Granted' ? 'disabled' : ''}>Authorise</button></div></form>`,
+      `<form data-f="rel" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${d.id}">${fi('rel', 'aud', 'Audience and purpose', { type: 'select', req: true, value: d.aud || '', opts: REL_AUD.map(a => [a, REL_AUD_LABEL[a]]), ph: 'Select' })}${noC ? banner('warn', 'Public/funder release permission is off', `You can change this in ${L('My records & consent', 'privacy', { tab: 'consent' })} first.`) : ''}${e && e.conf !== 'Programme' ? banner('info', '', `This record is ${h(e.conf)}. The Trust/Data Steward must explicitly cover ${h(e.conf)} content, or it stays out of this audience.`) : ''}${banner('info', '', 'A Trust/Data Steward completes disclosure review before anything is released. This decision covers this audience only.')}${fi('rel', 'ok', 'I authorise this specific release', { type: 'checkbox', req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit" ${noC ? 'disabled' : ''}>Authorise</button></div></form>`,
   );
 };
 F.rel = d => {
   if (!validate('rel', d, { aud: ['req'], ok: [['req', 'Tick to authorise.']] })) return render();
-  S.releases.push({
-    id: uid('rr'),
-    ev: d.id,
-    requester: myId(),
-    audience: d.aud,
-    status: 'Owner authorised — disclosure review',
-    at: today(),
-  });
-  S.assign
-    .filter(a => roleBase(a.role) === 'A')
-    .forEach(a => notify(a.pid, 'Disclosure review needed: ' + byId('evidence', d.id).title, 'evidence', { id: d.id }));
+  const e = byId('evidence', d.id);
+  const why = !e || e.owner !== myId()
+    ? 'only the owner can authorise a release'
+    : !REL_AUD.includes(d.aud)
+    ? 'choose one of the listed audiences'
+    : !evReleasable(e)
+      ? 'only approved, active evidence can be released'
+      : consent(e.owner, 'public') !== 'Granted'
+        ? 'public/funder release permission is not granted — change it in My records & consent first'
+        : evClear(e, d.aud) || S.releases.some(x => x.ev === e.id && (x.aud || relAudOf(x.audience)) === d.aud && x.status === 'Owner authorised — disclosure review')
+          ? 'this audience is already cleared or in disclosure review'
+          : '';
+  if (why) {
+    UI.modal = null;
+    return deny(why, d.id);
+  }
+  S.releases.push({ id: uid('rr'), ev: d.id, requester: myId(), audience: REL_AUD_LABEL[d.aud], aud: d.aud, status: 'Owner authorised — disclosure review', at: today() });
+  e.history.push({ at: today(), by: myId(), t: 'Release: owner authorised ' + d.aud + ' — awaiting Trust/Data Steward disclosure review' });
+  evStewards().forEach(p => notify(p, 'Disclosure review needed: ' + e.title + ' (' + d.aud + ')', 'evidence', { id: d.id }));
   audit('Release authorised by owner', d.id, d.aud);
   UI.modal = null;
   clearF('rel');
@@ -386,18 +636,25 @@ F.rel = d => {
 A.relDecide = d => {
   const x = byId('releases', d.id);
   const e = byId('evidence', x.ev);
-  if (d.v.startsWith('Owner authorised') && consent(e.owner, 'public') !== 'Granted') {
-    return deny('public/funder release permission is not granted — turn it on in Privacy & consent first');
+  const aud = (x.aud = x.aud || relAudOf(x.audience));
+  if (d.v.startsWith('Owner authorised')) {
+    if (consent(e.owner, 'public') !== 'Granted') return deny('public/funder release permission is not granted — change it in My records & consent first');
+    if (!evReleasable(e)) return deny('only approved, active evidence can be released', e.id);
   }
+  if (['Released', 'Withheld after disclosure review'].includes(d.v) && x.status !== 'Owner authorised — disclosure review') return deny('the owner has not authorised this release', x.id);
+  if (d.v === 'Released' && !evReleasable(e)) return deny('only approved, active evidence can be released', e.id);
   x.status = d.v;
-  if (d.v === 'Released') e.release = 'Approved for funder release';
-  e.history.push({ at: today(), t: 'Release: ' + d.v + ' (' + x.audience + ')' });
-  if (d.v.startsWith('Owner authorised'))
-    S.assign
-      .filter(a => roleBase(a.role) === 'A')
-      .forEach(a => notify(a.pid, 'Disclosure review needed: ' + e.title, 'evidence', { id: e.id }));
-  notify(e.owner, 'Release decision: ' + d.v, 'evidence', { id: e.id });
-  audit('Release decision', x.id, d.v);
+  if (d.v === 'Released') {
+    const before = e.release;
+    const cover = CONF.some(c => c[0] === d.cover) ? d.cover : 'Programme';
+    e.cleared = (e.cleared || []).filter(c => c.aud !== aud);
+    e.cleared.push({ aud, at: today(), by: myId(), rr: x.id, conf: cover });
+    e.release = evRelStr(e);
+    evHist(e, 'Release', before, 'Cleared: ' + aud, 'disclosure review by ' + me().name + (cover !== 'Programme' ? '; covers ' + cover + ' content' : ''));
+  } else e.history.push({ at: today(), by: myId(), t: 'Release (' + aud + '): ' + d.v });
+  if (d.v.startsWith('Owner authorised')) evStewards().forEach(p => notify(p, 'Disclosure review needed: ' + e.title + ' (' + aud + ')', 'evidence', { id: e.id }));
+  notify(e.owner, 'Release decision (' + aud + '): ' + d.v, 'evidence', { id: e.id });
+  audit('Release decision', x.id, aud + ' · ' + d.v);
   ok();
 };
 // ---- evidence formats: a file, a link, a written reflection or output, or a reference to a repository record
@@ -463,7 +720,8 @@ route('newevidence', 'evidence', () => {
  ${fi(f, 'title', 'Title', { req: true })}<div class="f2">${fi(f, 'type', 'Evidence type', { type: 'select', req: true, ph: 'Select', opts: EV_TYPES })}${fi(f, 'claim', 'Claim or metric it supports', { req: true })}</div>
  <div class="np-sh"><span class="np-n" aria-hidden="true">3</span><h2 class="h3">Where it belongs</h2></div>
  ${spaces.length ? fi(f, 'link', 'Link to', { type: 'select', req: true, ph: 'Select a Circle, Rope Team or ' + WL(), value: UI.p.link || '', opts: spaces.map(s => [s.id, (byId('circles', s.id) ? 'Circle' : byId('ropes', s.id) ? 'Rope Team' : WL()) + ' · ' + s.name + (spaceProject(s.id) ? ' — ' + spaceProject(s.id).title : '')]), help: 'Linked by reference, not copied.' }) : banner('info', '', 'Join a Circle, Rope Team or ' + WL() + ' to link evidence.')}
- <div class="f2">${fi(f, 'source', 'Source', { req: true, ph: 'e.g. Field survey' })}${fi(f, 'purpose', 'Purpose', { type: 'select', req: true, opts: ['Project evidence', 'Milestone evidence', 'Learning evidence', 'Portfolio'], ph: 'Select' })}</div>
+ <div class="f2">${fi(f, 'source', 'Source', { req: true, ph: 'e.g. Field survey' })}${fi(f, 'purpose', 'Purpose', { type: 'select', req: true, opts: ['Project evidence', 'Milestone evidence', 'Learning evidence', 'Personal learning record (not public)'], ph: 'Select', help: 'There is no public portfolio. Any audience outside the programme is a separate release decision.' })}</div>
+ ${fi(f, 'conf', 'Confidentiality', { type: 'select', req: true, value: 'Programme', opts: CONF.map(([k, m]) => [k, k + ' — ' + m]), help: 'Who can see it. Separate from the review status; you can change it later.' })}
  <div class="actions">${L('Cancel', 'evidence', {}, 'btn btn-g')}<button class="btn btn-p" type="submit">Submit for review</button></div></form></div>`
   );
 });
@@ -477,6 +735,7 @@ F.ne = (d, form) => {
   d.consent = 'Not recorded';
   d.sens = 'Not recorded';
   d.retention = 'Programme duration';
+  d.conf = CONF.some(c => c[0] === d.conf) ? d.conf : 'Programme';
   const [tRoom, tId] = (d.task || '').split('|');
   if (tRoom && !d.link.includes(tRoom)) d.link.push(tRoom);
   const okv = validate(
@@ -550,15 +809,18 @@ F.ne = (d, form) => {
     retention: d.retention,
     review: 'Submitted',
     level: 'E0',
+    conf: d.conf,
     reviewer: null,
     limits: '',
     lifecycle: 'Active',
-    release: 'Not released',
-    history: [{ at: today(), t: 'Submitted' }],
+    release: 'Not cleared',
+    cleared: [],
+    comments: [],
+    history: [{ at: today(), by: myId(), t: 'Submitted · Support E0 · Confidentiality ' + d.conf + ' · Lifecycle Active · Release not cleared' }],
   };
   S.evidence.push(ev);
   S.assign
-    .filter(a => a.ctx === ctxId() && (roleBase(a.role) === 'F' || a.bundles.includes('Reviewer')) && a.pid !== myId())
+    .filter(a => a.ctx === ctxId() && a.bundles.includes('Reviewer') && a.pid !== myId())
     .forEach(a => notify(a.pid, 'Evidence submitted for review: ' + ev.title, 'evidence', { id: ev.id }));
   const tx = tRoom && byId('rooms', tRoom);
   const tk = tx && tx.tasks.find(k => k.id === tId);
@@ -749,6 +1011,35 @@ const HV_SECTIONS = [
   'AI transparency',
 ];
 const canComplete = () => role() === 'F' || hasB('Reviewer') || hasB('Project Lead');
+// Release of an approved Harvest is a separate, later decision per audience, made by the Trust/Data Steward.
+const HV_AUD = ['Funder report', 'Public showcase', 'Organisation report'];
+const hvRelStr = x => [(x.cleared || []).length ? 'Cleared: ' + x.cleared.map(c => c.aud).join('; ') : 'Not cleared', x.relReq ? 'Release requested: ' + x.relReq : ''].filter(Boolean).join(' · ');
+// Approved Harvests cleared for `audience` — for sponsor and public reports.
+const hvReleasedTo = audience => S.harvests.filter(x => ['Approved', 'Released'].includes(x.state) && (x.cleared || []).some(c => c.aud === audience));
+// Dissent and minority views are kept as their own entries: later edits and approval never remove them.
+function hvDissentSection(x, f, edit) {
+  const ds = x.dissent || [];
+  const body =
+    (ds.length ? `<ul class="hv-dis">${ds.map(v => `<li><p class="hv-x">${h(v.t)}</p><span class="cap">${h(v.kind || 'Dissent')} · ${nm(v.by)} · ${fmt(v.at)}</span></li>`).join('')}</ul>` : '<p class="cap">None recorded.</p>') +
+    (edit ? fi(f, 'dissentAdd', 'Add a dissenting or minority view', { type: 'textarea', rows: 2, help: 'Kept as written and attributed. Later edits and approval cannot remove it.' }) : '');
+  return `<section class="hv-s hv2-sec" id="${f === 'hv2' ? 'hv2-' : 'hv-'}dissent"><header class="hv2-sh"><h2 class="h3">Dissent and minority views</h2><p class="cap">Disagreement, minority positions and missing voices are preserved, including after approval.</p></header>${body}</section>`;
+}
+const hvAddDissent = (x, t, kind = 'Dissent') => {
+  if (!String(t || '').trim()) return;
+  (x.dissent = x.dissent || []).push({ by: myId(), at: today(), kind, t: String(t).trim() });
+};
+function hvReleaseCard(x, comp) {
+  const pend = x.relReq;
+  const open = HV_AUD.filter(a => !(x.cleared || []).some(c => c.aud === a));
+  return card(
+    'Release',
+    'A separate decision after approval, for one audience at a time. The Trust/Data Steward decides.',
+    `<p class="hv-rel">${h(hvRelStr(x))}</p>` +
+      (x.state === 'Approved' && comp && !pend && open.length ? `<div class="row wrap" style="gap:6px">${open.map(a => B('Request release: ' + a, 'hvRel', { id: x.id, v: 'Release requested', aud: a })).join('')}</div>` : '') +
+      (x.state !== 'Approved' ? '<p class="cap">Available after a person approves the Harvest.</p>' : '') +
+      (pend && hasB('Trust/Data Steward') ? `<div class="row wrap" style="gap:6px;margin-top:8px">${B('Withhold', 'hvRelNo', { id: x.id })}${B('Release to ' + h(pend), 'hvRel', { id: x.id, v: 'Released', aud: pend }, 'btn-p btn-sm')}</div>` : pend ? '<p class="cap">Waiting for the Trust/Data Steward.</p>' : ''),
+  );
+}
 route('harvests', 'harvest', () => {
   const r = role();
   if (r === 'S') return deniedView('harvest');
@@ -758,13 +1049,13 @@ route('harvests', 'harvest', () => {
       r === 'A' ||
       (o && (memberOf(o) || r === 'F')) ||
       x.personal === myId() ||
-      ((r === 'S' || r === 'O') && x.release === 'Released')
+      (r === 'O' && (x.cleared || []).some(c => c.aud === 'Organisation report'))
     );
   });
   return (
     head(
       'Learning Harvests',
-      'Source records → AI draft → human review → edit → approve/reject → release. Previous versions are kept.',
+      'Source records → optional AI draft / advisory → human review and edits → a person approves or rejects → a separate release decision. Previous versions are kept.',
       r !== 'S' && r !== 'O' ? B(ic('plus', 16) + 'Start a Harvest', 'newHarvest', {}, 'btn-p') : '',
     ) +
     card('Your Learning Harvests', '', dataView('harvests', {
@@ -775,7 +1066,7 @@ route('harvests', 'harvest', () => {
       filters: [
         { key: 'trigger', label: 'Trigger', options: dvOpts(list, x => x.trigger), test: (x, v) => x.trigger === v },
         { key: 'release', label: 'Release', options: dvOpts(list, x => x.release), test: (x, v) => x.release === v },
-        { key: 'ai', label: 'AI', options: [['yes', 'AI-assisted'], ['no', 'Written by people']], test: (x, v) => (v === 'yes' ? !!x.ai : !x.ai) },
+        { key: 'ai', label: 'AI', options: [['yes', 'AI draft / advisory'], ['no', 'Written by people']], test: (x, v) => (v === 'yes' ? !!x.ai : !x.ai) },
       ],
       sorts: [
         ['title', 'Title', (a, b) => a.scopeName.localeCompare(b.scopeName)],
@@ -787,7 +1078,7 @@ route('harvests', 'harvest', () => {
         title: h(x.scopeName),
         sub: h(x.trigger),
         meta: [`${x.tpl === 2 ? WL() + ' template' : 'Template v1.0'} · v${x.ver}`, h(x.release)],
-        badges: pill(x.state) + (x.ai ? aiTag('AI-assisted') : ''),
+        badges: pill(x.state) + (x.ai ? aiTag('AI draft / advisory') : ''),
         primary: L('Open', 'harvest', { id: x.id }, 'btn btn-s btn-sm'),
       }),
       empty: ['sparkle', 'No Harvests yet.', ''],
@@ -801,7 +1092,7 @@ A.newHarvest = d => {
   modal(
     'Start a Learning Harvest',
     () =>
-      `<form data-f="hv" class="col prj-dlg" novalidate>${fi('hv', 'scope', 'For', { type: 'select', req: true, ph: 'Select', opts: [...pids.map(s => [s.id, s.name]), ['personal', 'My personal Harvest (pathway)']], value: d.scope })}${fi('hv', 'trigger', 'Trigger', { type: 'select', req: true, opts: ['Session completion', 'Milestone', 'Visible win', 'Periodic review', 'Workspace closure', 'Pathway completion'] })}${consent(myId(), 'ai') === 'Granted' && S.settings.aiAvailable ? fi('hv', 'ai', 'Let PHOENIX draft it from authorised source records (Class B)', { type: 'checkbox' }) : banner('info', '', 'AI drafting unavailable — you will write the Harvest manually.')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Start</button></div></form>`,
+      `<form data-f="hv" class="col prj-dlg" novalidate>${fi('hv', 'scope', 'For', { type: 'select', req: true, ph: 'Select', opts: [...pids.map(s => [s.id, s.name]), ['personal', 'My personal Harvest (pathway)']], value: d.scope })}${fi('hv', 'trigger', 'Trigger', { type: 'select', req: true, opts: ['Session completion', 'Milestone', 'Visible win', 'Periodic review', 'Workspace closure', 'Pathway completion'] })}${consent(myId(), 'ai') === 'Granted' && S.settings.aiAvailable ? fi('hv', 'ai', 'Let PHOENIX draft it from authorised source records (Class B)', { type: 'checkbox' }) : banner('info', '', consent(myId(), 'ai') !== 'Granted' ? `AI processing is off for you, so PHOENIX will not draft the Harvest; you write it yourself. You can change this in ${L('My records & consent', 'privacy', { tab: 'consent' })}.` : 'AI drafting unavailable — you will write the Harvest manually.')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Start</button></div></form>`,
   );
 };
 F.hv = d => {
@@ -817,7 +1108,7 @@ F.hv = d => {
     sec.Context = `${o ? o.name : 'Personal pathway'} · ${d.trigger} · ${today()}`;
     sec['What happened'] = o && o.decisions ? o.decisions.map(x => x.t).join('; ') : '';
     sec['Evidence and outcomes'] = S.evidence
-      .filter(e => o && e.linked.includes(o.id) && e.review === 'Approved')
+      .filter(e => o && e.linked.includes(o.id) && e.review === 'Approved' && e.lifecycle === 'Active' && e.conf === 'Programme')
       .map(e => e.title + ' (' + e.level + ')')
       .join('; ');
     sec.Learning = '[Draft] Themes from source records — review and edit.';
@@ -828,8 +1119,9 @@ F.hv = d => {
             .map(x => x.t)
             .join('; ')
         : '';
+    // Only shared decisions, open commitments, approved evidence and consented records; private Rope Team notes are never read.
     sec['AI transparency'] =
-      `AI drafted from ${src.map(r => r.title).join(', ') || 'approved records'}.${blocked.length ? ' Excluded (missing recording consent): ' + blocked.map(r => r.title).join(', ') + '.' : ''} Not yet reviewed.`;
+      `AI draft / advisory, from ${src.map(r => r.title).join(', ') || 'approved records'}.${blocked.length ? ' Excluded (missing recording consent): ' + blocked.map(r => r.title).join(', ') + '.' : ''} Private Rope Team notes are never used. A person reviews, edits and decides; AI does not approve.`;
     S.ai.push({
       id: uid('aj'),
       by: myId(),
@@ -854,7 +1146,9 @@ F.hv = d => {
     by: myId(),
     sections: sec,
     contrib: [],
-    release: 'Not released',
+    dissent: [],
+    cleared: [],
+    release: 'Not cleared',
     versions: [],
   };
   S.harvests.push(x);
@@ -874,17 +1168,18 @@ route('harvest', 'harvest', () => {
   const r = role();
   const o = byId('circles', x.scope) || byId('rooms', x.scope) || byId('ropes', x.scope);
   const mem = o ? memberOf(o) : x.personal === myId();
-  if (r === 'S' || (r === 'O' && x.release !== 'Released')) return deniedView('harvest');
+  if (r === 'S' || (r === 'O' && !(x.cleared || []).some(c => c.aud === 'Organisation report'))) return deniedView('harvest');
   const comp = canComplete() && (mem || r === 'F');
   const edit = ['Draft', 'Review'].includes(x.state) && (x.by === myId() || comp);
   if (x.tpl === 2) return hv2View(x, mem, comp, edit);
   return (
     crumbsHtml([['Learning Harvests', 'harvests'], ['Harvest']]) +
-    `<div class="shead-main hv-head"><span class="tile" aria-hidden="true">${ic('sparkle', 20)}</span><div class="shead-t"><div class="shead-kind">Learning Harvest · ${h(x.trigger)}</div><div class="row wrap hv-ttl"><h1 class="h1">${h(x.scopeName)}</h1>${pill(x.state)}${x.ai ? aiTag('AI-assisted') : ''}</div><div class="shead-meta"><span>Learning Harvest Template v1.0 · version ${x.ver}</span><span>${h(x.release)}</span></div></div></div>` +
-    `<div class="g12"><form data-f="hve" class="card c8 col hv-doc" novalidate><input type="hidden" name="id" value="${x.id}">${HV_SECTIONS.map(s => (edit ? fi('hve', s, s, { type: 'textarea', rows: 2, value: x.sections[s] }) : `<section class="hv-s"><h2 class="h3">${s}</h2><p class="hv-x">${h(x.sections[s] || '—')}</p></section>`)).join('')}${edit ? `<div class="actions"><span></span><div class="row wrap"><button class="btn btn-s" type="submit" name="act" value="save">Save edits</button>${x.state === 'Draft' ? `<button class="btn btn-s" type="submit" name="act" value="review">Send for review</button>` : ''}${comp ? `<button class="btn btn-s" type="submit" name="act" value="reject">Reject</button><button class="btn btn-p" type="submit" name="act" value="approve">Approve</button>` : ''}</div></div>` : ''}</form>
- <aside class="c4 col hv-side">${card('Contributions', 'Reflections, lessons, dissent and questions.', x.contrib.map(c => lrow('message', h(c.t), nm(c.by))).join('') || '<p class="cap">None yet.</p>', mem && ['Draft', 'Review'].includes(x.state) ? B(ic('plus', 14) + 'Contribute', 'hvContrib', { id: x.id }) : '')}
- ${card('Release', 'Separate approval for public or funder release.', `<p class="hv-rel">${h(x.release)}</p>${x.state === 'Approved' && comp && x.release === 'Not released' ? B('Request funder release', 'hvRel', { id: x.id, v: 'Funder release requested' }) : ''}${r === 'A' && x.release === 'Funder release requested' ? B('Approve release', 'hvRel', { id: x.id, v: 'Released' }, 'btn-p btn-sm') : ''}`)}
- ${card('Profile candidates', 'A Harvest cannot write to a profile. Only individual, attributable items are offered.', x.state === 'Approved' && comp ? B('Offer profile candidates to participants', 'hvCand', { id: x.id }) : '<p class="cap">Available after approval.</p>')}
+    `<div class="shead-main hv-head"><span class="tile" aria-hidden="true">${ic('sparkle', 20)}</span><div class="shead-t"><div class="shead-kind">Learning Harvest · ${h(x.trigger)}</div><div class="row wrap hv-ttl"><h1 class="h1">${h(x.scopeName)}</h1>${pill(x.state)}${x.ai ? aiTag('AI draft / advisory') : ''}</div><div class="shead-meta"><span>Learning Harvest Template v1.0 · version ${x.ver}</span><span>${h(hvRelStr(x))}</span></div></div></div>` +
+    (x.state === 'Approved' ? banner('ok', 'Completed by a person (human decision)', (x.approvedBy ? 'Approved by ' + nm(x.approvedBy) + (x.approvedAt ? ' on ' + fmt(x.approvedAt) : '') + '.' : 'Approved by an authorised reviewer.') + (x.ai ? ' The AI draft was advisory only.' : '') + ' Release is a separate decision.') : '') +
+    `<div class="g12"><form data-f="hve" class="card c8 col hv-doc" novalidate><input type="hidden" name="id" value="${x.id}">${HV_SECTIONS.map(s => (edit ? fi('hve', s, s, { type: 'textarea', rows: 2, value: x.sections[s] }) : `<section class="hv-s"><h2 class="h3">${s}</h2><p class="hv-x">${h(x.sections[s] || '—')}</p></section>`)).join('')}${hvDissentSection(x, 'hve', edit)}${edit ? `<div class="actions"><span class="cap">Approval is a human decision; AI never approves.</span><div class="row wrap"><button class="btn btn-s" type="submit" name="act" value="save">Save edits</button>${x.state === 'Draft' ? `<button class="btn btn-s" type="submit" name="act" value="review">Send for review</button>` : ''}${comp ? `<button class="btn btn-s" type="submit" name="act" value="reject">Reject</button><button class="btn btn-p" type="submit" name="act" value="approve">Approve (human decision)</button>` : ''}</div></div>` : ''}</form>
+ <aside class="c4 col hv-side">${card('Contributions', 'Reflections, lessons, dissent and questions. Dissent is also kept in its own section.', x.contrib.map(c => lrow('message', h(c.t), nm(c.by))).join('') || '<p class="cap">None yet.</p>', mem && ['Draft', 'Review'].includes(x.state) ? B(ic('plus', 14) + 'Contribute', 'hvContrib', { id: x.id }) : '')}
+ ${hvReleaseCard(x, comp)}
+ ${card('Profile candidates', 'A Harvest never writes to a profile. Each participant who was a member is offered one candidate to accept, edit or reject.', x.state === 'Approved' && comp ? B('Offer profile candidates to participants', 'hvCand', { id: x.id }) : '<p class="cap">Available after approval.</p>')}
  ${x.state === 'Rejected' && (x.by === myId() || comp) ? card('Rejected', 'Revise contributions and redraft. The rejected version is kept.', B(ic('refresh', 14) + 'Revise and redraft', 'hvRedraft', { id: x.id }, 'btn-p btn-sm')) : ''}
  ${x.versions.length ? card('Previous versions', '', `<ol class="hv-vers">${x.versions.map(v => `<li class="cap">v${v.ver} · ${fmt(v.at)} · ${h(v.state)}</li>`).join('')}</ol>`) : ''}</aside></div>`
   );
@@ -892,7 +1187,7 @@ route('harvest', 'harvest', () => {
 F.hve = d => {
   const x = byId('harvests', d.id);
   const act = d.act || 'save';
-  x.versions.push({ ver: x.ver, at: today(), state: x.state, sections: { ...x.sections } });
+  x.versions.push({ ver: x.ver, at: today(), state: x.state, sections: { ...x.sections }, dissent: (x.dissent || []).length });
   x.ver++;
   HV_SECTIONS.forEach(s => (x.sections[s] = d[s] || ''));
   if (act === 'approve') {
@@ -903,8 +1198,12 @@ F.hve = d => {
       toast('Complete required sections first: ' + miss.join(', '), 'err');
       return render();
     }
+  }
+  hvAddDissent(x, d.dissentAdd);
+  if (act === 'approve') {
     x.state = 'Approved';
     x.approvedBy = myId();
+    x.approvedAt = today();
     const j = S.ai.find(a => a.purpose === 'Harvest draft' && a.status === 'In review');
     if (j) {
       j.status = 'Released';
@@ -919,8 +1218,8 @@ F.hve = d => {
       .filter(a => a.ctx === ctxId() && roleBase(a.role) === 'F')
       .forEach(a => notify(a.pid, 'Harvest ready for review: ' + x.scopeName, 'harvest', { id: x.id }));
   }
-  audit('Harvest ' + act, x.id, 'v' + x.ver);
-  if (act === 'approve') toast('Harvest approved.');
+  audit('Harvest ' + act, x.id, 'v' + x.ver + (act === 'approve' ? ' · completed by a person (human decision)' : ''));
+  if (act === 'approve') toast('Harvest approved — completed by a person (human decision). Release is a separate step.');
   ok();
 };
 A.hvContrib = d => {
@@ -933,44 +1232,70 @@ A.hvContrib = d => {
 };
 F.hc = d => {
   if (!validate('hc', d, { t: ['req'] })) return render();
-  byId('harvests', d.id).contrib.push({ by: myId(), t: d.kind + ': ' + d.t });
+  const x = byId('harvests', d.id);
+  x.contrib.push({ by: myId(), at: today(), t: d.kind + ': ' + d.t });
+  if (['Dissent', 'Missing voice'].includes(d.kind)) hvAddDissent(x, d.t, d.kind);
   UI.modal = null;
   clearF('hc');
   ok();
 };
+// Request (Facilitator, Reviewer or Project Lead) and release (Trust/Data Steward), one audience at a time.
 A.hvRel = d => {
   const x = byId('harvests', d.id);
-  x.release = d.v;
-  if (d.v === 'Funder release requested')
-    S.assign
-      .filter(a => roleBase(a.role) === 'A')
-      .forEach(a => notify(a.pid, 'Harvest release requested: ' + x.scopeName, 'harvest', { id: x.id }));
-  audit('Harvest release', x.id, d.v);
+  if (x.state !== 'Approved') return deny('a Learning Harvest is released only after a person approves it', x.id);
+  if (!HV_AUD.includes(d.aud)) return deny('choose one of the listed audiences', x.id);
+  if (d.v === 'Release requested') {
+    if (x.relReq) return deny('a release request is already waiting for the Trust/Data Steward', x.id);
+    x.relReq = d.aud;
+    evStewards().forEach(p => notify(p, 'Harvest release requested (' + d.aud + '): ' + x.scopeName, 'harvest', { id: x.id }));
+  } else if (d.v === 'Released') {
+    if (x.relReq !== d.aud) return deny('there is no release request for this audience', x.id);
+    x.cleared = (x.cleared || []).filter(c => c.aud !== d.aud);
+    x.cleared.push({ aud: d.aud, at: today(), by: myId() });
+    x.relReq = null;
+    if (x.by) notify(x.by, 'Learning Harvest released to ' + d.aud + ': ' + x.scopeName, 'harvest', { id: x.id });
+  } else return deny('unknown release decision', x.id);
+  x.release = hvRelStr(x);
+  audit('Harvest release', x.id, d.v + ' · ' + d.aud);
   ok();
 };
+A.hvRelNo = d => {
+  const x = byId('harvests', d.id);
+  if (!x.relReq) return ok();
+  audit('Harvest release', x.id, 'Withheld · ' + x.relReq);
+  if (x.by) notify(x.by, 'Learning Harvest release withheld (' + x.relReq + '): ' + x.scopeName, 'harvest', { id: x.id });
+  x.relReq = null;
+  x.release = hvRelStr(x);
+  ok();
+};
+// Offers each participant who was a member one candidate. Never writes the profile; never repeats an offer;
+// draws on nothing private (no Rope Team private notes, no Purpose Compass).
 A.hvCand = d => {
   const x = byId('harvests', d.id);
+  if (x.state !== 'Approved') return deny('candidates are offered only from an approved Learning Harvest', x.id);
   const o = byId('circles', x.scope) || byId('rooms', x.scope) || byId('ropes', x.scope);
   const ps = o
-    ? o.members
+    ? (o.members || [])
         .filter(m => m.status === 'Active')
         .map(m => m.pid)
-        .filter(p => (S.assign.find(a => a.pid === p && a.ctx === ctxId()) || {}).role === 'P')
-    : [x.personal];
-  ps.forEach(p => {
+        .filter(p => S.assign.some(a => a.pid === p && a.ctx === ctxId() && roleBase(a.role) === 'P'))
+    : [x.personal].filter(Boolean);
+  const fresh = [...new Set(ps)].filter(p => !S.candidates.some(c => c.hv === x.id && c.pid === p));
+  fresh.forEach(p => {
     S.candidates.push({
       id: uid('cd'),
       pid: p,
+      hv: x.id,
       field: 'Completed learning activity',
-      value: 'Contributed to ' + x.scopeName,
-      source: 'Learning Harvest ' + x.id,
+      value: 'Took part in ' + x.scopeName,
+      source: 'Approved Learning Harvest “' + x.scopeName + '”',
       prov: 'Activity-derived',
       status: 'Pending',
     });
     notify(p, 'A profile candidate from a Learning Harvest is waiting for your decision', 'profile', { tab: 'cand' });
   });
-  audit('Harvest profile candidates offered', x.id, ps.length + ' participants');
-  toast(ps.length + ' participant(s) were offered a candidate to accept, edit or reject.');
+  audit('Harvest profile candidates offered', x.id, fresh.length + ' new · ' + (ps.length - fresh.length) + ' already offered');
+  toast(fresh.length ? fresh.length + ' participant(s) were offered a candidate to accept, edit or reject.' + (ps.length > fresh.length ? ' ' + (ps.length - fresh.length) + ' had already been offered one.' : '') : 'Every participant has already been offered a candidate from this Harvest.');
   ok();
 };
 
@@ -1056,8 +1381,10 @@ const bullets = a => a.map(s => '• ' + s).join('\n');
 function hvCompile(x, pid) {
   const live = (x.tasks || []).filter(k => !['Proposed', 'Declined'].includes(k.status));
   const done = live.filter(k => k.status === 'Done');
-  const ev = roomEvidence(x);
-  const evOf = k => (k.evidence || []).map(id => byId('evidence', id)).filter(Boolean);
+  // a shared Harvest names only Programme-level, active evidence; restricted items are counted, not named
+  const evAll = roomEvidence(x).filter(e => e.lifecycle !== 'Withdrawn');
+  const ev = evAll.filter(e => e.conf === 'Programme');
+  const evOf = k => (k.evidence || []).map(id => byId('evidence', id)).filter(e => e && e.conf === 'Programme');
   const ms = (x.milestones || []).filter(m => m.status === 'Achieved');
   const wins = (x.wins || []).filter(w => w.status === 'Approved');
   const recs = S.records.filter(r => r.state === 'Active' && r.linked.includes(x.id) && !/missing/i.test(r.consent));
@@ -1068,7 +1395,7 @@ function hvCompile(x, pid) {
     bullets(done.map(k => `${k.t} — ${P(k.owner).name}${k.doneAt ? ', completed ' + fmt(dOnly(k.doneAt)) : ''}${evOf(k).length ? ' · evidence: ' + evOf(k).map(e => e.title).join('; ') : ''}${k.doneNote ? ' · ' + k.doneNote : ''}`)),
     (x.outcome ? 'Intended outcome: ' + x.outcome : 'Charter: ' + x.charter),
     ms.length ? 'Milestones achieved: ' + ms.map(m => m.t).join('; ') : '',
-    `Evidence submitted (${ev.length}): ` + ev.map(e => `${e.title} (${e.review}, ${e.level})`).join('; '),
+    `Evidence submitted (${ev.length}): ` + ev.map(e => `${e.title} (${e.review}, ${e.level})`).join('; ') + (evAll.length > ev.length ? ` · ${evAll.length - ev.length} restricted or confidential item(s) not named` : ''),
     recs.length + linkedRecs.length ? 'Records: ' + [...recs.map(r => r.title), ...linkedRecs.map(l => l.label)].join('; ') : '',
   ]
     .filter(Boolean)
@@ -1079,7 +1406,7 @@ function hvCompile(x, pid) {
     ...done.filter(k => k.due && k.doneAt && dOnly(k.doneAt) > k.due).map(k => `Completed late: ${k.t} (due ${fmt(k.due)}, done ${fmt(dOnly(k.doneAt))})`),
     ...(x.tasks || []).filter(k => k.status === 'Declined').map(k => `Proposed but not pursued: ${k.t}`),
     ...(x.contribs || []).filter(c => (c.history || []).some(e => /Changes requested|More evidence requested/.test(e.t))).map(c => `Contribution needed rework before acceptance: ${c.t}`),
-    ...S.evidence.filter(e => e.linked.includes(x.id) && ['Rejected', 'Insufficient', 'Needs Revision'].includes(e.review)).map(e => `Evidence ${e.review.toLowerCase()}: ${e.title}`),
+    ...S.evidence.filter(e => e.linked.includes(x.id) && e.conf === 'Programme' && ['Rejected', 'Insufficient', 'Needs Revision'].includes(e.review)).map(e => `Evidence ${e.review.toLowerCase()}: ${e.title}`),
     ...(x.returns || []).map(r => `Work returned to ${r.to}: ${r.why}`),
   ];
   const resources = lib.map(l => `${l.label} (${l.type.toLowerCase()}) · how it contributed: `);
@@ -1137,7 +1464,9 @@ A.hvGen = d => {
     detected: c.detected,
     links: c.links,
     contrib: [],
-    release: 'Not released',
+    dissent: [],
+    cleared: [],
+    release: 'Not cleared',
     versions: [],
   };
   S.harvests.push(v);
@@ -1175,11 +1504,12 @@ function hv2View(x, mem, comp, edit) {
   ${sec('what', HV2[0][1], HV2[0][2], ta('what', '<span class="sr">' + HV2[0][1] + '</span>', { rows: 8, req: true, help: edit ? 'Compiled from the completed deliverables, evidence, milestones, wins and records. Edit freely.' : '' }) + refs(['Deliverable', 'Evidence', 'Milestone', 'Record']))}
   ${sec('learning', HV2[1][1], HV2[1][2], ta('learning', 'What was learned', { rows: 3, req: true }) + `<div class="g2 hv2-learn">${HV2_LEARN.map(([k, l]) => ta(k, l, { rows: 2, help: edit && ['skillsDem', 'skillsDev', 'interests'].includes(k) ? 'Comma-separated. Used to suggest profile changes, which the person reviews.' : '' })).join('')}</div>`)}
   ${sec('negative', HV2[2][1] + ' <span class="req">*</span>', HV2[2][2], ta('negative', '<span class="sr">' + HV2[2][1] + '</span>', { rows: 6, req: true, help: edit ? (x.detected ? `Pre-filled with ${x.detected} item${x.detected > 1 ? 's' : ''} found in the records (open risks, blocked dependencies, late or declined deliverables, reworked contributions, evidence not approved). Confirm, edit and add what did not work.` : 'Nothing was flagged in the records. Record what did not work as expected, or explain why there was nothing.') : '' }))}
+  ${hvDissentSection(x, f, edit)}
   ${sec('resources', HV2[3][1], HV2[3][2], ta('resources', '<span class="sr">' + HV2[3][1] + '</span>', { rows: 5, req: true, help: edit ? 'Add how each resource contributed, or remove ones that did not.' : '' }) + refs(['Resource']))}
   ${sec('partners', HV2[4][1], HV2[4][2], ta('partners', '<span class="sr">' + HV2[4][1] + '</span>', { rows: 5, req: true, help: edit ? 'Add how each contribution affected the outcome.' : '' }) + refs(['Partner', 'Contribution']))}
   ${sec('decisions', 'F. Continue / Change / Stop / Test', 'The Harvest concludes with four decisions. All four are required.', `<div class="hv2-dec">${HV2_DEC.map(([k, l, q]) => `<div class="hv2-d hv2-d-${k}${fe(f, k) ? ' err' : ''}"><label class="hv2-dl" for="hv2_${k}"><b>${l}</b><span class="cap">${q}</span></label>${edit ? `<textarea id="hv2_${k}" name="${k}" class="input${fe(f, k) ? ' err' : ''}" rows="4" aria-invalid="${!!fe(f, k)}">${h(fv(f, k, s[k] || ''))}</textarea>${fe(f, k) ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe(f, k)}</span>` : ''}` : `<p class="hv2-x">${h(s[k] || '—')}</p>`}</div>`).join('')}</div>`)}
   ${sec('links', 'G. Links to records', 'Every source record this Harvest draws on. Each link opens the underlying record, which keeps its own permissions.', groups.length ? `<div class="hv2-links">${groups.map(g => `<div class="hv2-lg"><span class="lbl">${g === 'Baseline' ? 'Purpose Compass Baseline (only you)' : g + 's'}</span><div class="hv2-refs">${links.filter(l => l.type === g).map(chip).join('')}</div></div>`).join('')}</div>` : '<p class="cap">No linked records.</p>')}
-  ${edit ? `<div class="actions"><span class="cap">Every save keeps the previous version.</span><div class="row wrap"><button class="btn btn-s" type="submit" name="act" value="save">Save edits</button>${x.state === 'Draft' ? '<button class="btn btn-s" type="submit" name="act" value="review">Send for review</button>' : ''}${comp && !subj ? '<button class="btn btn-s" type="submit" name="act" value="reject">Reject</button><button class="btn btn-p" type="submit" name="act" value="approve">Approve</button>' : ''}</div></div>` : ''}</form>`;
+  ${edit ? `<div class="actions"><span class="cap">Every save keeps the previous version.</span><div class="row wrap"><button class="btn btn-s" type="submit" name="act" value="save">Save edits</button>${x.state === 'Draft' ? '<button class="btn btn-s" type="submit" name="act" value="review">Send for review</button>' : ''}${comp && !subj ? '<button class="btn btn-s" type="submit" name="act" value="reject">Reject</button><button class="btn btn-p" type="submit" name="act" value="approve">Approve (human decision)</button>' : ''}</div></div>` : ''}</form>`;
   const side = `<aside class="c4 col" style="gap:12px">${card(
     'Status',
     '',
@@ -1188,16 +1518,17 @@ function hv2View(x, mem, comp, edit) {
       ['For', nm(x.subject)],
       [WL(), o ? L(h(o.name), 'room', { id: o.id }) : '—'],
       ['Version', 'v' + x.ver],
-      x.approvedBy && ['Approved by', nm(x.approvedBy)],
-    ]) + (x.state === 'Draft' ? `<p class="cap hv2-note">Not complete until it is sent for review and approved by a Faculty/Steward, Reviewer or Project Lead.</p>` : x.state === 'Review' ? '<p class="cap hv2-note">Waiting for review and approval.</p>' : ''),
+      x.approvedBy && ['Completed by a person (human decision)', nm(x.approvedBy) + (x.approvedAt ? ' · ' + fmt(x.approvedAt) : '')],
+      ['Release', h(hvRelStr(x))],
+    ]) + (x.state === 'Draft' ? `<p class="cap hv2-note">Not complete until it is sent for review and a person — a Faculty/Steward, Reviewer or Project Lead — approves it.</p>` : x.state === 'Review' ? '<p class="cap hv2-note">Waiting for review and a human approval decision.</p>' : ''),
     '',
     'hv2-status',
   )}
- <nav class="card quiet hv2-toc hide-md" aria-label="Harvest sections"><span class="lbl">In this Harvest</span><ol>${[...HV2.map(([k, t]) => [k, t]), ['decisions', 'F. Continue / Change / Stop / Test'], ['links', 'G. Links to records']].map(([k, t]) => `<li><a href="#hv2-${k}">${t}</a></li>`).join('')}</ol></nav>
+ <nav class="card quiet hv2-toc hide-md" aria-label="Harvest sections"><span class="lbl">In this Harvest</span><ol>${[...HV2.slice(0, 3).map(([k, t]) => [k, t]), ['dissent', 'Dissent and minority views'], ...HV2.slice(3).map(([k, t]) => [k, t]), ['decisions', 'F. Continue / Change / Stop / Test'], ['links', 'G. Links to records']].map(([k, t]) => `<li><a href="#hv2-${k}">${t}</a></li>`).join('')}</ol></nav>
  ${subj ? card('Your baseline', 'Context from your Purpose Compass. Only you see this panel; nothing here is copied into the Harvest unless you write it in.', dl([['Purpose', h(cp.PC1 || '—')], ['Outcome', h(cp.PC2 || '—')], ['Success looks like', h(cp.PC6 || '—')], ['You bring', h(cp.PC7 || '—')], ['Blockers you expected', h(cp.PC3 || '—')], ['How you learn', h(cp.learnHow || '—')], ['First milestone', h(cp.PC5 || '—')]]) + '<p class="cap hv2-note">Did an expected blocker happen? Add it to Negative findings if you want to share it.</p>', L('Open baseline', 'profile', { tab: 'compass' })) : ''}
  ${card('Profile evolution', 'Suggested from the approved Harvest. Never applied automatically.', !hvDone(x) ? '<p class="cap">Identified when the Harvest is approved. The person reviews each suggestion and approves or rejects it.</p>' : subj ? (mineEvo.length ? `<p>${pend.length ? `<b>${pend.length}</b> waiting for your review` : 'All reviewed'} · ${mineEvo.filter(e => e.status === 'Approved').length} approved · ${mineEvo.filter(e => e.status === 'Rejected').length} rejected</p>` : '<p class="cap">No profile changes were identified.</p>') : `<p class="cap">${allEvo.length} suggestion${allEvo.length === 1 ? '' : 's'} offered to ${nm(x.subject)} · ${pend.length} awaiting their decision. Only they can approve.</p>`, subj && mineEvo.length ? L(pend.length ? 'Review profile changes' : 'See decisions', 'profile', { tab: 'evo' }, 'btn btn-p btn-sm') : '')}
- ${card('Contributions', 'Reflections, lessons, dissent and questions.', x.contrib.map(c => lrow('message', h(c.t), nm(c.by))).join('') || '<p class="cap">None yet.</p>', mem && ['Draft', 'Review'].includes(x.state) ? B(ic('plus', 14) + 'Contribute', 'hvContrib', { id: x.id }) : '')}
- ${card('Release', 'Separate approval for public or funder release.', `<p class="hv-rel">${h(x.release)}</p>${x.state === 'Approved' && comp && x.release === 'Not released' ? B('Request funder release', 'hvRel', { id: x.id, v: 'Funder release requested' }) : ''}${role() === 'A' && x.release === 'Funder release requested' ? B('Approve release', 'hvRel', { id: x.id, v: 'Released' }, 'btn-p btn-sm') : ''}`)}
+ ${card('Contributions', 'Reflections, lessons, dissent and questions. Dissent is also kept in its own section.', x.contrib.map(c => lrow('message', h(c.t), nm(c.by))).join('') || '<p class="cap">None yet.</p>', mem && ['Draft', 'Review'].includes(x.state) ? B(ic('plus', 14) + 'Contribute', 'hvContrib', { id: x.id }) : '')}
+ ${hvReleaseCard(x, comp)}
  ${x.state === 'Rejected' && (x.by === myId() || comp) ? card('Rejected', 'Revise and redraft. The rejected version is kept.', B(ic('refresh', 14) + 'Revise and redraft', 'hvRedraft', { id: x.id }, 'btn-p btn-sm')) : ''}
  ${x.versions.length ? card('Previous versions', '', `<ol class="hv-vers">${x.versions.map(v => `<li class="cap">v${v.ver} · ${fmt(v.at)} · ${h(v.state)}</li>`).join('')}</ol>`) : ''}</aside>`;
   const evoMine = hvDone(x) && subj && pend.length ? `<div class="c12">${banner('warn', pend.length + ' suggested profile change' + (pend.length > 1 ? 's are' : ' is') + ' waiting for your review', 'Identified from this approved Harvest. Nothing has been applied: review each one and approve or reject it.<span class="row wrap hv2-evo-a">' + L('Review profile changes', 'profile', { tab: 'evo' }, 'btn btn-p btn-sm') + '</span>')}</div>` : '';
@@ -1222,9 +1553,10 @@ F.hv2 = d => {
       return render();
     }
   }
-  x.versions.push({ ver: x.ver, at: today(), state: x.state, sections: { ...x.sections } });
+  x.versions.push({ ver: x.ver, at: today(), state: x.state, sections: { ...x.sections }, dissent: (x.dissent || []).length });
   x.ver++;
   x.sections = { ...x.sections, ...next };
+  hvAddDissent(x, d.dissentAdd);
   if (act === 'review') {
     x.state = 'Review';
     const o = byId('rooms', x.scope);
@@ -1236,6 +1568,7 @@ F.hv2 = d => {
   if (act === 'approve') {
     x.state = 'Approved';
     x.approvedBy = myId();
+    x.approvedAt = today();
     found = evoGenerate(x);
   }
   if (act === 'reject') x.state = 'Rejected';
@@ -1243,7 +1576,7 @@ F.hv2 = d => {
   clearF('hv2');
   toast(
     act === 'approve'
-      ? 'Harvest approved. ' + (found.length ? found.length + ' suggested profile change' + (found.length > 1 ? 's were' : ' was') + ' sent to ' + P(x.subject).name + ' for review — nothing was applied.' : 'No profile changes were identified.')
+      ? 'Harvest approved — completed by a person (human decision). ' + (found.length ? found.length + ' suggested profile change' + (found.length > 1 ? 's were' : ' was') + ' sent to ' + P(x.subject).name + ' for review — nothing was applied.' : 'No profile changes were identified.')
       : act === 'review'
         ? 'Sent for review.'
         : act === 'reject'

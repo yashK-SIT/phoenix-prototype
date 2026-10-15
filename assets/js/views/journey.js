@@ -1,6 +1,6 @@
-// ---------- PROJECT STAGE JOURNEY: Circle → Rope Team → Action Room (Section 5.3, Figure 4, F05, F07) ----------
-// Spaces are linked, never converted. Forward movement has a gate; backward movement returns an issue
-// to an earlier space and the work moves forward again once it is resolved.
+// ---------- LINKED SPACES: Circle, Rope Team and Action Workspace (F05, F07; Build-Freeze BF-07) ----------
+// Spaces are linked, never converted, and can be entered in any valid order. An issue can be sent to any linked
+// space that can help; the work continues once it is resolved.
 const projOf = (kind, o) =>
   !o
     ? null
@@ -9,20 +9,25 @@ const projOf = (kind, o) =>
       : kind === 'rooms'
         ? S.projects.find(p => p.room === o.id) || null
         : byId('projects', o.project) || null;
-const skipsRope = p => p && p.supportPath === 'Circle → Room';
+// No mandatory sequence: a Rope Team can always be linked (kept as a function for existing callers).
+const skipsRope = () => false;
 const circleAgreed = c => !!c && (c.decisions || []).length > 0;
 const openReturns = p => (S.returnLog || []).filter(r => r.project === p.id && r.status === 'Open');
 function stageSteps(p) {
+  // BF-07: drive status from which spaces are actually linked — never imply Circle → Rope → Room is required.
   const c = byId('circles', p.circle),
     rt = byId('ropes', p.rope),
     rm = byId('rooms', p.room);
-  const idx = { Circle: 0, 'Rope Team': 1, Room: 2, 'Final review': 3, Closed: 4 }[p.stage] ?? -1;
+  const closing = ['Final review', 'Closed'].includes(p.stage);
   const steps = [
-    { key: 'circle', kind: 'circles', label: 'Circle', o: c, i: 0, icon: 'users', tile: 't-purple', what: 'Discuss, decide, weighted vote' },
-    !skipsRope(p) && { key: 'rope', kind: 'ropes', label: 'Rope Team', o: rt, i: 1, icon: 'route', tile: 't-teal', what: 'Mentor guidance, reviews, finalise requirements' },
-    { key: 'room', kind: 'rooms', label: WL(), o: rm, i: 2, icon: 'room', tile: 't-navy', what: 'Tasks, milestones, evidence, final submission' },
+    { key: 'circle', kind: 'circles', label: 'Circle', o: c, icon: 'users', tile: 't-purple', what: 'Shared learning, sensemaking, equal-vote decisions' },
+    !skipsRope(p) && { key: 'rope', kind: 'ropes', label: 'Rope Team', o: rt, icon: 'route', tile: 't-teal', what: 'Mentor support and accountability' },
+    { key: 'room', kind: 'rooms', label: WL(), o: rm, icon: 'room', tile: 't-navy', what: 'Tasks, milestones, risks, resources and evidence' },
   ].filter(Boolean);
-  return steps.map(s => ({ ...s, st: !s.o && idx > s.i ? 'skip' : idx > s.i ? 'done' : idx === s.i ? 'cur' : 'todo' }));
+  return steps.map(s => ({
+    ...s,
+    st: s.o ? (closing ? 'done' : 'cur') : 'todo',
+  }));
 }
 const canOpenSpace = (kind, o) =>
   !!o &&
@@ -30,74 +35,57 @@ const canOpenSpace = (kind, o) =>
     ['A', 'O'].includes(role()) ||
     (kind === 'circles' && role() === 'F' && o.facilitator === myId()) ||
     (kind === 'circles' && o.visibility === 'Programme'));
+// BF-07: Circle = shared learning and sensemaking; Rope Team = protected support and accountability; Action
+// Workspace = execution. They are separate, linked objects that can be entered or linked in any valid order —
+// no mandatory sequence, and no space is ever converted into another.
 function stageTrack(p, hereKind) {
-  if (!p || !p.circle) return '';
+  if (!p) return '';
   const steps = stageSteps(p);
   const rets = openReturns(p);
   const closed = p.stage === 'Closed';
-  return `<section class="journey" aria-label="Project stages"><div class="jhead"><span class="jtitle">${ic('steps', 15)}Project journey</span><span class="cap jsum">${L(h(p.title), 'project', { id: p.id }, 'lnk')} · ${closed ? 'approved and closed' : p.stage === 'Final review' ? 'final review with the Faculty/Steward' : 'stage ' + h(stageLabel(p.stage))}</span></div><ol class="jsteps">${steps
-    .map((s, n) => {
+  return `<section class="journey" aria-label="Linked spaces"><div class="jhead"><span class="jtitle">${ic('link', 15)}Linked spaces</span><span class="cap jsum">${L(h(p.title), 'project', { id: p.id }, 'lnk')} · separate spaces, linked in any order · never converted</span></div><ol class="jsteps jsteps-free">${steps
+    .map(s => {
       const here = s.kind === hereKind;
       const route_ = { circles: 'circle', ropes: 'rope', rooms: 'room' }[s.kind];
-      const name = s.o ? h(s.o.name) : s.st === 'skip' ? 'Skipped' : 'Not created yet';
+      const name = s.o ? h(s.o.name) : 'Not linked';
       const link = s.o && canOpenSpace(s.kind, s.o) && !here ? L(name, route_, { id: s.o.id }, 'lnk') : name;
       const back = rets.filter(r => r.to.kind === s.kind).length;
-      return `<li class="jstep is-${s.st}${here ? ' is-here' : ''}${back ? ' has-ret' : ''}"${here ? ' aria-current="step"' : ''}><span class="tile ${['todo', 'skip'].includes(s.st) ? 't-soft' : s.tile}">${s.st === 'done' ? ic('check', 16) : ic(s.icon, 16)}</span><div class="jbody"><span class="jlabel">${n + 1}. ${s.label}${here ? ' <span class="jhere">You are here</span>' : ''}</span><span class="jname">${link}</span><span class="cap jmeta">${s.o ? pill(s.o.state) : s.st === 'skip' ? '<span>Not used for this project</span>' : h(s.what)}${back ? ' ' + pill(back + ' returned issue' + (back > 1 ? 's' : ''), 'p-amber') : ''}</span></div></li>`;
+      return `<li class="jstep is-${s.o ? 'done' : 'todo'}${here ? ' is-here' : ''}${back ? ' has-ret' : ''}"${here ? ' aria-current="step"' : ''}><span class="tile ${s.o ? s.tile : 't-soft'}">${ic(s.icon, 16)}</span><div class="jbody"><span class="jlabel">${s.label}${here ? ' <span class="jhere">You are here</span>' : ''}</span><span class="jname">${link}</span><span class="cap jmeta">${s.o ? pill(s.o.state) : h(s.what)}${back ? ' ' + pill(back + ' issue' + (back > 1 ? 's' : '') + ' sent here', 'p-amber') : ''}</span></div></li>`;
     })
-    .join('')}<li class="jstep jfinal is-${closed ? 'done' : p.stage === 'Final review' ? 'cur' : 'todo'}"><span class="tile ${closed ? 't-teal' : p.stage === 'Final review' ? 't-navy' : 't-soft'}">${ic(closed ? 'check' : 'award', 16)}</span><div class="jbody"><span class="jlabel">Final review</span><span class="jname">${closed ? 'Approved' : p.stage === 'Final review' ? 'In review' : 'After execution'}</span><span class="cap jmeta">Faculty/Steward</span></div></li></ol>${rets.length ? `<div class="jret" role="note">${ic('refresh', 16)}<div><b>${rets.length} issue${rets.length > 1 ? 's' : ''} returned to an earlier stage.</b> <span class="cap">${rets.map(r => h(r.toName) + ': ' + h(r.why.slice(0, 70))).join(' · ')}</span></div></div>` : ''}</section>`;
+    .join('')}<li class="jstep jfinal is-${closed ? 'done' : p.stage === 'Final review' ? 'cur' : 'todo'}"><span class="tile ${closed ? 't-teal' : p.stage === 'Final review' ? 't-navy' : 't-soft'}">${ic(closed ? 'check' : 'award', 16)}</span><div class="jbody"><span class="jlabel">Project close</span><span class="jname">${closed ? 'Approved and closed' : p.stage === 'Final review' ? 'Final review' : 'When the work is done'}</span><span class="cap jmeta">Faculty/Steward · Learning Harvest</span></div></li></ol>${rets.length ? `<div class="jret" role="note">${ic('refresh', 16)}<div><b>${rets.length} issue${rets.length > 1 ? 's' : ''} sent to a linked space.</b> <span class="cap">${rets.map(r => h(r.toName) + ': ' + h(r.why.slice(0, 70))).join(' · ')}</span></div></div>` : ''}</section>`;
 }
-// ---- what moves the project forward from here, and who can do it
+// ---- linking another space from here: any missing space can be created or linked, by whoever is authorised
 function stageGate(p, kind, o) {
   if (!p) return '';
   const r = role();
-  const fac = (r === 'F' && p.stewards.includes(myId())) || r === 'A';
+  const steward = r === 'F' && p.stewards.includes(myId());
+  const fac = steward || r === 'A';
+  const owner = p.owner === myId();
+  const active = o && o.state === 'Active';
   const items = [];
-  if (kind === 'circles') {
-    const agreed = circleAgreed(o);
-    items.push([agreed, 'The matter is discussed and agreed — at least one decision is recorded (weighted vote ≥ ' + S.settings.voting.threshold + '% or facilitator record).']);
-    if (!skipsRope(p)) {
-      items.push([!!p.rope, 'A Rope Team is formed: a mentor accepts a Mentor Request.']);
-      const steward = r === 'F' && p.stewards.includes(myId());
-      const act = !p.rope && (steward || p.owner === myId()) && o.state === 'Active'
-        ? B(ic('route', 14) + 'Raise Mentor Request', 'mentorRequest', { project: p.id }, 'btn-p btn-sm') + (steward ? B(ic('link', 14) + 'Find a collaborator', 'collabFind', { project: p.id }) : '')
-        : '';
-      return gateCard('Forward: Circle → Rope Team', items, act, p, kind, o);
-    }
-    items.push([!!p.room, 'The ' + WL() + ' is created or linked.']);
-    const act = !p.room && (fac || ownRoomProjects().includes(p)) && o.state === 'Active'
-      ? agreed
-        ? B(ic('room', 14) + 'Create or link ' + WL(), 'newRoom', { origin: 'Circle decision', oid: o.id, project: p.id }, 'btn-p btn-sm')
-        : `<button class="btn btn-p btn-sm" type="button" disabled>${ic('room', 14)}Create ${WL()}</button><span class="cap">Record an approved decision first.</span>`
-      : '';
-    return gateCard('Forward: Circle → ' + WL() + ' (Rope Team skipped)', items, act, p, kind, o);
-  }
-  if (kind === 'ropes') {
-    items.push([(o.reviews || []).some(v => v.status === 'Looks good'), 'Mentor has reviewed the team’s work.']);
-    items.push([!!o.reqFinal, 'Guidance is complete and requirements are finalised (mentor).']);
-    items.push([!!p.room, 'The ' + WL() + ' is created or linked (project owner or Faculty/Steward).']);
-    let act = '';
-    const ownerCan = p.owner === myId() && !p.room && o.state === 'Active' && ownRoomProjects().includes(p);
-    if (o.state === 'Active' && o.mentor === myId() && !o.reqFinal) act = B(ic('check', 14) + 'Mark requirements finalised', 'reqFinal', { id: o.id }, 'btn-p btn-sm');
-    if (!p.room && ((o.reqFinal && fac) || ownerCan)) act = B(ic('room', 14) + 'Create ' + WL(), 'newRoom', { origin: 'Rope Team recommendation', oid: o.id, project: p.id }, 'btn-p btn-sm') + (ownerCan && !o.reqFinal ? '<span class="cap">Requirements are not finalised yet; you can still start.</span>' : '');
-    if (!o.reqFinal && fac && !act) act = '<span class="cap">Waiting for the mentor to finalise requirements.</span>';
-    return gateCard('Forward: Rope Team → ' + WL(), items, act, p, kind, o);
-  }
+  const acts = [];
+  items.push([!!p.circle, 'Circle — shared learning, sensemaking and equal-vote decisions.']);
+  items.push([!!p.rope, 'Rope Team — a mentor supports the team; private mentoring notes stay inside it.']);
+  items.push([!!p.room, WL() + ' — tasks, milestones, risks, resources and evidence.']);
+  if (active && !p.rope && (steward || owner)) acts.push(B(ic('route', 14) + 'Ask for a mentor (Rope Team)', 'mentorRequest', { project: p.id }, 'btn-s btn-sm'));
+  if (active && !p.room && (fac || ownRoomProjects().includes(p)))
+    acts.push(B(ic('room', 14) + 'Create or link ' + WL(), 'newRoom', { origin: kind === 'circles' ? 'Circle decision' : kind === 'ropes' ? 'Rope Team recommendation' : 'Project', oid: o.id, project: p.id }, 'btn-s btn-sm'));
+  if (active && kind === 'ropes' && o.mentor === myId() && !o.reqFinal) acts.push(B(ic('check', 14) + 'Record support recommendation', 'reqFinal', { id: o.id }, 'btn-s btn-sm'));
+  if (active && steward && kind === 'circles') acts.push(B(ic('link', 14) + 'Find a collaborator', 'collabFind', { project: p.id }));
   if (kind === 'rooms') {
     const ms = o.milestones || [];
     const done = ms.filter(m => m.status === 'Achieved').length;
-    items.push([o.state === 'Active', 'The ' + WL() + ' is active.']);
     items.push([ms.length > 0 && done === ms.length, `Milestones achieved with validated evidence (${done} of ${ms.length}).`]);
-    items.push([p.stage === 'Final review' || p.stage === 'Closed', 'Final deliverables submitted to the Faculty/Steward.']);
-    const act = p.owner === myId() && p.stage === 'Room' && o.state === 'Active' ? B('Submit final deliverables', 'submitFinal', { id: p.id }, 'btn-p btn-sm') : p.stage === 'Final review' ? '<span class="cap">With the Faculty/Steward for final review.</span>' : '';
-    return gateCard('Forward: ' + WL() + ' → final review', items, act, p, kind, o);
+    if (owner && p.stage === 'Room' && active) acts.push(B('Submit final deliverables', 'submitFinal', { id: p.id }, 'btn-p btn-sm'));
+    if (p.stage === 'Final review') acts.push('<span class="cap">With the Faculty/Steward for final review.</span>');
   }
-  return '';
+  return gateCard('Link another space', items, acts.join(''), p, kind, o);
 }
 function gateCard(title, items, act, p, kind, o) {
   return card(
     title,
-    'Forward movement needs these conditions. Backward movement is always possible when something needs guidance or a new decision.',
-    `<ul class="gate">${items.map(([ok_, t]) => `<li class="${ok_ ? 'ok' : ''}"><span class="gate-ic">${ic(ok_ ? 'check' : 'clock', 14)}</span><span>${t}</span></li>`).join('')}</ul>${act ? `<div class="row wrap gate-act">${act}</div>` : ''}${backActions(p, kind, o)}`,
+    'Spaces can be entered and linked in any valid order. A recorded Circle decision or a mentor’s recommendation helps, but neither is a gate.',
+    `<ul class="gate">${items.map(([ok_, t]) => `<li class="${ok_ ? 'ok' : ''}"><span class="gate-ic">${ic(ok_ ? 'check' : 'link', 14)}</span><span>${t}</span></li>`).join('')}</ul>${act ? `<div class="row wrap gate-act">${act}</div>` : ''}${backActions(p, kind, o)}`,
     '',
     'gate-card',
   );
@@ -105,12 +93,9 @@ function gateCard(title, items, act, p, kind, o) {
 function backActions(p, kind, o) {
   if (!o || o.state !== 'Active' || !memberOf(o)) return '';
   const btns = [];
-  if (kind === 'rooms') {
-    if (p.rope && !skipsRope(p)) btns.push(B(ic('refresh', 14) + 'Return issue to Rope Team', 'returnTo', { from: 'rooms', id: o.id, to: 'rope' }));
-    btns.push(B(ic('refresh', 14) + 'Return issue to Circle', 'returnTo', { from: 'rooms', id: o.id, to: 'circle' }));
-  }
-  if (kind === 'ropes') btns.push(B(ic('refresh', 14) + 'Return matter to Circle', 'returnTo', { from: 'ropes', id: o.id, to: 'circle' }));
-  return btns.length ? `<div class="jback"><span class="jback-k">${ic('refresh', 14)}<span>Backward movement</span></span><div class="row wrap">${btns.join('')}</div></div>` : '';
+  if (kind !== 'ropes' && p.rope) btns.push(B(ic('refresh', 14) + 'Send an issue to the Rope Team', 'returnTo', { from: kind, id: o.id, to: 'rope' }));
+  if (kind !== 'circles' && p.circle) btns.push(B(ic('refresh', 14) + 'Send an issue to the Circle', 'returnTo', { from: kind, id: o.id, to: 'circle' }));
+  return btns.length ? `<div class="jback"><span class="jback-k">${ic('refresh', 14)}<span>Needs guidance or a new decision?</span></span><div class="row wrap">${btns.join('')}</div></div>` : '';
 }
 // ---- reports along the accountability chain (Section 5.3)
 const REPORT_KIND = { circles: 'Circle progress report', ropes: 'Rope Team guidance report' };
@@ -239,7 +224,7 @@ function tick() {
   });
   S.circles.forEach(c =>
     (c.polls || []).forEach(p => {
-      if (p.status === 'Open' && (p.closes.length > 10 ? p.closes : p.closes + 'T23:59') < now().slice(0, 16)) closePollCore({ c: c.id, p: p.id }, 'due', true);
+      if (p.status === 'Open') pollTick(c, p); // closes at the closing time; sends the configured reminder (circles.js)
     }),
   );
 }

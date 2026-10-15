@@ -314,6 +314,7 @@ function migrate() {
     // custom pathways now wait for the Programme Administrator to assign a Steward
     if (p.state === "In review" && !p.reviewer) p.state = "Awaiting reviewer";
   });
+  profileMigrate(); // pathway step rules, candidate source/audience (views/profile.js)
   // Milestones hold a list of evidence, each approved by the Steward; the project's Steward facilitates its Action Room
   S.rooms.forEach((x) => {
     (x.milestones || []).forEach((m) => {
@@ -338,24 +339,10 @@ function migrate() {
     if (n.r === "admin" && n.p && n.p.tab === "approvals") n.p.tab = "users";
     if (n.r === "rope" && n.p && n.p.tab === "contrib") n.p.tab = "about";
   });
-  // policies carry structured text; the Participant Agreement v3 (processing covered by the agreement) is published
+  // policies carry structured text; optional purposes always stay separate from the required agreement (BF-02)
   S.agreements.forEach((g) => {
     if (!g.text) g.text = polSeedText(g);
   });
-  const g11 = byId("agreements", "g11");
-  if (g11 && g11.status === "Draft" && !g11.coversPurposes) {
-    S.agreements
-      .filter((g) => g.type === g11.type && g.ctx === g11.ctx && g.status === "Active")
-      .forEach((g) => (g.status = "Superseded"));
-    Object.assign(g11, {
-      status: "Active",
-      effective: g11.effective && g11.effective > "2026-10-07" ? g11.effective : "2026-10-07",
-      summary:
-        "How PHOENIX may use your information is now part of this agreement. The separate permission choices are removed, so there is nothing to switch on or off later.",
-      coversPurposes: true,
-    });
-    g11.text = polSeedText({ ...g11, ver: 3 });
-  }
   // Purpose Compass questions are data managed by the Platform Administrator
   if (!S.compassQs) S.compassQs = seedCompassQs();
   // one default programme for self-registration (there is no programme choice)
@@ -436,7 +423,7 @@ function migrate() {
       id: "iv1",
       title: "Spring 2027 urban heat cohort",
       summary:
-        "Twenty new participants across three wards. Seat sponsorship and project funding are both welcome.",
+        "Twenty new participants across three wards. Seat sponsorship is welcome; sponsors follow approved outcomes through funder-safe reports.",
       by: "p7",
       at: "2026-09-25",
       status: "Published",
@@ -513,6 +500,7 @@ function migrate() {
     pay: { name: "Payment provider", mode: "Sandbox" },
     email: { name: "Transactional email service", mode: "Production" },
   };
+  if (typeof evMigrate === "function") evMigrate(); // BF-04: evidence review / confidentiality / lifecycle / release split
 }
 // ---- Resources & guidance (PGA-05, FCS-02)
 const AUD = {
@@ -700,7 +688,7 @@ const initiativesView = () =>
       card(
         h(i.title),
         "Published " + fmt(i.at) + " by " + nm(i.by),
-        `<p class="muted">${h(i.summary)}</p><div class="row wrap ini-acts">${B("Browse projects", "go", { r: "funding", tab: "discover" }, "btn-p btn-sm")}</div>`,
+        `<p class="muted">${h(i.summary)}</p><div class="row wrap ini-acts">${B("Approved initiatives", "go", { r: "funding", tab: "initiatives" }, "btn-p btn-sm")}</div>`,
       ),
     )
     .join('<div class="section-gap"></div>') ||
@@ -807,7 +795,8 @@ F.mfa = (d) => {
     return render();
   }
   const p = P(UI.pre.mfaPid);
-  UI.pre = null;
+  // keep a pending "add this role to my account" request through two-step verification
+  UI.pre = UI.pre.addRole ? { addRole: UI.pre.addRole } : null;
   clearF("mfa");
   startSession(p, true);
 };

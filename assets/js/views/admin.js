@@ -158,7 +158,7 @@ function userForm(p, a) {
   return `<form data-f="usr" class="col" style="gap:14px" novalidate>${errSum(f)}<input type="hidden" name="aid" value="${a ? a.id : ''}">
   <h3 class="h3">Account</h3>
   <div class="f2">${fi(f, 'name', 'Full name', { req: true, value: p?.name, auto: 'off' })}${fi(f, 'display', 'Display name', { req: true, value: p?.display, auto: 'off' })}</div>
-  <div class="f2">${fi(f, 'email', 'Email address', { type: 'email', req: true, value: p?.email, auto: 'off' })}${dobField(f, p?.dob || '', { req: true, auto: 'off', vis: '' })}</div>
+  <div class="f2">${fi(f, 'email', 'Email address', { type: 'email', req: true, value: p?.email, auto: 'off' })}${fi(f, 'age', 'Age confirmation on file', { type: 'select', req: true, value: p?.ageConfirmed ? 'yes' : '', ph: 'Choose', opts: [['yes', 'The person confirmed they meet the programme age requirement'], ['no', 'Not yet confirmed']], help: 'Recommended (WSS): age confirmation instead of a date of birth.' })}</div>
   <h3 class="h3">${a ? 'This role assignment' : 'First role'}</h3>
   <div class="f2">${fi(f, 'role', 'Role', { type: 'select', req: true, ph: 'Choose a role', value: a?.role, opts: invitableRoles(USER_ROLES).map(r => [r.id, r.name + (r.system ? '' : ' (custom)')]) })}${fi(f, 'ctxName', 'Context', { value: cx ? cx.name : '', ro: true })}</div>
   ${a ? fi(f, 'status', 'Role status', { type: 'select', value: a.status, opts: st }) : ''}
@@ -185,7 +185,7 @@ A.userView = d => {
       ['Full name', h(p.name)],
       ['Display name', h(p.display)],
       ['Email', h(p.email)],
-      ['Date of birth', p.dob ? fmt(p.dob) : '<span class="cap">Not recorded</span>'],
+      ['Age confirmation', p.ageConfirmed ? 'Confirmed ' + fmt(p.ageConfirmed === true ? today() : p.ageConfirmed) : '<span class="cap">Not recorded</span>'],
       ['Organization', h((S.orgs.find(o => o.id === p.org) || {}).name || '—')],
       ['Email verified', p.verified ? 'Yes' : 'No'],
       ['Account status', pill(p.status || 'Active')],
@@ -203,7 +203,7 @@ F.usr = d => {
     name: ['req'],
     display: ['req'],
     email: ['req', 'email', ['fn', { f: v => { const x = personByEmail(v); return !x || x.id === pid; }, m: 'Another account already uses this email address.' }]],
-    dob: dobRules(true),
+    age: ['req'],
     role: ['req'],
   });
   if (!okv) return render();
@@ -212,7 +212,7 @@ F.usr = d => {
     UI.err.usr = { role: 'This person already holds that role in that context.' };
     return render();
   }
-  const fields = { name: d.name.trim(), display: d.display.trim(), email: d.email.trim(), dob: d.dob };
+  const fields = { name: d.name.trim(), display: d.display.trim(), email: d.email.trim(), ageConfirmed: d.age === 'yes' ? today() : null };
   if (a) {
     const p = P(pid);
     const was = JSON.stringify({ name: p.name, display: p.display, email: p.email, dob: p.dob, role: a.role, ctx: a.ctx, status: a.status });
@@ -339,6 +339,212 @@ A.mandRevoke = d => {
   toast('Mandate revoked. Elevated access removed; ordinary access continues.');
   ok();
 };
+// ---------- BUILD-FREEZE: configuration status, packs, parameters, versions, org requests ----------
+// Each setting shows whether it is frozen by the Alpha, configurable within delegation, or pending a WSS decision.
+const CFG_ST = { Frozen: 'p-navy', Configurable: 'p-teal', Included: 'p-green', 'Recommended (WSS)': 'p-teal', 'Pending WSS decision': 'p-amber' };
+const cfgSt = s => pill(s, CFG_ST[s] || 'p-grey');
+function votingCard() {
+  const v = S.settings.voting;
+  const st = k => cfgSt((v.status || {})[k] || 'Configurable');
+  return card(
+    'Circle voting parameters',
+    'Equal vote weight is frozen. Threshold, quorum, window and reminders stay configurable until WSS freezes them; the platform never hard-codes them.',
+    `<form data-f="votecfg" class="col adm-form" novalidate>
+    <div class="row wrap adm-vrow"><b>Vote weight</b><span>One eligible member = one vote. No owner multiplier, no AI override.</span>${cfgSt('Frozen')}</div>
+    <div class="g3">${fi('votecfg', 'threshold', 'Approval threshold (% of eligible voters)', { type: 'number', min: 1, maxv: 100, value: v.threshold, req: true })}${fi('votecfg', 'quorum', 'Quorum (% of eligible voters who must vote)', { type: 'number', min: 1, maxv: 100, value: v.quorum, req: true })}${fi('votecfg', 'windowDays', 'Voting window (days)', { type: 'number', min: 1, value: v.windowDays, req: true })}</div>
+    <div class="g3">${fi('votecfg', 'reminderDays', 'Reminder before close (days)', { type: 'number', min: 0, value: v.reminderDays, req: true })}${fi('votecfg', 'tie', 'When the vote ties', { value: v.tie, ro: true })}<div class="field"><span class="lbl">Status</span><div class="row wrap" style="gap:6px">${st('threshold')}<span class="cap">threshold</span>${st('quorum')}<span class="cap">quorum</span>${st('windowDays')}<span class="cap">window</span>${st('reminderDays')}<span class="cap">reminders</span></div></div></div>
+    <div class="actions"><span class="help">Changes apply to votes opened after saving. Open votes keep the rule they started with.</span><button class="btn btn-p btn-sm" type="submit">Save parameters</button></div></form>`,
+    '',
+    'adm-panel',
+  );
+}
+F.votecfg = d => {
+  if (!validate('votecfg', d, { threshold: ['req', 'num'], quorum: ['req', 'num'], windowDays: ['req', 'num'], reminderDays: ['req'] })) return render();
+  const v = S.settings.voting;
+  const before = `${v.threshold}% / ${v.quorum}% / ${v.windowDays}d / ${v.reminderDays}d`;
+  Object.assign(v, { threshold: Math.min(100, +d.threshold), quorum: Math.min(100, +d.quorum), windowDays: +d.windowDays, reminderDays: +d.reminderDays, weight: 'Equal' });
+  audit('Voting parameters changed', 'settings.voting', before + ' → ' + `${v.threshold}% / ${v.quorum}% / ${v.windowDays}d / ${v.reminderDays}d`);
+  clearF('votecfg');
+  toast('Voting parameters saved. Equal vote weight is unchanged.');
+  ok();
+};
+function decisionsCard() {
+  const dc = S.settings.decisions || {};
+  const rows = [
+    ['Vote weight', 'One eligible member = one vote', 'Frozen'],
+    ['Required agreement vs optional purposes', 'Five optional purposes always separate from the agreement', 'Frozen'],
+    ['Device baseline (BF-11)', dc.device?.value, dc.device?.status],
+    ['Entry route (BF-12)', dc.entry?.value, dc.entry?.status],
+    ['Age data (BF-12)', dc.age?.value, dc.age?.status],
+    ['Bulletin Board Lite / Relationship List Lite (BF-15/16)', 'Built over existing authorised records only', 'Included'],
+    ['Pack labels, templates, enabled flows', 'Inside the approved pack envelope', 'Configurable'],
+  ];
+  return card('Settings: frozen, configurable or pending', 'So that nobody mistakes an open WSS decision for a fixed rule.', table(['Setting', 'Current value in the prototype', 'Status'], rows.map(([a, b, c]) => [`<b>${h(a)}</b>`, h(b || '—'), cfgSt(c || 'Configurable')])), '', 'adm-panel');
+}
+// Packs differ by labels, onboarding questions, templates, enabled flows, evidence types and metrics — never code.
+function packsView() {
+  const cur = pack();
+  return `<div class="adm-stack">${card(
+    'Use-case packs ' + `<span class="adm-n">${S.packs.length}</span>`,
+    'Every pack reuses the same Person, Role Assignment, Agreement, Purpose Compass, Pathway, Circle, Rope Team, Opportunity, Match Brief, Action Workspace, Evidence and Harvest objects.',
+    table(
+      ['Pack', 'Workspace label', 'Circle label', 'Enabled flows', 'Evidence types', 'Status', ''],
+      S.packs.map(p => [
+        `<b>${h(p.name)}</b>${p.id === cur.id ? ' ' + pill('This context', 'p-teal') : ''}`,
+        h(p.labels.workspace),
+        h(p.labels.circle),
+        `<span class="cap">${p.flows.length} of 12</span>`,
+        h(p.evidenceTypes),
+        pill(p.status === 'Active' ? 'Active' : 'Draft'),
+        p.status === 'Active' ? B('Configure', 'packCfg', { id: p.id }) : B('Configure', 'packCfg', { id: p.id }) + B('Activate', 'packAct', { id: p.id }, 'btn-p btn-sm'),
+      ]),
+    ),
+    '',
+    'adm-panel',
+  )}${votingCard()}${decisionsCard()}</div>`;
+}
+A.packCfg = d => {
+  const p = byId('packs', d.id);
+  clearF('pkc');
+  modal(
+    'Configure pack: ' + h(p.name),
+    () => `<form data-f="pkc" class="col adm-form" novalidate><input type="hidden" name="id" value="${p.id}">
+    <div class="g3">${fi('pkc', 'workspace', 'Label shown for Action Workspaces', { value: p.labels.workspace, req: true, help: 'The system concept stays “Action Workspace”.' })}${fi('pkc', 'circle', 'Label for Circles', { value: p.labels.circle, req: true })}${fi('pkc', 'rope', 'Label for Rope Teams', { value: p.labels.rope, req: true })}</div>
+    ${fi('pkc', 'evidenceTypes', 'Evidence types', { value: p.evidenceTypes, req: true })}
+    ${fi('pkc', 'compassOpt', 'Ask optional Purpose Compass questions (PC7–PC12) later, in context', { type: 'checkbox', value: p.compassOptional ? 'yes' : '' })}
+    <div class="adm-locked"><span class="adm-locked-ic" aria-hidden="true">${ic('lock', 16)}</span><div><b>Same for every pack (locked)</b><p class="cap">Identity · consent and optional purposes · role authority · matching rules · evidence states · Harvest and profile controls · audit</p></div></div>
+    <div class="actions"><span class="help">Saved as configuration. No code fork, database change or vendor script.</span><button class="btn btn-p" type="submit">Save pack</button></div></form>`,
+    true,
+  );
+};
+F.pkc = d => {
+  if (!validate('pkc', d, { workspace: ['req'], circle: ['req'], rope: ['req'], evidenceTypes: ['req'] })) return render();
+  const p = byId('packs', d.id);
+  p.labels = { workspace: d.workspace.trim(), circle: d.circle.trim(), rope: d.rope.trim() };
+  p.evidenceTypes = d.evidenceTypes.trim();
+  p.compassOptional = d.compassOpt === 'yes';
+  audit('Pack configured', p.id, JSON.stringify(p.labels));
+  UI.modal = null;
+  clearF('pkc');
+  toast(p.name + ' saved.');
+  ok();
+};
+A.packAct = d => {
+  const p = byId('packs', d.id);
+  p.status = 'Active';
+  audit('Pack activated', p.id, p.name);
+  toast(p.name + ' is active. Programmes can now use it.');
+  ok();
+};
+// Configuration versions: save, export and restore configuration only. Participant data and rights are never touched.
+const cfgSnap = () => JSON.parse(JSON.stringify({ packs: S.packs, voting: S.settings.voting, compassQs: S.compassQs, templates: S.templates, participantCanProposeWorkspace: S.settings.participantCanProposeWorkspace }));
+function versionsView() {
+  const vs = S.configVersions;
+  return card(
+    'Configuration versions ' + `<span class="adm-n">${vs.length}</span>`,
+    'Restoring a version changes configuration only (packs, labels, templates, Purpose Compass wording, voting parameters). Participant records, consent choices and rights are kept as they are.',
+    table(
+      ['Version', 'Saved', 'By', 'Note', ''],
+      vs.map((v, i) => [`<b>v${i + 1}</b>`, fmt(v.at), nm(v.by), h(v.note), (v.snap ? CB('Restore', 'cfgRestore', { id: v.id }, 'Restore configuration v' + (i + 1) + '? Current configuration is saved first as a new version. Participant data and rights are not changed.', 'btn-s btn-sm') : '<span class="cap">Baseline record</span>') + B(ic('download', 14) + 'Export', 'cfgExport', { id: v.id })]),
+    ),
+    B(ic('archive', 14) + 'Save current configuration', 'cfgSave', {}, 'btn-p btn-sm'),
+    'adm-panel',
+  );
+}
+A.cfgSave = d => {
+  S.configVersions.push({ id: uid('cv'), at: now(), by: myId(), note: (d && d.note) || 'Saved from Programme admin', snap: cfgSnap() });
+  audit('Configuration version saved', 'config', 'v' + S.configVersions.length);
+  toast('Configuration saved as v' + S.configVersions.length + '.');
+  ok();
+};
+A.cfgRestore = d => {
+  const v = byId('configVersions', d.id);
+  if (!v || !v.snap) return;
+  S.configVersions.push({ id: uid('cv'), at: now(), by: myId(), note: 'Automatic save before restoring ' + h(v.note), snap: cfgSnap() });
+  const s = JSON.parse(JSON.stringify(v.snap));
+  S.packs = s.packs;
+  S.settings.voting = s.voting;
+  S.compassQs = s.compassQs;
+  S.templates = s.templates;
+  S.settings.participantCanProposeWorkspace = s.participantCanProposeWorkspace;
+  audit('Configuration restored', v.id, v.note);
+  toast('Configuration restored. Participant data and rights were not changed.');
+  ok();
+};
+A.cfgExport = d => {
+  const v = byId('configVersions', d.id);
+  try {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify({ version: v.id, at: v.at, note: v.note, configuration: v.snap || cfgSnap() }, null, 2)], { type: 'application/json' }));
+    a.download = 'phoenix-configuration-' + v.id + '.json';
+    a.click();
+  } catch (e) {}
+  audit('Configuration exported', v.id, v.note);
+  toast('Configuration exported.');
+  ok();
+};
+// Request access (BF-12): approving issues a normal single-use invitation; declining creates nothing.
+function accessReqCard() {
+  const rs = (S.accessReqs || []).filter(r => r.ctx === ctxId());
+  return card('Access requests ' + `<span class="adm-n">${rs.filter(r => r.status === 'Awaiting approval').length}</span>`, 'People who asked to join. No account exists until you approve and they accept the invitation.', table(['Name', 'Email', 'As', 'Reason', 'Status', ''], rs.map(r => [h(r.name), h(r.email), h(ROLE[r.role]), h(r.why || '—'), pill(r.status === 'Awaiting approval' ? 'Pending approval' : r.status), r.status === 'Awaiting approval' ? B('Approve and invite', 'accessDecide', { id: r.id, v: 'Invited' }, 'btn-p btn-sm') + B('Decline', 'accessDecide', { id: r.id, v: 'Declined' }) : '']), 'No access requests.'), '', 'adm-panel');
+}
+A.accessDecide = d => {
+  const r = (S.accessReqs || []).find(x => x.id === d.id);
+  r.status = d.v;
+  if (d.v === 'Invited') {
+    const tok = 'TKN-REQ-' + String(1000 + S.seq++).slice(-4);
+    S.invites.unshift({ id: uid('i'), token: tok, email: r.email, role: r.role, ctx: r.ctx, status: 'Pending', expires: addDays(today(), S.settings.inviteValidityDays || 14), by: myId(), sent: today(), fromRequest: r.id });
+    r.token = tok;
+    toast('Invitation sent to ' + r.email + ' (' + tok + ').');
+  } else toast('Request declined. No account was created.');
+  audit('Access request ' + (d.v === 'Invited' ? 'approved — invitation issued' : 'declined'), r.id, r.email);
+  ok();
+};
+// Approval inbox: operational approvals stay here; specialist decisions are routed to their accountable owner.
+function routedCard() {
+  const c = ctxId();
+  const rows = [
+    ['Evidence approval', S.evidence.filter(e => e.review === 'Submitted').length, 'Reviewer bundle'],
+    ['Release / disclosure review', S.releases.filter(x => /disclosure/i.test(x.status)).length, 'Trust/Data Steward'],
+    ['Policy and consent wording', S.agreements.filter(g => g.ctx === c && g.status === 'Draft').length, 'Trust/Data Steward'],
+    ['Products, prices and payments', S.products.filter(p => /draft|review/i.test(p.status || '')).length, 'Finance Owner'],
+    ['AI sources and evaluation', S.aiSources.filter(x => x.status !== 'Approved').length, 'AI Owner'],
+    ['Incidents and appeals', S.incidents.filter(i => i.state !== 'Closed').length, 'Incident/Safety Owner'],
+  ];
+  return card('Routed to specialist owners', 'You are not the fallback approver for these. They go to the person holding the matching bundle.', table(['Decision', 'Waiting', 'Decided by'], rows.map(([a, n, b]) => [h(a), String(n), pill(b, 'p-grey')])), '', 'adm-panel');
+}
+function orgReqCard() {
+  const rs = (S.orgReqs || []).filter(r => r.ctx === ctxId());
+  return card('Requests from Organization Representatives ' + `<span class="adm-n">${rs.length}</span>`, 'Anything outside their delegated envelope arrives here as a request, never as a silent permission change.', table(['From', 'Request', 'Detail', 'Status', ''], rs.map(r => [nm(r.by), h(r.kind), h(r.t), pill(r.status), r.status === 'Open' ? B('Approve', 'orgReqDecide', { id: r.id, v: 'Approved' }, 'btn-p btn-sm') + B('Decline', 'orgReqDecide', { id: r.id, v: 'Declined' }) : '']), 'No requests.'), '', 'adm-panel');
+}
+A.orgReqDecide = d => {
+  const r = (S.orgReqs || []).find(x => x.id === d.id);
+  r.status = d.v;
+  notify(r.by, 'Your request “' + r.kind + '” was ' + d.v.toLowerCase(), 'org', { tab: 'requests' });
+  audit('Organization request ' + d.v.toLowerCase(), r.id, r.kind);
+  ok();
+};
+// Org Representative: requests to the Programme Administrator
+function orgRequestsView() {
+  const f = 'orgrq';
+  const rs = (S.orgReqs || []).filter(r => r.by === myId());
+  return `<div class="adm-stack">${banner('info', 'Inside your envelope you act directly; anything else is a request', 'You can invite people, assign approved roles and configure labels inside the approved pack envelope. Other changes — new bundles, seat allocations, configuration outside the envelope — go to the Programme Administrator as a request.')}${card(
+    'New request to the Programme Administrator',
+    '',
+    `${errSum(f)}<form data-f="orgrq" class="col adm-form" novalidate><div class="g2">${fi(f, 'kind', 'Request', { type: 'select', req: true, ph: 'Choose', opts: ['Configuration outside the pack envelope', 'Seat allocation', 'Specialist bundle for a person', 'New cohort', 'Other'] })}</div>${fi(f, 't', 'Detail', { type: 'textarea', rows: 3, req: true })}<div class="actions"><span></span><button class="btn btn-p btn-sm" type="submit">${ic('send', 14)}Send request</button></div></form>`,
+    '',
+    'adm-panel',
+  )}${card('Your requests', '', table(['Request', 'Detail', 'Sent', 'Status'], rs.map(r => [h(r.kind), h(r.t), fmt(r.at), pill(r.status)]), 'No requests yet.'), '', 'adm-panel')}${cfgForm(true)}</div>`;
+}
+F.orgrq = d => {
+  if (!validate('orgrq', d, { kind: ['req'], t: ['req'] })) return render();
+  (S.orgReqs = S.orgReqs || []).unshift({ id: uid('orq'), by: myId(), ctx: ctxId(), kind: d.kind, t: d.t.trim(), at: today(), status: 'Open' });
+  S.assign.filter(a => roleBase(a.role) === 'A' && a.ctx === ctxId() && a.status === 'Active').forEach(a => notify(a.pid, 'Organization request: ' + d.kind, 'admin', { tab: 'requests' }, a.id));
+  audit('Organization request sent', myId(), d.kind);
+  clearF('orgrq');
+  toast('Request sent to the Programme Administrator.');
+  ok();
+};
 // ---------- ORGANIZATION WORKSPACE (6.5) ----------
 route('org', 'admin', () => {
   if (role() !== 'O') return deniedView('admin');
@@ -347,15 +553,19 @@ route('org', 'admin', () => {
   const t = tabs(
     'org',
     [
+      ['users', 'People & cohorts'],
       ['invites', 'Invitations'],
-      ['users', 'Users & roles'],
-      ['config', 'Configuration'],
-      ['projects', 'Projects & spaces'],
-      ['reports', 'Reports & exports'],
+      ['roles', 'Role assignments'],
+      ['spaces', 'Spaces in my context'],
+      ['reports', 'Reports'],
+      ['requests', 'Requests to Programme Admin', (S.orgReqs || []).filter(r => r.by === myId() && r.status === 'Open').length || null],
     ],
     UI.p.tab,
   );
   let body = '';
+  // Organisation view: approved progress and aggregates only. Never raw Purpose Compass, hurdles, private
+  // reflections, AI conversations or Rope notes (doc 1 §6.5).
+  const ctxBanner = banner('info', 'Working in ' + h(ctxName(c)) + ' as Organization Representative', 'You see people, roles and approved progress in this context only. Other organisations’ workspaces and participants’ other contexts stay invisible. Raw Purpose Compass answers, hurdles, private reflections, AI conversations and Rope Team notes are never shown here.');
   if (t.cur === 'invites')
     body = card(
       `Invitation lifecycle <span class="adm-n">${S.invites.filter(i => i.ctx === c).length}</span>`,
@@ -364,17 +574,27 @@ route('org', 'admin', () => {
       B(ic('plus', 14) + 'Invite users', 'invNew', {}, 'btn-p btn-sm'),
       'adm-panel',
     );
-  if (t.cur === 'users')
+  if (t.cur === 'roles')
     body = card(
-      `Users in your organisation’s context <span class="adm-n">${S.assign.filter(a => a.ctx === c).length}</span>`,
-      'Assign roles, grant or revoke mandates within your organisation.',
+      `Role assignments in this context <span class="adm-n">${S.assign.filter(a => a.ctx === c).length}</span>`,
+      'Assign approved roles and record mandates inside your delegation. Permission bundles are not editable here.',
       usersTable(c, true),
       '',
       'adm-panel',
     );
-  if (t.cur === 'config')
+  if (t.cur === 'requests') body = orgRequestsView();
+  if (t.cur === 'users')
     body =
-      `<div class="adm-stack">${cfgForm(true)}${tplForm()}${card(
+      `<div class="adm-stack">${card(
+        `People in this context <span class="adm-n">${new Set(S.assign.filter(a => a.ctx === c).map(a => a.pid)).size}</span>`,
+        'Role and onboarding progress only.',
+        table(
+          ['Person', 'Role', 'Status', 'Onboarding'],
+          S.assign.filter(a => a.ctx === c).map(a => [nm(a.pid), h(ROLE[a.role]), pill(a.status), a.onb.agreement && a.onb.profile && (a.onb.compass || roleBase(a.role) !== 'P') ? pill('Complete', 'p-green') : pill('In progress', 'p-amber')]),
+        ),
+        '',
+        'adm-panel',
+      )}${card(
         'Grow your programme',
         'Launch a new cohort, initiative or use-case pack.',
         table(
@@ -392,10 +612,10 @@ route('org', 'admin', () => {
         B(ic('plus', 14) + 'Request a new cohort', 'cohortNew', {}, 'btn-p btn-sm'),
         'adm-panel',
       )}</div>`;
-  if (t.cur === 'projects')
+  if (t.cur === 'spaces')
     body = card(
-      'Projects and spaces',
-      'Create projects and their structure; aggregate view only.',
+      'Projects and spaces in this context',
+      'Aggregate view only. Opening a space follows its own membership rules.',
       (ps =>
         dataView('org:projects', {
           label: 'projects',
@@ -432,6 +652,8 @@ route('org', 'admin', () => {
   return (
     `<header class="shead adm-ws"><div class="shead-main">${org ? orgMark(org, 48) : `<span class="tile">${ic('building', 22)}</span>`}<div class="shead-t"><div class="shead-kind">Organization workspace</div><h1 class="h1">${h(org?.name || '') || 'Organization workspace'}</h1><div class="shead-meta"><span>${h(ctx().name)}</span><span>pack: ${h(pk.name)}</span></div></div></div></header>` +
     t.html +
+    ctxBanner +
+    '<div style="height:12px"></div>' +
     body
   );
 });
@@ -440,14 +662,14 @@ function cfgForm(isOrg) {
   return card(
     isOrg ? 'Configure within the pack envelope' : 'Use-case pack: ' + h(pk.name),
     'Platform-controlled items cannot be changed by a tenant.',
-    `<form data-f="cfg" class="col adm-form" novalidate><div class="g3">${fi('cfg', 'workspace', 'Label for workspaces', { value: 'Action Room', ro: true, help: 'Fixed across PHOENIX so every role sees the same name.' })}${fi('cfg', 'circle', 'Label for Circles', { value: pk.labels.circle, req: true })}${fi('cfg', 'rope', 'Label for Rope Teams', { value: pk.labels.rope, req: true })}</div>${fi('cfg', 'compassOpt', 'Ask optional Purpose Compass questions PC7–PC12 in context', { type: 'checkbox', value: pk.compassOptional ? 'yes' : '' })}${fi('cfg', 'propose', 'Participants may propose a ' + pk.labels.workspace, { type: 'checkbox', value: S.settings.participantCanProposeWorkspace ? 'yes' : '' })}
+    `<form data-f="cfg" class="col adm-form" novalidate><div class="g3">${fi('cfg', 'workspace', 'Label shown for Action Workspaces', { value: pk.labels.workspace, ro: true, help: 'Set by the Programme Administrator in Pack configuration.' })}${fi('cfg', 'circle', 'Label for Circles', { value: pk.labels.circle, req: true })}${fi('cfg', 'rope', 'Label for Rope Teams', { value: pk.labels.rope, req: true })}</div>${fi('cfg', 'compassOpt', 'Ask optional Purpose Compass questions PC7–PC12 in context', { type: 'checkbox', value: pk.compassOptional ? 'yes' : '' })}${fi('cfg', 'propose', 'Participants may propose a ' + pk.labels.workspace, { type: 'checkbox', value: S.settings.participantCanProposeWorkspace ? 'yes' : '' })}
  <div class="adm-locked"><span class="adm-locked-ic" aria-hidden="true">${ic('lock', 16)}</span><div><b>Platform-controlled (locked)</b><p class="cap">Consent framework · trust controls · security rules · audit model · core data semantics · Evidence Support Level definitions</p></div></div><div class="actions"><span></span><button class="btn btn-p" type="submit">Save configuration</button></div></form>`,
   );
 }
 F.cfg = d => {
   if (!validate('cfg', d, { circle: ['req'], rope: ['req'] })) return render();
   const pk = pack();
-  pk.labels = { workspace: 'Action Room', circle: d.circle, rope: d.rope };
+  pk.labels = { workspace: pk.labels.workspace || 'Action Workspace', circle: d.circle, rope: d.rope };
   pk.compassOptional = d.compassOpt === 'yes';
   S.settings.participantCanProposeWorkspace = d.propose === 'yes';
   audit('Pack configuration changed', pk.id, JSON.stringify(pk.labels));
@@ -513,10 +735,12 @@ route('admin', 'admin', () => {
   const t = tabs(
     'adm',
     [
-      ['requests', 'Review requests', rqProj.length + rqPw.length],
-      ['users', 'Users', pend.length || null],
+      ['requests', 'Approval inbox', rqProj.length + rqPw.length + pend.length + (S.orgReqs || []).filter(r => r.ctx === ctxId() && r.status === 'Open').length || null],
+      ['users', 'Users & roles', pend.length || null],
       ['invites', 'Invitations'],
-      ['library', 'Pathway library'],
+      ['packs', 'Pack configuration'],
+      ['library', 'Template library'],
+      ['versions', 'Configuration versions'],
       ['notify', 'Notifications'],
       ['initiatives', 'Sponsor initiatives'],
       [
@@ -571,7 +795,9 @@ route('admin', 'admin', () => {
         }),
         '',
         'adm-panel',
-      )}${pwAdminCards()}</div>`;
+      )}${pwAdminCards()}${pend.length ? card('Role approvals ' + n(pend.length), 'Sensitive roles only: Organization Representative and Programme Administrator. Other roles activate without approval.', table(['Person', 'Role', 'Context', ''], pend.map(a => [nm(a.pid), h(ROLE[a.role]), h(ctxName(a.ctx)), B('Approve', 'roleDecide', { id: a.id, v: 'Active' }, 'btn-p btn-sm') + B('Decline', 'roleDecide', { id: a.id, v: 'Role not activated' })])), '', 'adm-panel') : ''}${accessReqCard()}${orgReqCard()}${routedCard()}</div>`;
+  if (t.cur === 'packs') body = packsView();
+  if (t.cur === 'versions') body = versionsView();
   if (t.cur === 'users')
     body =
       (pend.length ? banner('warn', pend.length + ' role' + (pend.length > 1 ? 's' : '') + ' awaiting approval', 'Open Manage on the person to approve or decline the role.') + '<div style="height:12px"></div>' : '') +
@@ -636,7 +862,6 @@ route('admin', 'admin', () => {
             ['Circle activity, chat, votes', 'In-app'],
             ['Commitments, milestones', 'In-app'],
             ['AI review', 'In-app'],
-            ['Funding tranches, progress summaries', 'Email + in-app'],
             ['Payment / entitlement changes', 'Email'],
           ].map(([e, ch]) => [e, `<span class="adm-chan">${ch}</span>`]),
         ),
@@ -696,7 +921,7 @@ route('admin', 'admin', () => {
       'adm-lrows',
     );
   if (t.cur === 'reports') body = reportsView(false);
-  return head('Programme administration', h(ctx().name)) + t.html + body;
+  return head('Programme administration', h(ctx().name) + ' · operational administration. Specialist decisions go to their bundle holders.') + t.html + body;
 });
 A.roleDecide = d => {
   UI.modal = null;
@@ -750,6 +975,8 @@ F.tpl = d => {
 F.ann = d => {
   if (!validate('ann', d, { t: ['req'] })) return render();
   const ps = S.assign.filter(a => a.ctx === ctxId() && (d.to === 'all' || a.role === d.to)).map(a => a.pid);
+  // kept as a programme announcement so the Explore board can show it to its audience
+  (S.announcements = S.announcements || []).unshift({ id: uid('an'), t: d.t, to: d.to, ctx: ctxId(), by: myId(), at: today(), kind: 'Programme announcement' });
   [...new Set(ps)].forEach(p => notify(p, 'Announcement: ' + d.t, 'notifications'));
   audit('Announcement sent', d.to, ps.length + ' recipients');
   clearF('ann');

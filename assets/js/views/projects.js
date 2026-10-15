@@ -110,7 +110,6 @@ route('projects', 'projects', () => {
         sorts: [
           ['title', 'Title', (a, b) => a.title.localeCompare(b.title)],
           ['submitted', 'Submitted', (a, b) => String(b.submitted || '').localeCompare(String(a.submitted || ''))],
-          ['funding', 'Funding need', (a, b) => (b.fundingNeed || 0) - (a.fundingNeed || 0)],
         ],
         defaultSort: 'title',
         row: p => ({
@@ -122,7 +121,6 @@ route('projects', 'projects', () => {
             'Steward <b>' + (p.stewards.map(nm).join(', ') || 'not assigned') + '</b>',
             (p.tags || []).length ? `<span class="rec-tags">${p.tags.slice(0, 3).map(x => `<span class="rec-tag">${h(x)}</span>`).join('')}${p.tags.length > 3 ? `<span class="cap">+${p.tags.length - 3}</span>` : ''}</span>` : '',
             p.submitted ? 'Submitted ' + fmt(p.submitted) : '',
-            p.fundingNeed ? 'Funding need ' + money('USD', p.fundingNeed) : '',
           ],
           badges: pill(p.status) + (p.stage ? pill(stageLabel(p.stage), SC[p.stage]) : ''),
           primary: L('Open', 'project', { id: p.id }, 'btn btn-s btn-sm'),
@@ -168,11 +166,11 @@ route('newproject', 'aireq', () => {
   ${fi(f, 'title', 'Working title', { req: true, value: pr?.title, ph: 'e.g. Community cooling map for Ward 7', max: 120 })}
   ${fi(f, 'desc', 'Describe it in your own words', { type: 'textarea', rows: 6, req: true, value: pr?.desc, ph: 'What is the need or idea? Who is affected? What would be different if it worked?', help: 'At least 40 characters.' })}</div>
   <div class="np-sec"><div class="np-sh"><span class="np-n" aria-hidden="true">2</span><h2 class="h3">Who should find it</h2></div>
-  <fieldset class="np-fs col"><legend class="lbl">Areas of interest</legend><div class="np-chips">${[...PROJECT_AREAS, ...(pr?.tags || []).filter(t => !PROJECT_AREAS.includes(t))].map(a => `<label class="chipchk np-chip"><input type="checkbox" name="tags" value="${h(a)}" ${[].concat(fv(f, 'tags', pr?.tags || [])).includes(a) ? 'checked' : ''}><span>${h(a)}</span></label>`).join('')}</div><div class="field np-other"><label class="lbl" for="np_areaOther">Add your own</label><input id="np_areaOther" name="areaOther" class="input" value="${h(fv(f, 'areaOther', ''))}" placeholder="Comma-separated, e.g. Air quality, School gardens" maxlength="160"></div><span class="help">Helps stewards and sponsors find relevant projects. Sponsors see only approved sponsor-visible information.</span></fieldset></div>
-  <div class="np-sec"><div class="np-sh"><span class="np-n" aria-hidden="true">3</span><h2 class="h3">Place and funding</h2></div>
-  <div class="f2">${fi(f, 'area', 'Location or programme area (optional)', { value: pr?.area, ph: 'e.g. Ward 7, Excelsior City' })}${fi(f, 'fundingNeed', 'Funding requirement in USD (optional)', { type: 'number', min: 0, value: pr?.fundingNeed, help: 'Only if the project will seek sponsor funding.' })}</div></div>
+  <fieldset class="np-fs col"><legend class="lbl">Areas of interest</legend><div class="np-chips">${[...PROJECT_AREAS, ...(pr?.tags || []).filter(t => !PROJECT_AREAS.includes(t))].map(a => `<label class="chipchk np-chip"><input type="checkbox" name="tags" value="${h(a)}" ${[].concat(fv(f, 'tags', pr?.tags || [])).includes(a) ? 'checked' : ''}><span>${h(a)}</span></label>`).join('')}</div><div class="field np-other"><label class="lbl" for="np_areaOther">Add your own</label><input id="np_areaOther" name="areaOther" class="input" value="${h(fv(f, 'areaOther', ''))}" placeholder="Comma-separated, e.g. Air quality, School gardens" maxlength="160"></div><span class="help">Helps stewards and collaborators find relevant projects. Sponsors never browse or fund individual projects.</span></fieldset></div>
+  <div class="np-sec"><div class="np-sh"><span class="np-n" aria-hidden="true">3</span><h2 class="h3">Place</h2></div>
+  <div class="f2">${fi(f, 'area', 'Location or programme area (optional)', { value: pr?.area, ph: 'e.g. Ward 7, Excelsior City' })}</div></div>
   <div class="actions">${L('Cancel', 'projects', {}, 'btn btn-g')}<div class="row wrap"><button class="btn btn-s" type="submit" name="go" value="save">Save draft</button><button class="btn btn-p" type="submit" name="go" value="gen">${okAI ? 'Draft sections with PHOENIX' : 'Continue to sections'}</button></div></div></form>
-  <aside class="c4 col np-side">${okAI ? `<div class="card col np-ai">${aiTag('AI-assisted · Class B workflow draft')}<b>PHOENIX will draft 8 sections</b><ol class="np-seclist">${SECTIONS.map(s => `<li>${s}</li>`).join('')}</ol><p class="cap">Each stays a draft until you accept, edit or reject it.</p></div>` : banner('warn', S.settings.aiAvailable ? 'AI processing is off' : 'AI is unavailable', S.settings.aiAvailable ? `You can write each section yourself. To get drafts, turn on AI in ${L('Privacy & consent', 'privacy')}.` : 'You can write each section yourself; drafting will work again when the service is back.')}${card('What happens next', '', '<p class="cap">You submit for Faculty/Steward review. They may ask for clarification, then accept it and set up a Circle.</p>', '', 'quiet')}</aside></div>`
+  <aside class="c4 col np-side">${okAI ? `<div class="card col np-ai">${aiTag('AI-assisted · Class B workflow draft')}<b>PHOENIX will draft 8 sections</b><ol class="np-seclist">${SECTIONS.map(s => `<li>${s}</li>`).join('')}</ol><p class="cap">Each stays a draft until you accept, edit or reject it.</p></div>` : banner('warn', S.settings.aiAvailable ? 'AI processing is off' : 'AI is unavailable', S.settings.aiAvailable ? `AI processing is off for you, so PHOENIX will not draft sections. You can write each section yourself. To get drafts, change this in ${L('My records & consent', 'privacy', { tab: 'consent' })}.` : 'You can write each section yourself; drafting will work again when the service is back.')}${card('What happens next', '', '<p class="cap">You submit for Faculty/Steward review. They may ask for clarification, then accept it and set up a Circle.</p>', '', 'quiet')}</aside></div>`
     );
   // review sections
   const secs = pr.sections;
@@ -225,7 +223,7 @@ F.np = (d, form) => {
   }
   const own = (d.areaOther || '').split(',').map(x => x.trim()).filter(Boolean).map(x => x.slice(0, 40));
   const tags = [...new Set([...[].concat(d.tags || []), ...own].map(x => x.trim()).filter(Boolean))];
-  Object.assign(p, { type: d.type, title: d.title.trim(), desc: d.desc.trim(), tags, area: (d.area || '').trim(), fundingNeed: +d.fundingNeed || null });
+  Object.assign(p, { type: d.type, title: d.title.trim(), desc: d.desc.trim(), tags, area: (d.area || '').trim() });
   clearF('np');
   if (sub === 'save') {
     audit('Project draft saved', p.id, '');
@@ -294,24 +292,19 @@ route('project', 'projects', () => {
     'Submitted',
     p.status === 'Rejected' ? 'Rejected' : 'Under review',
     'Accepted',
-    'Circle',
-    'Rope Team',
-    'Room',
+    // BF-07: Circle, Rope Team and Action Workspace are linked in any order, so they are one lifecycle stage
+    'Linked spaces',
     'Final review',
     'Closed',
   ];
   const ci =
     p.stage === 'Closed'
-      ? 8
+      ? 6
       : p.stage === 'Final review'
-        ? 7
-        : p.stage === 'Room'
-          ? 6
-          : p.stage === 'Rope Team'
-            ? 5
-            : p.stage === 'Circle'
-              ? 4
-              : p.status === 'Accepted'
+        ? 5
+        : ['Room', 'Rope Team', 'Circle'].includes(p.stage)
+          ? 4
+          : p.status === 'Accepted'
                 ? 3
                 : ['Clarification requested', 'Rejected'].includes(p.status) || (p.status === 'Submitted' && p.stewards.length)
                   ? 2
@@ -357,7 +350,7 @@ route('project', 'projects', () => {
       ['Projects', 'projects'],
       [h(p.title)],
     ]) +
-    `<div class="shead-main prj-head"><span class="tile" aria-hidden="true">${ic('folder', 20)}</span><div class="shead-t"><div class="shead-kind">Project · ${h(p.stage ? stageLabel(p.stage) : p.status)}</div><div class="row wrap prj-ttl"><h1 class="h1">${h(p.title)}</h1>${pill(p.status)}</div><div class="shead-meta"><span>${h(p.type)}</span><span>Owner · ${nm(p.owner)}</span><span>${p.stewards.length ? 'Steward · ' + p.stewards.map(nm).join(', ') : 'No reviewer yet'}</span>${p.fundingNeed ? `<span>Funding need · ${money('USD', p.fundingNeed)}</span>` : ''}${p.area ? `<span>${h(p.area)}</span>` : ''}</div>${(p.tags || []).length ? `<div class="rec-tags prj-tags">${p.tags.map(x => `<span class="rec-tag">${h(x)}</span>`).join('')}</div>` : ''}</div>${actions.trim() ? `<div class="shead-a">${actions}</div>` : ''}</div>` +
+    `<div class="shead-main prj-head"><span class="tile" aria-hidden="true">${ic('folder', 20)}</span><div class="shead-t"><div class="shead-kind">Project · ${h(p.stage ? stageLabel(p.stage) : p.status)}</div><div class="row wrap prj-ttl"><h1 class="h1">${h(p.title)}</h1>${pill(p.status)}</div><div class="shead-meta"><span>${h(p.type)}</span><span>Owner · ${nm(p.owner)}</span><span>${p.stewards.length ? 'Steward · ' + p.stewards.map(nm).join(', ') : 'No reviewer yet'}</span>${p.area ? `<span>${h(p.area)}</span>` : ''}</div>${(p.tags || []).length ? `<div class="rec-tags prj-tags">${p.tags.map(x => `<span class="rec-tag">${h(x)}</span>`).join('')}</div>` : ''}</div>${actions.trim() ? `<div class="shead-a">${actions}</div>` : ''}</div>` +
     tl +
     stageTrack(p, 'projects') +
     `<div class="prj-notes">` +
@@ -392,41 +385,20 @@ route('project', 'projects', () => {
          : '<p class="cap">—</p>',
      )}</div>
  <aside class="c4 col prj-side">${own && ['Draft', 'Clarification requested'].includes(p.status) ? card('Before you submit', '', `<form data-f="submitProj" class="col prj-submit" novalidate><input type="hidden" name="id" value="${p.id}">${!ready ? banner('warn', '', 'All 8 sections must be accepted or edited first.') : ''}${fi('sp', 'c1', 'I have reviewed every AI-drafted section and accept responsibility for the content.', { type: 'checkbox', req: true })}${fi('sp', 'c2', 'I understand reviewers in this programme will see this project.', { type: 'checkbox', req: true })}${p.status === 'Clarification requested' ? fi('sp', 'note', 'What you changed (optional)', { type: 'textarea', rows: 3, max: 2000, help: 'Added to the review conversation.' }) : ''}<button class="btn btn-p btn-block" type="submit" ${ready ? '' : 'disabled'}>${p.status === 'Clarification requested' ? 'Resubmit for review' : 'Submit for review'}</button></form>`, '', 'accent') : ''}
- ${card('Linked spaces', '', [p.circle && lrow('users', cName(p.circle), 'Circle', L('Open', 'circle', { id: p.circle }), 't-purple'), p.rope && lrow('route', cName(p.rope), 'Rope Team', L('Open', 'rope', { id: p.rope }), 't-teal'), p.room && lrow('room', cName(p.room), WL(), L('Open', 'room', { id: p.room }), 't-navy'), p.funding && lrow('coin', 'Sponsor funding', 'Stage-wise tranches', L('Open', 'funding', {}))].filter(Boolean).join('') || '<p class="cap">Spaces are linked, not converted. A Circle is created when the project is accepted.</p>', '', 'prj-panel')}
+ ${card('Linked spaces', '', [p.circle && lrow('users', cName(p.circle), 'Circle', L('Open', 'circle', { id: p.circle }), 't-purple'), p.rope && lrow('route', cName(p.rope), 'Rope Team', L('Open', 'rope', { id: p.rope }), 't-teal'), p.room && lrow('room', cName(p.room), WL(), L('Open', 'room', { id: p.room }), 't-navy')].filter(Boolean).join('') || '<p class="cap">Circle, Rope Team and ' + WL() + ' are separate spaces, linked in any order and never converted. Once the project is accepted, start with whichever fits.</p>', '', 'prj-panel')}
  ${card(
-   'Stewards and support path',
+   'Reviewer and starting space',
    '',
    dl([
      ['Reviewer', p.stewards.map(nm).join(', ') || 'Assigned by the Programme Administrator after submission'],
-     ['Support path', h(pathLabel(p.supportPath) || 'Chosen on acceptance')],
+     ['Starts in', h(pathLabel(p.supportPath) || 'Chosen on acceptance') + '<div class="cap">Other spaces can be linked in any order.</div>'],
    ]),
    '',
    'prj-panel',
  )}
- ${p.owner === myId() ? interestedSponsors(p) : ''}
- ${(S.stageReports || []).some(x => x.project === p.id) ? card('Reports along the chain', 'Circle → Rope Team → ' + WL(), (S.stageReports || []).filter(x => x.project === p.id).slice().reverse().map(x => lrow('send', h(x.kind), h(x.t) + `<span class="cap prj-rep">${cName(x.from)} → ${cName(x.to)} · ${nm(x.by)} · ${fmt(x.at)}</span>`)).join(''), '', 'prj-panel') : ''}</aside></div>`
+ ${(S.stageReports || []).some(x => x.project === p.id) ? card('Reports between linked spaces', 'Updates a linked space sent to another', (S.stageReports || []).filter(x => x.project === p.id).slice().reverse().map(x => lrow('send', h(x.kind), h(x.t) + `<span class="cap prj-rep">${cName(x.from)} → ${cName(x.to)} · ${nm(x.by)} · ${fmt(x.at)}</span>`)).join(''), '', 'prj-panel') : ''}</aside></div>`
   );
 });
-// Sponsors who showed interest in this project (saved it, pitched, funded or messaged). The owner can message them.
-function interestedSponsors(p) {
-  const ids = new Set([
-    ...Object.entries(S.saved || {}).filter(([, l]) => (l || []).includes(p.id)).map(([pid]) => pid),
-    ...S.funding.filter(f => f.project === p.id).map(f => f.sponsor),
-    ...S.pitches.filter(x => x.project === p.id).map(x => x.to),
-    ...(S.dms || []).filter(x => x.project === p.id).flatMap(x => x.members.map(m => m.pid)),
-  ]);
-  const sp = [...ids].filter(pid => pid !== p.owner && S.assign.some(a => a.pid === pid && roleBase(a.role) === 'S' && a.status === 'Active'));
-  return card(
-    'Interested sponsors',
-    'Sponsors who saved, funded or were pitched this project. Messages are between you and the sponsor only.',
-    sp.map(pid => {
-      const why = [(S.saved[pid] || []).includes(p.id) && 'saved it', S.funding.some(f => f.project === p.id && f.sponsor === pid) && 'funding', S.pitches.some(x => x.project === p.id && x.to === pid) && 'pitched by you'].filter(Boolean).join(' · ');
-      return lrow('coin', nm(pid), h((S.orgs.find(o => o.id === P(pid).org) || {}).name || 'Sponsor') + (why ? ' · ' + why : ''), B(ic('message', 14) + 'Message', 'dmOpen', { pid, project: p.id }));
-    }).join('') || '<p class="cap">No sponsor has shown interest yet.</p>',
-    '',
-    'prj-panel',
-  );
-}
 // Evidence for this project: linked to the project or to its Circle, Rope Team or Action Room.
 function projEvidenceCard(p) {
   const own = p.owner === myId();
@@ -472,16 +444,16 @@ const projEditable = p => !!p && p.owner === myId() && p.status !== 'Rejected' &
 A.projEdit = d => {
   const p = byId('projects', d.id);
   clearF('pje');
-  UI.form.pje = { type: p.type, title: p.title, desc: p.desc || '', tags: (p.tags || []).join(', '), area: p.area || '', fundingNeed: p.fundingNeed || '' };
+  UI.form.pje = { type: p.type, title: p.title, desc: p.desc || '', tags: (p.tags || []).join(', '), area: p.area || '' };
   modal(
     'Edit project details',
     () =>
-      `<form data-f="pje" class="col prj-submit" novalidate>${errSum('pje')}<input type="hidden" name="id" value="${p.id}"><div class="f2">${fi('pje', 'title', 'Working title', { req: true, max: 120 })}${fi('pje', 'type', 'Starting point', { type: 'select', req: true, opts: ['Need', 'Opportunity', 'Project idea'] })}</div>${fi('pje', 'desc', 'Description', { type: 'textarea', rows: 5, req: true, help: 'At least 40 characters.' })}${fi('pje', 'tags', 'Areas of interest', { ph: 'e.g. Urban heat, Water', help: 'Comma-separated.' })}<div class="f2">${fi('pje', 'area', 'Location or programme area')}${fi('pje', 'fundingNeed', 'Funding requirement in USD', { type: 'number', min: 0 })}</div>${banner('info', '', p.status === 'Draft' ? 'The 8 sections are edited with Edit sections.' : 'Your reviewer is told what changed. The 8 sections are not changed here.')}<div class="actions">${B('Cancel', 'closeM')}<button class="btn btn-p" type="submit">Save changes</button></div></form>`,
+      `<form data-f="pje" class="col prj-submit" novalidate>${errSum('pje')}<input type="hidden" name="id" value="${p.id}"><div class="f2">${fi('pje', 'title', 'Working title', { req: true, max: 120 })}${fi('pje', 'type', 'Starting point', { type: 'select', req: true, opts: ['Need', 'Opportunity', 'Project idea'] })}</div>${fi('pje', 'desc', 'Description', { type: 'textarea', rows: 5, req: true, help: 'At least 40 characters.' })}${fi('pje', 'tags', 'Areas of interest', { ph: 'e.g. Urban heat, Water', help: 'Comma-separated.' })}${fi('pje', 'area', 'Location or programme area')}${banner('info', '', p.status === 'Draft' ? 'The 8 sections are edited with Edit sections.' : 'Your reviewer is told what changed. The 8 sections are not changed here.')}<div class="actions">${B('Cancel', 'closeM')}<button class="btn btn-p" type="submit">Save changes</button></div></form>`,
     true,
   );
 };
 F.pje = d => {
-  if (!validate('pje', d, { title: ['req'], type: ['req'], desc: ['req', ['min', 40]], fundingNeed: [['fn', { f: v => !v || Number(v) >= 0, m: 'Enter 0 or more.' }]] })) return render();
+  if (!validate('pje', d, { title: ['req'], type: ['req'], desc: ['req', ['min', 40]] })) return render();
   const p = byId('projects', d.id);
   const next = {
     type: d.type,
@@ -489,9 +461,8 @@ F.pje = d => {
     desc: d.desc.trim(),
     tags: [...new Set((d.tags || '').split(',').map(x => x.trim().slice(0, 40)).filter(Boolean))],
     area: (d.area || '').trim(),
-    fundingNeed: +d.fundingNeed || null,
   };
-  const ch = changedFields({ ...p, tags: (p.tags || []).join(',') }, { ...next, tags: next.tags.join(',') }, { title: 'title', type: 'starting point', desc: 'description', tags: 'areas', area: 'location', fundingNeed: 'funding need' });
+  const ch = changedFields({ ...p, tags: (p.tags || []).join(',') }, { ...next, tags: next.tags.join(',') }, { title: 'title', type: 'starting point', desc: 'description', tags: 'areas', area: 'location' });
   UI.modal = null;
   clearF('pje');
   if (!ch.length) {
@@ -560,17 +531,19 @@ F.prej = d => {
   toast('Project rejected. The owner has been told why.');
   ok();
 };
-// Support and onboarding paths offered on acceptance. "Circle → Room" skips the Rope Team (see skipsRope).
+// BF-07 entry routes offered on acceptance. They name where the work starts; any other space can be linked later
+// in any order, and no space is converted into another.
 const SUPPORT_PATHS = [
-  ['Circle → Rope Team → Room', 'The project starts in a Circle, moves to a Rope Team for mentor guidance, then to the ' + WL() + '.'],
-  ['Circle → Room', 'The project starts in a Circle and moves straight to the ' + WL() + '. No Rope Team or Mentor Request.'],
+  ['Start in a Circle', 'Shared learning and sensemaking first. A Rope Team or Action Workspace can be linked at any time.'],
+  ['Start in a Rope Team', 'A mentor supports the team first. A Circle or Action Workspace can be linked at any time.'],
+  ['Start in an Action Workspace', 'Execution starts directly with authorised members. A Circle or Rope Team can be linked if needed.'],
 ];
 A.acceptProj = d => {
   clearF('acc');
   UI.form.acc = { path: SUPPORT_PATHS[0][0] };
-  modal('Accept project and choose support path', () => {
+  modal('Accept project and choose where it starts', () => {
     const cur = SUPPORT_PATHS.find(([v]) => v === fv('acc', 'path')) || SUPPORT_PATHS[0];
-    return `<form data-f="acc" class="col prj-dlg" novalidate><input type="hidden" name="id" value="${d.id}">${fi('acc', 'path', 'Support and onboarding path', { type: 'select', req: true, opts: SUPPORT_PATHS.map(([v]) => [v, pathLabel(v)]), ch: 'accPath', help: cur[1] })}${fi('acc', 'note', 'Note to the participant', { type: 'textarea', rows: 3 })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Accept project</button></div></form>`;
+    return `<form data-f="acc" class="col prj-dlg" novalidate><input type="hidden" name="id" value="${d.id}">${fi('acc', 'path', 'Where the work starts', { type: 'select', req: true, opts: SUPPORT_PATHS.map(([v]) => [v, pathLabel(v)]), ch: 'accPath', help: cur[1] })}${fi('acc', 'note', 'Note to the participant', { type: 'textarea', rows: 3 })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Accept project</button></div></form>`;
   });
 };
 // keeps the note while the help text follows the chosen path
@@ -593,7 +566,7 @@ F.acc = d => {
   audit('Project accepted', p.id, path);
   UI.modal = null;
   clearF('acc');
-  toast('Project accepted. Next: create the Circle.');
+  toast('Project accepted. Start: ' + path.replace(/^Start /, '') + '.');
   ok();
 };
 // Everyone who can review a project: active Stewards, Faculty and Facilitators in its programme (one entry per

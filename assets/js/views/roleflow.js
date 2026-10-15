@@ -47,7 +47,7 @@ function rfAccess(c) {
     return [
       rfS('Start: open PHOENIX'),
       rfD('Do you have an invitation link?', [
-        rfB('No', [rfA('Create an account as ' + rfName(c), 'Participants and Sponsors can register directly. Name, display name, email, date of birth and a password (10+ characters with a number). The account joins the default programme.')]),
+        rfB('No', [rfA('Create an account as ' + rfName(c), 'Request access or use an invitation. Name, display name, email, age confirmation and a password (10+ characters with a number). No account until an invitation is accepted.')]),
         rfB('Yes', [rfA('Open the invitation link and accept', 'PHOENIX checks the link. Expired, withdrawn or used links stop here with a “Request a new invitation” form. A valid link fixes the role, programme and email.')]),
       ]),
       rfD('Does this email already have a PHOENIX account?', [
@@ -62,7 +62,7 @@ function rfAccess(c) {
     rfH(inviter, c === 'A' ? 'A Platform Administrator names you as an organization’s administrator, or a Programme Administrator invites you' : 'A Programme Administrator, or an Organization Representative in its own programme, invites you', 'The invitation sets your role, programme, link expiry (14 days by default) and an optional role end date. ' + rfName(c) + ' joins by invitation only.'),
     rfA('Open the invitation link', 'PHOENIX checks the link. Expired, withdrawn or already used links stop here with a “Request a new invitation” form, which notifies the Programme Administrators.'),
     rfD('Does this email already have a PHOENIX account?', [
-      rfB('No', [rfA('Accept and create your account', 'Role and email come from the invitation. Name, display name, date of birth and a password (10+ characters with a number).'), rfA('Verify your email', 'Open the link in the verification email, or send a new one.')]),
+      rfB('No', [rfA('Accept and create your account', 'Role and email come from the invitation. Name, display name, age confirmation and a password (10+ characters with a number).'), rfA('Verify your email', 'Open the link in the verification email, or send a new one.')]),
       rfB('Yes', [rfA('Sign in to accept', 'No second account: the role is added to your existing account.')]),
     ]),
     rfD(
@@ -155,8 +155,8 @@ function rfFlows() {
             rfY('Stage “Circle”', 'You are the Project owner; the Steward joins as Facilitator.'),
             rfA('Build the team', 'Invite people as Collaborator, Facilitator or Mentor, and approve or decline join requests. Invitees accept or decline.'),
             rfA('Join other Circles', 'Ask to join an active Circle in your programme (its owner or facilitator decides), or accept an invitation.'),
-            rfA('Work together', 'Chat, sessions, records and commitments, documents, an Opportunity Card or a Learning Harvest from the Circle.'),
-            rfA('Decide by weighted vote', 'You or the Facilitator open and close polls. Owner counts twice, Collaborators once; 60% of all eligible weight records a decision.'),
+            rfA('Work together', 'Threaded discussion, sessions, records and commitments, documents, an Opportunity Card or a Learning Harvest from the Circle.'),
+            rfA('Decide by Circle vote', 'You or the Facilitator open and close votes. One eligible member = one vote — you included, with no override. An option is approved at ' + S.settings.voting.threshold + '% of eligible voters with a ' + S.settings.voting.quorum + '% quorum; a tie returns to Shared for revision and re-vote. AI never passes or fails a vote.'),
             rfD('Which support path was chosen?', [
               rfB('Circle → Rope Team → ' + W, [rfA('Raise a Mentor Request', 'To a named mentor or as an open request to every mentor in the programme.'), rfH('M', 'A mentor accepts'), rfY('Rope Team formed', 'You, the Circle’s Collaborators, the mentor and a facilitator join; Circle documents are copied in. Stage “Rope Team”.')]),
               rfB('Circle → ' + W, [rfY('No Rope Team', 'Mentor Requests are not available. Once a decision is recorded, “Create or link ' + W + '” appears.')], 'Skips to the ' + W + ' phase'),
@@ -170,7 +170,7 @@ function rfFlows() {
             rfA('Share work for review'),
             rfH('M', 'Mentor reviews it', '“Looks good” or “Changes recommended”. A mentor contribution is recorded.'),
             rfA('Upload documents, ask for support, take part in check-ins'),
-            rfH('M', 'Mentor marks the requirements finalised'),
+            rfH('M', 'Mentor records a support recommendation'),
             rfA('Send a Rope Team report, or return a matter to the Circle', 'Returning raises a concern for the Circle facilitator. The project stage does not move back.'),
           ],
         ],
@@ -297,7 +297,7 @@ function rfFlows() {
             rfA('Create the Circle for a project you steward', 'Or the owner creates it. You join as Facilitator.'),
             rfA('Manage membership', 'Invite, approve or decline join requests, change roles, remove members.'),
             rfA('Run sessions, record decisions, review commitments, resolve concerns'),
-            rfA('Open and close polls; final-review poll outcomes', 'Facilitators do not vote. 60% of eligible weight records a decision.'),
+            rfA('Open and close polls; final-review poll outcomes', 'Facilitators do not vote. One eligible member = one vote; ' + S.settings.voting.threshold + '% of eligible voters with a ' + S.settings.voting.quorum + '% quorum records a decision.'),
             rfA('Approve the AI Circle summary, moderate chat, pause the Circle for repair or resume it'),
             rfD('Support path', [
               rfB('With Rope Team', [rfA('Raise a Mentor Request (or the owner does)'), rfH('M', 'Mentor accepts; Rope Team formed')]),
@@ -314,7 +314,7 @@ function rfFlows() {
             rfY('You join as facilitator when you raised the Mentor Request'),
             rfA('See progress indicators, invite members'),
             rfA('Decide on a mentor’s proposed exit; close the Rope Team'),
-            rfA('Create the ' + W + ' once the mentor finalises requirements'),
+            rfA('Create or link the ' + W + ' whenever the team is ready'),
           ],
         ],
         [
@@ -362,7 +362,7 @@ function rfFlows() {
       ],
     },
     M: {
-      lead: 'Accepts Mentor Requests, guides the Rope Team, reviews shared work and finalises requirements.',
+      lead: 'Accepts Mentor Requests, supports the Rope Team, reviews shared work and recommends — never approves.',
       side: ['Pathways', 'Circles, ' + W + 's, Harvests and messages'],
       phases: [
         ['Account & access', 'Invitation, approval and sign-in', rfAccess('M')],
@@ -384,7 +384,7 @@ function rfFlows() {
             rfH('P', 'Members share work for review'),
             rfD('Your review', [rfB('Looks good', [rfY('Mentor contribution recorded')]), rfB('Changes recommended', [rfH('P', 'Members revise and share again')], 'Review again')]),
             rfA('Run check-ins, answer support requests, see progress indicators'),
-            rfA('Mark the requirements finalised', 'The facilitators are notified and can create the ' + W + '.'),
+            rfA('Record a support recommendation', 'The team decides; the recommendation never approves anything.'),
             rfA('Send the Rope Team report to the ' + W),
             rfA('Resolve matters returned from the ' + W),
             rfA('Propose ending your engagement, or close the Rope Team', 'A Facilitator / Steward decides on an exit.'),
@@ -656,7 +656,7 @@ function rfOverview() {
     ['Access', 'Everyone joins', [rfS('Start: people join PHOENIX'), rfH('P/S', 'Participants and Sponsors register directly'), rfH('F/M/C/O/A', 'Other roles join by invitation; sensitive roles wait for approval'), rfH('A/O', 'Approve roles'), rfH('T', 'Creates organizations and names their Programme Administrators')]],
     ['Projects', 'Submission and review', [rfH('P', 'Creates the project, reviews 8 sections, submits'), rfH('A', 'Assigns one reviewer (the Steward)'), rfD('Steward decides (or a Programme Administrator)', [rfB('Clarify', [rfH('P', 'Replies or resubmits')], 'Decide again'), rfB('Reject', [rfY('Project rejected')], 'end'), rfB('Accept + support path', [rfY('Accepted')])])]],
     ['Circles', 'Circle', [rfH('P/F', 'Owner or Steward creates the Circle'), rfH('*', 'Members discuss, record and vote'), rfH('P/F', 'Owner or Steward raises a Mentor Request (Rope Team path)')]],
-    ['Rope Teams', 'Rope Team', [rfH('M', 'Mentor accepts; Rope Team formed'), rfH('M', 'Mentor reviews work and finalises requirements')]],
+    ['Rope Teams', 'Rope Team', [rfH('M', 'Mentor accepts; Rope Team formed'), rfH('M', 'Mentor reviews work and recommends')]],
     [W + 's', W, [rfH('P', 'Owner creates the ' + W), rfH('*', 'Members deliver tasks and link evidence to milestones'), rfH('F', 'Steward reviews evidence and validates milestones')]],
     ['Final review', 'Closure', [rfH('P', 'Owner submits final deliverables'), rfH('F', 'Steward approves (or requests changes)'), rfS('End: project closed')]],
     ['Alongside', 'Supporting flows', [rfH('S', 'Sponsor funds in tranches; owner reports progress'), rfH('C', 'Partner joins through a Steward-approved match'), rfH('A', 'Programme Administrator releases evidence and Harvests to funders'), rfH('F', 'Steward approves pathways that the Programme Administrator assigns')]],

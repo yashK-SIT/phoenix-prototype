@@ -39,7 +39,9 @@ const ROLE = {
   T: 'Platform Administrator',
 };
 // Seeded defaults only. At run time roles live in S.roles (managed in Role management) and ROLE mirrors their names.
-const SENSITIVE_ROLES = ['F', 'M', 'C', 'O', 'A'];
+// Onboarding route C (Build-Freeze review): only institution and administration roles wait for approval.
+// Participant, Mentor, Facilitator and Partner activate normally; specialist bundles are approved separately.
+const SENSITIVE_ROLES = ['O', 'A'];
 // Default role × module matrix (Section 10, Table 30), used to seed S.roles and to reset a seeded role.
 const MX = {
   home: { P: 'O', F: 'O', M: 'O', C: 'O', O: 'O', S: 'O', A: 'O', T: 'O' },
@@ -50,7 +52,7 @@ const MX = {
   aireq: { P: 'C', F: 'V', M: '-', C: '-', O: '-', S: '-', A: '-', T: '-' },
   projects: { P: 'C', F: 'R', M: '-', C: '-', O: 'V', S: '-', A: 'M', T: '-' },
   circles: { P: 'C', F: 'M', M: 'C', C: 'C', O: 'M', S: '-', A: 'VM', T: '-' },
-  voting: { P: 'C', F: 'C', M: '-', C: '-', O: '-', S: '-', A: '-', T: '-' },
+  voting: { P: 'C', F: 'C', M: 'C', C: 'C', O: '-', S: '-', A: '-', T: '-' },
   ropeteams: { P: 'C', F: 'C', M: 'C', C: '-', O: 'M', S: '-', A: 'VM', T: '-' },
   rooms: { P: 'C', F: 'M', M: 'C', C: 'M', O: 'M', S: '-', A: 'M', T: '-' },
   opportunities: { P: 'C', F: 'R', M: 'V', C: 'C', O: 'C', S: '-', A: 'M', T: '-' },
@@ -60,9 +62,9 @@ const MX = {
   harvest: { P: 'C', F: 'R', M: 'C', C: 'C', O: 'A', S: 'A', A: 'C', T: '-' },
   ai: { P: 'C', F: 'C', M: 'C', C: 'C', O: 'C', S: 'C', A: 'M', T: 'T' },
   payments: { P: 'O', F: '-', M: '-', C: '-', O: 'C', S: 'C', A: 'M', T: 'T' },
-  funding: { P: 'C', F: 'V', M: '-', C: '-', O: '-', S: 'M', A: 'V', T: '-' },
+  funding: { P: '-', F: '-', M: '-', C: '-', O: '-', S: 'V', A: 'V', T: '-' },
   metrics: { P: 'O', F: 'V', M: 'V', C: 'V', O: 'A', S: 'A', A: 'M', T: 'T' },
-  governance: { P: 'C', F: 'R', M: 'C', C: 'C', O: 'C', S: 'C', A: 'M', T: 'T' },
+  governance: { P: 'C', F: 'R', M: 'C', C: 'C', O: 'C', S: 'C', A: 'M', T: 'C' },
   admin: { P: '-', F: '-', M: '-', C: '-', O: 'M', S: '-', A: 'M', T: 'M' },
   platform: { P: '-', F: '-', M: '-', C: '-', O: '-', S: '-', A: '-', T: 'M' },
 };
@@ -92,8 +94,8 @@ function syncRoles() {
 const ctxId = () => asg()?.ctx;
 const ctx = () => S.contexts.find(c => c.id === ctxId());
 const pack = () => S.packs.find(p => p.id === ctx()?.pack) || S.packs[0];
-// Execution spaces are called Action Rooms everywhere, in every pack.
-const WL = () => 'Action Room';
+// "Action Workspace" is the canonical concept; a pack may display its own label (Action Room, Project Room …).
+const WL = () => (S && S.packs && pack() && pack().labels && pack().labels.workspace) || 'Action Workspace';
 const lvl = m => {
   const r = roleRec(roleId());
   return (r && r.perms ? r.perms[m] : (MX[m] || {})[roleId()]) || '-';
@@ -108,24 +110,58 @@ const tech = m => lvl(m).includes('T') || (lvl(m).includes('M') && role() === 'T
 const hasB = b => (asg()?.bundles || []).includes(b);
 const mine = pid => pid === S.session?.pid;
 const myId = () => S.session?.pid;
-// Optional processing purposes are covered by the agreement (product decision): there is no separate opt-in.
-// Legal basis to be confirmed by the WSS Trust/Data Steward before any real data is processed.
-const consent = () => 'Granted';
+// BF-02: the required agreement is separate from five optional purposes. Each purpose is Granted, Declined or
+// Withdrawn on its own; declining or withdrawing never blocks the manual core (pathway, Circles, tasks, evidence).
+// "matching" is not one of the five purposes: it is the person's matching-visibility choice used by Match Briefs.
+const OPT_PURPOSES = [
+  ['ai', 'AI processing', 'Ask PHOENIX and AI drafts that use your own records. Every AI output stays a draft until a person accepts it.'],
+  ['research', 'Research and evaluation', 'De-identified activity and reflections used to evaluate and improve the programme.'],
+  ['xorg', 'Cross-organisation sharing', 'Named items shared with people in other organisations you collaborate with.'],
+  ['public', 'Public or funder release', 'Approved stories or evidence released to funders or the public. Each release still needs your approval.'],
+  ['ext', 'External-system exchange', 'Exchange with connected external systems, such as a learning platform.'],
+];
+const consent = (pid = myId(), k = 'ai') => {
+  const c = (S.consents || {})[pid] || {};
+  return c[k] || 'Not asked';
+};
 const ent = pid => S.ents.filter(e => e.pid === pid && e.ctx === ctxId() && ['Active', 'Grace'].includes(e.state));
 const inCtx = o => !o.ctx || o.ctx === ctxId();
+const ctxName = id => (S.contexts.find(c => c.id === id) || {}).name || '—';
+// Short label for a context in chips and notices ("Excelsior", "Riverside").
+const ctxShort = id => ctxName(id).split(/\s+/)[0];
+const asgLabel = a => (a ? `${ROLE[a.role] || a.role} · ${ctxName(a.ctx)}` : '');
+// Agreement versions take effect on their effective date. A version published for a future date is shown as
+// upcoming and does not gate anything early (Build-Freeze review: "future version gated early").
+const agrFor = (ctxid, base) =>
+  S.agreements
+    .filter(g => g.ctx === ctxid && g.roles.includes(base) && (g.status === 'Active' || (g.status === 'Scheduled' && g.effective <= today())))
+    .sort((a, b) => b.ver - a.ver)[0];
+const agrUpcoming = (ctxid, base) =>
+  S.agreements.filter(g => g.ctx === ctxid && g.roles.includes(base) && g.status === 'Scheduled' && g.effective > today()).sort((a, b) => b.ver - a.ver)[0];
 const reaccept = () => {
   const a = asg();
   if (!a) return null;
-  const g = S.agreements.find(g => g.ctx === a.ctx && g.status === 'Active' && g.roles.includes(roleBase(a.role)));
+  const g = agrFor(a.ctx, roleBase(a.role));
   if (!g) return null;
   return S.accepts.some(x => x.pid === a.pid && x.ag === g.id) ? null : g;
 };
+// While a material agreement change waits for re-acceptance, only participation is paused. Own records, consent,
+// correction, appeal, export, help and concern routes stay open (onboarding route E).
+const RIGHTS_ROUTES = ['privacy', 'profile', 'resources', 'incidents', 'help', 'messages'];
 function audit(a, o, d, r = 'ok') {
   S.audit.unshift({ at: now(), by: myId() || 'anonymous', ctx: ctxId(), a, o, d, r });
 }
-function notify(pid, t, r, p) {
-  S.notifs.unshift({ id: uid('n'), pid, t, r, p: p || {}, read: false, at: today() });
+// Every notice names the role assignment (role + context) it belongs to. By default that is the recipient's active
+// assignment in the context where the action happened; opening a notice for another assignment needs a safe switch.
+function notify(pid, t, r, p, aid) {
+  const c = ctxId();
+  const mine = S.assign.filter(a => a.pid === pid);
+  const a = (aid && mine.find(x => x.id === aid)) || mine.find(x => x.ctx === c && x.status === 'Active') || mine.find(x => x.ctx === c) || mine.find(x => x.status === 'Active') || mine[0];
+  S.notifs.unshift({ id: uid('n'), pid, t, r, p: p || {}, read: false, at: today(), aid: a ? a.id : null, ctx: a ? a.ctx : c });
 }
+// The assignment a notice belongs to (older notices without one count as the current assignment).
+const notifAsg = n => (n.aid && S.assign.find(a => a.id === n.aid)) || null;
+const notifHere = n => !n.aid || n.aid === S.session?.aid;
 function toast(t, k = 'ok') {
   UI.toast = { t, k };
   clearTimeout(UI._tt);
@@ -242,6 +278,8 @@ const SC = {
   Degraded: 'p-red',
   Unavailable: 'p-red',
   'Not approved': 'p-grey',
+  'Closed — Tie: returned to Shared': 'p-amber',
+  'Closed — No quorum': 'p-amber',
 };
 const pill = (t, c) =>
   `<span class="pill ${c || SC[t] || (String(t).startsWith('Closed — Approved') ? 'p-green' : String(t).startsWith('Closed') ? 'p-grey' : 'p-grey')}">${h(t)}</span>`;
@@ -417,12 +455,12 @@ const dobOk = v => {
   const d = new Date(v + 'T00:00:00Z');
   return !isNaN(d) && d.toISOString().slice(0, 10) === v && v < today() && +v.slice(0, 4) >= new Date().getFullYear() - 120;
 };
-const dobRules = req => [
-  ...(req ? [['req', 'Enter your date of birth.']] : []),
+// BF-12: minimise age data. Date of birth is never required; age confirmation is recorded instead.
+const dobRules = () => [
   ['fn', { f: v => !v || dobOk(v), m: 'Enter a valid date of birth in the past.' }],
 ];
 const dobField = (f, value, o = {}) =>
-  fi(f, 'dob', 'Date of birth', { type: 'date', req: o.req !== false, value, maxv: today(), auto: 'bday', vis: 'You and authorised administration', ...o });
+  fi(f, 'dob', 'Date of birth (optional)', { type: 'date', value, maxv: today(), auto: 'bday', vis: 'You and authorised administration', help: 'Only if your programme policy asks for it.', ...o, req: false });
 // Accounts are soft-deleted; a deleted account no longer matches an email address.
 const personByEmail = e => S.people.find(p => p.status !== 'Deleted' && (p.email || '').toLowerCase() === String(e || '').trim().toLowerCase());
 const errSum = f => {
@@ -443,58 +481,109 @@ const closeM = () => {
   UI.modal = null;
   render();
 };
-// ---- nav model per role
+/// ---- nav model per role (BF-13/BF-14): a small common spine, then only the work areas of the active role.
+// Specialist sections appear only when the matching capability bundle is held in this context. Unrelated modules are
+// hidden, not disabled. Role and context are switched from the header, not from the menu.
 function navItems() {
   const r = role();
   const W = WL();
   const items = [];
   const add = (m, route, label, icon, cond = true) => {
-    if (cond && can(m)) items.push([route, label, icon]);
+    if (cond && (!m || can(m))) items.push([route, label, icon]);
+  };
+  const inMy = k => S[k].some(o => inCtx(o) && memberOf(o));
+  const tail = () => {
+    // Specialist actions: only when the matching bundle is active in this context.
+    if (hasB('Reviewer') && r !== 'F') items.push(['inbox', 'Review inbox', 'inbox']);
+    if (hasB('Trust/Data Steward')) items.push(['policies', 'Trust/Data: policies', 'shield']);
+    if (hasB('Finance Owner')) items.push(['billing', 'Finance: products & payments', 'card']);
+    if (hasB('AI Owner')) items.push(['aiadmin', 'AI Owner: sources', 'sparkle']);
+    if (hasB('Incident/Safety Owner')) items.push(['incidents', 'Incident queue', 'alert']);
+    // Always visible; content and counts follow the active role and context.
+    if (r !== 'T') items.push(['privacy', 'My records & consent', 'lock']);
+    if (r !== 'T') items.push(['resources', 'Resources & guidance', 'file']);
+    items.push(['help', 'Help & support', 'info']);
+    if (!hasB('Incident/Safety Owner')) items.push(['incidents', 'Report a concern', 'alert']);
+    return items;
   };
   if (r === 'T') {
-    return [
-      ['home', 'Platform health', 'grid'],
-      ['tenants', 'Organizations', 'building'],
-      ['roles', 'Role management', 'shield'],
-      ['policies', 'Policies & agreements', 'file'],
-      ['compassqs', 'Purpose Compass', 'target'],
+    items.push(
+      ['home', 'System health', 'grid'],
+      ['tenants', 'Contexts & tenants', 'building'],
+      ['roles', 'Roles & bundles', 'shield'],
       ['platform:integrations', 'Integrations', 'link'],
       ['platform:security', 'Security & access', 'lock'],
-      ['platform:health', 'Health & alerts', 'chart'],
-      ['platform:storage', 'Storage & backups', 'archive'],
+      ['platform:storage', 'Backups & restore', 'archive'],
+      ['platform:health', 'Deployment status', 'chart'],
       ['audit', 'Audit & logs', 'file'],
-    ];
+    );
+    return tail();
   }
   items.push(['home', 'My PHOENIX', 'home']);
   if (hasChats()) items.push(['messages', 'Messages', 'message']);
-  add('pathways', 'pathway', 'Pathway', 'route', r !== 'C' && r !== 'O');
-  add('projects', 'projects', r === 'F' ? 'Project reviews' : 'Projects', 'folder');
-  add('circles', 'circles', 'Circles', 'users');
-  add('ropeteams', 'ropeteams', 'Rope Teams', 'route');
-  add('rooms', 'rooms', W + 's', 'room');
-  add('opportunities', 'opportunities', 'Opportunities', 'megaphone');
-  add('matching', 'matches', 'Match Briefs', 'link');
-  add('evidence', 'evidence', r === 'S' || r === 'O' ? 'Approved evidence' : 'Evidence', 'award');
-  add('repository', 'repository', 'Repository', 'archive');
-  add('harvest', 'harvests', 'Learning Harvests', 'sparkle', r !== 'S');
-  if (can('funding')) items.push(['funding', r === 'S' ? 'Projects & funding' : 'Funding', 'coin']);
-  if (can('payments') && r === 'A')
-    items.push([
-      'billing',
-      r === 'S' ? 'Seats & payments' : r === 'A' ? 'Products & payments' : 'Access & billing',
-      'card',
-    ]);
-  if (r === 'O') items.push(['org', 'Organization workspace', 'building']);
-  if (r === 'A') items.push(['admin', 'Programme admin', 'settings']);
-  items.push(['resources', 'Resources & guidance', 'file']);
-  items.push([
-    'incidents',
-    r === 'A' && hasB('Incident/Safety Owner') ? 'Incidents & concerns' : 'Report a concern',
-    'alert',
-  ]);
-  if (can('metrics') && r !== 'P') items.push(['metrics', 'Metrics & reports', 'chart']);
-  if (r === 'A' || r === 'O') items.push(['audit', 'Audit log', 'file']);
-  return items;
+  if (r === 'P') {
+    // BF-14: 4–7 primary work areas; Matches, collaborations, Harvests and Repository stay reachable from home/cards.
+    add('pathways', 'pathway', 'Pathway', 'route');
+    add('circles', 'circles', 'Circles', 'users');
+    add('ropeteams', 'ropeteams', 'Rope Teams', 'route');
+    add('rooms', 'rooms', W + 's', 'room');
+    add('opportunities', 'opportunities', 'Opportunities', 'megaphone');
+    add('evidence', 'evidence', 'Evidence', 'award');
+    add(null, 'board', 'Explore board', 'grid');
+  } else if (r === 'M') {
+    add('ropeteams', 'ropeteams', 'My people & requests', 'route');
+    add('pathways', 'pathway', 'Shared pathways', 'route');
+    add('circles', 'circles', 'Circles', 'users', inMy('circles'));
+    add('rooms', 'rooms', 'Assigned ' + W + 's', 'room', inMy('rooms'));
+    add(null, 'relations', 'My collaborations', 'users');
+    add('evidence', 'evidence', 'Shared evidence', 'award');
+  } else if (r === 'F') {
+    add('circles', 'circles', 'Circles', 'users');
+    add(null, 'inbox', 'Review inbox', 'inbox');
+    add('projects', 'projects', 'Project reviews', 'folder');
+    add('pathways', 'pathway', 'Pathways', 'route');
+    add('matching', 'matches', 'Match Briefs', 'link', S.matches.some(m => m.steward === myId()));
+    add('rooms', 'rooms', 'Linked ' + W + 's', 'room');
+    add('ropeteams', 'ropeteams', 'Rope Teams', 'route', inMy('ropes'));
+    add('harvest', 'harvests', 'Learning Harvests', 'sparkle');
+    if (hasB('Reviewer')) add('evidence', 'evidence', 'Evidence review', 'award');
+  } else if (r === 'C') {
+    add('opportunities', 'opportunities', 'Opportunities', 'megaphone');
+    add('matching', 'matches', 'Match Briefs', 'link');
+    add(null, 'board', 'Explore board', 'grid');
+    add(null, 'relations', 'My collaborations', 'users');
+    add('rooms', 'rooms', W + 's', 'room');
+    add(null, 'mandate', 'Organisation & mandate', 'building');
+    add('evidence', 'evidence', 'Evidence', 'award');
+  } else if (r === 'O') {
+    items.push(
+      ['org:users', 'People & cohorts', 'users'],
+      ['org:invites', 'Invitations', 'mail'],
+      ['org:roles', 'Role assignments', 'shield'],
+      ['org:spaces', 'Spaces in my context', 'folder'],
+      ['metrics', 'Programme progress', 'chart'],
+      ['org:reports', 'Reports', 'file'],
+      ['org:requests', 'Requests to Programme Admin', 'send'],
+    );
+  } else if (r === 'S') {
+    items.push(['funding:seats', 'Seat utilisation', 'card'], ['funding:initiatives', 'Approved initiatives', 'folder']);
+    add('evidence', 'evidence', 'Approved evidence', 'award');
+    items.push(['funding:reports', 'Funder-safe reports', 'chart'], ['funding:invoices', 'Invoices & receipts', 'coin']);
+  } else if (r === 'A') {
+    items.push(
+      ['admin:requests', 'Approval inbox', 'inbox'],
+      ['admin:invites', 'Invitations', 'mail'],
+      ['admin:users', 'Users & roles', 'users'],
+      ['admin:packs', 'Pack configuration', 'settings'],
+      ['admin:library', 'Template library', 'route'],
+      ['compassqs', 'Purpose Compass settings', 'target'],
+      ['admin:notify', 'Notifications', 'bell'],
+      ['metrics', 'Reports & exports', 'chart'],
+      ['admin:versions', 'Configuration versions', 'archive'],
+      ['audit', 'Audit log', 'file'],
+    );
+  }
+  return tail();
 }
 const PARENT = {
   project: 'projects',
@@ -516,24 +605,31 @@ const GROUP = {
   circles: 'Work',
   ropeteams: 'Work',
   rooms: 'Work',
+  inbox: 'Work',
+  mandate: 'Work',
   opportunities: 'Discover',
   matches: 'Discover',
+  board: 'Discover',
+  relations: 'Discover',
   evidence: 'Records',
   repository: 'Records',
   harvests: 'Records',
-  funding: 'Access',
-  billing: 'Access',
-  org: 'Administration',
+  funding: 'Sponsorship',
+  org: 'Organisation',
   admin: 'Administration',
-  inbox: 'Administration',
+  compassqs: 'Administration',
   metrics: 'Administration',
   audit: 'Administration',
-  incidents: 'Support',
-  resources: 'Support',
+  policies: 'Specialist',
+  billing: 'Specialist',
+  aiadmin: 'Specialist',
+  privacy: 'Always available',
+  resources: 'Always available',
+  help: 'Always available',
+  incidents: 'Always available',
   platform: 'Platform',
   tenants: 'Platform',
   roles: 'Platform',
-  notifications: 'Platform',
 };
 function navCount(r) {
   const pid = myId();
@@ -545,29 +641,40 @@ function navCount(r) {
       m => m.status === 'Awaiting consent' && ((m.a === pid && !m.consentA) || (m.b === pid && !m.consentB)),
     ).length;
   if (r === 'ropeteams' && role() === 'M')
-    return S.mentorReqs.filter(m => m.to === pid && m.status === 'Pending').length;
+    return S.mentorReqs.filter(m => m.to === pid && m.status === 'Pending' && mentorReqVisible(m)).length;
   return 0;
 }
+// In-page tab keys of routes that the menu links into section by section (route:tab).
+const NAV_TABK = { admin: 'adm', org: 'org', platform: 'plat', funding: 'fund' };
 function sidebar() {
   const a = asg();
   const others = roleChoices().length;
   const act = PARENT[UI.route] || UI.route;
   let last = null;
-  const items = navItems()
+  const all = navItems();
+  const curTab = rt => UI.p.tab || UI.tab[NAV_TABK[rt]] || null;
+  // A route linked by several items highlights the item for the open section, else its first item.
+  const pick = {};
+  all.forEach(([r]) => {
+    const [rt, tb] = r.split(':');
+    if (rt !== act) return;
+    if (tb && tb === curTab(rt)) pick[rt] = r;
+    else if (!pick[rt]) pick[rt] = r;
+  });
+  const items = all
     .map(([r, l, i]) => {
       const [rt, tb] = r.split(':');
-      const on = rt === act && (rt !== 'platform' || (UI.p.tab || 'integrations') === (tb || 'integrations')) ? ' on' : '';
-      const g = role() === 'T' ? '' : rt === 'metrics' && !['A', 'O'].includes(role()) ? 'Insights' : GROUP[rt] || '';
+      const on = pick[rt] === r ? ' on' : '';
+      const g = role() === 'T' ? '' : GROUP[rt] || '';
       let sec = '';
-      if (g !== last && g) {
-        sec = `<div class="navsec"><span>${g}</span></div>`;
-      }
+      if (g !== last && g) sec = `<div class="navsec"><span>${g}</span></div>`;
       last = g;
       const n = navCount(rt);
       return `${sec}<a href="#" class="nav${on}" data-a="go" data-r="${rt}"${tb ? ` data-tab="${tb}"` : ''} data-tip="${h(l)}"${on ? ' aria-current="page"' : ''}>${ic(i)}<span class="t">${h(l)}</span><span class="ts" aria-hidden="true">${h(SHORT[rt] || l.split(' ')[0])}</span>${n ? `<span class="ncount" aria-label="${n} new">${n}</span>` : ''}</a>`;
     })
     .join('');
-  return `<aside class="side" id="side-nav" aria-label="Main navigation"${UI.drawer ? ' role="dialog" aria-modal="true"' : ''}><div class="side-plate"><a href="#" class="brand" data-a="go" data-r="home" aria-label="PHOENIX home"><span class="mark">${MARK()}</span><span class="wm"><b>PHOENIX</b><span>Foundation Alpha</span></span></a><button class="side-user" type="button" data-a="switcher" aria-label="${h(me().name)}, ${h(ROLE[a.role])}${others > 1 ? '. Switch role' : ''}" title="${h(me().name)} · ${h(ROLE[a.role])}"><span class="av side-av" aria-hidden="true">${ini(myId())}</span><span class="side-user-t"><b title="${h(me().name)}">${h(me().name)}</b><small title="${h(ROLE[a.role])}">${h(ROLE[a.role])}${a.bundles.length ? ' · +' + a.bundles.length + ' bundle' + (a.bundles.length > 1 ? 's' : '') : ''}</small></span><span class="side-user-chev">${ic('chev', 16)}</span></button></div><nav class="side-nav" aria-label="Sections">${items}</nav><div class="side-foot"><button type="button" class="nav side-close" data-a="drawerClose">${ic('x')}<span class="t">Close menu</span></button></div></aside>`;
+  const sub = `${h(ROLE[a.role])} · ${h(ctxShort(a.ctx))}${a.bundles.length ? ' · +' + a.bundles.length + ' bundle' + (a.bundles.length > 1 ? 's' : '') : ''}`;
+  return `<aside class="side" id="side-nav" aria-label="Main navigation"${UI.drawer ? ' role="dialog" aria-modal="true"' : ''}><div class="side-plate"><a href="#" class="brand" data-a="go" data-r="home" aria-label="PHOENIX home"><span class="mark">${MARK()}</span><span class="wm"><b>PHOENIX</b><span>Foundation Alpha</span></span></a><button class="side-user" type="button" data-a="switcher" aria-label="${h(me().name)}, ${h(asgLabel(a))}${others > 1 ? '. Switch role or context' : ''}" title="${h(me().name)} · ${h(asgLabel(a))}"><span class="av side-av" aria-hidden="true">${ini(myId())}</span><span class="side-user-t"><b title="${h(me().name)}">${h(me().name)}</b><small title="${h(asgLabel(a))}">${sub}</small></span><span class="side-user-chev">${ic('chev', 16)}</span></button></div><nav class="side-nav" aria-label="Sections">${items}</nav><div class="side-foot"><button type="button" class="nav side-close" data-a="drawerClose">${ic('x')}<span class="t">Close menu</span></button></div></aside>`;
 }
 // The PHOENIX mark: an ember plume rising from a baseline.
 const MARK = (s = 20) =>
@@ -576,9 +683,10 @@ const MARK = (s = 20) =>
 const crumbsHtml = list =>
   `<ol class="crumbs" aria-label="Breadcrumb">${list.map(([l, r, p], i) => (i < list.length - 1 && r ? `<li>${L(l, r, p, '')}</li>` : `<li><span aria-current="page">${l}</span></li>`)).join('')}</ol>`;
 function topbar() {
-  const unread = S.notifs.filter(n => n.pid === myId() && !n.read).length;
+  const unread = S.notifs.filter(n => n.pid === myId() && !n.read && notifHere(n)).length;
   return `<header class="top"><button class="iconbtn menubtn" type="button" data-a="drawerToggle" aria-label="Open navigation" aria-controls="side-nav" aria-expanded="${!!UI.drawer}">${ic('menu', 20)}</button><a href="#" class="mbrand" data-a="go" data-r="home" aria-label="PHOENIX home"><span class="mark">${MARK(16)}</span></a>
  <div class="grow"></div>
+ <button type="button" class="ctxbtn" data-a="switcher" aria-haspopup="dialog" title="Active role and context. Select to switch." aria-label="Working as ${h(asgLabel(asg()))}. Switch role or context"><span class="ctxbtn-k">Working as</span><b>${h(ROLE[asg().role])}</b><span class="ctxbtn-c">${ic('building', 13)}${h(ctxName(asg().ctx))}</span><span class="ctxbtn-ch">${ic('chev', 13)}</span></button>
  ${can('ai') ? `<button type="button" class="btn btn-s btn-sm askbtn ${UI.panel === 'ask' ? 'on' : ''}" data-a="askToggle" aria-label="Ask PHOENIX" aria-expanded="${UI.panel === 'ask'}" aria-controls="assist" title="Ask PHOENIX">${ic('sparkle', 16)}<span class="hide-md">Ask PHOENIX</span></button>` : ''}
  <div class="nwrap"><button class="iconbtn ${UI.panel === 'notif' ? 'on' : ''}" type="button" data-a="notifToggle" aria-haspopup="dialog" aria-expanded="${UI.panel === 'notif'}" aria-label="Notifications, ${unread} unread">${ic('bell')}${unread ? `<span class="badge">${unread}</span>` : ''}</button>${UI.panel === 'notif' ? notifMenu() : ''}</div>
  <div class="uwrap"><button class="who ${UI.panel === 'user' ? 'on' : ''}" type="button" data-a="userToggle" aria-haspopup="menu" aria-expanded="${UI.panel === 'user'}" aria-controls="user-menu" aria-label="Account menu for ${h(me().name)}"><span class="av">${ini(myId())}</span><span class="hide-sm">${h(me().display)}</span><span class="who-chev">${ic('chev', 14)}</span></button>${UI.panel === 'user' ? userMenu() : ''}</div></header>`;
@@ -620,6 +728,23 @@ function bottomnav() {
 function deniedView(m) {
   return `<div class="denied card"><span class="tile t-soft" style="width:56px;height:56px;margin:0 auto">${ic('lock', 24)}</span><h1 class="h2" style="margin-top:12px">You do not have access to this area</h1><p class="muted" style="margin-top:8px">Your effective permission for <b>${h(m)}</b> as ${ROLE[role()]} in ${h(ctx()?.name)} is: <b>${LV[lvl(m)] || 'no access'}</b>.</p><p class="cap" style="margin-top:8px">Effective permission = identity + scoped role + context + mandate + object permission + consent + lifecycle state + entitlement. This attempt has been recorded.</p><div style="margin-top:16px">${B('Back to My PHOENIX', 'go', { r: 'home' }, 'btn-p')}</div></div>`;
 }
+// ---- deep links and notices are re-checked against the active context (BF-01)
+const CTX_OBJ = { circle: 'circles', rope: 'ropes', room: 'rooms', project: 'projects', card: 'cards', match: 'matches', harvest: 'harvests' };
+// The object a detail route opens, when it belongs to a different context than the active one.
+function ctxObj() {
+  const k = CTX_OBJ[UI.route];
+  const o = k && UI.p.id && byId(k, UI.p.id);
+  return o && o.ctx && o.ctx !== ctxId() ? o : null;
+}
+function ctxGateView(o) {
+  const mine = roleChoices().filter(x => x.ctx === o.ctx);
+  const ok_ = mine.filter(asgUsable);
+  return `<div class="denied card"><span class="tile t-soft" style="width:56px;height:56px;margin:0 auto">${ic('building', 24)}</span><h1 class="h2" style="margin-top:12px">This item belongs to ${h(ctxName(o.ctx))}</h1><p class="muted" style="margin-top:8px">You are working as <b>${h(asgLabel(asg()))}</b>. Items from another context open only after you switch to an active role there. Nothing from this item was loaded.</p>${
+    ok_.length
+      ? `<div class="col" style="gap:8px;margin-top:16px">${ok_.map(x => B(`Switch to ${h(ctxShort(x.ctx))} as ${h(ROLE[x.role])} and open`, 'doSwitch', { id: x.id, then: JSON.stringify({ r: UI.route, p: UI.p }) }, 'btn-p')).join('')}</div>`
+      : `<p class="cap" style="margin-top:12px">${mine.length ? 'Your role there is ' + h(mine.map(x => x.status).join(', ').toLowerCase()) + ', so it cannot be used for work yet.' : 'You have no role in that context.'}</p>`
+  }<div style="margin-top:12px">${B('Back to My PHOENIX', 'go', { r: 'home' })}</div><p class="cap" style="margin-top:12px">This attempt has been recorded.</p></div>`;
+}
 // ---- routes
 const ROUTES = {}; // name:{mod, view}
 function route(name, mod, view) {
@@ -643,6 +768,7 @@ function render() {
       html = PUB.pending();
     } else if (
       !a.onb.agreement ||
+      !a.onb.consents ||
       !a.onb.profile ||
       (!a.onb.compass && roleBase(a.role) === 'P')
     ) {
@@ -650,7 +776,14 @@ function render() {
     } else {
       const R = ROUTES[UI.route] || ROUTES.home;
       let inner;
-      if (R.mod && R.mod !== 'any' && !(can(R.mod) || (R.tech && lvl(R.mod).match(/[TM]/)))) {
+      const xo = ctxObj();
+      const pg = reaccept();
+      if (xo) {
+        audit('Access denied', UI.route + ' ' + xo.id, 'Object belongs to ' + ctxName(xo.ctx) + '; active context is ' + ctxName(ctxId()), 'denied');
+        inner = ctxGateView(xo);
+      } else if (pg && !RIGHTS_ROUTES.includes(UI.route)) {
+        inner = policyGate(pg);
+      } else if (R.mod && R.mod !== 'any' && !(can(R.mod) || (R.tech && lvl(R.mod).match(/[TM]/)))) {
         audit('Access denied', UI.route, 'Route guard: ' + LV[lvl(R.mod)], 'denied');
         inner = deniedView(R.mod);
       } else {
@@ -661,8 +794,7 @@ function render() {
           inner = banner('err', 'Something went wrong on this screen', h(e.message));
         }
       }
-      const pg = reaccept();
-      html = `<div class="ph"${pg ? ' inert' : ''}><a href="#main" class="skip" data-a="skipMain">Skip to content</a><div class="app${UI.compact ? ' is-compact' : ''}${UI.drawer ? ' is-drawer' : ''}" data-route="${h(UI.route)}">${sidebar()}${UI.drawer ? '<div class="scrim" data-a="drawerClose" aria-hidden="true"></div>' : ''}<div class="main">${topbar()}<main class="content${enter ? ' enter' : ''}" id="main" tabindex="-1">${inner}</main>${bottomnav()}</div></div></div>${pg ? policyGate(pg) : ''}`;
+      html = `<div class="ph"><a href="#main" class="skip" data-a="skipMain">Skip to content</a><div class="app${UI.compact ? ' is-compact' : ''}${UI.drawer ? ' is-drawer' : ''}" data-route="${h(UI.route)}">${sidebar()}${UI.drawer ? '<div class="scrim" data-a="drawerClose" aria-hidden="true"></div>' : ''}<div class="main">${topbar()}<main class="content${enter ? ' enter' : ''}" id="main" tabindex="-1">${inner}</main>${bottomnav()}</div></div></div>`;
     }
   }
   if (UI.modal)
@@ -891,30 +1023,42 @@ A.logout = () => {
   UI.route = 'login';
   render();
 };
-// The switcher lists roles, not programmes: one entry per distinct role the person holds.
+/// BF-01: the switcher lists every role assignment with its organisation or programme context. Only Active
+// assignments can be chosen for work; pending, expired, suspended or declined ones are shown with their state.
 function roleChoices(pid = myId()) {
-  const cur = S.session ? asg() : null;
-  const out = [];
-  S.assign
-    .filter(x => x.pid === pid)
-    .forEach(x => {
-      const i = out.findIndex(y => y.role === x.role);
-      if (i < 0) out.push(x);
-      else if ((cur && x.id === cur.id) || (out[i].status !== 'Active' && x.status === 'Active')) out[i] = x;
-    });
-  return out;
+  return S.assign.filter(x => x.pid === pid);
+}
+const asgUsable = x => !!x && x.status === 'Active' && (S.contexts.find(c => c.id === x.ctx) || {}).status !== 'Suspended';
+// A form holds unsaved input when any of its text fields has content.
+const unsavedForms = () =>
+  Object.entries(UI.form || {})
+    .filter(([k, v]) => !['login', 'cv'].includes(k) && v && Object.values(v).some(x => String(x || '').trim() && x !== 'yes'))
+    .map(([k]) => k);
+function switcherBody(then) {
+  const cur = S.session.aid;
+  const list = roleChoices();
+  const byCtx = [...new Set(list.map(x => x.ctx))];
+  return `<p class="muted">Choose the role and context to work in. Your dashboard, menu, requests, counts and notifications are rebuilt for that choice; nothing from one context is carried into another.</p>${unsavedForms().length ? banner('warn', 'You have unsaved changes', 'Switching discards text you have not saved. Save it first if you want to keep it.') : ''}<div class="col" style="gap:14px">${byCtx
+    .map(
+      c => `<section class="col" style="gap:6px"><span class="lbl">${ic('building', 14)} ${h(ctxName(c))}</span>${list
+        .filter(x => x.ctx === c)
+        .map(x => {
+          const usable = asgUsable(x);
+          const isCur = x.id === cur;
+          return `<button class="demo-acc${usable ? '' : ' is-off'}" type="button" ${usable && !isCur ? `data-a="doSwitch" data-id="${x.id}"${then ? ` data-then="${h(then)}"` : ''}` : 'disabled aria-disabled="true"'}><span class="tile t-soft">${ic('user', 18)}</span><span class="col" style="flex:1"><b>${h(ROLE[x.role])}</b><span class="cap">${x.bundles.length ? 'Bundles: ' + h(x.bundles.join(', ')) : 'No specialist bundles'}${usable ? '' : ' · not available for work until it is active'}</span></span>${isCur ? pill('Current', 'p-teal') : pill(x.status)}</button>`;
+        })
+        .join('')}</section>`,
+    )
+    .join('')}</div>`;
 }
 A.switcher = () => {
-  const list = roleChoices();
-  if (list.length < 2) {
-    toast('You hold one role.', 'warn');
+  if (roleChoices().length < 2) {
+    toast('You hold one role in one context.', 'warn');
     render();
     return;
   }
-  modal(
-    'Switch role',
-    `<p class="muted">My PHOENIX changes to the role you choose. What you can see and do follows that role.</p><div class="col" style="gap:8px">${list.map(x => `<button class="demo-acc" type="button" data-a="doSwitch" data-id="${x.id}"><span class="tile t-soft">${ic('user', 18)}</span><span class="col" style="flex:1"><b>${h(ROLE[x.role])}</b><span class="cap">${x.bundles.length ? h(x.bundles.join(', ')) : 'No extra bundles'}</span></span>${x.id === S.session.aid ? pill('Current', 'p-teal') : pill(x.status)}</button>`).join('')}</div>`,
-  );
+  UI.panel = null;
+  modal('Switch role or context', switcherBody());
 };
 // A policy published in another tab reaches this one straight away.
 window.addEventListener('storage', e => {
@@ -927,12 +1071,30 @@ window.addEventListener('storage', e => {
     }
   } catch (x) {}
 });
+// Re-evaluate the chosen assignment, close dialogs, drop cached screen state and open My PHOENIX (or the item the
+// person asked for, which is checked again under the new context by the route guard and the object's own checks).
 A.doSwitch = d => {
+  const x = S.assign.find(a => a.id === d.id && a.pid === myId());
+  if (!asgUsable(x)) {
+    audit('Context switch refused', 'session', d.id, 'denied');
+    toast('That role is not active, so it cannot be used for work.', 'err');
+    return render();
+  }
+  const from = asg();
+  const then = d.then ? JSON.parse(d.then) : null;
   resetUI();
-  S.session.aid = d.id;
-  audit('Context switched', 'session', d.id);
+  UI.drawer = false;
+  S.session.aid = x.id;
+  me().lastAid = x.id;
+  audit('Role/context switched', 'session', asgLabel(from) + ' → ' + asgLabel(x));
   save();
-  go('home');
+  if (then) {
+    go(then.r, then.p || {});
+    toast('Now working as ' + asgLabel(x) + '.');
+  } else {
+    go('home');
+    toast('Now working as ' + asgLabel(x) + '.');
+  }
 };
 A.moreNav = () =>
   modal(
@@ -948,13 +1110,28 @@ A.moreNav = () =>
         '',
       )}${can('ai') ? `<a href="#" class="nav" data-a="go" data-r="ask">${ic('sparkle')}<span>Ask PHOENIX</span></a>` : ''}${role() !== 'T' ? `<a href="#" class="nav" data-a="go" data-r="privacy">${ic('shield')}<span>Privacy & agreements</span></a>` : ''}<a href="#" class="nav out" data-a="logout">${ic('logout')}<span>Log out</span></a></div>`,
   );
+// A notice for another role or context never opens protected content under the current one. It names its context
+// and asks for an explicit, safe switch first (BF-01 example: "Switch to Excelsior as Mentor?").
 A.read = d => {
   const n = S.notifs.find(x => x.id === d.id);
-  if (n) {
-    n.read = true;
-    save();
-    go(n.r, n.p);
+  if (!n) return;
+  n.read = true;
+  save();
+  if (notifHere(n)) return go(n.r, n.p);
+  const x = notifAsg(n);
+  UI.panel = null;
+  if (!asgUsable(x)) {
+    audit('Cross-context notice blocked', n.id, asgLabel(x) + ' is ' + (x ? x.status : 'missing'), 'denied');
+    return modal(
+      'This notice cannot be opened',
+      `${banner('warn', 'The role it belongs to is not active', `This notice is for your <b>${h(asgLabel(x) || 'earlier')}</b> role${x ? ', which is ' + h(x.status).toLowerCase() : ''}. Its content stays protected until that role is active again.`)}<div class="actions">${B('Close', 'closeM')}${B('Help & support', 'go', { r: 'help' }, 'btn-p btn-sm')}</div>`,
+    );
   }
+  audit('Cross-context notice opened', n.id, 'switch offered to ' + asgLabel(x));
+  modal(
+    `Switch to ${h(ctxShort(x.ctx))} as ${h(ROLE[x.role])}?`,
+    `<p class="muted">This notice belongs to your <b>${h(ROLE[x.role])}</b> role in <b>${h(ctxName(x.ctx))}</b>. You are working as <b>${h(asgLabel(asg()))}</b>, so it is not opened here.</p><div class="notice-q">${ic('bell', 16)}<span>${h(n.t)}</span></div><p class="cap">After the switch, your menu, requests and counts change to that context, and the item opens with that role's permissions.</p><div class="actions">${B('Stay here', 'closeM')}${B(`Switch to ${h(ctxShort(x.ctx))} as ${h(ROLE[x.role])} and open`, 'doSwitch', { id: x.id, then: JSON.stringify({ r: n.r, p: n.p }) }, 'btn-p btn-sm')}</div>`,
+  );
 };
 A.resetDemo = () =>
   modal(
@@ -997,7 +1174,7 @@ function boot() {
   } catch (e) {
     S = null;
   }
-  if (!S || S.v !== 5) {
+  if (!S || S.v !== 6) {
     S = freshData();
     save();
   }
