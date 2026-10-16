@@ -399,14 +399,13 @@ F.rb = d => {
 // ---------- MATCH BRIEFS (E06) ----------
 route('matches', 'matching', () => {
   const r = role();
+  // Parties see their briefs at every stage (including steward review / clarification), so Connect is walkable.
   const list = S.matches.filter(m =>
     r === 'F'
       ? m.steward === myId()
       : r === 'A'
         ? true
-        : ((m.a === myId() || m.b === myId()) &&
-            !['Draft', 'In steward review', 'Clarification requested', 'Rejected'].includes(m.status)) ||
-          (m.a === myId() && m.origin === 'Expression of interest'),
+        : m.a === myId() || m.b === myId() || (m.steward === myId() && ['In steward review', 'Clarification requested'].includes(m.status)),
   );
   return (
     head(

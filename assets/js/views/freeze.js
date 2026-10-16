@@ -76,8 +76,21 @@ route('board', 'any', () => {
   const KIND = { opp: ['Opportunity', 'megaphone', 't-purple'], ann: ['Announcement / event', 'bell', 't-navy'], win: ['Visible Win', 'flag', 't-teal'] };
   const list = UI.boardF === 'all' ? all : all.filter(x => x.k === UI.boardF);
   const f = (v, l) => `<button type="button" class="${UI.boardF === v ? 'on' : ''}" data-a="boardF" data-v="${v}" aria-pressed="${UI.boardF === v}">${l}<span class="cnt">${v === 'all' ? all.length : all.filter(x => x.k === v).length}</span></button>`;
+  const howRows = [
+    ['Opportunity', 'Publish an Opportunity Card with status Active and an audience you are allowed to see (usually Programme).', role() === 'P' || role() === 'C' || role() === 'A' ? L('Post a card', 'newcard', {}, 'btn btn-s btn-sm') : ''],
+    ['Announcement', 'Programme Administrator → Notifications → Send an announcement (same context).', role() === 'A' ? L('Send announcement', 'admin', { tab: 'notify' }, 'btn btn-s btn-sm') : ''],
+    ['Visible Win', 'In an Action Workspace → record a win → steward/lead Approves it (auto-releases to Programme).', myRooms().length ? L('Open a ' + WL(), 'rooms', {}, 'btn btn-s btn-sm') : ''],
+  ];
   return (
     head('Explore board', `What is happening in ${h(ctxName(ctxId()))}: approved opportunities, programme announcements and released wins.`) +
+    card(
+      'How items get onto this board',
+      'Bulletin Board Lite (BF-15) — no new feed. Items appear only when the source record is approved and released to an audience you can already see.',
+      table(['Type', 'How to add', ''], howRows.map(([a, b, c]) => [`<b>${a}</b>`, b, c || '—'])),
+      '',
+      'board-how',
+    ) +
+    `<div class="section-gap"></div>` +
     `<div class="seg board-f" role="group" aria-label="Show">${f('all', 'All')}${f('opp', 'Opportunities')}${f('ann', 'Announcements')}${f('win', 'Visible Wins')}</div>` +
     `<div class="board-list">${
       list
@@ -190,5 +203,17 @@ A.srcToggle = d => {
   x.status = x.status === 'Approved' ? 'Not approved' : 'Approved';
   audit('AI source ' + (x.status === 'Approved' ? 'approved' : 'withdrawn'), x.id, x.title);
   toast(x.title + ': ' + x.status);
+  ok();
+};
+// Attachments and receipts download as a small placeholder file (prototype: no real file storage).
+A.fakeDl = d => {
+  try {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob(['PHOENIX prototype placeholder for: ' + d.n + '\r\nGenerated ' + now()], { type: 'text/plain;charset=utf-8' }));
+    a.download = String(d.n || 'download').replace(/[^\w.-]+/g, '-') + '.txt';
+    a.click();
+  } catch (e) {}
+  audit('Downloaded', d.n, '');
+  toast('Downloaded ' + d.n + '.');
   ok();
 };

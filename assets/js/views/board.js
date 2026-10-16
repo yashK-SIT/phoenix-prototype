@@ -20,7 +20,7 @@ function nextTaskKey(x) {
 const taskOverdue = k => k.status !== 'Done' && k.due && k.due < today();
 const roomActive = x => x.members.filter(m => m.status === 'Active');
 // ---- a task is an agreed deliverable: resources, partners, supporting evidence and completion
-const roomEvidence = x => S.evidence.filter(e => e.linked.includes(x.id) && !['Withdrawn', 'Rejected'].includes(e.review));
+const roomEvidence = x => S.evidence.filter(e => e.linked.includes(x.id) && e.review !== 'Rejected' && (e.lifecycle || 'Active') === 'Active');
 const resLabel = (x, id) => {
   const r = (x.resources || []).find(r => r.id === id);
   return r ? r.t + (r.from ? ' — ' + r.from : '') : id;

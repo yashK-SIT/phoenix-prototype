@@ -641,7 +641,7 @@ route('billing', 'payments', () => {
       (r === 'O'
         ? card(
             'Request an institution-specific package',
-            'Products and prices are set by the WSS Finance Owner.',
+            'Products and prices are set by the Finance Owner.',
             `<form data-f="pkg" class="col fgap" novalidate>${fi('pkg', 'seats', 'Seats needed', { type: 'number', req: true, min: 1 })}${fi('pkg', 'note', 'Requirements', { type: 'textarea', rows: 3, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send request</button></div></form>`,
           )
         : card(
@@ -673,7 +673,7 @@ route('billing', 'payments', () => {
   if (t.cur === 'products')
     body = card(
       'Product catalogue',
-      'Finance Owner approves and releases; Programme Administrator drafts. Pricing policy is WSS’s.',
+      'Finance Owner approves and releases; Programme Administrator drafts. Pricing policy is set by Finance.',
       dataView('bill:products', {
         label: 'products',
         items: S.products,
@@ -819,7 +819,7 @@ function prodAct(p) {
 A.checkout = d => {
   const p = byId('products', d.id);
   modal(
-    'Provider-hosted checkout (simulated)',
+    'Checkout',
     `<div class="card quiet chk-sum">${dl([
       ['Product', h(p.name)],
       ['Price', h(p.price)],
@@ -893,7 +893,7 @@ A.payResult = d => {
 A.portal = d => {
   const e = byId('ents', d.id);
   modal(
-    'Billing portal (provider-hosted, simulated)',
+    'Billing portal',
     `${dl([
       ['Product', h(byId('products', e.product).name)],
       ['State', pill(e.state)],
@@ -958,7 +958,7 @@ A.prodNew = () => {
   modal(
     'Draft a product',
     () =>
-      `<form data-f="prod" class="col fgap" novalidate>${fi('prod', 'name', 'Name', { req: true })}${fi('prod', 'kind', 'Type', { type: 'select', req: true, opts: ['One-time payment', 'Monthly subscription', 'Annual subscription', 'Donation', 'Sponsored access', 'Invoice'] })}<div class="f2">${fi('prod', 'price', 'Price', { req: true, help: 'Set by the WSS commercial owner' })}${fi('prod', 'cycle', 'Billing cycle', { type: 'select', opts: ['One-time', 'Monthly', 'Annual', '—'] })}</div>${fi('prod', 'ent', 'Entitlement', { req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save draft</button></div></form>`,
+      `<form data-f="prod" class="col fgap" novalidate>${fi('prod', 'name', 'Name', { req: true })}${fi('prod', 'kind', 'Type', { type: 'select', req: true, opts: ['One-time payment', 'Monthly subscription', 'Annual subscription', 'Donation', 'Sponsored access', 'Invoice'] })}<div class="f2">${fi('prod', 'price', 'Price', { req: true, help: 'Set by the Finance Owner' })}${fi('prod', 'cycle', 'Billing cycle', { type: 'select', opts: ['One-time', 'Monthly', 'Annual', '—'] })}</div>${fi('prod', 'ent', 'Entitlement', { req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save draft</button></div></form>`,
   );
 };
 F.prod = d => {

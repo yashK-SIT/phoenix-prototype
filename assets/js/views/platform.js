@@ -14,7 +14,7 @@ const MODULES = {
   circles: ['Circles', 'Collaboration spaces'],
   voting: ['Voting', 'Equal-vote decisions in Circles'],
   ropeteams: ['Rope Teams', 'Mentoring and support groups'],
-  rooms: ['Action Rooms', 'Execution spaces and task board'],
+  rooms: ['Action Workspaces', 'Execution spaces: tasks, milestones, risks and evidence'],
   opportunities: ['Opportunities', 'Needs, offers and Opportunity Cards'],
   matching: ['Match Briefs', 'Steward-reviewed introductions'],
   repository: ['Repository', 'Records and documents'],
@@ -433,7 +433,7 @@ route('roles', 'platform', () => {
   const people = id => S.assign.filter(a => a.role === id && a.status === 'Active').length;
   const mods = r => Object.values(r.perms).filter(v => v && v !== '-').length;
   return (
-    head('Roles & bundles', 'Approved role and capability-bundle definitions. The Platform Administrator applies changes that WSS and the accountable owner have approved; it does not create governance rules on its own.') +
+    head('Roles & bundles', 'Approved role and capability-bundle definitions. Apply changes that governance and the accountable owner have approved.') +
     card('Specialist capability bundles', 'Capabilities attached to a person in a context, not personas. A plain Programme Administrator or Facilitator does not inherit them.', table(['Bundle', 'What it can do', 'What it must not imply', 'Approved by'], S.bundles.map(b => [`<b>${h(b.name)}</b>`, h(b.desc), h(b.limit || ''), h(b.approval)]))) +
     '<div class="section-gap"></div>' +
     card(
@@ -494,7 +494,7 @@ function roleDetail(r) {
       `<div class="tblwrap"><table class="tbl permtbl"><thead><tr><th scope="col">Module</th><th scope="col">Permissions</th><th scope="col">Effective</th></tr></thead><tbody>${rows}</tbody></table></div>`,
       ro
         ? ''
-        : `<div class="field rol-ref"><label class="lbl" for="rperm_ref">Approved change reference <span class="req">*</span></label><input id="rperm_ref" name="ref" class="input" placeholder="e.g. WSS-DR-014" value="${h(fv('rperm', 'ref', ''))}"><span class="help">The Platform Administrator applies role and bundle definitions approved by WSS and the accountable owner; it does not define governance on its own.</span></div>${r.system && dirty ? B(ic('refresh', 14) + 'Reset to default', 'roleReset', { id: r.id }) : ''}<button class="btn btn-p btn-sm" type="submit">${ic('check', 14)}Apply approved change</button>`,
+        : `<div class="field rol-ref"><label class="lbl" for="rperm_ref">Approved change reference <span class="req">*</span></label><input id="rperm_ref" name="ref" class="input" placeholder="e.g. CR-014" value="${h(fv('rperm', 'ref', ''))}"><span class="help">Enter the reference for the approved change, then apply it.</span></div>${r.system && dirty ? B(ic('refresh', 14) + 'Reset to default', 'roleReset', { id: r.id }) : ''}<button class="btn btn-p btn-sm" type="submit">${ic('check', 14)}Apply approved change</button>`,
       'adm-panel',
     )}</form>` +
     '<div class="section-gap"></div>' +
@@ -758,8 +758,7 @@ route('compassqs', 'any', () => {
   const sets = [...new Set(qs.map(q => q.set))];
   const last = qs.length - 1;
   return (
-    head('Purpose Compass settings', 'IKIGAI-inspired reflective questions — never scored. The six minimum questions (PC1–PC6) are asked at onboarding; the rest are asked later, in context. Wording changes use WSS-approved text; existing answers are kept.', B(ic('plus', 16) + 'Add question', 'cqNew', {}, 'btn-p')) +
-    banner('info', 'No score, no hidden inference', 'There is no purpose, coherence, IKIGAI, personality or worth score. The raw hurdle answer (PC3) stays private to the participant by default.') +
+    head('Purpose Compass settings', 'Purpose Compass questions asked at onboarding and later in context. Existing answers are kept when wording changes.', B(ic('plus', 16) + 'Add question', 'cqNew', {}, 'btn-p')) +
     card(
       'Active questions',
       qs.length + ' question' + (qs.length === 1 ? '' : 's') + ' in ' + sets.length + ' set' + (sets.length === 1 ? '' : 's') + '. Questions in the same set appear together on one screen.',

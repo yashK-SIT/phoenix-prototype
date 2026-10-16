@@ -241,8 +241,9 @@ route("profile", "any", () => {
         row: (c) => ({
           lead: `<span class="tile t-soft" aria-hidden="true">${ic("sparkle", 16)}</span>`,
           title: `${h(c.field)}: ${h(c.value)}`,
-          sub: "Source: " + candSrc(c),
+          sub: "Source: " + h(c.source || "—"),
           meta: [
+            candSrcLink(c),
             `Audience ${c.status === "Accepted" ? "" : "if accepted"}: ${h(c.aud || "Only me")}`,
             c.orig && c.orig !== c.value ? `You edited the wording (was “${h(c.orig)}”)` : "",
             c.decidedAt ? `${h(c.status)} by ${nm(c.decidedBy)} on ${fmt(c.decidedAt)}${c.status === "Rejected" ? " · profile not changed" : c.status === "Accepted" ? " · profile updated" : ""}` : "",
@@ -271,8 +272,8 @@ route("profile", "any", () => {
     body =
       banner(
         "info",
-        "Your profile only changes when you approve",
-        "After a Learning Harvest is approved, PHOENIX identifies possible profile changes from it. Each one shows what would change, why, and the finding and records behind it. Approving updates your profile and saves a new version; rejecting leaves it unchanged. Both are recorded.",
+        "Your profile only changes when you accept",
+        "After a Learning Harvest is approved, PHOENIX identifies possible profile changes from it. Each one shows what would change, why, and the finding and records behind it. Each one shows its source and provenance. Accept it, edit it and accept, or reject it: accepting updates your profile and saves a new version; rejecting leaves it unchanged. Both are recorded.",
       ) +
       (pend.length
         ? `<h2 class="h3 pf-sec">Awaiting your review (${pend.length})</h2><div class="pf-evo">${pend.map((s) => evoCard(s, true)).join("")}</div>`
@@ -479,7 +480,7 @@ A.editBasics = () => {
   modal(
     "Edit basics",
     () =>
-      `<form data-f="basics" class="col pf-form" novalidate>${fi("basics", "display", "Display name", { req: true })}${fi("basics", "ageNote", "Age confirmation", { value: me().ageConfirmed ? ("Confirmed " + fmt(me().ageConfirmed === true ? today() : me().ageConfirmed)) : "Not recorded", disabled: true, help: "Recommended (WSS): attestation only — no date of birth is collected." })}${fi("basics", "bio", "Short biography", { type: "textarea", rows: 3, max: 400 })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save new version</button></div></form>`,
+      `<form data-f="basics" class="col pf-form" novalidate>${fi("basics", "display", "Display name", { req: true })}${fi("basics", "ageNote", "Age confirmation", { value: me().ageConfirmed ? ("Confirmed " + fmt(me().ageConfirmed === true ? today() : me().ageConfirmed)) : "Not recorded", disabled: true, help: "Confirmed when you joined. A date of birth is not collected." })}${fi("basics", "bio", "Short biography", { type: "textarea", rows: 3, max: 400 })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save new version</button></div></form>`,
   );
 };
 F.basics = (d) => {
@@ -517,11 +518,12 @@ const provPill = (p) =>
 // The provenance an accepted claim records.
 const provAccepted = (prov, edited) => (String(prov).startsWith("AI-proposed") ? "AI-proposed → " + (edited ? "edited and " : "") + "accepted by participant" : prov);
 // Source text, with a link to the evidence, Harvest, milestone or pathway it came from when that record exists.
-const candSrc = (c) => {
+const candSrcLink = (c) => {
   const s = c.src;
   const okLink = s && s.r && (s.r !== "evidence" || byId("evidence", s.p && s.p.id)) && (s.r !== "harvest" || byId("harvests", s.p && s.p.id));
-  return h(c.source || "—") + (okLink ? " · " + L(ic("link", 12) + "Open source: " + h(s.label || s.r), s.r, s.p || {}) : "");
+  return okLink ? L("Open source: " + h(s.label || s.r), s.r, s.p || {}) : "";
 };
+const candSrc = (c) => h(c.source || "—") + (candSrcLink(c) ? "<br>" + candSrcLink(c) : "");
 A.cand = (d) => {
   const c = byId("candidates", d.id);
   if (!c || !["Pending", "Deferred"].includes(c.status)) return deny("this candidate has already been decided");
@@ -606,7 +608,7 @@ function analyseHarvest(x) {
     : [];
   const ev = room
     ? S.evidence.filter(
-        (e) => e.linked.includes(room.id) && e.owner === pid && !["Withdrawn", "Rejected"].includes(e.review),
+        (e) => e.linked.includes(room.id) && e.owner === pid && e.review !== "Rejected" && (e.lifecycle || "Active") === "Active",
       )
     : [];
   const refs = [
@@ -738,7 +740,7 @@ function evoCard(s, act) {
     ["Profile field", `<b>${h(s.field)}</b>`],
     [s.status === "Pending" ? "Current" : "Before", h(evoCurrent(s))],
     ["Suggested", evoSuggestedHtml(s) + (s.origSug ? `<span class="cap"> · edited by you (suggested: “${h(s.origSug)}”)</span>` : "")],
-    ["Source", hv ? L(ic("sparkle", 12) + "Learning Harvest: " + h(hv.scopeName || hv.id), "harvest", { id: hv.id }) + (hv.ai ? " " + aiTag("AI-drafted Harvest") : "") : "Learning Harvest " + h(s.hv)],
+    ["Source", hv ? L("Learning Harvest: " + h(hv.scopeName || hv.id), "harvest", { id: hv.id }) + (hv.ai ? " " + aiTag("AI-drafted Harvest") : "") : "Learning Harvest " + h(s.hv)],
     ["Provenance", provPill(evoProv(s)) + ' <span class="cap">Identified by PHOENIX from the approved Harvest; applied only if you accept.</span>'],
     ["Audience " + (s.status === "Approved" ? "" : "if accepted"), h(s.aud || "Only me")],
     ["Why this was suggested", h(s.reason)],
@@ -1085,7 +1087,7 @@ function consentAt(pid, k) {
   const c = S.consents[pid] || {};
   const hs = c.history || [];
   const l = consLabel(k);
-  const x = [...hs].reverse().find((e) => e.k === k || String(e.t || "").startsWith(l + ":") || String(e.t || "").startsWith(k + ":"));
+  const x = [...hs].reverse().find((e) => e.k === k || String(e.t || "").startsWith(l) || String(e.t || "").startsWith(k + ":"));
   return x ? x.at : c[k] ? (hs[0] || {}).at || "" : "";
 }
 function consentRow(pid, k, label, text) {
@@ -1305,7 +1307,7 @@ route("pathway", "pathways", () => {
               "Current · Mode " + h(cur.mode) + " · " + pg.n + " of " + pg.of + " steps complete · " + pwWho(cur),
               `<div class="hm-prog"><div class="progress"><span class="bar" style="width:${(pg.n / pg.of) * 100}%"></span></div><span class="cap">${Math.round((pg.n / pg.of) * 100)}%</span></div>` +
                 (ns
-                  ? banner("info", `Next step (chosen by rule): Step ${nx + 1} · ${h(ns.t)}`, (ns.type === "Conditional" && !ns.applies ? "Check whether it applies to you: " + h(ns.cond || "") + ". " : "") + "It is the lowest-numbered required step whose prerequisites are complete. No one recommended it and nothing is committed for you; you can also work on any other step that is not blocked.")
+                  ? banner("info", `Next step: Step ${nx + 1} · ${h(ns.t)}`, ns.type === "Conditional" && !ns.applies ? "Check whether it applies to you: " + h(ns.cond || "") + "." : "You can also work on any other step that is not blocked.")
                   : banner("ok", "No required step is open", "Every required step is complete or satisfied.")) +
                 pwLegend() +
                 pwStepsList(cur, true),
@@ -1546,7 +1548,7 @@ function pwStepMeta(p, i, withState) {
     `<span class="pw-why"><b>Completion rule:</b> ${h(s.rule || PW_RULE_DEF)}</span>` +
     (s.type === "Conditional" ? `<span class="pw-why"><b>Applies when:</b> ${h(s.cond || "—")}${s.applies ? " · confirmed by the participant" : ""}</span>` : "") +
     (s.prior && !pwClosed(s) ? `<span class="pw-why">Prior evidence may satisfy this step if a facilitator or mentor recommends it and the participant accepts.</span>` : "") +
-    (withState && x.st === "Blocked" ? `<span class="pw-why">${ic("lock", 12)} Blocked: ${h(x.why)}</span>` : "") +
+    (withState && x.st === "Blocked" ? `<span class="pw-why"><b>Blocked:</b> ${h(x.why)}</span>` : "") +
     (s.st === "Satisfied by prior evidence"
       ? `<span class="pw-why">Satisfied by prior evidence ${ev ? L(h(ev.title), "evidence", { id: ev.id }) : ""} · recommended by ${nm(s.recBy)} · accepted by ${nm(p.pid)}${s.recAccepted ? " on " + fmt(s.recAccepted) : ""}</span>`
       : "") +
@@ -2498,7 +2500,7 @@ A.pwActivity = (d) => {
           s.done && (s.note || (s.files || []).length)
             ? `${s.note ? h(s.note) : ""}${pwFiles(s.files)}`
             : "",
-          canRec ? B(ic("award", 14) + "Recommend prior evidence", "pwPrior", { id: p.id, i }) : "",
+          canRec ? B("Recommend evidence", "pwPrior", { id: p.id, i }, "btn-s btn-sm", 'title="Recommend that approved prior evidence satisfies this step"') : "",
         ];
       }),
     )}</div></div>`,

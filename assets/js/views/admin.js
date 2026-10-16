@@ -158,12 +158,12 @@ function userForm(p, a) {
   return `<form data-f="usr" class="col" style="gap:14px" novalidate>${errSum(f)}<input type="hidden" name="aid" value="${a ? a.id : ''}">
   <h3 class="h3">Account</h3>
   <div class="f2">${fi(f, 'name', 'Full name', { req: true, value: p?.name, auto: 'off' })}${fi(f, 'display', 'Display name', { req: true, value: p?.display, auto: 'off' })}</div>
-  <div class="f2">${fi(f, 'email', 'Email address', { type: 'email', req: true, value: p?.email, auto: 'off' })}${fi(f, 'age', 'Age confirmation on file', { type: 'select', req: true, value: p?.ageConfirmed ? 'yes' : '', ph: 'Choose', opts: [['yes', 'The person confirmed they meet the programme age requirement'], ['no', 'Not yet confirmed']], help: 'Recommended (WSS): age confirmation instead of a date of birth.' })}</div>
+  <div class="f2">${fi(f, 'email', 'Email address', { type: 'email', req: true, value: p?.email, auto: 'off' })}${fi(f, 'age', 'Age confirmation on file', { type: 'select', req: true, value: p?.ageConfirmed ? 'yes' : '', ph: 'Choose', opts: [['yes', 'The person confirmed they meet the programme age requirement'], ['no', 'Not yet confirmed']], help: 'Age confirmation instead of a date of birth.' })}</div>
   <h3 class="h3">${a ? 'This role assignment' : 'First role'}</h3>
   <div class="f2">${fi(f, 'role', 'Role', { type: 'select', req: true, ph: 'Choose a role', value: a?.role, opts: invitableRoles(USER_ROLES).map(r => [r.id, r.name + (r.system ? '' : ' (custom)')]) })}${fi(f, 'ctxName', 'Context', { value: cx ? cx.name : '', ro: true })}</div>
   ${a ? fi(f, 'status', 'Role status', { type: 'select', value: a.status, opts: st }) : ''}
   ${a && S.assign.filter(x => x.pid === a.pid).length > 1 ? banner('info', '', 'Account details apply to every role this person holds. Role and status apply only to this assignment.') : ''}
-  ${a ? '' : banner('info', '', 'The account is created verified and the role is active. On first sign-in the person accepts the agreement for their role and completes their profile. Prototype: they sign in with the demo password demo1234.')}
+  ${a ? '' : banner('info', '', 'The account is created verified and the role is active. On first sign-in the person accepts the agreement for their role and completes their profile.')}
   <div class="actions">${B('Cancel', 'closeM')}<button class="btn btn-p" type="submit">${a ? 'Save changes' : 'Create user'}</button></div></form>`;
 }
 A.userNew = () => {
@@ -341,18 +341,17 @@ A.mandRevoke = d => {
 };
 // ---------- BUILD-FREEZE: configuration status, packs, parameters, versions, org requests ----------
 // Each setting shows whether it is frozen by the Alpha, configurable within delegation, or pending a WSS decision.
-const CFG_ST = { Frozen: 'p-navy', Configurable: 'p-teal', Included: 'p-green', 'Recommended (WSS)': 'p-teal', 'Pending WSS decision': 'p-amber' };
+const CFG_ST = { Frozen: 'p-navy', Configurable: 'p-teal' };
 const cfgSt = s => pill(s, CFG_ST[s] || 'p-grey');
 function votingCard() {
   const v = S.settings.voting;
-  const st = k => cfgSt((v.status || {})[k] || 'Configurable');
   return card(
     'Circle voting parameters',
-    'Equal vote weight is frozen. Threshold, quorum, window and reminders stay configurable until WSS freezes them; the platform never hard-codes them.',
+    'One eligible member = one vote. Set threshold, quorum, window and reminders for new votes.',
     `<form data-f="votecfg" class="col adm-form" novalidate>
-    <div class="row wrap adm-vrow"><b>Vote weight</b><span>One eligible member = one vote. No owner multiplier, no AI override.</span>${cfgSt('Frozen')}</div>
+    <div class="row wrap adm-vrow"><b>Vote weight</b><span>One eligible member = one vote</span></div>
     <div class="g3">${fi('votecfg', 'threshold', 'Approval threshold (% of eligible voters)', { type: 'number', min: 1, maxv: 100, value: v.threshold, req: true })}${fi('votecfg', 'quorum', 'Quorum (% of eligible voters who must vote)', { type: 'number', min: 1, maxv: 100, value: v.quorum, req: true })}${fi('votecfg', 'windowDays', 'Voting window (days)', { type: 'number', min: 1, value: v.windowDays, req: true })}</div>
-    <div class="g3">${fi('votecfg', 'reminderDays', 'Reminder before close (days)', { type: 'number', min: 0, value: v.reminderDays, req: true })}${fi('votecfg', 'tie', 'When the vote ties', { value: v.tie, ro: true })}<div class="field"><span class="lbl">Status</span><div class="row wrap" style="gap:6px">${st('threshold')}<span class="cap">threshold</span>${st('quorum')}<span class="cap">quorum</span>${st('windowDays')}<span class="cap">window</span>${st('reminderDays')}<span class="cap">reminders</span></div></div></div>
+    <div class="g3">${fi('votecfg', 'reminderDays', 'Reminder before close (days)', { type: 'number', min: 0, value: v.reminderDays, req: true })}${fi('votecfg', 'tie', 'When the vote ties', { value: v.tie, ro: true })}</div>
     <div class="actions"><span class="help">Changes apply to votes opened after saving. Open votes keep the rule they started with.</span><button class="btn btn-p btn-sm" type="submit">Save parameters</button></div></form>`,
     '',
     'adm-panel',
@@ -368,25 +367,13 @@ F.votecfg = d => {
   toast('Voting parameters saved. Equal vote weight is unchanged.');
   ok();
 };
-function decisionsCard() {
-  const dc = S.settings.decisions || {};
-  const rows = [
-    ['Vote weight', 'One eligible member = one vote', 'Frozen'],
-    ['Required agreement vs optional purposes', 'Five optional purposes always separate from the agreement', 'Frozen'],
-    ['Device baseline (BF-11)', dc.device?.value, dc.device?.status],
-    ['Entry route (BF-12)', dc.entry?.value, dc.entry?.status],
-    ['Age data (BF-12)', dc.age?.value, dc.age?.status],
-    ['Bulletin Board Lite / Relationship List Lite (BF-15/16)', 'Built over existing authorised records only', 'Included'],
-    ['Pack labels, templates, enabled flows', 'Inside the approved pack envelope', 'Configurable'],
-  ];
-  return card('Settings: frozen, configurable or pending', 'So that nobody mistakes an open WSS decision for a fixed rule.', table(['Setting', 'Current value in the prototype', 'Status'], rows.map(([a, b, c]) => [`<b>${h(a)}</b>`, h(b || '—'), cfgSt(c || 'Configurable')])), '', 'adm-panel');
-}
+function decisionsCard() { return ''; }
 // Packs differ by labels, onboarding questions, templates, enabled flows, evidence types and metrics — never code.
 function packsView() {
   const cur = pack();
   return `<div class="adm-stack">${card(
     'Use-case packs ' + `<span class="adm-n">${S.packs.length}</span>`,
-    'Every pack reuses the same Person, Role Assignment, Agreement, Purpose Compass, Pathway, Circle, Rope Team, Opportunity, Match Brief, Action Workspace, Evidence and Harvest objects.',
+    'Configure labels, templates and enabled flows for each programme pack.',
     table(
       ['Pack', 'Workspace label', 'Circle label', 'Enabled flows', 'Evidence types', 'Status', ''],
       S.packs.map(p => [
@@ -401,7 +388,7 @@ function packsView() {
     ),
     '',
     'adm-panel',
-  )}${votingCard()}${decisionsCard()}</div>`;
+  )}${votingCard()}</div>`;
 }
 A.packCfg = d => {
   const p = byId('packs', d.id);
@@ -980,7 +967,7 @@ F.ann = d => {
   [...new Set(ps)].forEach(p => notify(p, 'Announcement: ' + d.t, 'notifications'));
   audit('Announcement sent', d.to, ps.length + ' recipients');
   clearF('ann');
-  toast('Sent to ' + ps.length + ' people.');
+  toast('Sent to ' + ps.length + ' people. It also appears on Explore board for this context.');
   ok();
 };
 A.sqDone = d => {
@@ -1013,7 +1000,7 @@ route('platform', 'platform', () => {
     body =
       `<div class="adm-stack">${card(
         'External integrations ' + n(S.integrations.length),
-        'Shared WSS-controlled accounts with tenant separation in configuration and audit.',
+        'Shared organisation-controlled accounts with tenant separation in configuration and audit.',
         `<ul class="ops-list">${S.integrations
           .map(
             (i, n) =>

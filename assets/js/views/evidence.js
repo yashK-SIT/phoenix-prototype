@@ -272,11 +272,21 @@ function evDims(e) {
     .join('')}</div>`;
 }
 // Release is decided per audience: the owner authorises, then the Trust/Data Steward completes disclosure review.
+// Identifiable story requests (from a sponsor, via funding.js) are their own release decisions: the owner decides
+// first, then the Trust/Data Steward. They never count as an aggregate audience clearance.
+const evStoryRows = (rr, owner) =>
+  rr
+    .filter(x => x.kind === 'story')
+    .map(x => {
+      const act = owner && x.status === 'Awaiting owner decision' ? B('Decline', 'relDecide', { id: x.id, v: 'Declined by owner' }) + B('Authorise', 'relDecide', { id: x.id, v: 'Owner authorised — disclosure review' }, 'btn-p btn-sm') : '';
+      return `<div class="lrow ev-rr"><div class="lt"><b>Identifiable story request</b><p class="cap">${h(x.audience)} · from ${nm(x.requester)} · ${fmt(x.at)}</p>${x.purpose ? `<p class="cap">Why: ${h(x.purpose)}</p>` : ''}<p class="cap">${h(x.status === 'Awaiting owner decision' && owner ? 'Awaiting your decision' : x.status)}</p></div>${act}</div>`;
+    })
+    .join('');
 function evReleaseCard(e, rr) {
   const live = e.review === 'Approved' && e.lifecycle === 'Active';
   const rows = REL_AUD.map(a => {
     const c = (e.cleared || []).find(x => x.aud === a);
-    const xs = rr.filter(x => (x.aud || relAudOf(x.audience)) === a);
+    const xs = rr.filter(x => x.kind !== 'story' && (x.aud || relAudOf(x.audience)) === a);
     const ask = xs.find(x => x.status === 'Awaiting owner decision');
     const inRev = xs.find(x => x.status === 'Owner authorised — disclosure review');
     const last = xs[xs.length - 1];
@@ -288,13 +298,13 @@ function evReleaseCard(e, rr) {
         ? B('Request clearance', 'relNew', { id: e.id, aud: a })
         : '';
     return `<div class="lrow ev-rr"><div class="lt"><b>${h(a)}</b><p class="cap">${st}</p></div>${act}</div>`;
-  }).join('');
+  }).join('') + evStoryRows(rr, true);
   return card(
     'Release',
     'A separate decision for each audience. Approval never releases evidence.',
     rows +
       (live ? '' : '<p class="cap">Only approved, active evidence can be cleared for an audience.</p>') +
-      (consent(myId(), 'public') !== 'Granted' ? banner('warn', '', `Your public/funder release permission is ${h(consent(myId(), 'public').toLowerCase())}. Turn it on in ${L('Privacy & consent', 'privacy')} before you authorise a release.`) : '') +
+      (consent(myId(), 'public') !== 'Granted' ? banner('warn', '', `Your public/funder release permission is ${h(consent(myId(), 'public').toLowerCase())}. You can change this in ${L('My records & consent', 'privacy', { tab: 'consent' })} before you authorise a release.`) : '') +
       (e.conf !== 'Programme' ? banner('info', '', `This record is ${h(e.conf)}. It stays out of funder and public reports unless the Trust/Data Steward's clearance explicitly covers ${h(e.conf)} content.`) : ''),
   );
 }
@@ -360,7 +370,7 @@ function evDetail(e) {
            return card(
              'Disclosure review — Trust/Data Steward',
              'Small or distinctive groups and sensitive narratives are suppressed, combined or withheld before release.',
-             `<b>${h(REL_AUD_LABEL[aud] || aud)}</b><p class="cap">Requested ${fmt(x.at)} · ${h(e.review)} · ${h(e.lifecycle)} · ${h(e.conf)}</p>${covers ? banner('warn', '', `This record is ${h(e.conf)}. Releasing it means your clearance explicitly covers ${h(e.conf)} content for this audience.`) : ''}<div class="row ev-dr">${B('Withhold', 'relDecide', { id: x.id, v: 'Withheld after disclosure review' })}${e.review === 'Approved' && e.lifecycle === 'Active' ? B(covers ? 'Release — covers ' + h(e.conf) + ' content' : 'Release', 'relDecide', { id: x.id, v: 'Released', cover: e.conf }, 'btn-p btn-sm') : '<span class="cap">Only approved, active evidence can be released.</span>'}</div>`,
+             `<b>${x.kind === 'story' ? 'Identifiable story request — ' + h(x.audience) : h(REL_AUD_LABEL[aud] || aud)}</b>${x.kind === 'story' && x.purpose ? `<p class="cap">Why: ${h(x.purpose)}</p>` : ''}<p class="cap">Requested ${fmt(x.at)} · ${h(e.review)} · ${h(e.lifecycle)} · ${h(e.conf)}</p>${covers ? banner('warn', '', `This record is ${h(e.conf)}. Releasing it means your clearance explicitly covers ${h(e.conf)} content for this audience.`) : ''}<div class="row ev-dr">${B('Withhold', 'relDecide', { id: x.id, v: 'Withheld after disclosure review' })}${e.review === 'Approved' && e.lifecycle === 'Active' ? B(covers ? 'Release — covers ' + h(e.conf) + ' content' : 'Release', 'relDecide', { id: x.id, v: 'Released', cover: e.conf }, 'btn-p btn-sm') : '<span class="cap">Only approved, active evidence can be released.</span>'}</div>`,
            );
          })
          .join('')
@@ -618,7 +628,7 @@ F.rel = d => {
       ? 'only approved, active evidence can be released'
       : consent(e.owner, 'public') !== 'Granted'
         ? 'public/funder release permission is not granted — change it in My records & consent first'
-        : evClear(e, d.aud) || S.releases.some(x => x.ev === e.id && (x.aud || relAudOf(x.audience)) === d.aud && x.status === 'Owner authorised — disclosure review')
+        : evClear(e, d.aud) || S.releases.some(x => x.ev === e.id && x.kind !== 'story' && (x.aud || relAudOf(x.audience)) === d.aud && x.status === 'Owner authorised — disclosure review')
           ? 'this audience is already cleared or in disclosure review'
           : '';
   if (why) {
@@ -644,17 +654,24 @@ A.relDecide = d => {
   if (['Released', 'Withheld after disclosure review'].includes(d.v) && x.status !== 'Owner authorised — disclosure review') return deny('the owner has not authorised this release', x.id);
   if (d.v === 'Released' && !evReleasable(e)) return deny('only approved, active evidence can be released', e.id);
   x.status = d.v;
-  if (d.v === 'Released') {
+  const story = x.kind === 'story';
+  if (d.v === 'Released' && story) {
+    // an identifiable story is released for that one use only; it is not an aggregate audience clearance
+    x.cover = CONF.some(c => c[0] === d.cover) ? d.cover : 'Programme';
+    evHist(e, 'Release', 'Identifiable story request', 'Released for ' + x.audience, 'disclosure review by ' + me().name + '; not an audience clearance');
+  } else if (d.v === 'Released') {
     const before = e.release;
     const cover = CONF.some(c => c[0] === d.cover) ? d.cover : 'Programme';
     e.cleared = (e.cleared || []).filter(c => c.aud !== aud);
     e.cleared.push({ aud, at: today(), by: myId(), rr: x.id, conf: cover });
     e.release = evRelStr(e);
     evHist(e, 'Release', before, 'Cleared: ' + aud, 'disclosure review by ' + me().name + (cover !== 'Programme' ? '; covers ' + cover + ' content' : ''));
-  } else e.history.push({ at: today(), by: myId(), t: 'Release (' + aud + '): ' + d.v });
-  if (d.v.startsWith('Owner authorised')) evStewards().forEach(p => notify(p, 'Disclosure review needed: ' + e.title + ' (' + aud + ')', 'evidence', { id: e.id }));
-  notify(e.owner, 'Release decision (' + aud + '): ' + d.v, 'evidence', { id: e.id });
-  audit('Release decision', x.id, aud + ' · ' + d.v);
+  } else e.history.push({ at: today(), by: myId(), t: 'Release (' + (story ? 'Identifiable story request' : aud) + '): ' + d.v });
+  const what = story ? 'identifiable story request' : aud;
+  if (d.v.startsWith('Owner authorised')) evStewards().forEach(p => notify(p, 'Disclosure review needed: ' + e.title + ' (' + what + ')', 'evidence', { id: e.id }));
+  notify(e.owner, 'Release decision (' + what + '): ' + d.v, 'evidence', { id: e.id });
+  if (story && x.requester && x.requester !== myId()) notify(x.requester, 'Your identifiable story request about “' + e.title + '”: ' + d.v, 'funding', { tab: 'reports' });
+  audit('Release decision', x.id, what + ' · ' + d.v);
   ok();
 };
 // ---- evidence formats: a file, a link, a written reflection or output, or a reference to a repository record

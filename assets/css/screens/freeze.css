@@ -45,23 +45,100 @@
 /* ---- agreement update gate (affected functions only) */
 .pgate-rights { gap: var(--s-2); margin: var(--s-3) 0 var(--s-4); }
 
-/* ---- optional permissions (BF-02) */
-.cons-row { border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--s-3) var(--s-4); margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 4px var(--s-4); align-items: center; }
-.cons-row legend { padding: 0 4px; margin-left: -4px; }
-.cons-row > .cap { grid-column: 1; margin: 0; }
-.cons-row .cons-seg { grid-column: 2; grid-row: 1 / span 2; }
+/* ---- optional permissions (BF-02): Allow / Do not allow segmented control
+   Do not reuse .seg here — that control is for buttons and adds inset padding that breaks these radios. */
+.cons-row {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: var(--s-3) var(--s-4);
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2) var(--s-4);
+  min-width: 0;
+}
+.cons-row legend {
+  padding: 0 4px;
+  margin-left: -4px;
+  float: none;
+  width: 100%;
+}
+.cons-row > .cap {
+  flex: 1 1 220px;
+  margin: 0;
+  min-width: 0;
+}
+.cons-row .cons-seg {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
 .cons-row.err { border-color: var(--bad-bd); }
-.cons-row .emsg { grid-column: 1 / -1; }
-.cons-seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r-full); overflow: hidden; }
-.cons-opt { position: relative; }
-.cons-opt input { position: absolute; opacity: 0; inset: 0; cursor: pointer; }
-.cons-opt span { display: inline-block; padding: 6px 14px; font-size: var(--fs-sm); font-weight: 600; color: var(--text-2); }
-.cons-opt input:checked + span { background: var(--primary); color: var(--on-primary); }
-.cons-opt input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: -2px; }
+.cons-row .emsg {
+  flex: 1 1 100%;
+  width: 100%;
+}
+.cons-seg {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  overflow: hidden;
+  isolation: isolate;
+}
+.cons-opt {
+  position: relative;
+  display: flex;
+  margin: 0;
+  cursor: pointer;
+}
+.cons-opt + .cons-opt {
+  border-left: 1px solid var(--line);
+}
+.cons-opt input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  pointer-events: none;
+}
+.cons-opt span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 36px;
+  padding: 0 16px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--text-2);
+  background: transparent;
+  user-select: none;
+}
+.cons-opt:hover span { background: var(--surface-2); color: var(--text); }
+.cons-opt input:checked + span {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+.cons-opt input:checked + span:hover {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+.cons-opt input:focus-visible + span {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+  z-index: 1;
+}
 .cons-state { display: flex; flex-wrap: wrap; gap: var(--s-2); align-items: center; }
 @media (max-width: 600px) {
-  .cons-row { grid-template-columns: 1fr; }
-  .cons-row .cons-seg { grid-column: 1; grid-row: auto; justify-self: start; }
+  .cons-row .cons-seg { margin-left: 0; width: 100%; }
+  .cons-opt { flex: 1; }
+  .cons-opt span { width: 100%; }
 }
 
 /* ---- Help & support */

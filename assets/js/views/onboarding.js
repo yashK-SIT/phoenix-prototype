@@ -314,7 +314,7 @@ function policyGate(g) {
   <form data-f="agr" class="col" novalidate><input type="hidden" name="g" value="${g.id}"><input type="hidden" name="mode" value="update">${fi('agr', 'a1', `I have read and accept <b>${h(g.type)} v${g.ver}</b>.`, { type: 'checkbox', req: true })}<div class="actions">${B('Not now', 'go', { r: 'privacy' }, 'btn-s')}<button class="btn btn-p" type="submit">Accept and continue</button></div></form></section>`;
 }
 function onbTop(cur, steps) {
-  return `<header class="onb-top"><div class="row onb-brand"><span class="mark">${MARK(20)}</span><span class="wm hide-sm"><b>PHOENIX</b><span>Foundation Alpha</span></span></div><nav class="steps" aria-label="Onboarding progress">${steps.map((l, i) => `${i ? '<span class="sline"></span>' : ''}<div class="step ${i < cur ? 'done' : i === cur ? 'cur' : ''}"><span class="n">${i < cur ? ic('check', 14) : i + 1}</span><span class="st">${l}</span></div>`).join('')}</nav><div class="row">${roleChoices().length > 1 ? B('Switch role', 'switcher', {}, 'btn-g btn-sm') : ''}${B('Save and exit', 'logout', {}, 'btn-g btn-sm hide-sm')}</div></header>`;
+  return `<header class="onb-top"><div class="row onb-brand"><span class="mark">${MARK(20)}</span><span class="wm hide-sm"><b>PHOENIX</b><span>Foundation</span></span></div><nav class="steps" aria-label="Onboarding progress">${steps.map((l, i) => `${i ? '<span class="sline"></span>' : ''}<div class="step ${i < cur ? 'done' : i === cur ? 'cur' : ''}"><span class="n">${i < cur ? ic('check', 14) : i + 1}</span><span class="st">${l}</span></div>`).join('')}</nav><div class="row">${roleChoices().length > 1 ? B('Switch role', 'switcher', {}, 'btn-g btn-sm') : ''}${B('Save and exit', 'logout', {}, 'btn-g btn-sm hide-sm')}</div></header>`;
 }
 // Onboarding route A: invitation -> verify email -> required agreement -> separate optional permissions ->
 // minimum profile -> minimum Purpose Compass (participants) -> role activates -> My PHOENIX with a first next action.
@@ -338,7 +338,7 @@ function ONB() {
     body = `${UI.p.notnow ? banner('info', 'You can come back to this later', 'Access starts once you accept. Until then this is the only screen available.') : ''}
   <div class="col onb-h"><p class="over">Step 2 of ${steps.length}</p><h1 class="h1">Review your agreement</h1><p class="sub">This agreement applies to your role in ${h(ctxName(a.ctx))}. Optional uses of your information are separate choices on the next step.</p></div>
   <section class="card col onb-card"><div class="kv onb-meta"><div class="col"><span class="cap">Agreement</span><b>${h(g.type)}</b></div><div class="col"><span class="cap">Version</span><b>v${g.ver}</b></div><div class="col"><span class="cap">Effective</span><b>${fmt(g.effective)}</b></div></div>
-  <div class="scrollbox" tabindex="0" aria-label="Agreement text"><div class="col onb-pol">${polBody(g)}<p class="cap">Approved wording is published by the Trust/Data Steward after WSS legal review.</p></div></div>
+  <div class="scrollbox" tabindex="0" aria-label="Agreement text"><div class="col onb-pol">${polBody(g)}<p class="cap">Published by the Trust/Data Steward for this programme.</p></div></div>
   <div class="row wrap onb-tools">${B(ic('download', 16) + 'Download policy', 'polDownload', { id: g.id })}${B(ic('eye', 16) + (UI.tab.agrCmp === g.id ? 'Hide comparison' : 'Compare policy with prior'), 'agrCmp', { id: g.id }, 'btn-s btn-sm', `aria-expanded="${UI.tab.agrCmp === g.id}"`)}</div>
   ${UI.tab.agrCmp === g.id ? `<div class="col onb-cmp">${prev ? `<h2 class="h3">What changed since v${prev.ver}</h2>${g.summary ? `<p class="muted">${h(g.summary)}</p>` : ''}` : ''}${polDiffHtml(prev, g)}</div>` : ''}
   <form data-f="agr" class="col onb-agr" id="agrf" novalidate>${fi(f, 'a1', `I have read and accept <b>${h(g.type)} v${g.ver}</b>.`, { type: 'checkbox', req: true })}${fi(f, 'a2', 'I accept the PHOENIX service terms.', { type: 'checkbox', req: true })}<input type="hidden" name="g" value="${g.id}"><span class="help">A dated receipt of your acceptance is stored in Privacy & agreements.</span>
@@ -371,7 +371,7 @@ function ONB() {
     }
     const st = Math.max(0, Math.min(UI.tab.pcStep || 0, n - 1));
     const set = sets[st];
-    body = `<div class="col onb-h"><p class="over">Step 5 of 5 · Purpose Compass</p><h1 class="h1">Set your current direction</h1><p class="sub">Six short reflective questions, inspired by IKIGAI. Nothing here is scored or used to infer traits; there is no purpose, coherence or worth score. Your answers become your own context for your pathway, opportunities and Learning Harvests.</p></div>
+    body = `<div class="col onb-h"><p class="over">Step 5 of 5 · Purpose Compass</p><h1 class="h1">Set your current direction</h1><p class="sub">Six short questions about what matters to you now. Your answers guide your pathway and opportunities.</p></div>
   <div class="col onb-prog"><div class="row onb-prog-h"><span class="lbl">Set ${st + 1} of ${n}</span><span class="cap">${Math.round((st / n) * 100)}% complete</span></div><div class="progress"><span class="bar" style="width:${(st / n) * 100}%"></span></div></div>
   ${errSum(f)}<form data-f="pc" class="card col onb-card" novalidate><input type="hidden" name="set" value="${st}"><div class="col onb-h"><span class="over">Question set ${st + 1}</span><h2 class="h2">${h(set.n)}</h2>${set.d ? `<p class="cap">${h(set.d)}</p>` : ''}</div>
   ${set.q.map(q => blField(f, q, ans)).join('')}
@@ -512,7 +512,7 @@ F.pc = d => {
 // ---- BF-02 optional permissions step: five purposes, each answered on its own; nothing is pre-ticked.
 const consentLabel = k => (OPT_PURPOSES.find(x => x[0] === k) || [k, k === 'matching' ? 'Matching visibility' : k])[1];
 const consentChoice = (f, k, l, t, cur) =>
-  `<fieldset class="cons-row${fe(f, k) ? ' err' : ''}"><legend><b>${h(l)}</b></legend><p class="cap">${h(t)}</p><div class="seg cons-seg" role="radiogroup" aria-label="${h(l)}">${['Granted', 'Declined']
+  `<fieldset class="cons-row${fe(f, k) ? ' err' : ''}"><legend><b>${h(l)}</b></legend><p class="cap">${h(t)}</p><div class="cons-seg" role="radiogroup" aria-label="${h(l)}">${['Granted', 'Declined']
     .map(v => `<label class="cons-opt"><input type="radio" name="${k}" value="${v}" ${fv(f, k, cur[k] === 'Granted' || cur[k] === 'Declined' ? cur[k] : '') === v ? 'checked' : ''}><span>${v === 'Granted' ? 'Allow' : 'Do not allow'}</span></label>`)
     .join('')}</div>${fe(f, k) ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe(f, k)}</span>` : ''}</fieldset>`;
 function consentStep(steps) {

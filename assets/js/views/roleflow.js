@@ -1,7 +1,7 @@
-// ---------- ROLE FLOW: how each role works in PHOENIX, from registration to project completion ----------
+// ---------- ROLE FLOW: how each role works in PHOENIX, from invitation to the next action ----------
 // Public page (signed out), opened from the sign-in screen. One flowchart per role plus a cross-role overview.
-// The flows describe the prototype's current rules (guards.js, views/*). The module-access table is read live
-// from the role records (Role management) or the default matrix, so it always matches what the app enforces.
+// The flows follow the WSS Build-Freeze review (doc 1 §6 role flows) as the prototype implements it. The module-access
+// table is read live from the role records (Role management) or the default matrix, so it always matches the app.
 
 // Node kinds: s = start/end · a = this role acts · h = another role acts · y = PHOENIX does it automatically
 // d = decision with branches · g = moves to another module.
@@ -14,634 +14,558 @@ const rfG = t => ({ k: 'g', t });
 // A decision branch. out: 'cont' = the flow continues below, 'end' = this path stops, any other text = where it goes.
 const rfB = (l, nodes, out = 'cont') => ({ l, nodes, out });
 const RF_ORDER = ['P', 'F', 'M', 'C', 'O', 'S', 'A', 'T'];
-const rfName = c => ROLE[c] || c;
-// Role chips: the base roles use the theme's wayfinding colours; '*' means "any member".
+// Specialist bundles are capabilities attached to a person in a context, not personas. They appear as actors in
+// the flows (the person holding the bundle acts) under these codes.
+const RF_BUNDLE = { RV: 'Reviewer', TD: 'Trust/Data Steward', FO: 'Finance Owner', AO: 'AI Owner', IS: 'Incident/Safety Owner' };
+const rfName = c => ROLE[c] || RF_BUNDLE[c] || c;
+// Role chips: the base roles use the theme's wayfinding colours; '*' means "any member"; bundles are neutral.
 const rfChip = c =>
   c
     .split('/')
-    .map(x => `<span class="rfl-chip rfl-r-${x === '*' ? 'any' : x}">${x === '*' ? 'Space members' : x === 'SYS' ? 'PHOENIX' : h(rfName(x))}</span>`)
+    .map(x => `<span class="rfl-chip rfl-r-${RF_ORDER.includes(x) ? x : 'any'}">${x === '*' ? 'Space members' : x === 'SYS' ? 'PHOENIX' : h(rfName(x)) + (RF_BUNDLE[x] ? ' (bundle)' : '')}</span>`)
     .join('');
 
-// ---- shared: registration, verification, approval, sign-in and onboarding for each role
+// ---- shared: invitation (or access request), approval of sensitive roles, sign-in and onboarding for each role
 function rfAccess(c) {
   const mfa = ['A', 'T'].includes(c);
-  const onb = [
-    'accept the ' + rfName(c) + ' agreement and the service terms (you can download it or compare it with the previous version)',
-    'complete the minimum profile (name and display name come from the account; bio and interests are optional' + (c === 'S' ? ', funding interests are required' : '') + ')',
-    c === 'P' && 'answer the Purpose Compass baseline (required questions must be answered; “Save and finish later” signs you out)',
-  ].filter(Boolean);
+  const agr = { C: 'partner agreement', O: 'organisation agreement', S: 'Sponsor agreement' }[c] || rfName(c) + ' agreement';
+  const gate =
+    c === 'P'
+      ? rfG('Onboarding continues: required agreement, optional permissions and the Purpose Compass (next phases)')
+      : rfY('Onboarding gate', 'Accept the required ' + agr + ' (download it or compare it with the previous version). Optional permissions are asked separately and never bundled into it; declining them never blocks the core.');
   const signIn = [
-    rfA('Sign in with email and password' + (mfa ? ', then enter the two-step verification code' : ''), 'Wrong details show an error; after 5 failed attempts the screen says the account is temporarily locked.' + (mfa ? ' The code is required for Programme and Platform Administrators when signing in with a password.' : '')),
-    rfY('Onboarding gate', 'Before anything else you ' + onb.join(', then ') + '.'),
-    rfY('Policy updates', 'When the Platform Administrator publishes a new version of your agreement, a dialog shows it at sign-in. “Compare with previous policy” shows what changed. You accept to continue, or sign out.'),
-    rfY('Role expiry', 'If your role has an end date it expires automatically and you see “Role assignment expired” until an administrator renews it. People with several roles switch between them from the account menu.'),
-    rfG('My PHOENIX: your home page with your next action and pending decisions'),
+    rfA('Sign in with email and password' + (mfa ? ', then enter the two-step verification code' : ''), 'Wrong details show an error; after 5 failed attempts the account is temporarily locked.' + (mfa ? ' The code is always required for Programme and Platform Administrators.' : '')),
+    gate,
+    rfY('Agreement updates', 'When a new version of your agreement is published, a dialog shows it at sign-in. “Compare with previous policy” shows what changed. You accept to continue, or sign out.'),
+    rfY('One identity, several roles', 'Each role assignment is tied to a programme or organisation context. Switching role or context rebuilds the menu, counts and notifications. A role with an end date expires until it is renewed.'),
   ];
   if (c === 'T')
     return [
       rfS('Start: a Platform Administrator account is provisioned for you'),
-      rfY('No self-registration or invitation', 'Invitations can grant every role except Platform Administrator, so this account is set up outside the sign-up flows.'),
+      rfY('No self-registration or invitation', 'Invitations can grant every role except Platform Administrator, so this account is set up outside the sign-up flows. Two-step verification is mandatory.'),
       ...signIn,
-    ];
-  if (c === 'P' || c === 'S')
-    return [
-      rfS('Start: open PHOENIX'),
-      rfD('Do you have an invitation link?', [
-        rfB('No', [rfA('Create an account as ' + rfName(c), 'Request access or use an invitation. Name, display name, email, age confirmation and a password (10+ characters with a number). No account until an invitation is accepted.')]),
-        rfB('Yes', [rfA('Open the invitation link and accept', 'PHOENIX checks the link. Expired, withdrawn or used links stop here with a “Request a new invitation” form. A valid link fixes the role, programme and email.')]),
-      ]),
-      rfD('Does this email already have a PHOENIX account?', [
-        rfB('No', [rfA('Verify your email', 'Open the link in the verification email, or send a new one if it expired.'), rfY('Role active straight away', rfName(c) + ' does not need role approval by default.')]),
-        rfB('Yes', [rfY('No second account is created', 'You sign in and the new role is added to your existing account.')]),
-      ]),
-      ...signIn,
+      rfG('Platform operations'),
     ];
   const inviter = c === 'A' ? 'A/T' : 'A/O';
-  return [
-    rfS('Start: you receive an invitation'),
-    rfH(inviter, c === 'A' ? 'A Platform Administrator names you as an organization’s administrator, or a Programme Administrator invites you' : 'A Programme Administrator, or an Organization Representative in its own programme, invites you', 'The invitation sets your role, programme, link expiry (14 days by default) and an optional role end date. ' + rfName(c) + ' joins by invitation only.'),
-    rfA('Open the invitation link', 'PHOENIX checks the link. Expired, withdrawn or already used links stop here with a “Request a new invitation” form, which notifies the Programme Administrators.'),
-    rfD('Does this email already have a PHOENIX account?', [
-      rfB('No', [rfA('Accept and create your account', 'Role and email come from the invitation. Name, display name, age confirmation and a password (10+ characters with a number).'), rfA('Verify your email', 'Open the link in the verification email, or send a new one.')]),
-      rfB('Yes', [rfA('Sign in to accept', 'No second account: the role is added to your existing account.')]),
-    ]),
-    rfD(
-      'Does the role need approval?',
-      [
-        c === 'A' && rfB('Pre-approved by the Platform Administrator', [rfY('Role active straight away', 'Invitations sent when a Platform Administrator names an organization’s admin are pre-approved.')]),
-        rfB('Yes (default for ' + rfName(c) + ')', [
-          rfY('“Your role is awaiting approval”', 'Programme Administrators are notified.'),
-          rfD('Approver decides', [
-            rfB('Approve role', [rfH('A/O', 'Role becomes active', 'Approved by a Programme Administrator, or an Organization Representative in its own programme, from Users → Manage.')]),
-            rfB('Decline role', [rfY('“Role not activated” screen with the approver’s note', 'The account still exists; other roles are unaffected.')], 'end'),
+  const start =
+    c === 'P' || c === 'S'
+      ? [
+          rfS('Start: open PHOENIX'),
+          rfD('Do you have an invitation link?', [
+            rfB('No', [
+              rfA('Request access', 'Name, email, programme and a short reason. This does not create an account.'),
+              rfD('Programme Administrator decides', [
+                rfB('Approve', [rfY('A normal single-use invitation is sent')]),
+                rfB('Decline', [rfY('Nothing is created')], 'end'),
+              ]),
+            ]),
+            rfB('Yes', [rfH(inviter, 'You were invited', 'The invitation fixes your role, context (programme or organisation) and email.')]),
           ]),
-        ]),
-      ].filter(Boolean),
-      'Approval is set per role in Role management. By default Facilitator, Mentor, Partner, Organization Representative and Programme Administrator need it.',
-    ),
+        ]
+      : [
+          rfS('Start: you receive an invitation'),
+          rfH(inviter, c === 'A' ? 'A Platform Administrator names you as an organisation’s administrator, or a Programme Administrator invites you' : 'A Programme Administrator, or an Organisation Representative in its own programme, invites you', 'The invitation sets your role, context, link expiry and an optional role end date. No account exists before an invitation.'),
+        ];
+  const approval = ['O', 'A'].includes(c)
+    ? rfD(
+        'Does the role need approval?',
+        [
+          c === 'A' && rfB('Pre-approved by the Platform Administrator', [rfY('Role active straight away')]),
+          rfB('Yes (sensitive role)', [
+            rfY('“Your role is awaiting approval”', 'Authorised approvers are notified.'),
+            rfD('Approver decides', [
+              rfB('Approve role', [rfH('A', 'Role becomes active')]),
+              rfB('Decline role', [rfY('“Role not activated” with the approver’s note', 'The account still exists; other roles are unaffected.')], 'end'),
+            ]),
+          ]),
+        ].filter(Boolean),
+        'Only sensitive roles (Organisation Representative, Programme Administrator) wait for approval.',
+      )
+    : rfY('Role active straight away', rfName(c) + ' activates without approval. Specialist bundles are approved separately.');
+  return [
+    ...start,
+    rfA('Open the invitation link', 'PHOENIX checks the link. Expired, withdrawn or used links stop here with a “Request a new invitation” form.'),
+    rfD('Does this email already have a PHOENIX account?', [
+      rfB('No', [rfA('Accept and create your account', 'Role and email come from the invitation.'), rfA('Verify your email')]),
+      rfB('Yes', [rfY('No second account', 'The new role assignment is added to your existing identity.')]),
+    ]),
+    approval,
     ...signIn,
   ];
 }
 
-// ---- the flows, phase by phase; each phase is one module of the app
+// ---- the flows, phase by phase
 function rfFlows() {
   const W = WL();
+  const V = S.settings.voting;
   return {
     P: {
-      lead: 'Learner or practitioner. Sets a purpose, follows a learning pathway, proposes projects, and owns and leads them through Circle, Rope Team and ' + W + '.',
-      side: ['Learning pathway', 'Profile, claims and candidates', 'Evidence, repository and Learning Harvests', 'Pitches and sponsor funding', 'Opportunities and Match Briefs', 'Conversations, help and safety'],
+      lead: 'Learner or practitioner. Agrees to the core service, chooses optional permissions, sets a purpose, accepts a pathway, and moves through Circles, Rope Teams and ' + W + 's in whatever order fits, keeping control of their own profile.',
+      side: ['Conversations, help and safety'],
       phases: [
-        ['Account & access', 'Registration, sign-in and onboarding', rfAccess('P')],
+        ['Authorize', 'Invitation and sign-in', rfAccess('P')],
         [
-          'Pathway',
-          'Learning pathway',
+          'Authorize',
+          'Required agreement and optional permissions',
           [
-            rfD('How does your pathway start?', [
-              rfB('You create it', [
-                rfA('Create a pathway', 'Start from an approved template or write your own 3–5 steps. It is submitted at once.'),
-                rfY('Status “Awaiting reviewer”', 'Programme Administrators are notified.'),
-                rfH('A', 'Programme Administrator assigns a Steward', 'An active Facilitator / Steward in the programme, not you. The Steward can be changed later.'),
-                rfD('Steward decides', [
-                  rfB('Approve', [rfY('Pathway becomes current', 'Any earlier current pathway is marked Superseded.')]),
-                  rfB('Request clarification', [rfA('Reply in the conversation, or update the steps and resubmit with a note'), rfY('Back to “In review”')], 'Steward decides again'),
-                  rfB('Reject', [rfY('Rejected (final)', 'The reason is posted in the conversation. A rejected pathway cannot be resubmitted.')], 'end'),
-                ]),
+            rfA('Accept the required Participant agreement', 'It covers only what the core service needs. Download it or compare it with the previous version.'),
+            rfY('Optional permissions are asked separately', 'Five purposes, each on its own: AI processing, research and evaluation, cross-organisation sharing, public or funder release, external-system exchange. None is bundled into the agreement.'),
+            rfD('Your choice for each purpose', [
+              rfB('Allow', [rfY('Used for that purpose only')]),
+              rfB('Do not allow', [rfY('The core still works', 'Pathway, Circles, tasks and evidence stay available without it.')]),
+            ], 'You can change or withdraw each choice later.'),
+          ],
+        ],
+        [
+          'Orient',
+          'Minimum Purpose Compass',
+          [
+            rfA('Answer the six Purpose Compass questions', 'Short reflective questions inspired by IKIGAI. You can save and finish later.'),
+            rfY('Never scored', 'No rating or ranking is made from your answers. Organisation Representatives and Sponsors never see them.'),
+          ],
+        ],
+        [
+          'Orient',
+          'Accept a 3–5 step pathway',
+          [
+            rfD('Where does the pathway come from?', [
+              rfB('Template or your own steps', [rfA('Choose a template or draft 3–5 steps')]),
+              rfB('Recommended to you', [rfH('F/M', 'A Facilitator or Mentor proposes a pathway')]),
+            ]),
+            rfY('Each step has a type and prerequisites', 'Mandatory, Optional or Conditional. A step whose prerequisites are not met is Blocked.'),
+            rfD('Your answer', [
+              rfB('Accept', [rfY('Pathway becomes current', 'Nothing becomes current without your acceptance.')]),
+              rfB('Request a change', [rfH('F/M', 'Revises and proposes again')], 'Your answer'),
+            ]),
+            rfA('Work through the steps', 'Complete a step, skip an optional one (Skipped), or accept a mentor’s “Satisfied by prior evidence” recommendation.'),
+          ],
+        ],
+        [
+          'Connect',
+          'Join or link a Circle or Rope Team, as relevant',
+          [
+            rfD('Which space helps now?', [
+              rfB('A Circle', [rfA('Ask to join, accept an invitation, or propose one', 'Sessions, threaded discussion and equal voting.')]),
+              rfB('A Rope Team', [rfA('Join or link a Rope Team', 'A small mentored team.')]),
+              rfB('Neither yet', [rfY('No mandatory sequence')]),
+            ]),
+            rfY('Separate linked spaces', 'Circle, Rope Team and ' + W + ' are entered in any valid order and linked to each other, never converted into one another.'),
+          ],
+        ],
+        [
+          'Connect',
+          'Opportunity, match or direct collaboration',
+          [
+            rfD('How do you find collaborators?', [
+              rfB('Route A: PHOENIX match', [
+                rfA('Publish an Opportunity Card, or express interest in one'),
+                rfH('F', 'The assigned Steward reviews the Match Brief', 'Approve and request consent, ask for clarification, or close.'),
+                rfD('Both parties consent?', [rfB('Yes', [rfY('Introduced')]), rfB('No', [rfY('Match Brief closed')], 'end')]),
               ]),
-              rfB('A Facilitator or Mentor proposes it', [
-                rfH('F/M', 'Proposes a pathway to you', 'From an approved template (as is, or adapted with 3–5 steps) it comes straight to you. A custom pathway first goes through Steward approval as above.'),
-                rfD('Your answer', [
-                  rfB('Accept', [rfY('Pathway becomes current', 'The proposer is notified.')]),
-                  rfB('Request a change', [rfY('Back to the proposer as Draft'), rfH('F/M', 'Revises and proposes again')], 'Your answer'),
-                ]),
-              ]),
+              rfB('Route B: direct', [rfA('Propose a direct authorised collaboration', 'Only with people you already share an authorised space or organisation with.')]),
             ]),
-            rfA('Mark steps complete', 'In any order, with an optional note and files. The pathway creator is notified.'),
-            rfY('Profile candidate for each step', 'Completing every step marks the pathway Completed and adds a “Completed learning activity” candidate. You accept, edit, defer or reject each candidate on your profile.'),
-            rfA('Talk in the pathway conversation', 'The pathway owner, the Programme Administrator and the Steward see every message, here and in Messages → Pathways.'),
-          ],
-        ],
-        [
-          'Projects',
-          'Create and submit a project',
-          [
-            rfA('Start a project', 'Type (Need, Opportunity or Project idea), title, description (40+ characters), tags, area and funding need. You can save it as a draft.'),
-            rfD('Draft the 8 sections with AI?', [
-              rfB('Yes, AI is on', [rfY('AI drafts the 8 sections for your review')]),
-              rfB('No, or AI unavailable', [rfA('Write the 8 sections yourself')]),
-            ]),
-            rfA('Review each section', 'Accept, edit, regenerate or reject. All 8 must be accepted or edited before you can submit.'),
-            rfA('Submit for review', 'Confirm you reviewed every AI-drafted section and that reviewers in this programme will see the project.'),
-            rfY('Status “Submitted”', 'If no reviewer is assigned yet, the Programme Administrators are asked to assign one.'),
-          ],
-        ],
-        [
-          'Project review',
-          'Reviewer assignment and decision',
-          [
-            rfH('A', 'Programme Administrator assigns one reviewer', 'An active Facilitator / Steward in the programme, never the owner. The reviewer cannot be changed afterwards; they are “the Steward” for the rest of the project.'),
-            rfD('The Steward (or a Programme Administrator) decides', [
-              rfB('Request clarification', [rfY('Status “Clarification requested”'), rfA('Reply in the review conversation, or update the sections and resubmit with a note')], 'Steward decides again'),
-              rfB('Reject', [rfY('Status “Rejected”', 'You are told why. A rejected project cannot be edited.')], 'end'),
-              rfB('Accept', [rfY('Status “Accepted” with a support path', '“Circle → Rope Team → ' + W + '” or “Circle → ' + W + '” (no Rope Team). You are notified.')]),
-            ]),
-            rfA('Edit project details while it is open', 'Title, type, description, tags, area and funding need, until the project is rejected or closed. Reviewers are notified of changes.'),
-          ],
-        ],
-        [
-          'Circles',
-          'Circle: agree the problem and the scope',
-          [
-            rfA('Create the Circle for your accepted project', 'Or the Steward creates it. Name, purpose, outcome, agreement and at least one document.'),
-            rfY('Stage “Circle”', 'You are the Project owner; the Steward joins as Facilitator.'),
-            rfA('Build the team', 'Invite people as Collaborator, Facilitator or Mentor, and approve or decline join requests. Invitees accept or decline.'),
-            rfA('Join other Circles', 'Ask to join an active Circle in your programme (its owner or facilitator decides), or accept an invitation.'),
-            rfA('Work together', 'Threaded discussion, sessions, records and commitments, documents, an Opportunity Card or a Learning Harvest from the Circle.'),
-            rfA('Decide by Circle vote', 'You or the Facilitator open and close votes. One eligible member = one vote — you included, with no override. An option is approved at ' + S.settings.voting.threshold + '% of eligible voters with a ' + S.settings.voting.quorum + '% quorum; a tie returns to Shared for revision and re-vote. AI never passes or fails a vote.'),
-            rfD('Which support path was chosen?', [
-              rfB('Circle → Rope Team → ' + W, [rfA('Raise a Mentor Request', 'To a named mentor or as an open request to every mentor in the programme.'), rfH('M', 'A mentor accepts'), rfY('Rope Team formed', 'You, the Circle’s Collaborators, the mentor and a facilitator join; Circle documents are copied in. Stage “Rope Team”.')]),
-              rfB('Circle → ' + W, [rfY('No Rope Team', 'Mentor Requests are not available. Once a decision is recorded, “Create or link ' + W + '” appears.')], 'Skips to the ' + W + ' phase'),
+            rfD('After the introduction', [
+              rfB('Close', [], 'end'),
+              rfB('Continue conversation', [], 'Decide later'),
+              rfB('Link or create a workspace', [rfA('Link an existing ' + W + ' or create a new one')]),
             ]),
           ],
         ],
         [
-          'Rope Teams',
-          'Rope Team: get the requirements right (if on the path)',
+          'Act',
+          W + ': tasks',
           [
-            rfA('Share work for review'),
-            rfH('M', 'Mentor reviews it', '“Looks good” or “Changes recommended”. A mentor contribution is recorded.'),
-            rfA('Upload documents, ask for support, take part in check-ins'),
-            rfH('M', 'Mentor records a support recommendation'),
-            rfA('Send a Rope Team report, or return a matter to the Circle', 'Returning raises a concern for the Circle facilitator. The project stage does not move back.'),
+            rfA('Plan tasks and milestones with your collaborators'),
+            rfD('Does the assignee accept the task?', [
+              rfB('Accept', [rfY('Task begins', 'To do → In progress → Review → Done.')]),
+              rfB('Decline', [rfY('Back to the task owner')], 'Reassign'),
+            ], 'No task starts until the assignee accepts it.'),
           ],
         ],
         [
-          W + 's',
-          W + ': plan, deliver, prove',
+          'Evidence',
+          'Evidence: review, level, confidentiality and release',
           [
-            rfA('Create the ' + W + ' for your accepted project', 'Directly, without a proposal step. The primary origin is your project.'),
-            rfY('Stage “' + W + '”', 'Your Steward joins as Facilitator, the Circle’s Collaborators are invited, and any approved collaborator match joins as Partner.'),
-            rfA('Plan tasks and milestones', 'As owner your tasks start as To do; members’ proposals wait for your approval.'),
-            rfA('Move tasks: To do → In progress → Review'),
-            rfH('F', 'Facilitator or reviewer moves Review → Done'),
-            rfA('Link evidence to a milestone', 'Or upload it from the milestone.'),
-            rfY('Sent to the Steward automatically', 'Status “Awaiting Steward review”; the Steward is notified.'),
-            rfD('Steward reviews each piece of evidence', [
-              rfB('Approved', [rfY('Counts toward the milestone')]),
-              rfB('Changes requested', [rfA('Edit the evidence and resubmit')], 'Steward reviews again'),
-              rfB('Rejected', [rfA('Remove it and link other evidence')], 'Steward reviews again'),
+            rfA('Add evidence', 'File, link, reflection or record, linked to a task, milestone or space.'),
+            rfY('Four things are tracked separately', 'Review status, evidence level E0–E4, confidentiality, and lifecycle and release. Approving evidence never releases it.'),
+            rfD('A person with the Reviewer bundle reviews it', [
+              rfB('Approved', [rfY('Level and limitations recorded')]),
+              rfB('Needs revision', [rfA('Revise and resubmit')], 'Reviewed again'),
+              rfB('Rejected or insufficient', [rfY('Reason recorded')], 'end'),
             ]),
-            rfH('F', 'Steward validates the milestone', 'Only once every linked item is approved. The milestone becomes Achieved and evidence owners get profile candidates.'),
-            rfA('Return an issue to the Rope Team or Circle when you need guidance', 'Any member can. The project stage does not move back.'),
-          ],
-        ],
-        [
-          'Final review',
-          'Final deliverables and closure',
-          [
-            rfA('Submit final deliverables with a note', 'You see milestone, evidence and open-task counts; they do not block submission.'),
-            rfY('Stage “Final review”', 'The Steward is notified.'),
-            rfD('Steward’s final review', [
-              rfB('Request changes', [rfY('Back to the ' + W + ' stage with the Steward’s note')], 'Submit again'),
-              rfB('Approve', [rfY('Project closed', 'The ' + W + ' and Rope Team close and the Circle completes. You get a profile candidate and a reminder if a final Learning Harvest is still needed.')]),
+            rfD('Release beyond the team?', [
+              rfB('No', [rfY('Stays at its confidentiality level')]),
+              rfB('Requested', [rfH('TD', 'Decides the release', 'Needs your public or funder release permission. Small numbers are suppressed.')]),
             ]),
-            rfS('End: project closed'),
           ],
         ],
         [
-          'Profile',
-          'Profile, claims and candidates',
+          'Learn',
+          'Learning Harvest',
           [
-            rfA('Update your Purpose Compass', 'Saving creates a new profile version.'),
-            rfA('Add, correct or revoke profile claims and choose who sees each one'),
-            rfY('Profile candidates arrive', 'From completed pathway steps, approved evidence, validated milestones, project closure and Learning Harvests.'),
+            rfA('Contribute to the Learning Harvest', 'An AI draft is possible only if you allowed AI processing; a person completes the Harvest.'),
+            rfY('Dissent and negative findings are kept', 'They are not smoothed away.'),
+          ],
+        ],
+        [
+          'Evolve',
+          'Profile change candidate',
+          [
+            rfY('Candidates arrive with provenance', 'From completed steps, approved evidence and Harvests. Each shows where it came from.'),
             rfD('Your decision on each candidate', [
-              rfB('Accept, or edit and accept', [rfY('Added to your profile as a new version')]),
-              rfB('Defer', [rfY('Stays in your pending decisions')], 'Decide later'),
+              rfB('Accept', [rfY('Added to your profile as a new version')]),
+              rfB('Edit', [rfA('Edit, then accept'), rfY('Added with your wording')]),
               rfB('Reject', [rfY('Not added')], 'end'),
-            ]),
-            rfA('Accept or reject profile suggestions after an ' + W + ' Learning Harvest is approved', 'Only you decide what changes on your profile.'),
+            ], 'Only you decide what changes on your profile.'),
           ],
         ],
         [
-          'Records',
-          'Evidence, repository and Learning Harvests',
+          'Evolve',
+          'Next action',
           [
-            rfA('Upload evidence', 'File, link, reflection or repository record, linked to one of your spaces. It starts at level E0.'),
-            rfH('F', 'A Facilitator / Steward or Reviewer reviews it', 'Approved, Needs revision, Rejected, Insufficient or Restricted, with an evidence level E0–E4 and limitations. Approval adds a profile candidate.'),
-            rfA('Authorise funder release of approved evidence'),
-            rfH('A', 'Programme Administrator releases or withholds it', 'Released evidence becomes visible to sponsors.'),
-            rfA('Start a Learning Harvest', 'Optional AI draft; members are asked to contribute. In an ' + W + ' it needs every required deliverable done and at least one piece of evidence.'),
-            rfH('F', 'Facilitator / Steward approves or rejects the Harvest', 'Approval of an ' + W + ' Harvest sends profile suggestions to you.'),
-          ],
-        ],
-        [
-          'Funding',
-          'Pitches and sponsor funding',
-          [
-            rfA('Pitch an accepted project to sponsors'),
-            rfH('S', 'Sponsor funds it, saves it or declines', 'Funding starts a request in three tranches: Circle, Rope Team and ' + W + '.'),
-            rfH('A', 'Finance Owner approves the request; the sponsor signs'),
-            rfH('S', 'Sponsor releases a tranche', 'Only when the project has reached that stage and the previous tranche’s summary was accepted.'),
-            rfA('Submit a progress summary for the released tranche'),
-            rfD('Sponsor’s answer', [rfB('Accept summary', [rfY('Next tranche can be released')]), rfB('Put on hold', [rfA('Update the summary')], 'Sponsor’s answer')]),
-            rfA('Message interested sponsors', 'Direct messages exist only between a project owner and a sponsor, about one project.'),
-          ],
-        ],
-        [
-          'Discover',
-          'Opportunities and Match Briefs',
-          [
-            rfA('Publish an Opportunity Card', 'Need, Offer, Asset or Opportunity, linked to a project you own or work on. Visible to the programme, or to Circle members when created from a Circle.'),
-            rfA('Express interest in someone else’s card'),
-            rfH('F', 'Steward reviews the Match Brief', 'Approve and request consent, request clarification or reject.'),
-            rfD('Both parties consent?', [rfB('Yes', [rfY('Introduced: contact details shared'), rfA('Close, keep talking, or link or create an ' + W)]), rfB('No', [rfY('Match Brief closed')], 'end')]),
-            rfA('Or propose a direct collaboration', 'Only with someone you already share a space or organization with.'),
+            rfA('Choose the next action', 'Continue the pathway, join or link another space, update your Purpose Compass, or change a permission.'),
+            rfS('End: the loop starts again'),
           ],
         ],
         [
           'Messages & support',
           'Conversations, help and safety',
           [
-            rfA('Chat in your Circles, Rope Teams and ' + W + 's', 'Members of an active space post; Observers read only. Mark questions, attach files.'),
-            rfA('Ask PHOENIX', 'Private, rule-based help. Nothing changes on your record.'),
+            rfA('Post in threaded discussions in your spaces', 'Members of an active space post; Observers read only.'),
+            rfA('Ask PHOENIX', 'Private help. Nothing changes on your record.'),
             rfA('Report a concern'),
-            rfH('A', 'Incident/Safety Owner triages, reviews and records a decision'),
+            rfH('IS', 'Triages, reviews and records a decision'),
             rfD('Accept the decision?', [rfB('Yes', [rfY('Case closed')], 'end'), rfB('No', [rfA('Appeal')], 'Reviewed again')]),
           ],
         ],
       ],
     },
     F: {
-      lead: 'Faculty / Steward. Reviews and accepts projects, facilitates Circles, validates milestones and gives the final approval. Also approves pathways and reviews evidence.',
-      side: ['Pathways: propose and approve', 'Evidence, Harvests, Match Briefs and resources'],
+      lead: 'Facilitator / Steward. Creates or approves Circles, runs sessions and threaded discussion, opens equal votes, reviews Match Briefs when assigned as Steward, and links Circles to ' + W + 's and Learning Harvests.',
+      side: ['Pathways and evidence'],
       phases: [
-        ['Account & access', 'Invitation, approval and sign-in', rfAccess('F')],
+        ['Authorize', 'Invitation and sign-in', rfAccess('F')],
         [
-          'Project review',
-          'Review a project assigned to you',
+          'Connect',
+          'Create or approve a Circle',
           [
-            rfH('P', 'A participant submits a project'),
-            rfH('A', 'Programme Administrator assigns you as its reviewer', 'One reviewer per project, never the owner. It cannot be changed. You are now the project’s Steward.'),
-            rfA('Read the project and talk in the review conversation'),
-            rfD('Your decision', [
-              rfB('Request clarification', [rfH('P', 'Owner replies or updates and resubmits')], 'Decide again'),
-              rfB('Reject', [rfY('Owner is told why')], 'end'),
-              rfB('Accept and choose the support path', [rfY('“Circle → Rope Team → ' + W + '” or “Circle → ' + W + '”', 'The owner is notified.')]),
+            rfD('How does the Circle start?', [
+              rfB('You create it', [rfA('Create the Circle', 'Name, purpose, outcome and agreement. You join as Facilitator.')]),
+              rfB('Someone proposes it', [
+                rfH('P', 'A participant proposes a Circle'),
+                rfD('Your decision', [rfB('Approve', [rfY('Circle active')]), rfB('Decline', [rfY('Proposer told why')], 'end')]),
+              ]),
+            ]),
+            rfA('Manage membership', 'Invite, decide join requests, change roles, remove members.'),
+          ],
+        ],
+        [
+          'Deliberate',
+          'Sessions and threaded discussion',
+          [
+            rfA('Run sessions and record decisions and commitments'),
+            rfA('Moderate threaded discussion', 'Asynchronous threads, not real-time chat.'),
+          ],
+        ],
+        [
+          'Deliberate',
+          'Proposals and equal voting',
+          [
+            rfA('Open a proposal for a vote', 'Threshold, quorum, voting window and reminders are configurable (now ' + V.threshold + '% of eligible voters, ' + V.quorum + '% quorum).'),
+            rfY('One eligible member = one vote', 'Equal weight for everyone. The AI source check is advisory only and never passes or fails a vote.'),
+            rfD('Result when the window closes', [
+              rfB('Threshold and quorum met', [rfY('Decision recorded')]),
+              rfB('Tie', [rfY('Returns to Shared for revision')], 'Re-vote'),
+              rfB('Not met', [rfY('Not adopted; recorded')]),
             ]),
           ],
         ],
         [
-          'Circles',
-          'Facilitate the Circle',
+          'Connect',
+          'Match Briefs (only if assigned as Steward)',
           [
-            rfA('Create the Circle for a project you steward', 'Or the owner creates it. You join as Facilitator.'),
-            rfA('Manage membership', 'Invite, approve or decline join requests, change roles, remove members.'),
-            rfA('Run sessions, record decisions, review commitments, resolve concerns'),
-            rfA('Open and close polls; final-review poll outcomes', 'Facilitators do not vote. One eligible member = one vote; ' + S.settings.voting.threshold + '% of eligible voters with a ' + S.settings.voting.quorum + '% quorum records a decision.'),
-            rfA('Approve the AI Circle summary, moderate chat, pause the Circle for repair or resume it'),
-            rfD('Support path', [
-              rfB('With Rope Team', [rfA('Raise a Mentor Request (or the owner does)'), rfH('M', 'Mentor accepts; Rope Team formed')]),
-              rfB('Circle → ' + W, [rfA('Create or link the ' + W + ' once a decision is recorded')], 'Skips to the ' + W + ' phase'),
+            rfD('Are you the assigned Steward?', [
+              rfB('Yes', [
+                rfA('Review the Match Brief'),
+                rfD('Your decision', [
+                  rfB('Approve', [rfH('P/C', 'Both parties are asked for consent')]),
+                  rfB('Clarify', [rfH('P/C', 'Requester clarifies')], 'Decide again'),
+                  rfB('Close', [rfY('Brief closed')], 'end'),
+                ]),
+              ]),
+              rfB('No', [rfY('Not in your queue')]),
             ]),
-            rfA('Find a collaborator for a requirement', 'Builds a Match Brief from active Partners in the programme; you are its Steward.'),
-            rfH('C/P', 'Both parties consent after your approval', 'The collaborator is invited to the ' + W + ' as Partner, or queued until it exists.'),
           ],
         ],
         [
-          'Rope Teams',
-          'Support the Rope Team',
+          'Act',
+          'Link or create an ' + W,
+          [rfA('Link an existing ' + W + ' or create one from the Circle', 'The spaces stay separate and linked; nothing is converted.'), rfH('*', 'Members accept and work on tasks')],
+        ],
+        [
+          'Learn',
+          'Learning Harvest',
+          [rfA('Contribute to or complete the Learning Harvest', 'A person completes it; dissent and negative findings are kept.')],
+        ],
+        [
+          'Evolve',
+          'Close or continue the Circle',
           [
-            rfY('You join as facilitator when you raised the Mentor Request'),
-            rfA('See progress indicators, invite members'),
-            rfA('Decide on a mentor’s proposed exit; close the Rope Team'),
-            rfA('Create or link the ' + W + ' whenever the team is ready'),
+            rfD('What next for the Circle?', [
+              rfB('Continue', [rfY('Circle stays active')], 'Back to sessions'),
+              rfB('Close', [rfY('Circle closed; records kept')]),
+            ]),
+            rfS('End: Circle closed'),
           ],
         ],
         [
-          W + 's',
-          'Execution: tasks, milestones and evidence',
+          'Records',
+          'Pathways and evidence',
           [
-            rfA('Create ' + W + 's, or activate or decline proposed ones', 'Facilitators can create directly. Proposals from participants are activated or declined by you or a Programme Administrator.'),
-            rfY('Added as Facilitator when the owner creates the ' + W + ' for your project'),
-            rfA('Approve or decline proposed tasks; move tasks Review → Done'),
-            rfA('Review contributions and change objects'),
-            rfY('Milestone evidence arrives in your queue automatically'),
-            rfD('Review each piece of evidence', [rfB('Approve', [rfY('Set level and limitations')]), rfB('Request changes', [rfH('P', 'Owner edits and resubmits')], 'Review again'), rfB('Reject', [rfY('Owner notified')], 'Review again')]),
-            rfA('Validate the milestone', 'Only when every linked item is approved by you.'),
-          ],
-        ],
-        [
-          'Final review',
-          'Close the project',
-          [
-            rfH('P', 'Owner submits final deliverables'),
-            rfD('Final review', [rfB('Request changes', [rfY('Back to the ' + W + ' stage')], 'Review again'), rfB('Approve', [rfY('Project, ' + W + ' and Rope Team closed; Circle completed')])]),
-            rfS('End: project closed'),
-          ],
-        ],
-        [
-          'Pathway',
-          'Pathways: propose and approve',
-          [
-            rfA('Propose a pathway to a participant', 'Template as is, adapted (3–5 steps) or custom. Template-based ones go straight to the participant.'),
-            rfH('A', 'For custom pathways and participants’ own: the Programme Administrator assigns you as Steward'),
-            rfD('Your decision as Steward', [rfB('Approve', [rfY('Current, or proposed to the participant if someone else created it')]), rfB('Request clarification', [rfH('P', 'Creator replies or resubmits')], 'Decide again'), rfB('Reject', [rfY('Final')], 'end')]),
-            rfA('Talk with the owner and the Programme Administrator in Messages → Pathways'),
-          ],
-        ],
-        [
-          'Records & discover',
-          'Evidence, Harvests, Match Briefs and resources',
-          [
-            rfA('Review evidence in the review queue', 'Any evidence you did not submit: status, level E0–E4 and limitations.'),
-            rfA('Approve or reject Learning Harvests; request funder release', 'A Programme Administrator releases to funders.'),
-            rfA('Steward Match Briefs on Opportunity Cards; nominate matches'),
-            rfA('Suggest a resource', 'A Programme Administrator publishes it.'),
+            rfA('Propose a pathway to a participant', 'The participant accepts or requests a change.'),
+            rfD('Approve evidence?', [
+              rfB('With the Reviewer bundle', [rfA('Review: status, level E0–E4 and limitations')]),
+              rfB('Without it', [rfY('Comment only; a Reviewer decides')]),
+            ], 'Evidence approval needs the separate Reviewer bundle.'),
           ],
         ],
       ],
     },
     M: {
-      lead: 'Accepts Mentor Requests, supports the Rope Team, reviews shared work and recommends — never approves.',
-      side: ['Pathways', 'Circles, ' + W + 's, Harvests and messages'],
+      lead: 'Mentor / Advisor. Supports an assigned participant or Rope Team, recommends pathway changes and opportunities, and contributes to the assigned ' + W + ' — recommends, never approves.',
+      side: ['Requests from another context'],
       phases: [
-        ['Account & access', 'Invitation, approval and sign-in', rfAccess('M')],
+        ['Authorize', 'Invitation and sign-in', rfAccess('M')],
         [
-          'Rope Teams',
-          'Mentor Requests',
+          'Connect',
+          'Assigned participant or Rope Team',
           [
-            rfH('P/F', 'Project owner or Steward raises a Mentor Request', 'Named to you, or open to every mentor in the programme. Not available on the “Circle → ' + W + '” path.'),
+            rfH('F', 'A Facilitator / Steward raises a Mentor Request', 'Named to you, or open to every mentor in the programme.'),
             rfD('Your answer', [
-              rfB('Accept', [rfY('Rope Team formed', 'Owner, the Circle’s Collaborators, you as mentor and a facilitator. Circle documents are copied in. If one already exists you join it.')]),
-              rfB('Decline', [rfY('A named request is declined; an open request stays open for other mentors')], 'end'),
+              rfB('Accept', [rfY('You join the Rope Team or are linked to the participant')]),
+              rfB('Decline', [rfY('A named request is declined; an open one stays open')], 'end'),
             ]),
           ],
         ],
         [
-          'Rope Teams',
-          'Guide the team',
+          'Orient',
+          'Check-ins and support',
           [
-            rfH('P', 'Members share work for review'),
-            rfD('Your review', [rfB('Looks good', [rfY('Mentor contribution recorded')]), rfB('Changes recommended', [rfH('P', 'Members revise and share again')], 'Review again')]),
-            rfA('Run check-ins, answer support requests, see progress indicators'),
-            rfA('Record a support recommendation', 'The team decides; the recommendation never approves anything.'),
-            rfA('Send the Rope Team report to the ' + W),
-            rfA('Resolve matters returned from the ' + W),
-            rfA('Propose ending your engagement, or close the Rope Team', 'A Facilitator / Steward decides on an exit.'),
-            rfH('P/F', 'The work moves on to the ' + W),
-            rfS('End: Rope Team closed, or closed with the project at final approval'),
+            rfA('Run check-ins and answer support requests'),
+            rfA('Keep protected mentor notes', 'They never leave the Rope Team.'),
           ],
         ],
         [
-          'Pathway',
-          'Pathways',
+          'Orient',
+          'Pathway recommendations',
           [
-            rfA('Propose pathways to participants in your Rope Teams', 'Template-based ones go to the participant; custom ones need Steward approval first.'),
-            rfH('P', 'Participant accepts or requests a change'),
+            rfD('What do you recommend?', [
+              rfB('A pathway step or change', [rfA('Recommend pathway steps')]),
+              rfB('Prior evidence covers a step', [rfA('Recommend “Satisfied by prior evidence”')]),
+            ]),
+            rfH('P', 'The participant accepts or declines', 'Mentors recommend; only the participant makes it current.'),
+          ],
+        ],
+        ['Connect', 'Suggest opportunities', [rfA('Suggest Opportunity Cards to the participant'), rfH('P', 'The participant decides whether to express interest')]],
+        ['Act', 'Contribute to the assigned ' + W + ' and Harvest', [rfA('Contribute to tasks in the assigned ' + W), rfA('Contribute to its Learning Harvest')]],
+        [
+          'Evolve',
+          'Close or continue support',
+          [
+            rfD('What next?', [rfB('Continue', [rfY('Support continues')], 'Back to check-ins'), rfB('Close', [rfY('Support closed')])]),
+            rfS('End: support closed'),
           ],
         ],
         [
-          'Collaboration',
-          'Circles, ' + W + 's, Harvests and messages',
+          'Context',
+          'Requests from another context',
           [
-            rfA('Join Circles and ' + W + 's you are invited to'),
-            rfA('Start and contribute to Learning Harvests'),
-            rfA('View evidence and Opportunity Cards', 'Mentors cannot upload evidence or create cards.'),
-            rfA('Suggest a resource; chat in your spaces; report a concern'),
+            rfY('Cross-context notice', 'A request belonging to another programme or organisation asks you to switch to that context first.'),
+            rfA('Switch role or context, then answer it there'),
           ],
         ],
       ],
     },
     C: {
-      lead: 'Brings resources, expertise or opportunities. Works in ' + W + 's against a defined responsibility.',
-      side: ['Mandate and sharing'],
+      lead: 'Partner / Collaborator. Brings resources, expertise or opportunities through a Steward-reviewed match or a direct authorised collaboration, then contributes within a defined mandate.',
+      side: [],
       phases: [
-        ['Account & access', 'Invitation, approval and sign-in', rfAccess('C')],
+        ['Authorize', 'Invitation, partner agreement and sign-in', rfAccess('C')],
         [
-          'Discover',
-          'Opportunities and matches',
+          'Connect',
+          'Opportunity Card and match',
           [
-            rfA('Publish Opportunity Cards for projects you work on'),
-            rfA('Express interest in a card, or propose a direct collaboration', 'Direct only with people you already share a space or organization with.'),
-            rfY('A Match Brief is drafted for Steward review', 'The card owner is notified of your interest.'),
-            rfH('F', 'Steward finds you for a project requirement, or reviews your interest'),
-            rfD('Consent to the Match Brief?', [rfB('Yes (both parties)', [rfY('Introduced; invited to the ' + W + ' as Partner', 'Queued until the ' + W + ' exists.')]), rfB('No', [rfY('Brief closed')], 'end')]),
+            rfA('Publish an Opportunity Card', 'Need, Offer, Asset or Opportunity.'),
+            rfD('How does the collaboration start?', [
+              rfB('Route A: PHOENIX match', [
+                rfH('F', 'The assigned Steward reviews the Match Brief'),
+                rfD('Both parties consent?', [rfB('Yes', [rfY('Introduced')]), rfB('No', [rfY('Brief closed')], 'end')]),
+              ]),
+              rfB('Route B: direct', [rfA('Direct authorised collaboration', 'Only with people you already share an authorised space or organisation with.')]),
+            ]),
           ],
         ],
         [
-          W + 's',
-          'Deliver as a Partner',
+          'Connect',
+          'After the introduction',
           [
-            rfA('Accept the ' + W + ' invitation'),
-            rfH('P', 'The project owner leads the ' + W + ': tasks, milestones and members'),
-            rfA('Submit contributions'),
-            rfH('F', 'Facilitator or reviewer: Accepted, Changes requested or More evidence requested'),
-            rfA('Create or link ' + W + 's', 'Partners can create ' + W + 's directly.'),
-            rfA('Upload evidence; start Learning Harvests'),
-            rfH('F', 'Steward gives the project its final approval'),
-            rfS('End: the ' + W + ' closes with the project'),
+            rfD('What do you do next?', [
+              rfB('Close', [], 'end'),
+              rfB('Continue conversation', [], 'Decide later'),
+              rfB('Link existing workspace', [rfA('Link an existing ' + W)]),
+              rfB('Create new workspace', [rfA('Create a new ' + W)]),
+            ]),
           ],
         ],
         [
-          'Organization',
-          'Mandate and sharing',
+          'Act',
+          'Contribute within your mandate',
           [
-            rfH('A/O', 'Grants you a mandate to act for your organization'),
-            rfA('Request cross-organization sharing', 'The request goes to the Programme Administrators.'),
-            rfA('Chat in your spaces; report a concern'),
+            rfA('Accept tasks and contribute', 'Within the mandate your organisation granted.'),
+            rfA('Add evidence'),
+            rfH('RV', 'Reviews the evidence'),
+            rfS('End: collaboration closes with the ' + W),
           ],
         ],
       ],
     },
     O: {
-      lead: 'Runs the organization’s programme: invitations, role approvals, configuration, oversight of Circles and aggregate reporting.',
-      side: ['Aggregate insight'],
+      lead: 'Organisation Representative. Configures the organisation’s programme inside the pack envelope, invites the cohort, assigns approved roles and sees authorised aggregate progress only.',
+      side: [],
       phases: [
-        ['Account & access', 'Invitation, approval and sign-in', rfAccess('O')],
+        ['Authorize', 'Sensitive-role onboarding and organisation agreement', rfAccess('O')],
         [
-          'Organization workspace',
-          'People and roles',
+          'Configure',
+          'Configure inside the pack envelope',
           [
-            rfA('Invite users', 'Participant, Facilitator, Mentor, Partner or Organization Representative, in your own programme only.'),
-            rfH('P/F/M/C/O', 'The invitee accepts and creates an account, or adds the role to an existing one', 'Facilitator, Mentor, Partner and Organization Representative roles then wait for approval.'),
-            rfD('A role is waiting for approval', [rfB('Approve', [rfY('Role active; person notified')]), rfB('Decline', [rfY('“Role not activated”')], 'end')]),
-            rfA('Deactivate or reactivate roles, set role end dates, grant mandates, assign specialist bundles', 'High-trust bundles (Finance, AI, Trust/Data, Incident/Safety) stay with the Programme Administrator.'),
+            rfA('Configure your programme', 'Labels, templates and the options the pack allows.'),
+            rfD('Is the change inside the pack envelope?', [
+              rfB('Yes', [rfY('Applied')]),
+              rfB('No', [rfH('A', 'Becomes a request to the Programme Administrator')], 'end'),
+            ]),
           ],
         ],
         [
-          'Organization workspace',
-          'Configuration and growth',
+          'People',
+          'Cohort, roles and mandates',
           [
-            rfA('Configure the programme', 'Circle and Rope Team labels, optional Purpose Compass questions, whether participants may propose an ' + W + ', Circle and ' + W + ' templates.'),
-            rfA('Request a new cohort', 'The Platform Administrator is notified.'),
-            rfA('Create an institutional ' + W),
-          ],
-        ],
-        [
-          'Circles',
-          'Oversight of Circles',
-          [
-            rfH('F/A', 'A project is accepted by its Steward or a Programme Administrator'),
-            rfA('Create a Circle for any accepted project without one', 'You join as Facilitator; the project owner is the Project owner.'),
-            rfA('Oversee every Circle in your programme', 'Manage members, sessions, decisions and polls, and pause a Circle for repair.'),
-            rfS('End: programme running; continue from My PHOENIX'),
+            rfA('Invite your cohort'),
+            rfH('P/F/M/C', 'Invitees accept and create an account, or add the role to their identity'),
+            rfA('Assign approved roles and mandates'),
           ],
         ],
         [
           'Reports',
-          'Aggregate insight',
+          'Aggregate progress, reports and seats',
           [
-            rfA('View projects and spaces, approved evidence and released Learning Harvests', 'Aggregate only; no item details.'),
-            rfA('Reports and exports, metrics, audit log for your programme'),
-            rfA('Request institution seats or packages', 'The Finance Owner is notified.'),
-            rfA('Request cross-organization sharing'),
+            rfA('See authorised aggregate progress'),
+            rfY('Never personal detail', 'No raw Purpose Compass, hurdles, private reflections, AI conversations or Rope Team notes.'),
+            rfA('Reports and seats'),
+            rfS('End: programme running; continue from My PHOENIX'),
           ],
         ],
       ],
     },
     S: {
-      lead: 'Discovers accepted projects, funds them in stage-wise tranches and follows approved outcomes.',
-      side: ['Evidence, initiatives and seats'],
+      lead: 'Sponsor / Funder. Buys seat pools or donates, follows aggregate seat use and sees approved, funder-safe outcomes. Identifiable stories need a separate release.',
+      side: [],
       phases: [
-        ['Account & access', 'Registration, sign-in and onboarding', rfAccess('S')],
+        ['Authorize', 'Access, Sponsor agreement and sign-in', rfAccess('S')],
         [
-          'Funding',
-          'Find projects to fund',
+          'Seats',
+          'Seat pool or donation',
           [
-            rfA('Discover accepted projects', '“Matching my interests” is on by default; remove the filter to see every eligible project. Briefs show only funder-released evidence.'),
-            rfH('P', 'Project owners send you pitches'),
-            rfD('What do you do?', [
-              rfB('Fund it', [rfA('Request funding in three tranches', 'Circle, Rope Team and ' + W + '.')]),
-              rfB('Save or decline', [rfY('Declining notifies the owner')], 'end'),
-              rfB('Message the owner', [rfA('Direct message about this project')], 'Decide later'),
-            ]),
-          ],
-        ],
-        [
-          'Funding',
-          'Commitment and tranches',
-          [
-            rfH('A', 'Finance Owner approves the request'),
-            rfA('Sign the agreement', 'The owner is notified.'),
-            rfA('Release a tranche', 'Only when the project has reached that tranche’s stage and the previous summary was accepted.'),
-            rfH('P', 'Owner submits a progress summary'),
-            rfD('Your answer', [rfB('Accept summary', [rfY('Next tranche can be released; after the third, funding is fully released')]), rfB('Put on hold with a reason', [rfH('P', 'Owner updates the summary')], 'Your answer')]),
-            rfS('End: funding fully released'),
+            rfA('Choose a seat pool or a donation'),
+            rfD('How do you pay?', [rfB('Hosted payment', [rfA('Pay on the hosted payment page')]), rfB('Invoice', [rfA('Request an invoice')])]),
+            rfH('FO', 'Confirms payment and activates the pool'),
           ],
         ],
         [
           'Outcomes',
-          'Evidence, initiatives and seats',
+          'Utilisation and funder-safe outcomes',
           [
-            rfA('See approved evidence released for funders', 'Aggregated; small groups are hidden.'),
-            rfH('A', 'Programme Administrator publishes sponsor initiatives'),
-            rfA('Buy seat pools by invoice and assign seats to participants', 'A Finance Owner activates the pool.'),
-            rfA('Metrics (aggregate); report a concern'),
+            rfA('See seat utilisation', 'Aggregate only.'),
+            rfA('See approved initiatives, approved evidence summaries and funder-safe Learning Harvests', 'Small numbers are suppressed.'),
+            rfD('Want an identifiable story?', [
+              rfB('No', [rfY('Aggregate view only')]),
+              rfB('Yes', [rfA('Send a separate release request'), rfH('TD', 'Decides, with the person’s own release permission')]),
+            ]),
+            rfS('End: continue from My PHOENIX'),
           ],
         ],
       ],
     },
     A: {
-      lead: 'Runs the programme: people and roles, reviewer and Steward assignment, releases, resources, payments and reports.',
-      side: ['Programme content', 'Evidence, records and ' + W + 's', 'Products and payments', 'Safety, metrics and audit'],
+      lead: 'Programme Administrator. Runs invitations and access requests, sensitive-role approvals, pack configuration, voting parameters, resources, reports and configuration versions. Not the fallback approver for specialist decisions.',
+      side: ['Specialist decisions go to bundle holders'],
       phases: [
-        ['Account & access', 'Invitation and sign-in with two-step code', rfAccess('A')],
+        ['Authorize', 'Invitation and sign-in with two-step code', rfAccess('A')],
         [
-          'Programme admin',
-          'Review requests',
+          'Authorize',
+          'Invitations and access requests',
           [
-            rfH('P', 'A project is submitted'),
-            rfA('Assign one reviewer', 'An active Facilitator / Steward in the programme. Fixed once assigned.'),
-            rfH('F', 'The reviewer (Steward) requests clarification, accepts with a support path, or rejects', 'You can follow and post in the review conversation.'),
-            rfA('Decide on any project when needed', 'Administrators can also request clarification, accept with a support path, reject and give final approval.'),
-            rfH('P', 'A pathway is waiting for a Steward'),
-            rfA('Assign or change the pathway’s Steward', 'Then follow the pathway conversation in Messages → Pathways.'),
+            rfA('Invite people', 'Single or bulk, any role except Platform Administrator.'),
+            rfD('An access request arrives', [
+              rfB('Approve', [rfY('A normal single-use invitation is sent')]),
+              rfB('Decline', [rfY('Nothing is created')], 'end'),
+            ], 'No account exists before an invitation.'),
+            rfD('A sensitive role waits for approval', [rfB('Approve', [rfY('Role active; person notified')]), rfB('Decline', [rfY('“Role not activated”')], 'end')]),
           ],
         ],
         [
-          'Programme admin',
-          'Users and invitations',
+          'Configure',
+          'Pack, templates and Purpose Compass wording',
           [
-            rfA('Invite users', 'Single or bulk (up to 1,000 emails), any role except Platform Administrator. Resend or revoke.'),
-            rfD('A role is waiting for approval', [rfB('Approve', [rfY('Role active; person notified')]), rfB('Decline', [rfY('“Role not activated”')], 'end')]),
-            rfA('Add, edit or delete users', 'Users you add are active at once.'),
-            rfA('Manage roles', 'Deactivate or activate, set end dates, assign specialist bundles, grant mandates.'),
-            rfS('End: programme running; continue from My PHOENIX'),
+            rfA('Configure the programme pack and templates'),
+            rfA('Edit Purpose Compass wording', 'The six questions stay unscored.'),
+            rfA('Set voting parameters', 'Threshold, quorum, window and reminders. Equal weight is frozen: one eligible member = one vote.'),
+            rfA('Resources and notifications'),
           ],
         ],
+        ['Reports', 'Reports', [rfA('Programme reports and exports')]],
         [
-          'Programme admin',
-          'Programme content',
-          [
-            rfA('Pathway library: approve, retire or add templates'),
-            rfA('Send announcements; publish sponsor initiatives'),
-            rfA('Resolve support queries and privacy requests'),
-            rfA('Resources: add, publish, unpublish or reject suggestions'),
-          ],
+          'Configure',
+          'Configuration versions',
+          [rfA('Save, export or restore a configuration version', 'Restoring never touches participant data.'), rfS('End: programme running; continue from My PHOENIX')],
         ],
         [
-          'Releases',
-          'Evidence, records and ' + W + 's',
+          'Routing',
+          'Specialist decisions go to bundle holders',
           [
-            rfH('P', 'Owner authorises funder release of approved evidence'),
-            rfD('Release decision', [rfB('Release', [rfY('Visible to sponsors')]), rfB('Withhold', [rfY('Owner notified')], 'end')]),
-            rfA('Approve Learning Harvest releases to funders and repository deletions'),
-            rfA('Activate or decline proposed ' + W + 's; oversee every ' + W),
-          ],
-        ],
-        [
-          'Payments',
-          'Products and payments',
-          [
-            rfH('S', 'A sponsor requests funding for a project'),
-            rfA('Approve sponsor funding requests', 'Needs the Finance Owner bundle. The sponsor then signs the agreement.'),
-            rfA('Draft products, grant or revoke entitlements, create seat pools'),
-            rfA('Release or retire products, activate invoiced seat pools, reconcile payments', 'Needs the Finance Owner bundle.'),
-          ],
-        ],
-        [
-          'Oversight',
-          'Safety, metrics and audit',
-          [
-            rfA('Handle incidents (Incident/Safety Owner bundle)', 'Triage, review, record decision, close or reopen; emergency pause of a Circle.'),
-            rfA('Reports and exports, metrics, audit log'),
+            rfH('RV', 'Evidence review'),
+            rfH('TD', 'Policy, consent and release'),
+            rfH('FO', 'Products and payments'),
+            rfH('AO', 'AI sources'),
+            rfH('IS', 'Incidents and safety'),
           ],
         ],
       ],
     },
     T: {
-      lead: 'Runs the platform: organizations, roles, policies, Purpose Compass and technical operations. No access to programme content.',
-      side: ['Roles, agreements and Purpose Compass', 'Technical operations'],
+      lead: 'Platform Administrator. Runs the platform: system health, contexts, approved role and bundle definitions, integrations, security, backups and audit. No policy publishing, Purpose Compass governance or participant content.',
+      side: [],
       phases: [
-        ['Account & access', 'Provisioned account with two-step code', rfAccess('T')],
+        ['Authorize', 'Provisioned account with two-step code', rfAccess('T')],
+        ['Operations', 'System health and contexts', [rfA('Monitor system health and alerts'), rfA('Create and manage contexts (tenants)')]],
         [
-          'Organizations',
-          'Organizations and programme administrators',
+          'Roles',
+          'Role and bundle definitions',
           [
-            rfA('Create or edit an organization', 'Its programme is created if missing, and the default policies are copied in.'),
-            rfY('Pre-approved invitation to the named admin'),
-            rfH('A', 'The admin accepts and runs the programme'),
-            rfA('Suspend or reactivate an organization'),
-            rfS('End: the organization’s programme is running'),
-          ],
-        ],
-        [
-          'Roles & policies',
-          'Roles, agreements and Purpose Compass',
-          [
-            rfA('Create roles and set their module permissions and approval rule'),
-            rfA('Draft and publish a new policy version'),
-            rfY('Everyone it applies to accepts the new version at their next sign-in'),
-            rfA('Manage Purpose Compass questions'),
+            rfD('Is there an approved change reference?', [
+              rfB('Yes', [rfA('Apply the approved role or bundle definition')]),
+              rfB('No', [rfY('Cannot be applied')], 'end'),
+            ]),
           ],
         ],
         [
           'Operations',
-          'Technical operations',
+          'Integrations, security and audit',
           [
-            rfA('Integrations, security events, health and alerts, storage and backups, LMS deep links'),
-            rfA('Audit log across the platform'),
-            rfY('No access to participant or project content'),
+            rfA('Manage integrations'),
+            rfA('Security, backups and restore'),
+            rfA('Audit logs across the platform'),
+            rfY('Out of scope', 'No policy publishing, no Purpose Compass governance, no participant content.'),
+            rfS('End: platform running'),
           ],
         ],
       ],
@@ -649,17 +573,19 @@ function rfFlows() {
   };
 }
 
-// ---- the cross-role view: one project from submission to closure, with who acts at each step
+// ---- the cross-role view: the Alpha loop, with who acts at each step
 function rfOverview() {
   const W = WL();
   return [
-    ['Access', 'Everyone joins', [rfS('Start: people join PHOENIX'), rfH('P/S', 'Participants and Sponsors register directly'), rfH('F/M/C/O/A', 'Other roles join by invitation; sensitive roles wait for approval'), rfH('A/O', 'Approve roles'), rfH('T', 'Creates organizations and names their Programme Administrators')]],
-    ['Projects', 'Submission and review', [rfH('P', 'Creates the project, reviews 8 sections, submits'), rfH('A', 'Assigns one reviewer (the Steward)'), rfD('Steward decides (or a Programme Administrator)', [rfB('Clarify', [rfH('P', 'Replies or resubmits')], 'Decide again'), rfB('Reject', [rfY('Project rejected')], 'end'), rfB('Accept + support path', [rfY('Accepted')])])]],
-    ['Circles', 'Circle', [rfH('P/F', 'Owner or Steward creates the Circle'), rfH('*', 'Members discuss, record and vote'), rfH('P/F', 'Owner or Steward raises a Mentor Request (Rope Team path)')]],
-    ['Rope Teams', 'Rope Team', [rfH('M', 'Mentor accepts; Rope Team formed'), rfH('M', 'Mentor reviews work and recommends')]],
-    [W + 's', W, [rfH('P', 'Owner creates the ' + W), rfH('*', 'Members deliver tasks and link evidence to milestones'), rfH('F', 'Steward reviews evidence and validates milestones')]],
-    ['Final review', 'Closure', [rfH('P', 'Owner submits final deliverables'), rfH('F', 'Steward approves (or requests changes)'), rfS('End: project closed')]],
-    ['Alongside', 'Supporting flows', [rfH('S', 'Sponsor funds in tranches; owner reports progress'), rfH('C', 'Partner joins through a Steward-approved match'), rfH('A', 'Programme Administrator releases evidence and Harvests to funders'), rfH('F', 'Steward approves pathways that the Programme Administrator assigns')]],
+    ['Authorize', 'Authorize', [rfS('Start: invitation, or Request access → approval → invitation'), rfH('A/O', 'Invite people; Programme Administrators decide access requests and sensitive roles'), rfY('Required agreement, then optional permissions', 'Each person accepts the required agreement; the five optional permissions are asked separately and declining them never blocks the core.')]],
+    ['Connect', 'Connect', [rfH('P/F/M/C', 'Join or link a Circle, Rope Team or ' + W + ' as relevant'), rfY('Separate linked spaces', 'Entered in any valid order, never converted.'), rfH('F/C', 'Steward-reviewed match with mutual consent, or direct authorised collaboration')]],
+    ['Orient', 'Orient', [rfH('P', 'Answers the Purpose Compass (never scored)'), rfH('M/F', 'Recommend a 3–5 step pathway'), rfH('P', 'Accepts it; nothing becomes current without that')]],
+    ['Deliberate', 'Deliberate', [rfH('F', 'Runs sessions and threaded discussion'), rfH('*', 'Vote on proposals: one eligible member = one vote')]],
+    ['Act', 'Act', [rfH('*', 'Work in the ' + W + '; a task begins once its assignee accepts')]],
+    ['Evidence', 'Evidence', [rfH('*', 'Add evidence'), rfH('RV', 'Reviews status and level E0–E4'), rfH('TD', 'Decides any release')]],
+    ['Learn', 'Learn', [rfH('*', 'Complete the Learning Harvest; dissent and negative findings kept')]],
+    ['Evolve', 'Evolve', [rfH('P', 'Accepts, edits or rejects profile change candidates'), rfH('P', 'Chooses the next action'), rfS('End: the loop continues')]],
+    ['Alongside', 'Supporting flows', [rfH('S', 'Seat pools, aggregate utilisation and funder-safe outcomes'), rfH('O', 'Configures inside the pack envelope; sees aggregates only'), rfH('T', 'Runs the platform; no participant content'), rfY('Role + context switching', 'One identity, several role assignments, each tied to a context.')]],
   ];
 }
 
@@ -708,7 +634,7 @@ const rfLegend = () =>
 
 // ---- one role's data: its phases, which of them run alongside the main path, and its summary
 function rfData(cur) {
-  if (cur === 'all') return { phases: rfOverview(), side: new Set(['Supporting flows']), self: null, lead: 'One project from submission to closure, with the role that acts at each step.' };
+  if (cur === 'all') return { phases: rfOverview(), side: new Set(['Supporting flows']), self: null, lead: 'The Alpha loop: Authorize → Connect → Orient → Deliberate → Act → Evidence → Learn → Evolve, with the role that acts at each step. Circle, Rope Team and ' + WL() + ' are separate linked spaces entered in any valid order.' };
   const f = rfFlows()[cur];
   return { phases: f.phases, side: new Set(f.side || []), self: cur, lead: f.lead };
 }
@@ -1026,19 +952,19 @@ PUB.roleflow = () => {
   const partners = cur === 'all' ? [] : rfPartners(phases, cur);
   const intro =
     cur === 'all'
-      ? `<div class="rfl-intro"><h2 class="h2">How the roles work together</h2><p class="sub">One project from submission to closure, with the role that acts at each step. Choose a role above for its complete journey.</p></div>`
+      ? `<div class="rfl-intro"><h2 class="h2">How the roles work together</h2><p class="sub">${h(d.lead)} Choose a role above for its complete journey.</p></div>`
       : `<div class="rfl-intro"><div class="rfl-intro-h"><span class="rfl-chip rfl-r-${cur} rfl-chip-lg">${h(rfName(cur))}</span></div><p class="sub">${h(d.lead)}</p>${partners.length ? `<div class="rfl-with"><span class="cap">Works with</span>${partners.map(rfChip).join('')}</div>` : ''}</div>`;
   const vbtn = (id, l, i) => `<button type="button" class="rfl-vb ${view === id ? 'on' : ''}" aria-pressed="${view === id}" data-a="rfView" data-v="${id}">${ic(i, 14)}${l}</button>`;
   const body =
     view === 'chart'
       ? `<div class="rfl-chart-bar"><p class="cap">The main path runs from start to end; flows that run alongside it are drawn below. Scroll to see the whole chart.</p>${B(ic('download', 14) + 'Download image', 'rfPng', { c: cur }, 'btn-s btn-sm')}</div><div class="rfl-chart" tabindex="0" aria-label="Flowchart, scrollable">${rfxDiagram(cur).svg}</div>`
       : `${rfLegend()}<nav class="rfl-jump" aria-label="Phases">${phases.map((p, i) => `<button type="button" class="rfl-jb" data-a="rfJump" data-i="${i}">${i + 1}. ${h(phases.filter(q => q[0] === p[0]).length > 1 ? p[1] : p[0])}</button>`).join('')}</nav><div class="rfl-phases">${phases.map((p, i) => rfPhase(p, i, d.side.has(p[1]))).join('')}</div>`;
-  return `<div class="rfl-page"><header class="rfl-top"><div class="brand"><span class="mark">${MARK(20)}</span><span class="wm"><b>PHOENIX</b><span>Foundation Alpha</span></span></div><div class="row rfl-top-a">${B(ic('file', 14) + 'Print', 'rfPrint', {}, 'btn-s btn-sm')}${B(ic('chevl', 14) + 'Back to sign in', 'go', { r: 'login' }, 'btn-p btn-sm')}</div></header>
-  <main class="rfl-main"><div class="rfl-head"><h1 class="h1">Role Flow</h1><p class="sub">How each role works in PHOENIX, from registration and sign-in to approvals and project completion. Based on the prototype’s current rules.</p></div>
+  return `<div class="rfl-page"><header class="rfl-top"><div class="brand"><span class="mark">${MARK(20)}</span><span class="wm"><b>PHOENIX</b><span>Foundation</span></span></div><div class="row rfl-top-a">${B(ic('file', 14) + 'Print', 'rfPrint', {}, 'btn-s btn-sm')}${B(ic('chevl', 14) + 'Back to sign in', 'go', { r: 'login' }, 'btn-p btn-sm')}</div></header>
+  <main class="rfl-main"><div class="rfl-head"><h1 class="h1">Role Flow</h1><p class="sub">How each role works in PHOENIX, from invitation and agreement to evidence, learning and the next action. One identity can hold several role assignments, each tied to a programme or organisation context.</p></div>
   <div class="rfl-tabs" role="tablist" aria-label="Role">${tab('all', 'All roles')}${RF_ORDER.map(c => tab(c, h(rfName(c)))).join('')}</div>
   ${intro}<div class="rfl-views" role="group" aria-label="View">${vbtn('chart', 'Flowchart', 'steps')}${vbtn('steps', 'Step details', 'menu')}</div>
   ${body}
-  ${cur === 'all' ? '' : `<section class="rfl-phase rfl-acc-wrap"><header class="rfl-ph-h"><span class="rfl-num">${ic('shield', 14)}</span><div><span class="rfl-mod">Permissions</span><h2 class="h3">What ${h(rfName(cur))} can open</h2></div></header><p class="cap">Read from the current role settings. Specialist bundles (Reviewer, Project Lead, Finance Owner, AI Owner, Incident/Safety Owner) add rights on top of the role and are assigned by a Programme Administrator.</p>${rfAccessTable(cur)}</section>`}
+  ${cur === 'all' ? '' : `<section class="rfl-phase rfl-acc-wrap"><header class="rfl-ph-h"><span class="rfl-num">${ic('shield', 14)}</span><div><span class="rfl-mod">Permissions</span><h2 class="h3">What ${h(rfName(cur))} can open</h2></div></header><p class="cap">Read from the current role settings. Specialist bundles (Reviewer, Trust/Data Steward, Finance Owner, AI Owner, Incident/Safety Owner) are capabilities attached to a person in a context, not personas; they add rights on top of the role and are approved separately.</p>${rfAccessTable(cur)}</section>`}
   </main></div>`;
 };
 A.rfRole = d => {

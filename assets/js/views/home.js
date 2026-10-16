@@ -372,7 +372,7 @@ function nextAction() {
       if (i >= 0)
         return [
           cur.steps[i].type === "Conditional" && !cur.steps[i].applies ? `Check whether step ${i + 1} of your pathway applies` : `Complete step ${i + 1} of your pathway`,
-          `${h(cur.steps[i].t)} · chosen by rule: the lowest-numbered required step whose prerequisites are complete`,
+          h(cur.steps[i].t),
           "pathway",
           {},
         ];
@@ -644,7 +644,7 @@ const stat = (cls, tile, icon, num, title, sub, r, p) =>
 const hmFig = (tile, icon, num, title, sub) =>
   `<div class="kpi hm-kpi"><span class="hm-kpi-l"><span class="hm-kpi-ic ${tile}" aria-hidden="true">${ic(icon, 14)}</span>${title}</span><span class="hm-kpi-n">${num}</span>${sub ? `<span class="cap">${sub}</span>` : ""}</div>`;
 const hmStrip = (items, label) =>
-  `<div class="kpis hm-strip" role="group" aria-label="${label || "Summary"}">${items.join("")}</div>`;
+  `<div class="kpis hm-strip" style="--hm-cols:${Math.max(items.length, 1)}" role="group" aria-label="${label || "Summary"}">${items.join("")}</div>`;
 const lrow = (icon, title, sub, right = "", tile = "t-soft") =>
   `<div class="lrow"><span class="tile ${tile}">${ic(icon, 18)}</span><div class="lt"><b>${title}</b>${sub ? `<p class="cap">${sub}</p>` : ""}</div>${right}</div>`;
 // Row used on My PHOENIX, Profile and Pathway: compact tile, text that takes the space, actions grouped on the right.
@@ -669,7 +669,7 @@ route("home", "home", () => {
 });
 function nextCard() {
   const [t, s, rt, p] = nextAction();
-  return `<section class="card accent hm-next${rt === "home" ? " is-clear" : ""}" aria-labelledby="hm-next-t"><div class="hm-next-b"><span class="over">Next action</span><h2 class="h2" id="hm-next-t">${t}</h2><p class="muted">${s}</p></div>${rt !== "home" ? `<div class="hm-next-a">${B("Open" + ic("arrow", 16), "go", { r: rt, ...p }, "btn-p")}</div>` : ""}<p class="cap hm-next-n">${ic("info", 14)}Chosen by rule from your pending steps, tasks, decisions and reviews — not an AI ranking.</p></section>`;
+  return `<section class="card accent hm-next${rt === "home" ? " is-clear" : ""}" aria-labelledby="hm-next-t"><div class="hm-next-b"><span class="over">Next action</span><h2 class="h2" id="hm-next-t">${t}</h2><p class="muted">${s}</p></div>${rt !== "home" ? `<div class="hm-next-a">${B("Open" + ic("arrow", 16), "go", { r: rt, ...p }, "btn-p")}</div>` : ""}</section>`;
 }
 // An agreement version published for a future date is announced, not enforced, until it takes effect (route E).
 function upcomingAgr() {
@@ -677,6 +677,164 @@ function upcomingAgr() {
   return g
     ? banner("info", `${h(g.type)} v${g.ver} takes effect on ${fmt(g.effective)}`, `${h(g.summary || "")} Nothing is paused before then. ${L("Review it now", "privacy", { tab: "consent" })}`) + '<div style="height:12px"></div>'
     : "";
+}
+// Render a Doc1 Table 28 continuum rail. `stages`: [{k, done, r, p?, meta}]
+function journeyRail(aria, title, sum, stages) {
+  const curIdx = stages.findIndex((s) => !s.done);
+  stages.forEach((s, i) => {
+    s.cur = curIdx < 0 ? i === stages.length - 1 : i === curIdx;
+  });
+  return `<section class="journey" aria-label="${h(aria)}"><div class="jhead"><span class="jtitle">${ic("route", 15)}${h(title)}</span><span class="cap jsum">${h(sum)}</span></div><ol class="jsteps">${stages
+    .map((s) => {
+      const st = s.done && !s.cur ? "done" : s.cur ? "cur" : "todo";
+      const lab = s.r ? L(s.k, s.r, s.p || {}, "lnk") : h(s.k);
+      return `<li class="jstep ${st}"${s.cur ? ' aria-current="step"' : ""}><div class="jbody"><span class="jlabel">${lab}</span><span class="cap jmeta">${h(s.meta)}</span></div></li>`;
+    })
+    .join("")}</ol></section>`;
+}
+// Role-shaped A→Z continuum (Doc 1 §6 + Table 28). Not Mary-only — every demo role gets a walkable flow rail.
+function roleJourney() {
+  const pid = myId();
+  const r = role();
+  const a = asg();
+  const onb = a?.onb || {};
+  if (r === "P") {
+    const authorized = !!(onb.agreement && onb.consents && onb.profile && onb.compass);
+    const connected =
+      myCircles().length + myRopes().length > 0 ||
+      S.matches.some((m) => (m.a === pid || m.b === pid) && ["Awaiting consent", "Introduced"].includes(m.status));
+    const pw = S.pathways.find((p) => p.pid === pid && inCtx(p) && p.state === "Current");
+    const oriented = !!pw;
+    const deliberated = myCircles().some((c) => (c.decisions || []).length > 0 || (c.polls || []).some((p) => p.votes?.[pid] != null));
+    const acted = myRooms().length > 0;
+    const evidenced = S.evidence.some((e) => e.owner === pid && inCtx(e));
+    const learned =
+      S.harvests.some((hv) => (hv.contrib || []).some((c) => c.by === pid)) ||
+      (pw && (pw.steps || []).some((s) => /harvest|reflection/i.test(s.t) && s.done));
+    const evolved = S.candidates.some((c) => c.pid === pid && ["Accepted", "Edited"].includes(c.status));
+    return journeyRail(
+      "Your PHOENIX journey",
+      "Your journey",
+      "Authorize → Evolve · Participant continuum",
+      [
+        { k: "Authorize", done: authorized, r: "privacy", p: { tab: "consent" }, meta: authorized ? "Agreements & consent on file" : "Finish agreements & consent" },
+        { k: "Connect", done: connected, r: "matches", meta: connected ? "Circles, Rope Teams or Match Briefs" : "Join a space or review a Match Brief" },
+        { k: "Orient", done: oriented, r: "pathway", meta: oriented ? h(pw.name) : "Accept a learning pathway" },
+        { k: "Deliberate", done: deliberated, r: "circles", meta: deliberated ? "Circle decisions on record" : "Vote or decide in a Circle" },
+        { k: "Act", done: acted, r: "rooms", meta: acted ? myRooms().length + " " + WL() + (myRooms().length === 1 ? "" : "s") : "Work in an " + WL() },
+        { k: "Evidence", done: evidenced, r: "evidence", meta: evidenced ? "Evidence submitted" : "Upload first evidence" },
+        { k: "Learn", done: learned, r: "harvests", meta: learned ? "Harvest contribution recorded" : "Contribute to a Learning Harvest" },
+        { k: "Evolve", done: evolved, r: "profile", p: { tab: "cand" }, meta: evolved ? "Profile updated from candidates" : "Review profile change candidates" },
+      ],
+    );
+  }
+  if (r === "M") {
+    const reqs = S.mentorReqs.filter((m) => m.to === pid && mentorReqVisible(m));
+    const accepted = reqs.some((m) => m.status === "Accepted") || myRopes().some((rt) => rt.mentor === pid);
+    const pending = reqs.some((m) => m.status === "Pending");
+    const sharedPw = S.pathways.some((p) => inCtx(p) && (p.by === pid || myRopes().some((rt) => memberOf(rt, p.pid))));
+    const reviewed = myRopes().some((rt) => (rt.reviews || []).some((v) => v.status !== "Awaiting review"));
+    const supported = myRopes().some((rt) => (rt.support || []).some((s) => s.status === "Resolved"));
+    return journeyRail("Mentor flow", "Your mentoring flow", "Requests → Rope Teams → pathway & support (Doc 1 §6.2)", [
+      { k: "Requests", done: accepted || !pending, r: "ropeteams", meta: pending ? "Mentor Request waiting" : accepted ? "Request accepted" : "No open requests" },
+      { k: "Rope Teams", done: myRopes().some((rt) => rt.mentor === pid), r: "ropeteams", meta: myRopes().filter((rt) => rt.mentor === pid).length + " assigned" },
+      { k: "Shared pathway", done: sharedPw, r: "pathway", meta: sharedPw ? "Pathway visible for assigned people" : "Open a shared pathway when linked" },
+      { k: "Review work", done: reviewed, r: "ropeteams", meta: reviewed ? "Reviews on record" : "Awaiting shared work to review" },
+      { k: "Support", done: supported, r: "messages", meta: supported ? "Support closed" : "Respond to open support needs" },
+    ]);
+  }
+  if (r === "F") {
+    const circles = myCircles().length > 0;
+    const inbox = typeof inboxItems === "function" ? inboxItems().length === 0 : true;
+    const briefs = !S.matches.some((m) => m.steward === pid && ["In steward review", "Clarification requested"].includes(m.status));
+    const linked = myRooms().length > 0;
+    const hv = S.harvests.some((h) => h.by === pid || (h.scope && myCircles().some((c) => c.id === h.scope)));
+    const stages = [
+      { k: "Circles", done: circles, r: "circles", meta: circles ? myCircles().length + " active" : "Facilitate a Circle" },
+      { k: "Reviews", done: inbox, r: "inbox", meta: inbox ? "Inbox clear" : "Items in Review inbox" },
+      { k: "Match Briefs", done: briefs, r: "matches", meta: briefs ? "No briefs waiting" : "Steward review due" },
+      { k: "Linked work", done: linked, r: "rooms", meta: linked ? myRooms().length + " linked " + WL() + "s" : "Link an " + WL() },
+      { k: "Harvests", done: hv, r: "harvests", meta: hv ? "Harvest in progress or done" : "Complete a Learning Harvest" },
+    ];
+    if (hasB("Reviewer")) {
+      const evQ = S.evidence.filter((e) => e.review === "Submitted" && e.owner !== pid && inCtx(e)).length === 0;
+      stages.push({ k: "Evidence", done: evQ, r: "evidence", p: { tab: "queue" }, meta: evQ ? "Review queue clear" : "Evidence awaiting Reviewer" });
+    }
+    return journeyRail("Facilitator flow", "Your steward flow", "Circles → reviews → linked work → Harvest (Doc 1 §6.3)", stages);
+  }
+  if (r === "C") {
+    const mandate = !!(a.mandate && a.mandate.valid && a.mandate.until >= today());
+    const cards = S.cards.some((c) => c.owner === pid && c.status === "Active");
+    const mb = S.matches.some((m) => (m.a === pid || m.b === pid) && ["Awaiting consent", "Introduced"].includes(m.status));
+    const rooms = myRooms().length > 0;
+    const ev = S.evidence.some((e) => e.owner === pid) || myRooms().some((x) => (x.contribs || []).some((c) => c.by === pid));
+    return journeyRail("Partner flow", "Your collaboration flow", "Mandate → opportunities → workspaces → evidence (Doc 1 §6.4)", [
+      { k: "Mandate", done: mandate, r: "mandate", meta: mandate ? "Active mandate on file" : "Mandate required for binding commitments" },
+      { k: "Opportunities", done: cards, r: "opportunities", meta: cards ? "Active card published" : "Publish a need or offer" },
+      { k: "Match Briefs", done: mb, r: "matches", meta: mb ? "Brief in progress or introduced" : "Await a steward-approved brief" },
+      { k: WL() + "s", done: rooms, r: "rooms", meta: rooms ? "Active in " + myRooms().length : "Join an " + WL() },
+      { k: "Evidence", done: ev, r: "evidence", meta: ev ? "Contribution or evidence on record" : "Submit a contribution" },
+    ]);
+  }
+  if (r === "O") {
+    const people = S.assign.some((x) => x.ctx === ctxId() && x.status === "Active");
+    const inv = S.invites.some((i) => i.ctx === ctxId());
+    const spaces = S.circles.some((c) => c.ctx === ctxId()) || S.rooms.some((x) => x.ctx === ctxId());
+    const pend = !S.assign.some((x) => x.ctx === ctxId() && x.status === "Pending role approval");
+    return journeyRail("Organisation flow", "Your organisation flow", "People → invitations → spaces → progress (Doc 1 §6.5)", [
+      { k: "People", done: people, r: "org", p: { tab: "users" }, meta: "Cohort in this context" },
+      { k: "Invitations", done: inv, r: "org", p: { tab: "invites" }, meta: inv ? "Invites on file" : "Invite people into the programme" },
+      { k: "Role requests", done: pend, r: "org", p: { tab: "users" }, meta: pend ? "No pending approvals" : "Approve pending role requests" },
+      { k: "Spaces", done: spaces, r: "org", p: { tab: "spaces" }, meta: spaces ? "Scoped spaces visible" : "No spaces yet" },
+      { k: "Progress", done: true, r: "metrics", meta: "Aggregate programme progress" },
+      { k: "Reports", done: true, r: "org", p: { tab: "reports" }, meta: "Organisation reports" },
+    ]);
+  }
+  if (r === "S") {
+    const seats = (typeof myPools === "function" ? myPools() : []).some((s) => s.status === "Active");
+    const inits = S.initiatives.some((i) => i.status === "Published") || (typeof sponsorInitProjects === "function" && sponsorInitProjects().length);
+    const cleared = typeof sponsorCleared === "function" && sponsorCleared().length > 0;
+    const due = !S.payments.some((p) => p.pid === pid && p.state === "Invoice due");
+    return journeyRail("Sponsor flow", "Your sponsorship flow", "Seats → initiatives → safe reports → invoices (Doc 1 §6.6 · BF-08)", [
+      { k: "Seats", done: seats, r: "funding", p: { tab: "seats" }, meta: seats ? "Active seat pool" : "Buy seats by invoice" },
+      { k: "Initiatives", done: !!inits, r: "funding", p: { tab: "initiatives" }, meta: inits ? "Approved initiatives visible" : "Awaiting published initiatives" },
+      { k: "Evidence", done: !!cleared, r: "evidence", meta: cleared ? "Cleared summaries available" : "No funder-cleared evidence yet" },
+      { k: "Reports", done: !!cleared || (typeof funderHarvests === "function" && funderHarvests().length > 0), r: "funding", p: { tab: "reports" }, meta: "Funder-safe aggregate reports" },
+      { k: "Invoices", done: due, r: "funding", p: { tab: "invoices" }, meta: due ? "Nothing outstanding" : "Invoice due" },
+    ]);
+  }
+  if (r === "A") {
+    const packs = !!(S.packs && S.packs.length);
+    const tpl = S.templates.some((t) => t.status === "Approved");
+    const queue =
+      S.projects.filter((p) => inCtx(p) && p.status === "Submitted" && !(p.stewards || []).length).length +
+        S.pathways.filter((p) => inCtx(p) && typeof pwNeedsSteward === "function" && pwNeedsSteward(p)).length ===
+      0;
+    const rolesOk = !S.assign.some((x) => x.ctx === ctxId() && x.status === "Pending role approval");
+    const vers = (S.configVersions || []).length > 0;
+    return journeyRail("Admin flow", "Your programme operations", "Queues → people → packs → versions (Doc 1 §6.7)", [
+      { k: "Approval inbox", done: queue, r: "admin", p: { tab: "requests" }, meta: queue ? "No unassigned reviews" : "Assign reviewers" },
+      { k: "Users & roles", done: rolesOk, r: "admin", p: { tab: "users" }, meta: rolesOk ? "No pending role approvals" : "Role requests waiting" },
+      { k: "Invitations", done: S.invites.some((i) => i.ctx === ctxId()), r: "admin", p: { tab: "invites" }, meta: "Programme invitations" },
+      { k: "Packs", done: packs, r: "admin", p: { tab: "packs" }, meta: packs ? "Pack configuration live" : "Configure a pack" },
+      { k: "Templates", done: tpl, r: "admin", p: { tab: "library" }, meta: tpl ? "Approved templates" : "Approve pathway templates" },
+      { k: "Announce", done: (S.announcements || []).some((x) => x.ctx === ctxId()), r: "admin", p: { tab: "notify" }, meta: "Send to Explore board audience" },
+      { k: "Versions", done: vers, r: "admin", p: { tab: "versions" }, meta: vers ? "Config versions on file" : "Save a configuration version" },
+    ]);
+  }
+  if (r === "T") {
+    const healthy = S.integrations.every((i) => ["Healthy", "Configured"].includes(i.status));
+    const backup = (S.backups || []).some((b) => /Completed|passed/i.test(b.status));
+    return journeyRail("Platform flow", "System health & recovery", "Contexts → roles → integrations → backups (Doc 1 §6.8)", [
+      { k: "Contexts", done: S.contexts.length > 0, r: "tenants", meta: S.contexts.length + " contexts" },
+      { k: "Roles & bundles", done: (S.roles || []).length > 0, r: "roles", meta: "Role matrix available" },
+      { k: "Integrations", done: healthy, r: "platform", p: { tab: "integrations" }, meta: healthy ? "All operating" : "Integration needs attention" },
+      { k: "Security", done: (S.security || []).length > 0, r: "platform", p: { tab: "security" }, meta: "Security events logged" },
+      { k: "Backups", done: backup, r: "platform", p: { tab: "storage" }, meta: backup ? "Recent backup OK" : "Run or verify a backup" },
+      { k: "Audit", done: true, r: "audit", meta: "Technical audit log" },
+    ]);
+  }
+  return "";
 }
 function homeP() {
   const pid = myId(),
@@ -812,9 +970,10 @@ function homeP() {
     upcomingAgr() +
     `<div class="hm">
  <div class="hm-top">
- <section class="card hm-ns" aria-labelledby="hm-ns-t"><div class="hm-ns-h"><span class="over" id="hm-ns-t">My purpose / current direction</span><span class="row hm-ns-tools"><span class="vis">${ic("lock", 14)}Only you</span>${B(ic("edit", 14) + "Edit", "go", { r: "profile", tab: "compass" }, "btn-g btn-sm", 'aria-label="Edit Purpose Compass"')}</span></div><p class="hm-ns-q${cp.PC2 ? "" : " is-unset"}">${cp.PC2 ? "“" + h(cp.PC2) + "”" : "Set your goal in the Purpose Compass."}</p><dl class="hm-ns-facts"><div><dt>What matters most</dt><dd>${h(cp.PC1 || "—")}</dd></div><div><dt>First milestone</dt><dd>${h(cp.PC5 || "—")}</dd></div></dl><p class="cap hm-ns-n">Your self-declared direction. Never scored.</p></section>
+ <section class="card hm-ns" aria-labelledby="hm-ns-t"><div class="hm-ns-h"><span class="over" id="hm-ns-t">My purpose / current direction</span><span class="row hm-ns-tools"><span class="vis">${ic("lock", 14)}Only you</span>${B(ic("edit", 14) + "Edit", "go", { r: "profile", tab: "compass" }, "btn-g btn-sm", 'aria-label="Edit Purpose Compass"')}</span></div><p class="hm-ns-q${cp.PC2 ? "" : " is-unset"}">${cp.PC2 ? "“" + h(cp.PC2) + "”" : "Set your goal in the Purpose Compass."}</p><dl class="hm-ns-facts"><div><dt>What matters most</dt><dd>${h(cp.PC1 || "—")}</dd></div><div><dt>First milestone</dt><dd>${h(cp.PC5 || "—")}</dd></div></dl><p class="cap hm-ns-n">Your current direction for this programme.</p></section>
  ${nextCard()}</div>
  ${hmStrip([stat("s-purple", "t-purple", "folder", projects.length, "My projects", projects.filter((p) => p.status === "Clarification requested").length + " need clarification", "projects"), stat("s-teal", "t-teal", "users", myCircles().length + myRopes().length + myRooms().length, "Collaborations", `${myCircles().length} Circle${myCircles().length === 1 ? "" : "s"} · ${myRopes().length} Rope Team${myRopes().length === 1 ? "" : "s"} · ${myRooms().length} ${WL()}${myRooms().length === 1 ? "" : "s"}`, "circles"), stat("s-slate", "t-navy", "flag", pend.length, "Pending decisions", "Nothing takes effect until you decide", "home"), stat("s-mist", "t-soft", "award", ev.filter((e) => e.review === "Approved").length, "Evidence approved", ev.filter((e) => e.review === "Submitted").length + " awaiting review", "evidence")], "Your summary")}
+ ${roleJourney()}
  ${hmCols(
    `${myTasksCard()}
  ${card("Pending decisions", "Nothing below takes effect until you decide.", pend.length ? pend.join("") : empty("check", "You are all caught up", "Profile suggestions, match consents, votes and release requests appear here."), pend.length ? `<span class="cnt">${pend.length}</span>` : "", "hm-list")}
@@ -868,7 +1027,7 @@ function homeP() {
    B(ic("upload", 16) + "Upload evidence", "go", { r: "newevidence" }),
    "hm-tbl",
  )}`,
-   `${card("My pathway", pw ? h(pw.name) : "", pw ? `<div class="hm-prog"><div class="progress"><span class="bar" style="width:${(pwProg(pw).n / pw.steps.length) * 100}%"></span></div><span class="cap">${pwProg(pw).n} of ${pw.steps.length}</span></div><ol class="hm-steps">${pw.steps.map((s, i) => { const x = pwStepState(pw, i); return `<li class="${pwClosed(s) ? "done" : x.st === "Current" ? "cur" : ""}"><span class="hm-step-m" aria-hidden="true">${pwClosed(s) ? ic("check", 12) : i + 1}</span><span class="hm-step-t"><b>${h(s.t)}</b><span class="cap">${h(s.type || "Mandatory")} · ${x.st === "Current" ? "Next step (by rule)" : h(x.st)}${x.st === "Blocked" ? " — " + h(x.why) : ""}${s.rec && s.rec.status === "Awaiting participant" && !pwClosed(s) ? " · recommendation waiting for you" : ""}</span></span></li>`; }).join("")}</ol>` : empty("route", "No current pathway", "A facilitator or mentor may propose one. You decide whether to accept it."), pw ? L("Open", "pathway") : "", "hm-list")}
+   `${card("My pathway", pw ? h(pw.name) : "", pw ? `<div class="hm-prog"><div class="progress"><span class="bar" style="width:${(pwProg(pw).n / pw.steps.length) * 100}%"></span></div><span class="cap">${pwProg(pw).n} of ${pw.steps.length}</span></div><ol class="hm-steps">${pw.steps.map((s, i) => { const x = pwStepState(pw, i); return `<li class="${pwClosed(s) ? "done" : x.st === "Current" ? "cur" : ""}"><span class="hm-step-m" aria-hidden="true">${pwClosed(s) ? ic("check", 12) : i + 1}</span><span class="hm-step-t"><b>${h(s.t)}</b><span class="cap">${h(s.type || "Mandatory")} · ${x.st === "Current" ? "Next step" : h(x.st)}${x.st === "Blocked" ? " — " + h(x.why) : ""}${s.rec && s.rec.status === "Awaiting participant" && !pwClosed(s) ? " · recommendation waiting for you" : ""}</span></span></li>`; }).join("")}</ol>` : empty("route", "No current pathway", "A facilitator or mentor may propose one. You decide whether to accept it."), pw ? L("Open", "pathway") : "", "hm-list")}
  ${card("Collaborations", "In this context", [...myCircles().map((c) => hrow("users", h(c.name), "Circle · " + c.members.length + " members" + (unreadIn(c) ? " · " + unreadIn(c) + " unread" : ""), unr(c) + pill(c.state) + " " + L("Open", "circle", { id: c.id }), "t-purple")), ...myRopes().map((c) => hrow("route", h(c.name), "Rope Team · mentor " + (c.mentor ? nm(c.mentor) : "—") + (unreadIn(c) ? " · " + unreadIn(c) + " unread" : ""), unr(c) + pill(c.state) + " " + L("Open", "rope", { id: c.id }), "t-teal")), ...myRooms().map((c) => hrow("room", h(c.name), WL(), pill(c.state) + " " + L("Open", "room", { id: c.id }), "t-navy"))].join("") || empty("users", "No collaborations yet", "When a steward accepts your project, they create a Circle and invite you."), "", "hm-list")}
  ${card("Opportunities for you", "Cards visible to you", opps.map((c) => hrow("megaphone", h(c.title), h(c.kind) + " · expires " + fmt(c.expires), L("View", "card", { id: c.id }))).join("") || empty("megaphone", "No open opportunities", "New cards for your audience appear here."), L("Browse", "opportunities"), "hm-list")}
  <section class="card hm-ask"><div class="hm-ask-h"><span class="tile t-soft" aria-hidden="true">${ic("sparkle", 18)}</span><div><b>Ask PHOENIX</b><p class="cap">${consent(pid, "ai") === "Granted" ? "Private answers from approved sources. Nothing is saved to your record." : `AI processing is off for you, so Ask PHOENIX is unavailable. Everything else keeps working. You can change this in ${L("My records & consent", "privacy", { tab: "consent" })}.`}</p></div></div>${consent(pid, "ai") === "Granted" ? B("What should I do next to reach my milestone?", "askPreset", { q: "What should I do next to reach my milestone?" }, "btn-s") : `<button type="button" class="btn btn-s" disabled title="AI processing is off for you">What should I do next to reach my milestone?</button>`}</section>`,
@@ -930,6 +1089,7 @@ function homeF() {
  <div class="hm-top">
  <section class="card hm-ns hm-purpose" aria-labelledby="hm-pp-t"><span class="over" id="hm-pp-t">Programme purpose</span><p class="hm-ns-q">${h(ctx().name)}: move climate ideas from learning to accountable local action.</p><div class="hm-spaces">${[["Circles", myCircles().length, "circles", "t-purple", "users"], ["Rope Teams", S.ropes.filter((r) => inCtx(r) && memberOf(r)).length, "ropeteams", "t-teal", "route"], [WL() + "s", myRooms().length, "rooms", "t-navy", "room"]].map(([l, n, r, t, i]) => `<a href="#" data-a="go" data-r="${r}"><span class="tile ${t}" aria-hidden="true">${ic(i, 16)}</span><b>${n}</b><span>${l}</span></a>`).join("")}</div><p class="cap hm-ns-n">Spaces you facilitate or belong to in this programme.</p></section>${nextCard()}</div>
  ${hmStrip([stat("s-purple", "t-purple", "folder", subs.length, "Project submissions", "Awaiting review or clarification", "projects"), stat("s-teal", "t-teal", "link", S.matches.filter((m) => m.steward === pid && m.status === "In steward review").length, "Match Briefs", "Awaiting your review", "matches"), ...(hasB("Reviewer") ? [stat("s-slate", "t-navy", "award", S.evidence.filter((e) => e.review === "Submitted" && e.owner !== pid && inCtx(e)).length, "Evidence to review", "Reviewer bundle · set status and E0–E4", "evidence", { tab: "queue" })] : msMine.length ? [stat("s-slate", "t-navy", "award", msMine.length, "Milestone evidence", "Comment only — approval needs the Reviewer bundle", "evidence", { tab: "queue" })] : []), stat("s-mist", "t-soft", "route", S.pathways.filter((x) => x.reviewer === pid && x.state === "In review").length, "Pathways to review", "Assigned to you", "pathway")], "Your review queue")}
+ ${roleJourney()}
  ${hmCols(
    `${myTasksCard()}
  ${msMine.length ? card("Milestone evidence", hasB("Reviewer") ? "Approve every piece before you validate the milestone." : "You can comment as Facilitator / Steward. Approving evidence needs the Reviewer bundle.", msMine.map(([x, m, it]) => lrow("award", h(byId("evidence", it.ev)?.title || it.ev), "For “" + h(m.t) + "” · " + h(x.name) + " · added by " + nm(it.by), B(hasB("Reviewer") ? "Review" : "Open", "msRev", { r: x.id, id: m.id, i: msItems(m).indexOf(it) }, hasB("Reviewer") ? "btn-p btn-sm" : "btn-s btn-sm"))).join(""), hasB("Reviewer") ? L("Review queue", "evidence", { tab: "queue" }) : "", "hm-list") : ""}
@@ -978,6 +1138,7 @@ function homeM() {
     `<div class="hm">
  <div class="hm-top solo">${nextCard()}</div>
  ${hmStrip([hmFig("t-soft", "file", review.length, "Work awaiting your review", "From your Rope Teams"), hmFig("t-soft", "route", reqs.filter((m) => m.status === "Pending").length, "Mentor Requests", "Waiting for your answer"), hmFig("t-teal", "users", myRopes().length, "Assigned Rope Teams", ""), hmFig("t-soft", "message", support.length, "Open support requests", "")], "Your mentoring summary")}
+ ${roleJourney()}
  ${hmCols(
    `${myTasksCard()}
  ${card(
@@ -1113,6 +1274,7 @@ function homeC() {
     `<div class="hm">
  <div class="hm-top solo">${nextCard()}</div>
  ${hmStrip([hmFig("t-soft", "megaphone", cards.length, "Published cards", cards.filter((c) => c.status === "Active").length + " active"), hmFig("t-soft", "link", mb.length, "Match Briefs and invitations", ""), hmFig("t-navy", "room", myRooms().length, WL() + "s", ""), hmFig("t-soft", "award", contribs.length, "Contributions and history", "")], "Your partnership summary")}
+ ${roleJourney()}
  ${hmCols(
    `${myTasksCard()}
  ${card("Published cards", "", cards.map((c) => hrow("megaphone", h(c.title), h(c.kind) + " · " + fmt(c.expires), pill(c.status) + " " + L("Open", "card", { id: c.id }))).join("") || empty("megaphone", "No cards", ""), "", "hm-list")}
@@ -1169,6 +1331,7 @@ function homeO() {
     ) +
     `<div class="hm">
  ${hmStrip([stat("s-purple", "t-purple", "mail", inv.filter((i) => ["Pending", "Resent"].includes(i.status)).length, "Invitations pending", inv.filter((i) => i.status === "Accepted").length + " accepted", "org", { tab: "invites" }), stat("s-teal", "t-teal", "users", metric("m2"), "Circle participation", "Aggregate", "metrics"), stat("s-slate", "t-navy", "flag", metric("m6"), "Milestones completed", "Aggregate", "metrics"), stat("s-mist", "t-soft", "card", S.seatPools.filter((s) => s.sponsor === myId()).reduce((a, s) => a + s.assigned.length, 0) + "/" + S.seatPools.filter((s) => s.sponsor === myId()).reduce((a, s) => a + s.total, 0), "Institution seats", "Assigned / total", "org")], "Your organization summary")}
+ ${roleJourney()}
  ${hmCols(
    card("Circle and " + WL() + " activity", "Aggregate only — no individual participant records", table(["Space", "Type", "State", "Members"], [...S.circles.filter((x) => x.ctx === c).map((x) => [h(x.name), "Circle", pill(x.state), x.members.length]), ...S.rooms.filter((x) => x.ctx === c).map((x) => [h(x.name), WL(), pill(x.state), x.members.length])]), "", "hm-tbl"),
    card(
@@ -1213,6 +1376,7 @@ function homeS() {
     `<div class="hm">
  <div class="hm-top solo">${nextCard()}</div>
  ${hmStrip([stat("s-mist", "t-soft", "card", sup(act) + " / " + tot.toLocaleString("en-US"), "Active sponsored seats", "Utilisation " + supPct(act, tot), "funding", { tab: "seats" }), stat("s-purple", "t-purple", "folder", inits.length + projs.length, "Approved initiatives", inits.length + " initiative" + (inits.length === 1 ? "" : "s") + " · " + projs.length + " project" + (projs.length === 1 ? "" : "s"), "funding", { tab: "initiatives" }), stat("s-teal", "t-teal", "award", sup(ev.length), "Approved evidence summaries", "Cleared for funder reports", "funding", { tab: "reports" }), stat("s-slate", "t-navy", "coin", due.length, "Invoices due", due.length ? "Due " + fmt(due[0].due || due[0].at) : "Nothing outstanding", "funding", { tab: "invoices" })], "Your sponsorship summary")}
+ ${roleJourney()}
  ${hmCols(
    `${card(
      "Seat utilisation",
@@ -1285,6 +1449,7 @@ function homeA() {
     ) +
     `<div class="hm">
  ${hmStrip([stat("s-purple", "t-purple", "inbox", S.projects.filter((p) => inCtx(p) && p.status === "Submitted" && !p.stewards.length).length + S.pathways.filter((p) => inCtx(p) && pwNeedsSteward(p)).length, "Review requests", "Projects and pathways needing a reviewer", "admin", { tab: "requests" }), stat("s-teal", "t-teal", "user", pend.length, "Role requests", "Awaiting approval", "admin", { tab: "users" }), stat("s-slate", "t-navy", "alert", S.incidents.filter((i) => i.state !== "Closed").length, "Open incidents", "", "incidents"), stat("s-mist", "t-soft", "card", S.ents.filter((e) => e.state === "Grace").length, "Payments in grace", "", "billing")], "Programme queues")}
+ ${roleJourney()}
  ${hmCols(
    `${card(
    "Programme metrics",
@@ -1309,7 +1474,7 @@ function homeA() {
    "",
    dl([
      ["Programme", h(ctx().name) + " · pack " + h(pack().name)],
-     ["Scope", "Twelve Alpha epics (E01–E12) and flows F01–F12"],
+     ["Scope", "Programme flows and modules"],
      ["Your role", ROLE[role()]],
      [
        "Specialist bundles",
@@ -1336,6 +1501,7 @@ function homeT() {
     ) +
     `<div class="hm">
  ${hmStrip([hmFig("t-soft", "link", S.integrations.filter((i) => !["Degraded", "Unavailable"].includes(i.status)).length + " of " + S.integrations.length, "Integrations operating", ""), hmFig("t-soft", "lock", S.security.length, "Security events", S.security[0] ? "Latest " + fmt(S.security[0].at) : ""), hmFig("t-soft", "archive", S.backups[0] ? fmt(S.backups[0].at) : "—", "Last backup", S.backups[0] ? h(S.backups[0].status) : ""), hmFig("t-soft", "sparkle", S.settings.aiUsed + "/" + S.settings.aiQuota, "AI requests today", "Used / quota")], "Platform summary")}
+ ${roleJourney()}
  ${hmCols(
    `${card("Integration health", "", S.integrations.map((i) => hrow("link", h(i.name), "", pill(i.status))).join(""), L("Manage", "platform", { tab: "integrations" }), "hm-list")}
  ${card("Storage and backups", "", S.backups.map((b) => hrow("archive", fmt(b.at), h(b.size), pill(b.status.includes("passed") ? "Completed" : b.status))).join(""), "", "hm-list")}`,

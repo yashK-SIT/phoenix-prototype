@@ -770,7 +770,7 @@ F.xo = (d) => {
 PUB.mfa = () => {
   const f = "mfa";
   return authWrap(
-    `<span class="tile t-navy mfa-tile">${ic("lock", 22)}</span><div class="col mfa-h"><h1 class="h1">Two-step verification</h1><p class="sub">Administrator accounts need a code from your authenticator app.</p></div>${errSum(f)}<form data-f="mfa" class="col mfa-f" novalidate>${fi(f, "code", "6-digit code", { req: true, ph: "123456", auto: "one-time-code", help: "Prototype: use 123456." })}<button class="btn btn-p btn-block" type="submit">Verify and sign in</button></form>${L("Back to sign in", "login")}`,
+    `<span class="tile t-navy mfa-tile">${ic("lock", 22)}</span><div class="col mfa-h"><h1 class="h1">Two-step verification</h1><p class="sub">Administrator accounts need a code from your authenticator app.</p></div>${errSum(f)}<form data-f="mfa" class="col mfa-f" novalidate>${fi(f, "code", "6-digit code", { req: true, ph: "123456", auto: "one-time-code", help: "Use the code from your authenticator app." })}<button class="btn btn-p btn-block" type="submit">Verify and sign in</button></form>${L("Back to sign in", "login")}`,
   );
 };
 F.mfa = (d) => {

@@ -792,7 +792,7 @@ F.ri = (d) => {
   if (d.k === "deps") Object.assign(o, { on: d.on, state: "Open" });
   if (d.k === "resources")
     Object.assign(o, { from: d.from, status: "Committed" });
-  if (d.k === "wins") Object.assign(o, { status: "Proposed" });
+  if (d.k === "wins") Object.assign(o, { status: "Proposed", at: today(), release: null });
   if (o.st0) {
     o.status = o.st0;
     delete o.st0;
@@ -834,8 +834,14 @@ A.itemState = (d) => {
 };
 A.winApprove = (d) => {
   const x = byId("rooms", d.r);
-  x.wins.find((w) => w.t === d.t).status = "Approved";
+  const w = x.wins.find((w) => w.t === d.t);
+  if (!w) return;
+  // Approved + Programme release → appears on Explore board (Bulletin Board Lite, BF-15)
+  w.status = "Approved";
+  w.release = "Programme";
+  w.at = w.at || today();
   audit("Visible win approved", x.id, d.t);
+  toast("Approved. Released to the Explore board for this programme.");
   ok();
 };
 // ---- Milestones and their evidence
@@ -887,7 +893,7 @@ function msLink(x, m, e) {
 // Evidence that can be added: linked to this room or to its project's spaces, not withdrawn or rejected, not already added.
 const msEvOptions = (x, m) => {
   const pr = roomProject(x);
-  return S.evidence.filter((e) => ((e.linked || []).includes(x.id) || (pr && evProjects(e).includes(pr))) && !["Withdrawn", "Rejected"].includes(e.review) && !msItems(m).some((it) => it.ev === e.id));
+  return S.evidence.filter((e) => ((e.linked || []).includes(x.id) || (pr && evProjects(e).includes(pr))) && e.review !== "Rejected" && (e.lifecycle || "Active") === "Active" && !msItems(m).some((it) => it.ev === e.id));
 };
 function msCard(x, isM, lead, ro) {
   const stw = msIsSteward(x);

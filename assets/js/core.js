@@ -481,9 +481,9 @@ const closeM = () => {
   UI.modal = null;
   render();
 };
-/// ---- nav model per role (BF-13/BF-14): a small common spine, then only the work areas of the active role.
-// Specialist sections appear only when the matching capability bundle is held in this context. Unrelated modules are
-// hidden, not disabled. Role and context are switched from the header, not from the menu.
+/// ---- nav model per role (Doc 1 §6 role menus + Table 25/29).
+// Sectioned sidebar: Home → role work → discovery → records → specialist bundles → always available.
+// Unrelated modules are hidden. Role/context switch from the header.
 function navItems() {
   const r = role();
   const W = WL();
@@ -492,16 +492,17 @@ function navItems() {
     if (cond && (!m || can(m))) items.push([route, label, icon]);
   };
   const inMy = k => S[k].some(o => inCtx(o) && memberOf(o));
-  const tail = () => {
-    // Specialist actions: only when the matching bundle is active in this context.
+  const always = () => {
     if (hasB('Reviewer') && r !== 'F') items.push(['inbox', 'Review inbox', 'inbox']);
     if (hasB('Trust/Data Steward')) items.push(['policies', 'Trust/Data: policies', 'shield']);
     if (hasB('Finance Owner')) items.push(['billing', 'Finance: products & payments', 'card']);
     if (hasB('AI Owner')) items.push(['aiadmin', 'AI Owner: sources', 'sparkle']);
     if (hasB('Incident/Safety Owner')) items.push(['incidents', 'Incident queue', 'alert']);
-    // Always visible; content and counts follow the active role and context.
-    if (r !== 'T') items.push(['privacy', 'My records & consent', 'lock']);
-    if (r !== 'T') items.push(['resources', 'Resources & guidance', 'file']);
+    if (r !== 'T') {
+      items.push(['profile', 'Profile', 'user']);
+      items.push(['privacy', 'My records & consent', 'lock']);
+      items.push(['resources', 'Resources & guidance', 'file']);
+    }
     items.push(['help', 'Help & support', 'info']);
     if (!hasB('Incident/Safety Owner')) items.push(['incidents', 'Report a concern', 'alert']);
     return items;
@@ -517,27 +518,36 @@ function navItems() {
       ['platform:health', 'Deployment status', 'chart'],
       ['audit', 'Audit & logs', 'file'],
     );
-    return tail();
+    return always();
   }
   items.push(['home', 'My PHOENIX', 'home']);
   if (hasChats()) items.push(['messages', 'Messages', 'message']);
+
   if (r === 'P') {
-    // BF-14: 4–7 primary work areas; Matches, collaborations, Harvests and Repository stay reachable from home/cards.
+    // Doc 1 §6.1 / Table 15 — full Authorize → Evolve menu
     add('pathways', 'pathway', 'Pathway', 'route');
+    add('projects', 'projects', 'Projects', 'folder');
     add('circles', 'circles', 'Circles', 'users');
     add('ropeteams', 'ropeteams', 'Rope Teams', 'route');
     add('rooms', 'rooms', W + 's', 'room');
     add('opportunities', 'opportunities', 'Opportunities', 'megaphone');
-    add('evidence', 'evidence', 'Evidence', 'award');
+    add('matching', 'matches', 'Match Briefs', 'link');
     add(null, 'board', 'Explore board', 'grid');
+    add(null, 'relations', 'My collaborations', 'users');
+    add('evidence', 'evidence', 'Evidence', 'award');
+    add('repository', 'repository', 'Repository', 'archive');
+    add('harvest', 'harvests', 'Learning Harvests', 'sparkle');
   } else if (r === 'M') {
+    // Doc 1 §6.2 — assigned people & support only
     add('ropeteams', 'ropeteams', 'My people & requests', 'route');
     add('pathways', 'pathway', 'Shared pathways', 'route');
     add('circles', 'circles', 'Circles', 'users', inMy('circles'));
     add('rooms', 'rooms', 'Assigned ' + W + 's', 'room', inMy('rooms'));
     add(null, 'relations', 'My collaborations', 'users');
-    add('evidence', 'evidence', 'Shared evidence', 'award');
+    add('evidence', 'evidence', 'Evidence comments', 'award');
+    add('repository', 'repository', 'Repository', 'archive');
   } else if (r === 'F') {
+    // Doc 1 §6.3 / Table 28 — Circles, reviews, linked work (Match Briefs are steward work, not discovery)
     add('circles', 'circles', 'Circles', 'users');
     add(null, 'inbox', 'Review inbox', 'inbox');
     add('projects', 'projects', 'Project reviews', 'folder');
@@ -546,30 +556,44 @@ function navItems() {
     add('rooms', 'rooms', 'Linked ' + W + 's', 'room');
     add('ropeteams', 'ropeteams', 'Rope Teams', 'route', inMy('ropes'));
     add('harvest', 'harvests', 'Learning Harvests', 'sparkle');
-    if (hasB('Reviewer')) add('evidence', 'evidence', 'Evidence review', 'award');
+    if (hasB('Reviewer')) {
+      add('evidence', 'evidence', 'Evidence review', 'award');
+      add('repository', 'repository', 'Repository', 'archive');
+    }
   } else if (r === 'C') {
+    // Doc 1 §6.4 — mandate + workspaces first, then discovery, then records
+    add(null, 'mandate', 'Organisation & mandate', 'building');
+    add('rooms', 'rooms', W + 's', 'room');
+    add('projects', 'projects', 'Projects', 'folder', S.projects.some(p => inCtx(p) && (p.owner === myId() || (p.partners || []).includes(myId()))));
     add('opportunities', 'opportunities', 'Opportunities', 'megaphone');
     add('matching', 'matches', 'Match Briefs', 'link');
     add(null, 'board', 'Explore board', 'grid');
     add(null, 'relations', 'My collaborations', 'users');
-    add('rooms', 'rooms', W + 's', 'room');
-    add(null, 'mandate', 'Organisation & mandate', 'building');
     add('evidence', 'evidence', 'Evidence', 'award');
+    add('repository', 'repository', 'Repository', 'archive');
+    add('harvest', 'harvests', 'Learning Harvests', 'sparkle');
   } else if (r === 'O') {
+    // Doc 1 §6.5 / Table 28 — org envelope only
     items.push(
       ['org:users', 'People & cohorts', 'users'],
       ['org:invites', 'Invitations', 'mail'],
       ['org:roles', 'Role assignments', 'shield'],
       ['org:spaces', 'Spaces in my context', 'folder'],
-      ['metrics', 'Programme progress', 'chart'],
       ['org:reports', 'Reports', 'file'],
       ['org:requests', 'Requests to Programme Admin', 'send'],
+      ['metrics', 'Programme progress', 'chart'],
     );
   } else if (r === 'S') {
-    items.push(['funding:seats', 'Seat utilisation', 'card'], ['funding:initiatives', 'Approved initiatives', 'folder']);
+    // Doc 1 §6.6 — seats & funder-safe reporting (no pitches/tranches)
+    items.push(
+      ['funding:seats', 'Seat utilisation', 'card'],
+      ['funding:initiatives', 'Approved initiatives', 'folder'],
+      ['funding:reports', 'Funder-safe reports', 'chart'],
+      ['funding:invoices', 'Invoices & receipts', 'coin'],
+    );
     add('evidence', 'evidence', 'Approved evidence', 'award');
-    items.push(['funding:reports', 'Funder-safe reports', 'chart'], ['funding:invoices', 'Invoices & receipts', 'coin']);
   } else if (r === 'A') {
+    // Doc 1 §6.7 — operational queues & config (not specialist authority)
     items.push(
       ['admin:requests', 'Approval inbox', 'inbox'],
       ['admin:invites', 'Invitations', 'mail'],
@@ -583,7 +607,7 @@ function navItems() {
       ['audit', 'Audit log', 'file'],
     );
   }
-  return tail();
+  return always();
 }
 const PARENT = {
   project: 'projects',
@@ -600,7 +624,8 @@ const PARENT = {
 const GROUP = {
   home: '',
   messages: '',
-  pathway: '',
+  pathway: 'Orient',
+  profile: 'Always available',
   projects: 'Work',
   circles: 'Work',
   ropeteams: 'Work',
@@ -631,15 +656,30 @@ const GROUP = {
   tenants: 'Platform',
   roles: 'Platform',
 };
+// Section label for a nav route: Participant keeps Orient for pathway; other roles fold it into Work.
+function navGroup(rt) {
+  const r = role();
+  if (r === 'T') return '';
+  if (rt === 'pathway' && r !== 'P') return 'Work';
+  if (rt === 'matches' && r === 'F') return 'Work';
+  if (rt === 'inbox' && r !== 'F') return 'Specialist';
+  if (rt === 'metrics' && r === 'O') return 'Organisation';
+  if (rt === 'evidence' && r === 'S') return 'Sponsorship';
+  return GROUP[rt] || '';
+}
 function navCount(r) {
   const pid = myId();
   if (r === 'messages') return unreadTotal();
   if (r === 'projects' && role() === 'F')
     return S.projects.filter(p => inCtx(p) && p.status === 'Submitted' && stewardOf(p)).length;
-  if (r === 'matches')
+  if (r === 'matches') {
+    if (role() === 'F')
+      return S.matches.filter(m => m.steward === pid && ['In steward review', 'Clarification requested'].includes(m.status)).length;
     return S.matches.filter(
       m => m.status === 'Awaiting consent' && ((m.a === pid && !m.consentA) || (m.b === pid && !m.consentB)),
     ).length;
+  }
+  if (r === 'inbox') return typeof inboxItems === 'function' ? inboxItems().length : 0;
   if (r === 'ropeteams' && role() === 'M')
     return S.mentorReqs.filter(m => m.to === pid && m.status === 'Pending' && mentorReqVisible(m)).length;
   return 0;
@@ -665,7 +705,7 @@ function sidebar() {
     .map(([r, l, i]) => {
       const [rt, tb] = r.split(':');
       const on = pick[rt] === r ? ' on' : '';
-      const g = role() === 'T' ? '' : GROUP[rt] || '';
+      const g = navGroup(rt);
       let sec = '';
       if (g !== last && g) sec = `<div class="navsec"><span>${g}</span></div>`;
       last = g;
@@ -674,7 +714,7 @@ function sidebar() {
     })
     .join('');
   const sub = `${h(ROLE[a.role])} · ${h(ctxShort(a.ctx))}${a.bundles.length ? ' · +' + a.bundles.length + ' bundle' + (a.bundles.length > 1 ? 's' : '') : ''}`;
-  return `<aside class="side" id="side-nav" aria-label="Main navigation"${UI.drawer ? ' role="dialog" aria-modal="true"' : ''}><div class="side-plate"><a href="#" class="brand" data-a="go" data-r="home" aria-label="PHOENIX home"><span class="mark">${MARK()}</span><span class="wm"><b>PHOENIX</b><span>Foundation Alpha</span></span></a><button class="side-user" type="button" data-a="switcher" aria-label="${h(me().name)}, ${h(asgLabel(a))}${others > 1 ? '. Switch role or context' : ''}" title="${h(me().name)} · ${h(asgLabel(a))}"><span class="av side-av" aria-hidden="true">${ini(myId())}</span><span class="side-user-t"><b title="${h(me().name)}">${h(me().name)}</b><small title="${h(asgLabel(a))}">${sub}</small></span><span class="side-user-chev">${ic('chev', 16)}</span></button></div><nav class="side-nav" aria-label="Sections">${items}</nav><div class="side-foot"><button type="button" class="nav side-close" data-a="drawerClose">${ic('x')}<span class="t">Close menu</span></button></div></aside>`;
+  return `<aside class="side" id="side-nav" aria-label="Main navigation"${UI.drawer ? ' role="dialog" aria-modal="true"' : ''}><div class="side-plate"><a href="#" class="brand" data-a="go" data-r="home" aria-label="PHOENIX home"><span class="mark">${MARK()}</span><span class="wm"><b>PHOENIX</b><span>Foundation</span></span></a><button class="side-user" type="button" data-a="switcher" aria-label="${h(me().name)}, ${h(asgLabel(a))}${others > 1 ? '. Switch role or context' : ''}" title="${h(me().name)} · ${h(asgLabel(a))}"><span class="av side-av" aria-hidden="true">${ini(myId())}</span><span class="side-user-t"><b title="${h(me().name)}">${h(me().name)}</b><small title="${h(asgLabel(a))}">${sub}</small></span><span class="side-user-chev">${ic('chev', 16)}</span></button></div><nav class="side-nav" aria-label="Sections">${items}</nav><div class="side-foot"><button type="button" class="nav side-close" data-a="drawerClose">${ic('x')}<span class="t">Close menu</span></button></div></aside>`;
 }
 // The PHOENIX mark: an ember plume rising from a baseline.
 const MARK = (s = 20) =>
@@ -695,13 +735,18 @@ const SHORT = {
   home: 'Home',
   messages: 'Chats',
   pathway: 'Pathway',
+  profile: 'Profile',
   projects: 'Projects',
   circles: 'Circles',
   ropeteams: 'Rope',
   rooms: 'Rooms',
-  opportunities: 'Discover',
+  opportunities: 'Offers',
   matches: 'Matches',
+  board: 'Board',
+  relations: 'Links',
   evidence: 'Evidence',
+  repository: 'Repo',
+  harvests: 'Harvest',
   funding: 'Funding',
   billing: 'Billing',
   platform: 'Platform',
@@ -712,6 +757,14 @@ const SHORT = {
   admin: 'Admin',
   inbox: 'Inbox',
   resources: 'Guides',
+  help: 'Help',
+  privacy: 'Privacy',
+  mandate: 'Mandate',
+  compassqs: 'Compass',
+  policies: 'Trust',
+  aiadmin: 'AI',
+  incidents: 'Safety',
+  metrics: 'Reports',
 };
 function bottomnav() {
   const act = PARENT[UI.route] || UI.route;
@@ -1108,7 +1161,7 @@ A.moreNav = () =>
       })
       .join(
         '',
-      )}${can('ai') ? `<a href="#" class="nav" data-a="go" data-r="ask">${ic('sparkle')}<span>Ask PHOENIX</span></a>` : ''}${role() !== 'T' ? `<a href="#" class="nav" data-a="go" data-r="privacy">${ic('shield')}<span>Privacy & agreements</span></a>` : ''}<a href="#" class="nav out" data-a="logout">${ic('logout')}<span>Log out</span></a></div>`,
+      )}${can('ai') ? `<a href="#" class="nav" data-a="go" data-r="ask">${ic('sparkle')}<span>Ask PHOENIX</span></a>` : ''}${role() !== 'T' ? `<a href="#" class="nav" data-a="go" data-r="privacy">${ic('shield')}<span>My records & consent</span></a>` : ''}<a href="#" class="nav out" data-a="logout">${ic('logout')}<span>Log out</span></a></div>`,
   );
 // A notice for another role or context never opens protected content under the current one. It names its context
 // and asks for an explicit, safe switch first (BF-01 example: "Switch to Excelsior as Mentor?").
@@ -1135,7 +1188,7 @@ A.read = d => {
 };
 A.resetDemo = () =>
   modal(
-    'Reset demo data?',
+    'Reset local data?',
     '<p class="muted">All changes made in this browser are discarded and the sample data is restored.</p><div class="actions">' +
       B('Cancel', 'closeM') +
       B('Reset', 'doReset', {}, 'btn-d btn-sm') +
@@ -1185,7 +1238,7 @@ function boot() {
   render();
 }
 
-// ---------- Nested workspace navigation (Circles, Rope Teams, Action Rooms) ----------
+// ---------- Nested workspace navigation (Circles, Rope Teams, Action Workspaces) ----------
 // Same contract as tabs(): returns { cur, html } and selects through A.tab, so views keep their logic. Sections are
 // grouped under expandable parents; on phones the whole panel folds behind one "Sections" toggle.
 // opts: { label, groups: [[groupLabel, icon, [ids…]], …], others: [[label, route, params], …] (sibling spaces) }

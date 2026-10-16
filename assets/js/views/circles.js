@@ -81,13 +81,13 @@ const POLL_PILL = {
   'Closed — Tie: returned to Shared': 'p-amber',
 };
 const REPOLL_STATUSES = ['Closed — Not approved', 'Closed — No quorum', 'Closed — Tie: returned to Shared', 'Closed — No decision'];
-const pendTag = k => { const st = (voteSettings().status || {})[k]; return st === 'Pending WSS decision' ? ' ' + pill(st, 'p-amber') : st && st.startsWith('Recommended') ? ' ' + pill(st, 'p-teal') : ''; };
+const pendTag = k => '';
 function voteRuleStrip(c, p, tl) {
   const R = pollRule(p);
   // parameters still pending a WSS decision are tagged on open votes; a closed vote keeps the rule it ran under
   const pt = k => (p.status === 'Open' ? pendTag(k) : '');
   const cells = [
-    ['Vote weight', 'Equal — 1 eligible member = 1 vote (frozen)', ''],
+    ['Vote weight', 'Equal — 1 eligible member = 1 vote', ''],
     ['Approval threshold', R.threshold + '% of eligible voters', pt('threshold')],
     ['Quorum', R.quorum + '% of eligible voters must vote', pt('quorum')],
     ['Voting window', R.windowDays + ' days', pt('windowDays')],
@@ -116,7 +116,7 @@ function aiCheckBlock(c, p, isMem, ro) {
   const okAI = consent(myId(), 'ai') === 'Granted' && S.settings.aiAvailable;
   const btn = okAI
     ? B(ic('sparkle', 14) + (x ? 'Run the AI source check again' : 'AI source check (advisory)'), 'aiCheck', { c: c.id, p: p.id })
-    : `<button class="btn btn-s btn-sm" type="button" disabled>${ic('sparkle', 14)}AI source check (advisory)</button><span class="cap">${S.settings.aiAvailable ? 'AI processing is off for you, so the source check is unavailable. Turn it on in ' + L('Privacy & consent', 'privacy') + ' if you want it.' : 'AI is unavailable right now.'} Voting works exactly the same either way.</span>`;
+    : `<button class="btn btn-s btn-sm" type="button" disabled>${ic('sparkle', 14)}AI source check (advisory)</button><span class="cap">${S.settings.aiAvailable ? 'AI processing is off for you, so the source check is unavailable. Turn it on in ' + L('My records & consent', 'privacy', { tab: 'consent' }) + ' if you want it.' : 'AI is unavailable right now.'} Voting works exactly the same either way.</span>`;
   return res + `<div class="row wrap ws-acts" style="gap:8px">${btn}</div>`;
 }
 // Circles a project owner can create: their own accepted projects that do not have a Circle yet.
@@ -438,9 +438,9 @@ route('circle', 'circles', () => {
   if (t.cur === 'polls')
     body = card(
       'Circle votes',
-      'One eligible member = one vote. The project owner votes like every other member. An option is approved when its votes reach ' +
+      'One eligible member = one vote. Approval needs ' +
         voteSettings().threshold +
-        '% of all eligible voters and the quorum is met. AI can check sources but never passes or fails a vote.',
+        '% of eligible voters and quorum.',
       c.polls
         .map(p => {
           const tl = tally(c, p);
@@ -755,11 +755,10 @@ const pollDefaultClose = () => new Date(Date.now() + (+voteSettings().windowDays
 function pollRulesBanner(c) {
   const V = voteSettings();
   const n = eligibleNow(c).length;
-  const pend = VOTE_PARAMS.filter(k => (V.status || {})[k] === 'Pending WSS decision'); // Recommended defaults are not pending
   return banner(
     'info',
-    'Who votes and how it is decided',
-    `One eligible member = one vote; the project owner votes like everyone else and has no override. Observers, members set as non-voting and the facilitator do not vote. <b>${n} eligible voter${n === 1 ? '' : 's'}</b> right now — this list is fixed when the vote opens and is the denominator for every figure. An option is approved when its votes reach <b>${V.threshold}%</b> of eligible voters and at least <b>${V.quorum}%</b> of them have voted. Voting window ${V.windowDays} days; a reminder goes to members who have not voted ${V.reminderDays} days before closing. If the top options tie, the proposal goes back: ${h(String(V.tie || 'Return to Shared for revision and re-vote'))}, or human escalation. AI can check sources and suggest questions but never passes or fails a vote.${pend.length ? ' <span class="cap">Threshold, quorum, window and reminder timing are pending a WSS decision and may change for future votes; the values above are frozen on this vote when it opens.</span>' : ''}`,
+    'Voting rules',
+    `<b>${n} eligible voter${n === 1 ? '' : 's'}</b> · one vote each · approval at <b>${V.threshold}%</b> with <b>${V.quorum}%</b> quorum · window ${V.windowDays} days.`,
   );
 }
 function pollForm(c, base) {
