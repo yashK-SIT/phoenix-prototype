@@ -733,7 +733,7 @@ route('admin', 'admin', () => {
       [
         'support',
         'Support & requests',
-        S.supportQueries.filter(q => q.status === 'Open').length +
+        S.supportQueries.filter(q => q.ctx === ctxId() && SQ_OPEN.includes(q.status)).length +
           (S.requests || []).filter(r => r.status === 'Open').length,
       ],
       ['reports', 'Reports & exports'],
@@ -856,24 +856,9 @@ route('admin', 'admin', () => {
         'c7 adm-panel',
       )}</div>`;
   if (t.cur === 'support')
-    body =
-      `<div class="adm-stack">${card(
-        'Support queries ' + n(S.supportQueries.length),
-        '',
-        dataView('adm:support', {
-          label: 'support queries',
-          items: S.supportQueries,
-          search: q => P(q.by).name + ' ' + q.t,
-          quick: { label: 'Status', options: [...new Set(S.supportQueries.map(q => q.status))].map(v => [v, v]), test: (q, v) => q.status === v },
-          sorts: [['from', 'From', (a, b) => P(a.by).name.localeCompare(P(b.by).name)]],
-          rowId: q => q.id,
-          row: q => ({ lead: `<span class="av">${ini(q.by)}</span>`, title: nm(q.by), sub: h(q.t), badges: pill(q.status), primary: q.status === 'Open' ? B('Mark resolved', 'sqDone', { id: q.id }) : '' }),
-          bulk: [{ label: 'Mark resolved', icon: 'check', run: ids => ids.forEach(id => byId('supportQueries', id)?.status === 'Open' && A.sqDone({ id })) }],
-          empty: ['question', 'No support queries', '', ''],
-        }),
-        '',
-        'adm-panel',
-      )}${card(
+    body = UI.p.sq
+      ? sqAdminDetail(UI.p.sq)
+      : `<div class="adm-stack">${sqAdminTable()}${card(
         'Privacy requests ' + n((S.requests || []).length),
         'Correction, export and deletion requests.',
         (rs =>
@@ -968,10 +953,6 @@ F.ann = d => {
   audit('Announcement sent', d.to, ps.length + ' recipients');
   clearF('ann');
   toast('Sent to ' + ps.length + ' people. It also appears on Explore board for this context.');
-  ok();
-};
-A.sqDone = d => {
-  byId('supportQueries', d.id).status = 'Resolved';
   ok();
 };
 A.rqDone = d => {

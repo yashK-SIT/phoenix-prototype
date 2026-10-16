@@ -347,6 +347,14 @@ const G = {
   orgrq: () => role() === 'O' || 'only an Organization Representative sends organisation requests',
   orgReqDecide: d => (role() === 'A' && (S.orgReqs || []).some(r => r.id === d.id && r.ctx === ctxId() && r.status === 'Open')) || 'only a Programme Administrator in this context decides organisation requests',
   helpq: () => !!S.session || 'sign in to contact support',
+  sqr: d => {
+    const q = byId('supportQueries', d.id);
+    return (sqMine(q) && q.status !== 'Closed') || 'only the person who sent this request can reply, while it is not closed';
+  },
+  squ: d => sqAdmin(byId('supportQueries', d.id)) || 'only a Programme Administrator in the context this request was sent in can update it',
+  sqProg: d => sqAdmin(byId('supportQueries', d.id)) || 'only a Programme Administrator in the context this request was sent in can update it',
+  sqView: d => sqSees(byId('supportQueries', d.q)) || 'only the requester and Programme Administrators in its context can open these attachments',
+  sqDl: d => sqSees(byId('supportQueries', d.q)) || 'only the requester and Programme Administrators in its context can download these attachments',
   taskAccept: d => {
     const x = byId('rooms', d.r);
     const k = x && x.tasks.find(t => t.id === d.id);

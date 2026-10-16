@@ -3,17 +3,194 @@
 // My collaborations (Relationship List Lite, BF-16), Partner organisation & mandate, AI Owner sources (BF-09).
 // Everything here composes existing, already-authorised records: no new feed, ranking, score or graph.
 
-// ---- Help & support: a human route, separate from Ask PHOENIX, mentor support and incident reporting
+// ---- Help & support: a human route, separate from Ask PHOENIX, mentor support and incident reporting.
+// A request is seen by the person who sent it and by Programme Administrators in the context it was sent in.
+// Lifecycle New → In Progress → Resolved → Closed; every status change, response and note is kept in q.log.
+const SQ_STATES = ['New', 'In Progress', 'Resolved', 'Closed'];
+const SQ_OPEN = ['New', 'In Progress'];
+const SQ_TOPICS = ['Access or sign-in', 'Onboarding or agreement', 'My records or consent', 'Something is not working', 'Other'];
+const SQ_MAX_FILES = 5;
+const sqMaxMB = () => Math.min(S.settings.maxFileMB, 20);
+// Accepted by extension; the browser's MIME type is used only to choose a preview.
+const SQ_EXT = { png: 'image', jpg: 'image', jpeg: 'image', gif: 'image', webp: 'image', heic: 'image', mp4: 'video', mov: 'video', webm: 'video', mp3: 'audio', m4a: 'audio', wav: 'audio', pdf: 'pdf', txt: 'text', csv: 'text', log: 'text', doc: 'doc', docx: 'doc', xlsx: 'doc', pptx: 'doc' };
+const SQ_ACCEPT = Object.keys(SQ_EXT).map(x => '.' + x).join(',');
+const sqExt = n => (String(n).split('.').pop() || '').toLowerCase();
+const sqMB = b => +(b / 1048576).toFixed(2);
+const sqSize = mb => (mb < 1 ? Math.max(1, Math.round(mb * 1024)) + ' KB' : mb.toFixed(1) + ' MB');
+const sqIcon = k => ({ image: 'image', video: 'file', audio: 'file', pdf: 'file', text: 'file' })[k] || 'file';
+const sqAdmin = q => !!q && role() === 'A' && q.ctx === ctxId();
+const sqMine = q => !!q && q.by === myId();
+const sqSees = q => sqMine(q) || sqAdmin(q);
+const sqLast = q => (q.log || []).reduce((m, x) => (x.at > m ? x.at : m), q.at || '');
+const sqAdmins = ctx => S.assign.filter(a => roleBase(a.role) === 'A' && a.ctx === ctx && a.status === 'Active');
+
+// Attachment files live in this browser's IndexedDB, keyed by attachment id; the request keeps only metadata.
+// A production build stores them server-side and serves them through authorised, short-lived links.
+const SQ_DB = 'phoenix-support-files';
+const sqDb = () =>
+  new Promise((res, rej) => {
+    const r = indexedDB.open(SQ_DB, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('files');
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+const sqTx = (mode, fn) =>
+  sqDb().then(
+    db =>
+      new Promise((res, rej) => {
+        const tx = db.transaction('files', mode);
+        const out = fn(tx.objectStore('files'));
+        tx.oncomplete = () => (db.close(), res(out && out.result));
+        tx.onerror = tx.onabort = () => (db.close(), rej(tx.error || new Error('Storage failed')));
+      }),
+  );
+const sqPut = items => sqTx('readwrite', st => items.forEach(([k, b]) => st.put(b, k)));
+// Seeded demo attachments have no stored file; they are drawn on request.
+const sqDemo = f =>
+  new Blob(
+    [
+      `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400"><rect width="640" height="400" fill="#f3f4f1"/><rect x="24" y="24" width="592" height="44" rx="8" fill="#0f2e25"/><text x="44" y="52" font-family="sans-serif" font-size="16" fill="#fff">My records &amp; consent</text><rect x="24" y="92" width="592" height="120" rx="8" fill="#fff" stroke="#d7dbd4"/><text x="44" y="130" font-family="sans-serif" font-size="15" fill="#333">Agreements</text><text x="44" y="166" font-family="sans-serif" font-size="14" fill="#8a8f88">No agreements to show.</text><text x="24" y="380" font-family="sans-serif" font-size="12" fill="#8a8f88">${h(f.n)} · demo attachment</text></svg>`,
+    ],
+    { type: 'image/svg+xml' },
+  );
+const sqBlob = f => (f.demo ? Promise.resolve(sqDemo(f)) : sqTx('readonly', st => st.get(f.id)));
+
+// ---- staged attachments: kept in memory until the request is sent; removable one by one
+UI.sqFiles = UI.sqFiles || [];
+const sqStageErr = m => {
+  UI.err.helpq = { ...(UI.err.helpq || {}) };
+  if (m) UI.err.helpq.files = m;
+  else delete UI.err.helpq.files;
+};
+A.sqPick = (d, el) => {
+  const picked = [...(el.files || [])];
+  const bad = [];
+  picked.forEach(f => {
+    const k = SQ_EXT[sqExt(f.name)];
+    if (!k) return bad.push(`“${f.name}” is not a supported file type.`);
+    if (!f.size) return bad.push(`“${f.name}” is empty.`);
+    if (f.size > sqMaxMB() * 1048576) return bad.push(`“${f.name}” is ${sqSize(sqMB(f.size))}, over the ${sqMaxMB()} MB limit.`);
+    if (UI.sqFiles.length >= SQ_MAX_FILES) return bad.push(`“${f.name}” was not added: up to ${SQ_MAX_FILES} files per request.`);
+    if (UI.sqFiles.some(x => x.file.name === f.name && x.file.size === f.size)) return;
+    UI.sqFiles.push({ key: 'st' + Date.now() + Math.random().toString(36).slice(2, 6), file: f, kind: k, url: k === 'image' ? URL.createObjectURL(f) : null });
+  });
+  snapForms(); // keep the topic and text typed so far
+  sqStageErr(bad.join(' '));
+  el.value = '';
+  if (!bad.length && picked.length) toast(picked.length === 1 ? 'File added.' : picked.length + ' files added.');
+  render();
+};
+A.sqUnpick = d => {
+  const i = UI.sqFiles.findIndex(x => x.key === d.k);
+  if (i < 0) return;
+  snapForms();
+  const [x] = UI.sqFiles.splice(i, 1);
+  if (x.url) URL.revokeObjectURL(x.url);
+  sqStageErr('');
+  render();
+};
+const sqStaged = () =>
+  UI.sqFiles.length
+    ? `<ul class="sq-files" aria-label="Files to send">${UI.sqFiles
+        .map(
+          x =>
+            `<li class="sq-file">${x.url ? `<img class="sq-thumb" src="${x.url}" alt="">` : `<span class="sq-thumb tile t-soft" aria-hidden="true">${ic(sqIcon(x.kind), 16)}</span>`}<div class="sq-fn"><b>${h(x.file.name)}</b><span class="cap">${sqSize(sqMB(x.file.size))}</span></div><button type="button" class="iconbtn" data-a="sqUnpick" data-k="${x.key}" aria-label="Remove ${h(x.file.name)}" title="Remove">${ic('trash', 16)}</button></li>`,
+        )
+        .join('')}</ul>`
+    : '';
+const sqPicker = () => {
+  const e = fe('helpq', 'files');
+  const full = UI.sqFiles.length >= SQ_MAX_FILES;
+  return `<div class="field"><span class="lbl" id="helpq_files_l">Attachments (optional)</span><label class="dz sq-dz${e ? ' err' : ''}${full ? ' is-off' : ''}" for="helpq_files"><span aria-hidden="true">${ic('upload', 20)}</span><div><b>${full ? 'File limit reached' : 'Add screenshots, video or documents'}</b><div class="cap">Images, video, audio, PDF, text and Office files · up to ${SQ_MAX_FILES} files, ${sqMaxMB()} MB each</div></div><input id="helpq_files" type="file" class="sr" multiple accept="${SQ_ACCEPT}" data-ch="sqPick" aria-labelledby="helpq_files_l" aria-describedby="helpq_files_h" ${full ? 'disabled' : ''}></label>${e ? `<span class="emsg" role="alert">${ic('alert', 14)}${h(e)}</span>` : ''}${sqStaged()}<span class="help" id="helpq_files_h">Only you and the programme support team can open these. Do not attach other people’s private information.</span></div>`;
+};
+
+// ---- shared pieces of the request detail (requester and administrator)
+const sqFileList = (q, empty = 'No attachments.') =>
+  (q.files || []).length
+    ? `<ul class="sq-files">${q.files
+        .map(f => {
+          const pv = ['image', 'video', 'audio', 'pdf', 'text'].includes(f.kind);
+          return `<li class="sq-file"><span class="sq-thumb tile t-soft" aria-hidden="true">${ic(sqIcon(f.kind), 16)}</span><div class="sq-fn"><b>${h(f.n)}</b><span class="cap">${sqSize(f.mb)} · ${h(f.kind)}</span></div><div class="row" style="gap:6px">${pv ? B(ic('eye', 14) + '<span class="hide-sm">Preview</span>', 'sqView', { q: q.id, f: f.id }, 'btn-s btn-sm', `aria-label="Preview ${h(f.n)}"`) : ''}${B(ic('download', 14) + '<span class="hide-sm">Download</span>', 'sqDl', { q: q.id, f: f.id }, 'btn-s btn-sm', `aria-label="Download ${h(f.n)}"`)}</div></li>`;
+        })
+        .join('')}</ul>`
+    : `<p class="cap">${empty}</p>`;
+const SQ_LOG = {
+  submitted: ['send', 'Request submitted'],
+  status: ['refresh', 'Status changed'],
+  reply: ['reply', 'Response from support'],
+  user: ['message', 'Reply from requester'],
+  note: ['lock', 'Internal note'],
+};
+const sqTimeline = (q, admin) =>
+  `<ol class="timeline sq-tl">${(q.log || [])
+    .filter(x => admin || x.k !== 'note')
+    .slice()
+    .reverse()
+    .map(x => {
+      const [icon, label] = SQ_LOG[x.k] || ['info', 'Update'];
+      const who = x.by === myId() ? 'You' : x.k === 'reply' && !admin ? 'Programme support (' + nm(x.by) + ')' : nm(x.by);
+      const body = x.k === 'status' ? `<span class="sq-move">${pill(x.from)}${ic('arrow', 14)}${pill(x.to)}</span>` : x.t ? `<p class="sq-msg">${h(x.t)}</p>` : '';
+      return `<li class="tl sq-tl-i sq-${x.k}"><div class="row wrap" style="gap:6px;align-items:center">${ic(icon, 14)}<b>${label}</b>${x.k === 'note' ? pill('Admins only', 'p-grey') : ''}<span class="cap">${who} · ${fmt(x.at)}</span></div>${body}</li>`;
+    })
+    .join('')}</ol>`;
+// Steps are joined by a line; a step and the line into it fill once reached. Closed is the end of the lifecycle,
+// so a closed request shows every step, Closed included, as complete.
+const sqSteps = q => {
+  const at = SQ_STATES.indexOf(q.status);
+  const end = at === SQ_STATES.length - 1;
+  return `<ol class="sq-steps" aria-label="Progress">${SQ_STATES.map((s, i) => {
+    const done = i < at || (end && i === at);
+    const cls = [done && 'done', i === at && 'cur', i <= at && 'reached'].filter(Boolean).join(' ');
+    return `<li class="${cls}"${i === at ? ' aria-current="step"' : ''}><span class="sq-dot" aria-hidden="true">${done ? ic('check', 12) : i + 1}</span>${s}<span class="sr">${done ? ' (complete)' : i === at ? ' (current)' : ' (not reached)'}</span></li>`;
+  }).join('')}</ol>`;
+};
+const sqSummary = (q, admin) =>
+  dl([
+    ['Request ID', `<span class="mono">${h(q.ref)}</span>`],
+    ['Submitted by', admin ? `${nm(q.by)}${P(q.by).email ? ` <span class="cap">· ${h(P(q.by).email)}</span>` : ''}` : 'You'],
+    ['Topic', h(q.cat || 'General')],
+    ['Context', h(ctxName(q.ctx))],
+    ['Submitted', fmt(q.at)],
+    ['Status', pill(q.status)],
+    ['Last updated', fmt(sqLast(q))],
+  ]);
+const sqHead = (q, crumbs) =>
+  crumbsHtml(crumbs) +
+  `<div class="shead-main inc-head"><span class="tile" aria-hidden="true">${ic('question', 20)}</span><div class="shead-t"><div class="shead-kind">Support request · <span class="mono">${h(q.ref)}</span></div><div class="row wrap inc-title"><h1 class="h1">${h(q.cat || 'Support request')}</h1>${pill(q.status)}</div><div class="shead-meta"><span>Submitted ${fmt(q.at)}</span><span>${(q.files || []).length} attachment${(q.files || []).length === 1 ? '' : 's'}</span></div></div></div>`;
+const sqLatestReply = q => (q.log || []).filter(x => x.k === 'reply').slice(-1)[0];
+
+// ---- requester: one request
+function sqUserDetail(q) {
+  const f = 'sqr';
+  const last = sqLatestReply(q);
+  const replyBox =
+    q.status === 'Closed'
+      ? `<p class="cap">This request is closed. If you still need help, send a new request.</p>${B('New request', 'go', { r: 'help' }, 'btn-s btn-sm')}`
+      : `${errSum(f)}<form data-f="sqr" class="col fgap" novalidate><input type="hidden" name="id" value="${q.id}">${fi(f, 't', 'Add a reply', { type: 'textarea', rows: 3, req: true, max: 1000, ph: 'Add detail or answer a question from support.' })}<div class="actions"><span class="help">${q.status === 'Resolved' ? 'Replying reopens this request.' : 'The support team is notified.'}</span><button class="btn btn-p btn-sm" type="submit">${ic('send', 14)}Send reply</button></div></form>`;
+  return (
+    sqHead(q, [['Help & support', 'help'], [h(q.ref)]]) +
+    `<div class="g12 inc-body"><div class="c8 col inc-main">${card('Progress', '', sqSteps(q))}${last ? card('Latest response', 'From the programme support team · ' + fmt(last.at), `<p class="sq-msg">${h(last.t)}</p>`, '', 'accent') : ''}${card('Your request', '', `<p class="sq-msg">${h(q.t)}</p>`)}${card('Attachments', '', sqFileList(q, 'You did not attach any files.'))}${card('History', '', sqTimeline(q, false))}</div>
+ <div class="c4 col inc-side">${card('Details', '', sqSummary(q, false))}${card('Reply', '', replyBox)}</div></div>`
+  );
+}
+
 route('help', 'any', () => {
+  const sel = UI.p.id && byId('supportQueries', UI.p.id);
+  if (UI.p.id) {
+    if (sel && sqMine(sel)) return sqUserDetail(sel);
+    audit('Access denied', UI.p.id, 'support request belongs to someone else', 'denied');
+    return head('Help & support', '') + banner('err', 'You cannot open this request', 'Support requests are visible only to the person who sent them and the programme support team.') + `<div class="section-gap"></div>` + B('Back to Help & support', 'go', { r: 'help' }, 'btn-s btn-sm');
+  }
   const mine = S.supportQueries.filter(q => q.by === myId());
   const rope = S.ropes.find(r => inCtx(r) && memberOf(r) && r.mentor && r.mentor !== myId());
   const aiOk = consent(myId(), 'ai') === 'Granted';
   const f = 'helpq';
+  const sending = !!UI.sqSending;
   const tile = (icon, t, sub, act) => `<section class="card help-tile"><span class="tile t-soft" aria-hidden="true">${ic(icon, 18)}</span><div class="col" style="gap:4px"><b>${t}</b><p class="cap">${sub}</p></div><div class="row wrap" style="gap:8px">${act}</div></section>`;
   return (
     head('Help & support', `People who can help you in ${h(ctxName(ctxId()))}. Each route below is separate: asking one never sends anything to another.`) +
     `<div class="help-grid">${[
-      tile('user', 'Human support desk', 'A person from the programme team answers, usually within two working days. Use it for access, onboarding, records or anything that is not working.', B('Write to support', 'go', { r: 'help', tab: 'ask' }, 'btn-p btn-sm')),
+      tile('user', 'Human support desk', 'A person from the programme team answers, usually within two working days. Use it for access, onboarding, records or anything that is not working.', B('Write to support', 'sqFocus', {}, 'btn-p btn-sm')),
       can('ai')
         ? tile('sparkle', 'Ask PHOENIX (AI, advisory)', aiOk ? 'Answers from approved programme sources, with sources and uncertainty. It advises; it never decides, approves or changes your record.' : 'AI processing is off for you, so Ask PHOENIX is unavailable. Everything else keeps working. You can change this in My records & consent.', aiOk ? B('Open Ask PHOENIX', 'askToggle', {}, 'btn-s btn-sm') : B('My records & consent', 'go', { r: 'privacy', tab: 'consent' }, 'btn-s btn-sm'))
         : '',
@@ -24,21 +201,257 @@ route('help', 'any', () => {
     card(
       'Write to the support desk',
       'Seen by the programme support team for this context only.',
-      `${errSum(f)}<form data-f="helpq" class="col" novalidate>${fi(f, 'cat', 'Topic', { type: 'select', req: true, ph: 'Choose a topic', opts: ['Access or sign-in', 'Onboarding or agreement', 'My records or consent', 'Something is not working', 'Other'] })}${fi(f, 't', 'How can we help?', { type: 'textarea', rows: 3, req: true, max: 1000, ph: 'Describe what you need. Do not include other people’s private information.' })}<div class="actions"><span class="help">A person replies. AI is not used to answer support requests.</span><button class="btn btn-p btn-sm" type="submit">${ic('send', 14)}Send to support</button></div></form>`,
+      `${errSum(f)}<form data-f="helpq" id="helpq" class="col fgap" novalidate>${fi(f, 'cat', 'Topic', { type: 'select', req: true, ph: 'Choose a topic', opts: SQ_TOPICS })}${fi(f, 't', 'How can we help?', { type: 'textarea', rows: 3, req: true, max: 1000, ph: 'Describe what you need. Do not include other people’s private information.' })}${sqPicker()}<div class="actions"><span class="help">A person replies. AI is not used to answer support requests.</span><button class="btn btn-p btn-sm" type="submit" ${sending ? 'disabled aria-busy="true"' : ''}>${sending ? ic('refresh', 14) + 'Sending…' : ic('send', 14) + 'Send to support'}</button></div></form>`,
     ) +
     `<div class="section-gap"></div>` +
-    card('Your support requests', '', table(['Request', 'Topic', 'Sent', 'Status'], mine.map(q => [h(q.t), h(q.cat || 'General'), fmt(q.at), pill(q.status)]), 'You have not sent any support requests.'))
+    card(
+      'Your support requests',
+      'Open a request to see its progress, responses and attachments.',
+      dataView('help:mine', {
+        label: 'requests',
+        items: mine,
+        layout: 'table',
+        search: q => q.ref + ' ' + q.t + ' ' + (q.cat || ''),
+        quick: { label: 'Status', options: SQ_STATES.map(v => [v, v]), test: (q, v) => q.status === v },
+        sorts: [['new', 'Newest first', (a, b) => String(a.at).localeCompare(String(b.at))], ['upd', 'Last updated', (a, b) => sqLast(a).localeCompare(sqLast(b))]],
+        defaultSort: 'new',
+        defaultDir: 'desc',
+        columns: [
+          { label: 'Request', cell: q => `<span class="mono">${h(q.ref)}</span>` },
+          { label: 'Subject', cell: q => `<b>${h(q.cat || 'General')}</b><div class="cap sq-sum">${h(q.t)}</div>` },
+          { label: 'Sent', sort: 'new', cell: q => fmt(q.at), hideSm: true },
+          { label: 'Status', cell: q => pill(q.status) + (sqLatestReply(q) ? `<div class="cap">${ic('reply', 12)} Response received</div>` : '') },
+          { label: '', cell: q => L('Details', 'help', { id: q.id }, 'btn btn-s btn-sm') },
+        ],
+        empty: ['inbox', 'You have not sent any support requests.', 'Use the form above. Your requests and their progress appear here.', ''],
+      }),
+    )
   );
 });
+A.sqFocus = () => {
+  const t = document.getElementById('helpq_cat');
+  if (t) {
+    t.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    t.focus({ preventScroll: true });
+  }
+};
 F.helpq = d => {
+  if (UI.sqSending) return;
   if (!validate('helpq', d, { cat: [['req', 'Choose a topic.']], t: [['req', 'Describe what you need.'], ['min', 5]] })) return render();
-  S.supportQueries.unshift({ id: uid('sq'), by: myId(), t: d.t.trim(), cat: d.cat, ctx: ctxId(), at: today(), status: 'Open' });
-  S.assign.filter(a => roleBase(a.role) === 'A' && a.ctx === ctxId() && a.status === 'Active').forEach(a => notify(a.pid, 'Support request: ' + d.cat + ' from ' + me().name, 'admin', { tab: 'support' }, a.id));
-  audit('Support request sent', myId(), d.cat);
-  clearF('helpq');
-  toast('Sent. A person from the support team will reply.');
+  const id = uid('sq');
+  const staged = UI.sqFiles.slice();
+  const files = staged.map(x => ({ id: uid('sqf'), n: x.file.name, type: x.file.type || '', mb: sqMB(x.file.size), kind: x.kind }));
+  UI.sqSending = true;
+  render();
+  (files.length ? sqPut(files.map((f, i) => [f.id, staged[i].file])) : Promise.resolve())
+    .then(() => {
+      const q = { id, ref: 'SR-' + id.slice(2).padStart(4, '0'), by: myId(), t: d.t.trim(), cat: d.cat, ctx: ctxId(), at: now(), status: 'New', files, log: [{ at: now(), by: myId(), k: 'submitted' }] };
+      S.supportQueries.unshift(q);
+      sqAdmins(q.ctx).forEach(a => notify(a.pid, `Support request ${q.ref}: ${d.cat} from ${me().name}`, 'admin', { tab: 'support', sq: q.id }, a.id));
+      notify(myId(), `We received your support request ${q.ref}`, 'help', { id: q.id });
+      audit('Support request sent', q.id, d.cat + (files.length ? ' · ' + files.length + ' attachment' + (files.length > 1 ? 's' : '') : ''));
+      staged.forEach(x => x.url && URL.revokeObjectURL(x.url));
+      UI.sqFiles = [];
+      UI.sqSending = false;
+      clearF('helpq');
+      toast(`Sent as ${q.ref}. A person from the support team will reply.`);
+      ok();
+    })
+    .catch(() => {
+      UI.sqSending = false;
+      UI.form.helpq = d;
+      UI.err.helpq = { files: 'Your attachments could not be saved in this browser, so nothing was sent. Remove large files or try again.' };
+      render();
+    });
+};
+F.sqr = d => {
+  if (!validate('sqr', d, { t: [['req', 'Write your reply.'], ['min', 2]] })) return render();
+  const q = byId('supportQueries', d.id);
+  q.log.push({ at: now(), by: myId(), k: 'user', t: d.t.trim() });
+  if (q.status === 'Resolved') {
+    q.log.push({ at: now(), by: myId(), k: 'status', from: 'Resolved', to: 'In Progress' });
+    q.status = 'In Progress';
+  }
+  sqAdmins(q.ctx).forEach(a => notify(a.pid, `New reply on ${q.ref} from ${me().name}`, 'admin', { tab: 'support', sq: q.id }, a.id));
+  audit('Support request reply', q.id, q.status);
+  clearF('sqr');
+  toast('Reply sent to the support team.');
   ok();
 };
+
+// ---- attachments: opened only after the guard confirms the viewer is the requester or an admin in its context
+const sqFile = d => {
+  const q = byId('supportQueries', d.q);
+  return { q, f: q && (q.files || []).find(x => x.id === d.f) };
+};
+const sqOpen = (d, then) => {
+  const { q, f } = sqFile(d);
+  if (!f) return toast('That attachment no longer exists.', 'err');
+  sqBlob(f)
+    .then(b => {
+      if (!b) throw new Error('missing');
+      if (UI.sqUrl) URL.revokeObjectURL(UI.sqUrl);
+      UI.sqUrl = URL.createObjectURL(b);
+      then(q, f, UI.sqUrl, b);
+    })
+    .catch(() => toast('This file is not stored in this browser, so it cannot be opened here.', 'err'));
+};
+A.sqView = d =>
+  sqOpen(d, (q, f, url, b) => {
+    audit('Support attachment viewed', q.id, f.n);
+    save();
+    const box = 'class="sq-pv"';
+    const show =
+      f.kind === 'image'
+        ? `<img ${box} src="${url}" alt="${h(f.n)}">`
+        : f.kind === 'video'
+          ? `<video ${box} src="${url}" controls></video>`
+          : f.kind === 'audio'
+            ? `<audio src="${url}" controls style="width:100%"></audio>`
+            : f.kind === 'pdf'
+              ? `<iframe ${box} src="${url}" title="${h(f.n)}"></iframe>`
+              : '<pre class="sq-pv sq-txt">…</pre>';
+    modal(
+      h(f.n),
+      `${show}<div class="actions"><span class="cap">${h(q.ref)} · ${sqSize(f.mb)}</span>${B(ic('download', 14) + 'Download', 'sqDl', { q: q.id, f: f.id }, 'btn-p btn-sm')}</div>`,
+      true,
+    );
+    if (f.kind === 'text')
+      b.text().then(t => {
+        const el = document.querySelector('.sq-txt');
+        if (el) el.textContent = t.slice(0, 20000);
+      });
+  });
+A.sqDl = d =>
+  sqOpen(d, (q, f, url) => {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = f.n;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    audit('Support attachment downloaded', q.id, f.n);
+    save();
+  });
+
+// ---- Programme Administrator: table of requests in the current context
+function sqAdminTable() {
+  const qs = S.supportQueries.filter(q => q.ctx === ctxId());
+  const topics = [...new Set(qs.map(q => q.cat || 'General'))].sort();
+  return card(
+    `Support requests <span class="adm-n">${qs.length}</span>`,
+    `Requests sent in ${h(ctxName(ctxId()))}. Open a request to review it, respond and change its status.`,
+    dataView('adm:support', {
+      label: 'support requests',
+      items: qs,
+      layout: 'table',
+      search: q => q.ref + ' ' + P(q.by).name + ' ' + q.t + ' ' + (q.cat || ''),
+      searchLabel: 'Search by ID, name or text',
+      quick: { label: 'Status', options: SQ_STATES.map(v => [v, v]), test: (q, v) => q.status === v },
+      filters: [
+        { key: 'topic', label: 'Topic', options: topics.map(v => [v, v]), test: (q, v) => (q.cat || 'General') === v },
+        { key: 'files', label: 'Attachments', options: [['yes', 'With attachments'], ['no', 'Without attachments']], test: (q, v) => (v === 'yes') === !!(q.files || []).length },
+        { key: 'reply', label: 'Response', options: [['none', 'No response yet'], ['some', 'Responded']], test: (q, v) => (v === 'some') === !!sqLatestReply(q) },
+      ],
+      sorts: [
+        ['at', 'Submitted', (a, b) => String(a.at).localeCompare(String(b.at))],
+        ['upd', 'Last updated', (a, b) => sqLast(a).localeCompare(sqLast(b))],
+        ['ref', 'Request ID', (a, b) => a.ref.localeCompare(b.ref)],
+        ['from', 'Submitted by', (a, b) => P(a.by).name.localeCompare(P(b.by).name)],
+        ['st', 'Status', (a, b) => SQ_STATES.indexOf(a.status) - SQ_STATES.indexOf(b.status)],
+      ],
+      defaultSort: 'at',
+      defaultDir: 'desc',
+      rowId: q => q.id,
+      columns: [
+        { label: 'Request ID', sort: 'ref', cell: q => `<span class="mono">${h(q.ref)}</span>` },
+        { label: 'Submitted by', sort: 'from', cell: q => `<span class="row sq-nw" style="gap:8px"><span class="av">${ini(q.by)}</span>${nm(q.by)}</span>` },
+        { label: 'Subject', cell: q => `<b>${h(q.cat || 'General')}</b><div class="cap sq-sum">${h(q.t)}</div>` },
+        { label: 'Submitted', sort: 'at', cell: q => `<span class="sq-nw">${fmt(q.at)}</span>`, hideSm: true },
+        { label: 'Status', sort: 'st', cell: q => pill(q.status) },
+        { label: 'Files', num: true, cell: q => ((q.files || []).length ? `<span class="sq-nw">${ic('clip', 13)} ${q.files.length}</span>` : '<span class="cap">—</span>'), hideSm: true },
+        { label: '', cell: q => B('Details', 'go', { r: 'admin', tab: 'support', sq: q.id }, 'btn-s btn-sm') },
+      ],
+      bulk: [{ label: 'Mark in progress', icon: 'refresh', run: ids => ids.forEach(id => byId('supportQueries', id)?.status === 'New' && A.sqProg({ id })) }],
+      empty: ['question', 'No support requests', 'Requests people send from Help & support in this context appear here.', ''],
+    }),
+    '',
+    'adm-panel',
+  );
+}
+// ---- Programme Administrator: one request
+function sqAdminDetail(id) {
+  const q = byId('supportQueries', id);
+  if (!sqAdmin(q)) {
+    audit('Access denied', id, 'support request outside this administrator’s context', 'denied');
+    return crumbsHtml([['Support requests', 'admin', { tab: 'support' }], ['Request']]) + banner('err', 'This request is not in your scope', 'Programme Administrators can open support requests sent in the context they are working in. Switch context if you administer the context it was sent in.');
+  }
+  const f = 'squ';
+  const others = SQ_STATES.filter(s => s !== q.status);
+  return (
+    sqHead(q, [['Support requests', 'admin', { tab: 'support' }], [h(q.ref)]]) +
+    `<div class="g12 inc-body"><div class="c8 col inc-main">${card('Request', '', `<p class="sq-msg">${h(q.t)}</p>`)}${card('Attachments', 'Opening or downloading a file is recorded in the audit log.', sqFileList(q, 'The requester did not attach any files.'))}${card('History', 'Status changes, responses and internal notes, newest first.', sqTimeline(q, true))}</div>
+ <div class="c4 col inc-side">${card(
+   'Update request',
+   'The requester sees the status and your response. Internal notes stay with administrators.',
+   `${errSum(f)}<form data-f="squ" class="col fgap" novalidate><input type="hidden" name="id" value="${q.id}">${fi(f, 'status', 'Status', { type: 'select', opts: [[q.status, q.status + ' (current)'], ...others.map(s => [s, s])], value: q.status })}${fi(f, 'resp', 'Response to requester', { type: 'textarea', rows: 4, max: 2000, ph: 'What you found, what you did or what you need from them.', help: 'Required when you mark the request Resolved.' })}${fi(f, 'note', 'Internal note (optional)', { type: 'textarea', rows: 2, max: 1000, vis: 'Administrators only' })}<div class="actions"><span></span><button class="btn btn-p btn-sm" type="submit">${ic('check', 14)}Save update</button></div></form>`,
+   '',
+   'accent',
+ )}${card('Details', '', sqSummary(q, true))}</div></div>`
+  );
+}
+F.squ = d => {
+  const q = byId('supportQueries', d.id);
+  const resp = (d.resp || '').trim();
+  const note = (d.note || '').trim();
+  const to = SQ_STATES.includes(d.status) ? d.status : q.status;
+  const moved = to !== q.status;
+  if (
+    !validate('squ', d, {
+      status: [['fn', { f: () => moved || resp || note, m: 'Change the status, write a response or add a note.' }]],
+      resp: [['fn', { f: v => !(moved && to === 'Resolved') || v, m: 'Write a response so the requester knows how it was resolved.' }]],
+    })
+  )
+    return render();
+  const at = now();
+  if (moved) q.log.push({ at, by: myId(), k: 'status', from: q.status, to });
+  if (resp) q.log.push({ at, by: myId(), k: 'reply', t: resp });
+  if (note) q.log.push({ at, by: myId(), k: 'note', t: note });
+  if (moved) q.status = to;
+  if (moved || resp) notify(q.by, moved ? `Your support request ${q.ref} is now ${to}` + (resp ? ' — new response' : '') : `New response on your support request ${q.ref}`, 'help', { id: q.id });
+  audit('Support request updated', q.id, [moved && 'status → ' + to, resp && 'response', note && 'internal note'].filter(Boolean).join(', '));
+  clearF('squ');
+  toast(moved ? `${q.ref} is now ${to}.` : 'Update saved.');
+  ok();
+};
+A.sqProg = d => {
+  const q = byId('supportQueries', d.id);
+  q.log.push({ at: now(), by: myId(), k: 'status', from: q.status, to: 'In Progress' });
+  q.status = 'In Progress';
+  notify(q.by, `Your support request ${q.ref} is now In Progress`, 'help', { id: q.id });
+  audit('Support request updated', q.id, 'status → In Progress');
+  ok();
+};
+// Choosing an admin tab leaves an open request
+{
+  const tab = A.tab;
+  A.tab = d => {
+    if (d.k === 'adm') delete UI.p.sq;
+    tab(d);
+  };
+}
+// Older stored requests: give them an ID, a context, the new statuses and a history.
+function sqMigrate() {
+  (S.supportQueries || []).forEach(q => {
+    if (!q.ref) q.ref = 'SR-' + String(q.id).replace(/\D/g, '').padStart(4, '0');
+    if (!q.ctx) q.ctx = (S.assign.find(a => a.pid === q.by && a.status === 'Active') || {}).ctx || 'c1';
+    if (q.status === 'Open') q.status = 'New';
+    if (!SQ_STATES.includes(q.status)) q.status = 'New';
+    q.files = q.files || [];
+    q.at = q.at || today();
+    q.log = q.log || [{ at: q.at, by: q.by, k: 'submitted' }];
+  });
+}
 
 // ---- Review Inbox: only items assigned to this person in this role and context
 route('inbox', 'any', () => {

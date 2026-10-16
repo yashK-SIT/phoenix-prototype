@@ -2215,7 +2215,30 @@ function seed() {
       { name: 'AI Owner', desc: 'Manage approved AI use cases, the source registry and evaluation.', limit: 'Cannot make user or governance decisions.', approval: 'Governance' },
       { name: 'Incident/Safety Owner', desc: 'Triage, pause, remedy and route appeals.', limit: 'No automated sanctions.', approval: 'Governance' },
     ],
-    supportQueries: [{ id: 'sq1', by: 'p11', t: 'How do I finish my Purpose Compass?', status: 'Open' }],
+    supportQueries: [
+      { id: 'sq1', ref: 'SR-0001', by: 'p11', t: 'How do I finish my Purpose Compass?', cat: 'Onboarding or agreement', ctx: 'c1', at: '2026-10-13T09:14:00.000Z', status: 'New', files: [], log: [{ at: '2026-10-13T09:14:00.000Z', by: 'p11', k: 'submitted' }] },
+      {
+        id: 'sq2', ref: 'SR-0002', by: 'p1', cat: 'My records or consent', ctx: 'c1', at: '2026-10-09T14:02:00.000Z', status: 'In Progress',
+        t: 'The agreement I accepted last week does not show in My records & consent. Screenshot attached.',
+        files: [{ id: 'sqf-demo1', n: 'records-page.svg', type: 'image/svg+xml', mb: 0.01, kind: 'image', demo: true }],
+        log: [
+          { at: '2026-10-09T14:02:00.000Z', by: 'p1', k: 'submitted' },
+          { at: '2026-10-10T08:40:00.000Z', by: 'p7', k: 'status', from: 'New', to: 'In Progress' },
+          { at: '2026-10-10T08:40:00.000Z', by: 'p7', k: 'reply', t: 'Thanks, Mary. We can see your acceptance on our side and are checking why it is not listed for you. We will update you here.' },
+          { at: '2026-10-10T08:41:00.000Z', by: 'p7', k: 'note', t: 'Receipt exists for a1. Likely a display issue on the records page; raised with the platform team.' },
+        ],
+      },
+      {
+        id: 'sq3', ref: 'SR-0003', by: 'p10', cat: 'Access or sign-in', ctx: 'c1', at: '2026-10-06T11:20:00.000Z', status: 'Resolved',
+        t: 'My sign-in code email never arrives.', files: [],
+        log: [
+          { at: '2026-10-06T11:20:00.000Z', by: 'p10', k: 'submitted' },
+          { at: '2026-10-07T09:05:00.000Z', by: 'p7', k: 'status', from: 'New', to: 'Resolved' },
+          { at: '2026-10-07T09:05:00.000Z', by: 'p7', k: 'reply', t: 'Your organisation’s mail filter was holding our messages. It has been allow-listed; codes should arrive within a minute now.' },
+        ],
+      },
+      { id: 'sq4', ref: 'SR-0004', by: 'p13', t: 'Where do I find the Riverside volunteer rota?', cat: 'Other', ctx: 'c2', at: '2026-10-11T16:30:00.000Z', status: 'New', files: [], log: [{ at: '2026-10-11T16:30:00.000Z', by: 'p13', k: 'submitted' }] },
+    ],
     announcements: [
       { id: 'an1', t: 'Community heat-mapping workshop · Sat 24 Oct, 10:00 · Ward 7 library', to: 'all', ctx: 'c1', by: 'p7', at: '2026-10-08', kind: 'Programme event' },
       { id: 'an2', t: 'Spring 2027 cohort: applications open to existing participants until 30 Nov', to: 'all', ctx: 'c1', by: 'p7', at: '2026-10-05', kind: 'Programme announcement' },

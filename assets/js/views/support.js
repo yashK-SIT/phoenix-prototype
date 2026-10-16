@@ -314,6 +314,7 @@ function migrate() {
     // custom pathways now wait for the Programme Administrator to assign a Steward
     if (p.state === "In review" && !p.reviewer) p.state = "Awaiting reviewer";
   });
+  sqMigrate(); // support requests: ID, context, statuses, history (views/freeze.js)
   profileMigrate(); // pathway step rules, candidate source/audience (views/profile.js)
   // Milestones hold a list of evidence, each approved by the Steward; the project's Steward facilitates its Action Room
   S.rooms.forEach((x) => {

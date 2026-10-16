@@ -252,6 +252,8 @@ const SC = {
   'Change requested': 'p-amber',
   Proposed: 'p-amber',
   Open: 'p-amber',
+  New: 'p-navy',
+  'In Progress': 'p-amber',
   Assigned: 'p-navy',
   Resent: 'p-navy',
   'In progress': 'p-amber',
