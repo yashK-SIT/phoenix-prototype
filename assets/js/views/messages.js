@@ -22,7 +22,7 @@ const chatSpaces = (pid = myId()) => [
   ...(S.dms || []).filter(r => memberOf(r, pid)).map(o => ({ kind: 'dms', o })),
   ...pwConvos(pid).map(o => ({ kind: 'pathways', o })),
 ];
-// ---- pathway review conversations: the pathway owner, the Programme Administrator and the Steward.
+// ---- pathway review conversations: the pathway owner, the Programme Administrator and the Reviewer.
 // Messages shows the same thread (p.thread) and activity log as the pathway's "Conversation & activity" dialog.
 const PW_REVIEW = ['Awaiting reviewer', 'In review', 'Clarification requested'];
 const pwInConvo = (p, pid = myId()) => [p.by, p.pid, p.reviewer].includes(pid) || ctxAdmins(p.ctx).includes(pid);
@@ -161,14 +161,14 @@ function pwThread(p) {
     .slice(0, 4)
     .map(x => `<span class="av" title="${nm(x)} · ${h(c.role(p, x) || '')}">${ini(x)}</span>`)
     .join('')}</span>${B(ic('info', 14) + '<span class="mth-bl">Pathway details</span>', 'pwActivity', { id: p.id }, 'btn btn-s btn-sm')}</header>
-  <div class="mpw-who cap">${[['Pathway owner', p.by], p.pid !== p.by && ['Participant', p.pid], ['Steward', p.reviewer]]
+  <div class="mpw-who cap">${[['Pathway owner', p.by], p.pid !== p.by && ['Participant', p.pid], ['Reviewer', p.reviewer]]
     .filter(Boolean)
     .map(([l, x]) => `<span><b>${l}</b> ${x ? nm(x) : 'Not assigned yet'}</span>`)
     .join('')}<span><b>Programme Administrator</b> ${ctxAdmins(p.ctx).map(nm).join(', ') || '—'}</span></div>
-  <div class="msgs" data-scroll="${p.id}" role="log" aria-live="polite">${rows || `<div class="mempty">${empty('message', 'No messages yet', 'Start the conversation. The pathway owner, the Programme Administrator and the Steward see every message.')}</div>`}</div>
+  <div class="msgs" data-scroll="${p.id}" role="log" aria-live="polite">${rows || `<div class="mempty">${empty('message', 'No messages yet', 'Start the conversation. The pathway owner, the Programme Administrator and the Reviewer see every message.')}</div>`}</div>
   ${
     !pm
-      ? `<div class="mro">${ic('lock', 16)}<span>View only. Only the pathway owner, the Programme Administrator and the assigned Steward post here.</span></div>`
+      ? `<div class="mro">${ic('lock', 16)}<span>View only. Only the pathway owner, the Programme Administrator and the Reviewer post here.</span></div>`
       : `<form data-f="pwchat" class="composer" novalidate><input type="hidden" name="id" value="${p.id}"><div class="mpend" hidden>${ic('clip', 14)}<span class="fname"></span>${B(ic('x', 14), 'clearFile', {}, 'mtool', 'aria-label="Remove attachment"')}</div>
   <div class="mcomp"><label class="iconbtn mattach" title="Attach a file (up to ${S.settings.maxFileMB} MB)">${ic('clip')}<input type="file" name="f" data-chatfile="1" aria-label="Attach a file" class="sr"></label><textarea name="t" rows="1" class="mta" placeholder="${h(pm.label)}" aria-label="${h(pm.label)}" data-draft="${p.id}">${h(draft)}</textarea><button class="btn btn-p msend" type="submit" aria-label="Send message" title="Send (Enter)">${ic('send', 18)}</button></div>
   <div class="mhelp">${pm.kind === 'reply' ? '<b>Replying to the clarification request.</b> ' : ''}Enter to send · Shift+Enter for a new line · kept with the pathway's full history and shown in Pathway details</div></form>`
@@ -363,8 +363,8 @@ A.msgHide = d => {
 };
 A.chatQSum = d => {
   const o = byId(d.k, d.c);
-  if (!S.settings.aiAvailable) return deny('AI is unavailable right now. Everything else keeps working.');
-  if (consent(myId(), 'ai') !== 'Granted') return deny('AI processing is off for you, so PHOENIX cannot summarise this chat. You can change this in My records & consent → Optional permissions.');
+  const r = adapterCall('ai', { op: 'Summarise unanswered chat questions' });
+  if (r.state !== 'OK') return aiFallback(r, 'Read the unanswered questions (marked “?”) in the chat instead.');
   const qs = o.chat.filter(m => m.q && !m.ans && !m.hidden);
   S.settings.aiUsed++;
   S.ai.push({ id: uid('aj'), by: myId(), cls: 'A', purpose: 'Summarise unresolved questions · ' + o.name, sources: 'Chat in ' + o.id, consent: 'Granted', model: S.providers.ai.name, status: 'Generated', at: today() });

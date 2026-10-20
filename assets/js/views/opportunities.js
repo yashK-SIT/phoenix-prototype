@@ -31,13 +31,22 @@ function expireCards() {
     if (c.status === 'Active' && c.expires < today()) {
       c.status = 'Expired';
       S.matches
-        .filter(m => m.card === c.id && !['Introduced', 'Closed', 'Rejected'].includes(m.status))
+        .filter(m => m.card === c.id && m.status !== 'Introduced' && !MB_ENDED.includes(m.status))
         .forEach(m => {
-          m.status = 'Closed';
-          m.outcome = 'Closed — card expired';
+          m.status = 'Expired';
+          m.outcome = 'Proposal ended — card expired before mutual consent';
         });
     }
   });
+  // a consent request nobody completed in time ends the proposal (no introduction, nothing released)
+  S.matches
+    .filter(m => m.status === 'Awaiting consent' && m.consentBy && m.consentBy < today())
+    .forEach(m => {
+      m.status = 'Expired';
+      m.outcome = 'Proposal ended — consent not given by ' + fmt(m.consentBy);
+      [m.a, m.b, m.steward].filter(Boolean).forEach(p => notify(p, 'Match proposal expired before both people consented', 'match', { id: m.id }));
+      audit('Match proposal expired', m.id, 'consent window ended ' + m.consentBy);
+    });
 }
 // Card type as a typed badge: needs and offers read differently at a glance (icon + words, never colour alone).
 const OPP_KIND = { Need: ['target', 'need'], Offer: ['send', 'offer'], Asset: ['layers', 'asset'], Opportunity: ['megaphone', 'opp'] };
@@ -213,16 +222,13 @@ route('card', 'opportunities', () => {
    .filter(pp => pp.to === myId() || pp.from === myId())
    .map(pp =>
      card(
-       'Direct collaboration proposal',
-       'From ' + nm(pp.from) + ' to ' + nm(pp.to) + ' · ' + h(pp.rel),
-       pill(pp.status) +
+       'Direct collaboration (Route B)',
+       'No Match Brief. Recorded for audit: who, context, authority, consent and the resulting workspace.',
+       rbRecord(c, pp) +
          (pp.to === myId() && pp.status === 'Awaiting consent'
            ? `<div class="row opp-dr">${B('Decline', 'rbDecide', { c: c.id, id: pp.id, v: 'Declined' })}${B('Accept', 'rbDecide', { c: c.id, id: pp.id, v: 'Accepted' }, 'btn-p btn-sm')}</div>`
-           : '') +
-         (pp.status === 'Accepted' && canCreateRoom()
-           ? `<div class="opp-dr">${B('Create or link ' + WL(), 'newRoom', { origin: 'Direct invitation between authorised collaborators', oid: c.id }, 'btn-p btn-sm')}</div>`
            : ''),
-     ),
+     ) + (pp.status === 'Accepted' ? introCard(viaOf('pp:' + c.id + ':' + pp.id)) : ''),
    )
    .join('')}
  ${r === 'P' || r === 'C' ? card('Direct collaboration (Route B)', 'Only with an already-known authorised collaborator.', B('Propose direct collaboration', 'routeB', { id: c.id })) : ''}</aside></div>`
@@ -235,10 +241,10 @@ A.cardState = d => {
   c.status = d.v;
   if (['Withdrawn', 'Fulfilled/Closed'].includes(d.v))
     S.matches
-      .filter(m => m.card === c.id && !['Introduced', 'Closed', 'Rejected'].includes(m.status))
+      .filter(m => m.card === c.id && m.status !== 'Introduced' && !MB_ENDED.includes(m.status))
       .forEach(m => {
-        m.status = 'Closed';
-        m.outcome = 'Closed — card ' + d.v.toLowerCase();
+        m.status = 'Withdrawn';
+        m.outcome = 'Proposal ended — card ' + d.v.toLowerCase() + ' before mutual consent';
       });
   audit('Card state', c.id, from + ' → ' + d.v);
   ok();
@@ -296,6 +302,8 @@ function makeBrief(a, b, card, origin) {
   if (consent(a, 'matching') !== 'Granted') blockers.push('No matching consent from ' + P(a).name);
   if (consent(b, 'matching') !== 'Granted') blockers.push('No matching consent from ' + P(b).name);
   if (card.expires < today()) blockers.push('Opportunity card expired');
+  if (crossOrg(a, b, card.ctx || ctxId()))
+    [a, b].forEach(pid => !authorizePurpose('xorg', pid, { ctx: card.ctx || ctxId() }, 'Cross-organisation Match Brief').ok && blockers.push('Cross-organisation discovery not allowed for ' + P(pid).name + ' — ' + purposeCheck('xorg', pid, { ctx: card.ctx || ctxId() }).level + ' level'));
   const steward = cardSteward(card);
   const cl = S.claims.filter(c => c.pid === a && c.vis !== 'Only me' && c.state === 'Current');
   const m = {
@@ -317,7 +325,7 @@ function makeBrief(a, b, card, origin) {
     uncertainty: cl.length ? 'Moderate' : 'High — little shared information',
     questions: ['What would a first conversation cover?'],
     next: 'Steward to review and decide.',
-    ai: consent(a, 'ai') === 'Granted' && S.settings.aiAvailable,
+    ai: purposeOn('ai', a) && adapterUp('ai'),
     ctx: card.ctx || ctxId(),
     consentA: null,
     consentB: null,
@@ -355,45 +363,41 @@ F.nom = d => {
 A.routeB = d => {
   const c = byId('cards', d.id);
   clearF('rb');
+  const leads = SPACE_KINDS.flatMap(k => S[k].filter(o => inCtx(o) && linkAuth(k, o)).map(o => [o.id, OBJ_LABEL(k) + ' · ' + o.name]));
   modal(
     'Direct authorised collaboration (Route B)',
     () =>
-      `<form data-f="rb" class="col prj-dlg" novalidate><input type="hidden" name="id" value="${c.id}">${fi('rb', 'pid', 'Known collaborator', { type: 'select', req: true, ph: 'Select', opts: S.assign.filter(a => a.ctx === c.ctx && a.status === 'Active' && a.pid !== myId()).map(a => [a.pid, P(a.pid).name]) })}${fi('rb', 'rel', 'Existing relationship', { type: 'select', req: true, opts: ['Same Circle', 'Same Rope Team', 'Same ' + WL(), 'Same organisation'], ph: 'Select' })}${banner('info', 'Checks', 'Valid membership/context + role/mandate + permission to invite/link + consent of the other party + no restriction conflict.')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Run checks</button></div></form>`,
+      `<form data-f="rb" class="col prj-dlg" novalidate><input type="hidden" name="id" value="${c.id}">${fi('rb', 'pid', 'Known collaborator', { type: 'select', req: true, ph: 'Select', opts: S.assign.filter(a => a.ctx === c.ctx && a.status === 'Active' && a.pid !== myId() && roleBase(a.role) !== 'S').map(a => [a.pid, P(a.pid).name]) })}${fi('rb', 'auth', 'Authority source', { type: 'select', req: true, ph: 'Select the basis', opts: rbSources() })}${leads.length ? fi('rb', 'space', 'Existing work you lead (only for the last basis)', { type: 'select', ph: 'Select', opts: leads }) : ''}${banner('info', 'Checked before anything is sent', 'Both of you are active in this programme · the basis you chose is true · cross-organisation sharing is allowed for both if you are in different organizations · the other person must accept. No Match Brief is needed, and nothing private is shared.')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Run checks and invite</button></div></form>`,
   );
 };
 F.rb = d => {
-  if (!validate('rb', d, { pid: ['req'], rel: ['req'] })) return render();
-  const shared =
-    S.circles.some(c => memberOf(c) && memberOf(c, d.pid)) ||
-    S.rooms.some(c => memberOf(c) && memberOf(c, d.pid)) ||
-    S.ropes.some(c => memberOf(c) && memberOf(c, d.pid)) ||
-    (me().org && me().org === P(d.pid).org);
-  if (!shared) {
-    UI.modal = null;
-    return deny('no existing valid relationship with this person — use the steward-reviewed match route');
-  }
+  if (!validate('rb', d, { pid: ['req'], auth: ['req'] })) return render();
   const cd = byId('cards', d.id);
-  (cd.proposals = cd.proposals || []).push({
-    id: uid('pp'),
-    from: myId(),
-    to: d.pid,
-    status: 'Awaiting consent',
-    rel: d.rel,
-  });
-  notify(
-    d.pid,
-    `${me().name} proposes direct collaboration on “${cd.title}”. Accept or decline from the card.`,
-    'card',
-    { id: d.id },
-  );
-  audit('Route B proposal', d.id, d.pid);
+  const c = cd.ctx || ctxId();
+  if (d.auth === 'lead' && !d.space) {
+    UI.err.rb = { space: 'Choose the work you lead.' };
+    return render();
+  }
+  const auth = rbAuthority(d.auth, myId(), d.pid, c, d.space);
+  if (!auth) {
+    UI.modal = null;
+    return deny('the basis you chose is not true for you and ' + P(d.pid).name + ' — use the steward-reviewed match route');
+  }
+  if (crossOrg(myId(), d.pid, c))
+    for (const pid of [myId(), d.pid]) {
+      const r = authorizePurpose('xorg', pid, { ctx: c }, 'Route B direct collaboration');
+      if (!r.ok) {
+        UI.modal = null;
+        return deny('different organizations: ' + r.why);
+      }
+    }
+  const pp = { id: uid('pp'), from: myId(), to: d.pid, ctx: c, at: now(), rel: auth.label, authority: auth, invitation: { at: now(), by: myId() }, status: 'Awaiting consent', consentAt: null, workspace: null };
+  (cd.proposals = cd.proposals || []).push(pp);
+  notify(d.pid, `${me().name} invites you to collaborate directly on “${cd.title}” (${auth.label}). Accept or decline from the card.`, 'card', { id: d.id });
+  audit('Route B proposal', d.id, myId() + '→' + d.pid + ' · ' + auth.label);
   UI.modal = null;
   clearF('rb');
-  toast(
-    'Checks passed. The other party has been asked to consent. An authorised lead then creates or links a ' +
-      WL() +
-      '.',
-  );
+  toast('Checks passed. ' + P(d.pid).name + ' has been asked to accept.');
   ok();
 };
 // ---------- MATCH BRIEFS (E06) ----------
@@ -433,14 +437,38 @@ route('matches', 'matching', () => {
         title: nm(m.a) + ' ↔ ' + nm(m.b),
         sub: h(m.origin),
         meta: [m.steward ? 'Steward · ' + nm(m.steward) : ''],
-        badges: pill(m.status) + (m.blockers.length ? pill(m.blockers.length + ' do-not-introduce', 'p-red') : ''),
+        badges: pill(m.status) + (m.introState ? pill(INTRO_LABEL[m.introState], 'p-teal') : '') + (m.blockers.length ? pill(m.blockers.length + ' do-not-introduce', 'p-red') : ''),
         primary: L('Open', 'match', { id: m.id }, 'btn btn-s btn-sm'),
       }),
       empty: ['link', 'No Match Briefs yet', 'A steward drafts a Match Brief from a potential match; both people consent before any introduction.', ''],
     }),
-    )
+    ) + rbList()
   );
 });
+// Route B records the person is part of (all of them for the Programme Administrator), for audit and follow-up.
+function rbList() {
+  const r = role();
+  const rows = S.cards.flatMap(c => (c.proposals || []).filter(pp => (pp.ctx || c.ctx) === ctxId() && (r === 'A' || pp.from === myId() || pp.to === myId())).map(pp => [c, pp]));
+  if (!rows.length) return '';
+  return (
+    '<div class="section-gap"></div>' +
+    card(
+      'Direct collaborations (Route B)',
+      'Known collaborators, no Match Brief. Each record keeps who initiated it, the context, the authority source, consent and the resulting workspace.',
+      table(
+        ['Parties', 'Opportunity', 'Authority source', 'Consent', 'Outcome', ''],
+        rows.map(([c, pp]) => [
+          nm(pp.from) + ' → ' + nm(pp.to),
+          h(c.title),
+          h((pp.authority && pp.authority.label) || pp.rel || '—'),
+          pill(pp.status),
+          pp.introState ? `<code class="cap">${pp.introState}</code>` : '—',
+          L('Open', 'card', { id: c.id }, 'btn btn-s btn-sm'),
+        ]),
+      ),
+    )
+  );
+}
 route('match', 'matching', () => {
   const m = byId('matches', UI.p.id);
   if (!m) return empty('link', 'Not found', '');
@@ -459,9 +487,8 @@ route('match', 'matching', () => {
     );
   const myC = m.a === myId() ? 'consentA' : 'consentB';
   // Consent-based flow, shown read-only: brief → steward approval → mutual consent → introduction.
-  const declined = [m.consentA, m.consentB].includes('Declined');
-  const at = { Draft: 0, 'In steward review': 1, 'Clarification requested': 1, 'Awaiting consent': 2, Introduced: 4, Rejected: 1, Closed: declined ? 2 : 1 }[m.status] ?? 1;
-  const stop = ['Rejected', 'Closed'].includes(m.status);
+  const at = { Draft: 0, 'In steward review': 1, 'Clarification requested': 1, 'Awaiting consent': 2, Introduced: 4, Rejected: 1, Withdrawn: 1, Declined: 2, Expired: 2 }[m.status] ?? 1;
+  const stop = MB_ENDED.includes(m.status);
   const flow = `<ol class="mb-flow" aria-label="Match Brief progress">${['Match Brief', 'Steward approval', 'Mutual consent', 'Introduction']
     .map((t, i) => `<li class="${i < at ? 'done' : i === at ? (stop ? 'err' : 'cur') : 'todo'}"${i === at && !stop ? ' aria-current="step"' : ''}><span class="td">${i < at ? ic('check', 13) : i === at && stop ? ic('x', 13) : i + 1}</span><span>${t}</span></li>`)
     .join('')}</ol>`;
@@ -472,6 +499,8 @@ route('match', 'matching', () => {
     ]) +
     `<div class="shead-main mb-head"><span class="avstack mb-av" aria-hidden="true"><span class="av">${ini(m.a)}</span><span class="av">${ini(m.b)}</span></span><div class="shead-t"><div class="shead-kind">Match Brief · ${h(m.origin)}</div><div class="row wrap mb-ttl"><h1 class="h1">${nm(m.a) + ' ↔ ' + nm(m.b)}</h1>${pill(m.status)}</div><div class="shead-meta">${m.card && byId('cards', m.card) ? `<span>${oppKind(byId('cards', m.card).kind)} ${h(byId('cards', m.card).title)}</span>` : ''}${m.steward ? `<span>Steward · ${nm(m.steward)}</span>` : ''}</div></div></div>` +
     flow +
+    (stop ? banner('warn', 'Proposal ended before an introduction', h(m.outcome || m.status) + '. No contact details were released and nothing was created. This is not one of the four post-introduction outcomes.') : '') +
+    (m.status === 'Awaiting consent' && m.consentBy ? banner('info', 'Consent requested', 'Both people must consent by ' + fmt(m.consentBy) + '. If either declines, or the time runs out, the proposal ends with no introduction.') : '') +
     (m.blockers.length
       ? banner(
           'err',
@@ -482,11 +511,11 @@ route('match', 'matching', () => {
     (m.project ? banner('info', 'Collaborator invitation for a defined requirement', `Project: <b>${cName(m.project)}</b> · Requirement: <b>${h(m.requirement)}</b> · Expected contribution: ${h(m.contribution)}. The collaborator can accept or decline without obligation.`) : '') +
     `<div class="g12">
  <div class="c8 col" style="gap:16px">${mbBody(m)}</div>
- <aside class="c4 col mb-side">${card('Consent', 'Contact details are released only after both parties consent.', dl([[nm(m.a), pill(m.consentA || 'Pending')], [nm(m.b), pill(m.consentB || 'Pending')], m.outcome && ['Outcome', h(m.outcome)]]))}
+ <aside class="c4 col mb-side">${card('Consent', 'Contact details are released only after both parties consent.', dl([[nm(m.a), pill(m.consentA || 'Pending')], [nm(m.b), pill(m.consentB || 'Pending')], m.outcome && !m.introState && ['Outcome', h(m.outcome)]]))}
  ${stw && ['In steward review', 'Clarification requested'].includes(m.status) ? card('Steward decision', '', `<div class="col opp-stack">${B(ic('edit', 14) + 'Edit brief', 'mbEdit', { id: m.id })}${B('Request clarification', 'mbState', { id: m.id, v: 'Clarification requested' })}${B('Reject', 'mbState', { id: m.id, v: 'Rejected' })}${m.blockers.length ? `<button class="btn btn-p btn-sm" disabled>Approve</button>` : B('Approve and request consent', 'mbState', { id: m.id, v: 'Awaiting consent' }, 'btn-p btn-sm')}</div>`) : ''}
  ${party && m.status === 'Awaiting consent' && !m[myC] ? card('Your consent', 'Contact details are released only after both parties consent.', `<div class="row wrap">${B('Decline', 'mbConsent', { id: m.id, v: 'Declined' })}${B('Consent to introduction', 'mbConsent', { id: m.id, v: 'Consented' }, 'btn-p btn-sm')}</div>`) : ''}
  ${party && m.status === 'Introduced' && m.project ? card('Collaborator invitation', '', `<p class="muted">${m.b === myId() ? 'Your invitation to the project ' + WL() + ' explains the requirement and expected contribution. Accept or decline it without obligation.' : nm(m.b) + ' has been invited with a defined responsibility: ' + h(m.requirement) + '.'}</p>${byId('projects', m.project)?.room ? L('Open ' + WL(), 'room', { id: byId('projects', m.project).room }, 'btn btn-s btn-sm') : '<p class="cap">The invitation is sent when the ' + WL() + ' is created.</p>'}`) : ''}
- ${party && m.status === 'Introduced' && !m.next2 && !m.project ? card('What next?', '', `<div class="col opp-stack">${['Close', 'Continue conversation', 'Link existing ' + WL(), 'Create new ' + WL()].map(o => B(o, 'mbNext', { id: m.id, v: o })).join('')}</div>`) : ''}
+ ${m.status === 'Introduced' && (party || m.introState) ? (party && !m.project ? introCard(viaOf('mb:' + m.id)) : card('What happened next', '', m.introState ? `<code>${m.introState}</code> · ${h(INTRO_LABEL[m.introState])}` : m.project ? '<p class="cap">Recorded when the project’s ' + WL() + ' is created and the collaborator is invited.</p>' : '<p class="cap">Not recorded yet.</p>')) : ''}
  ${m.status === 'Introduced' ? card('Introduction', '', `<p>${nm(m.a)} · ${h(P(m.a).email)}</p><p>${nm(m.b)} · ${h(P(m.b).email)}</p><p class="cap opp-note">Released after mutual consent.</p>`) : ''}</aside></div>`
   );
 });
@@ -495,7 +524,8 @@ A.mbState = d => {
   if (d.v === 'Awaiting consent' && m.blockers.length) return deny('a do-not-introduce condition is present');
   m.status = d.v;
   if (d.v === 'Awaiting consent') {
-    [m.a, m.b].forEach(p => notify(p, 'Match Brief approved — your consent is requested', 'match', { id: m.id }));
+    m.consentBy = new Date(Date.now() + CONSENT_DAYS * 864e5).toISOString().slice(0, 10);
+    [m.a, m.b].forEach(p => notify(p, 'Match Brief approved — your consent is requested by ' + fmt(m.consentBy), 'match', { id: m.id }));
     const j = S.ai.find(x => x.purpose.includes(m.id));
     if (j) {
       j.status = 'Released';
@@ -503,7 +533,7 @@ A.mbState = d => {
     }
   }
   if (d.v === 'Rejected') {
-    m.outcome = 'Closed — rejected by steward';
+    m.outcome = 'Proposal ended — rejected by the steward';
   }
   audit('Match Brief ' + d.v, m.id, '');
   ok();
@@ -533,14 +563,15 @@ A.mbConsent = d => {
   if (m.a === myId()) m.consentA = d.v;
   else m.consentB = d.v;
   if (d.v === 'Declined') {
-    m.status = 'Closed';
-    m.outcome = 'Declined — no introduction, no contact details released';
+    m.status = 'Declined';
+    m.outcome = 'Proposal ended — ' + me().name + ' declined; no introduction, no contact details released';
     [m.a, m.b, m.steward]
       .filter(p => p !== myId())
-      .forEach(p => notify(p, 'Match Brief closed: one party declined', 'match', { id: m.id }));
+      .forEach(p => notify(p, 'Match proposal ended: one party declined', 'match', { id: m.id }));
   } else if (m.consentA === 'Consented' && m.consentB === 'Consented') {
     m.status = 'Introduced';
-    m.outcome = 'Accepted';
+    m.outcome = 'Introduction active';
+    m.introducedAt = now();
     if (m.project) collabInvite(m);
     [m.a, m.b, m.steward].forEach(p =>
       notify(p, 'Introduction made: ' + P(m.a).name + ' and ' + P(m.b).name, 'match', { id: m.id }),
@@ -549,31 +580,188 @@ A.mbConsent = d => {
   audit('Match consent ' + d.v, m.id, '');
   ok();
 };
+// ---------- AFTER THE INTRODUCTION: exactly four outcomes (WSS clarification 7) ----------
+// Only an active introduction (both parties consented) has an outcome. A decline, steward rejection, card withdrawal
+// or consent expiry before mutual consent ends the proposal instead — it is not one of the four outcomes.
+const INTRO = {
+  CLOSED: 'INTRODUCTION_CLOSED',
+  OPEN: 'INTRODUCTION_OPEN',
+  LINKED: 'INTRODUCTION_LINKED_EXISTING',
+  CREATED: 'INTRODUCTION_CREATED_WORKSPACE',
+};
+const introOutcomes = () => [
+  ['close', 'Close', 'No useful next step. Nothing is created.', INTRO.CLOSED],
+  ['continue', 'Continue Conversation', 'Useful, not ready for structured action. A private two-person conversation continues.', INTRO.OPEN],
+  ['link', 'Link Existing Workspace', 'You already share a Circle, Rope Team or ' + WL() + '. Both of you must be active members of it.', INTRO.LINKED],
+  ['create', 'Create New Workspace', 'Move into structured action. Normally an ' + WL() + ', with this introduction as its origin.', INTRO.CREATED],
+];
+const INTRO_LABEL = { [INTRO.CLOSED]: 'Closed', [INTRO.OPEN]: 'Conversation continuing', [INTRO.LINKED]: 'Linked to an existing workspace', [INTRO.CREATED]: 'New workspace created' };
+const INTRO_FINAL = [INTRO.CLOSED, INTRO.LINKED, INTRO.CREATED];
+// Consent window after steward approval; an unanswered proposal expires instead of hanging open.
+const CONSENT_DAYS = 14;
+const MB_ENDED = ['Declined', 'Expired', 'Rejected', 'Withdrawn'];
+// Route A (Match Brief) and Route B (direct collaboration proposal) share the post-agreement steps. `via` names one:
+// "mb:<match id>" or "pp:<card id>:<proposal id>".
+function viaOf(via) {
+  const [t, a, b] = String(via || '').split(':');
+  if (t === 'mb') {
+    const m = byId('matches', a);
+    return m && { kind: 'mb', o: m, parties: [m.a, m.b], ctx: m.ctx, card: m.card, label: 'Introduction · ' + P(m.a).name + ' ↔ ' + P(m.b).name };
+  }
+  if (t === 'pp') {
+    const c = byId('cards', a);
+    const pp = c && (c.proposals || []).find(x => x.id === b);
+    return pp && { kind: 'pp', o: pp, parties: [pp.from, pp.to], ctx: pp.ctx || c.ctx, card: c.id, label: 'Direct collaboration · ' + P(pp.from).name + ' ↔ ' + P(pp.to).name };
+  }
+  return null;
+}
+// Workspaces both parties are active members of — the authority PHOENIX validates before linking.
+const sharedSpaces = (a, b, c) =>
+  SPACE_KINDS.flatMap(k => S[k].filter(o => (!c || o.ctx === c) && o.state === 'Active' && memberOf(o, a) && memberOf(o, b)).map(o => [k, o]));
+function introSet(v, state, ws) {
+  v.o.introState = state;
+  v.o.introAt = now();
+  v.o.introBy = myId();
+  if (ws) v.o.workspace = ws;
+  const other = v.parties.find(p => p !== myId());
+  notify(other, me().name + ' recorded what happened next: ' + INTRO_LABEL[state], v.kind === 'mb' ? 'match' : 'card', v.kind === 'mb' ? { id: v.o.id } : { id: v.card });
+  if (v.kind === 'mb' && v.o.steward) notify(v.o.steward, 'Introduction outcome: ' + INTRO_LABEL[state] + ' — ' + v.label, 'match', { id: v.o.id });
+  audit('Post-introduction outcome', v.o.id, state + (ws ? ' · ' + ws.kind + ' ' + ws.id : ''));
+}
+// The private two-person conversation for "Continue Conversation".
+function introDm(v) {
+  v.o.dm = v.o.dm && byId('dms', v.o.dm) ? v.o.dm : null;
+  if (v.o.dm) return byId('dms', v.o.dm);
+  const o = { id: uid('dm'), ctx: v.ctx || ctxId(), intro: v.o.id, name: v.label, state: 'Active', members: v.parties.map(pid => ({ pid, role: 'Party', status: 'Active' })), chat: [] };
+  (S.dms = S.dms || []).push(o);
+  v.o.dm = o.id;
+  sysMsg(o, 'Introduction conversation opened by ' + me().name + '. Only the two of you can read it.');
+  return o;
+}
 A.mbNext = d => {
-  const m = byId('matches', d.id);
-  m.next2 = d.v;
-  m.outcome = { Close: 'Closed', 'Continue conversation': 'Follow-up' }[d.v] || 'Opportunity progressed';
-  audit('Post-introduction choice', m.id, d.v);
-  if (d.v.startsWith('Create')) {
-    if (!canCreateRoom()) {
-      toast('Your request was sent to an authorised lead to create the ' + WL() + '.');
-      S.assign
-        .filter(a => a.ctx === ctxId() && roleBase(a.role) === 'F')
-        .forEach(a => notify(a.pid, 'Create a ' + WL() + ' for an introduced match', 'match', { id: m.id }));
-      return ok();
-    }
-    return A.newRoom({ origin: 'Approved PHOENIX match', oid: m.card });
+  const v = viaOf('mb:' + d.id);
+  const k = d.k || (introOutcomes().find(x => x[1] === d.v || x[0] === d.v) || [])[0] || (/^link/i.test(d.v || '') ? 'link' : /^create/i.test(d.v || '') ? 'create' : '');
+  return introNext(v, k);
+};
+function introNext(v, k) {
+  if (k === 'close') {
+    introSet(v, INTRO.CLOSED);
+    if (v.o.dm && byId('dms', v.o.dm)) byId('dms', v.o.dm).state = 'Closed';
+    toast('Introduction closed. Nothing was created.');
+    return ok();
   }
-  if (d.v.startsWith('Link')) {
-    m.next2 = null;
-    if (!myRooms().length) {
-      toast('You are not a member of any ' + WL() + ' to link.', 'warn');
-      return ok();
-    }
-    return A.linkRoom({ id: m.id });
+  if (k === 'continue') {
+    introSet(v, INTRO.OPEN);
+    const o = introDm(v);
+    save();
+    return go('messages', { c: o.id, k: 'dms' });
   }
+  if (k === 'link') return A.introLink({ via: v.kind === 'mb' ? 'mb:' + v.o.id : 'pp:' + v.card + ':' + v.o.id });
+  if (k === 'create') {
+    const other = v.parties.find(p => p !== myId());
+    A.newRoom({ origin: v.kind === 'mb' ? 'Approved PHOENIX match' : 'Direct authorised collaboration', oid: v.kind === 'mb' ? v.o.id : v.card, via: v.kind === 'mb' ? 'mb:' + v.o.id : 'pp:' + v.card + ':' + v.o.id });
+    // the other party is suggested as an invitee; they still have to accept
+    UI.msel.nr_inv = [other];
+    return render();
+  }
+  return deny('choose one of the four outcomes');
+}
+A.introLink = d => {
+  const v = viaOf(d.via);
+  const [a, b] = v.parties;
+  const sp = sharedSpaces(a, b, v.ctx);
+  clearF('ilk');
+  modal(
+    'Link an existing workspace',
+    () =>
+      `<form data-f="ilk" class="col" style="gap:14px" novalidate><input type="hidden" name="via" value="${h(d.via)}">${
+        sp.length
+          ? fi('ilk', 'ws', 'Workspace you both belong to', { type: 'select', req: true, ph: 'Choose', opts: sp.map(([k, o]) => [k + ':' + o.id, OBJ_LABEL(k) + ' · ' + o.name]), help: 'Only active Circles, Rope Teams and ' + WL() + 's where ' + nm(a) + ' and ' + nm(b) + ' are both active members.' })
+          : banner('warn', 'No shared workspace', nm(a) + ' and ' + nm(b) + ' are not both active members of any Circle, Rope Team or ' + WL() + ' in this programme. Choose Create New Workspace or Continue Conversation instead.')
+      }${banner('info', 'Linked by reference', 'The workspace records this introduction as a related object. Nothing from the Match Brief or either person’s records is copied, and no one is added to the workspace.')}<div class="actions"><span></span><button class="btn btn-p" type="submit" ${sp.length ? '' : 'disabled'}>Link</button></div></form>`,
+  );
+};
+F.ilk = d => {
+  if (!validate('ilk', d, { ws: ['req'] })) return render();
+  const v = viaOf(d.via);
+  const [k, id] = d.ws.split(':');
+  const o = byId(k, id);
+  // re-validated at submit: both parties must still be active members of an active workspace
+  if (!o || o.state !== 'Active' || !v.parties.every(pid => memberOf(o, pid))) return deny('both parties must be active members of an active workspace to link it');
+  addLink(k, o.id, v.kind === 'mb' ? 'matches' : 'cards', v.kind === 'mb' ? v.o.id : v.card, 'related-to', false);
+  sysMsg(o, 'Linked by reference to ' + v.label + '. Nothing was copied and no one was added.');
+  introSet(v, INTRO.LINKED, { kind: k, id: o.id });
+  UI.modal = null;
+  clearF('ilk');
+  toast('Linked to ' + o.name + '.');
   ok();
 };
+// Called by the Action Room form once the room exists, so the outcome is recorded only when a workspace is real.
+function introCreated(via, x) {
+  const v = viaOf(via);
+  if (!v || INTRO_FINAL.includes(v.o.introState)) return;
+  if (v.kind === 'pp' && v.card) addLink('rooms', x.id, 'cards', v.card, 'related-to', false);
+  introSet(v, INTRO.CREATED, { kind: 'rooms', id: x.id });
+}
+// What the introduction screen shows: the question, or the recorded outcome.
+function introCard(v) {
+  const st = v.o.introState;
+  const ws = v.o.workspace && byId(v.o.workspace.kind, v.o.workspace.id);
+  const done = st ? dl([['State', `<code>${st}</code>`], ['Outcome', h(INTRO_LABEL[st])], ['Recorded by', nm(v.o.introBy) + ' · ' + fmt(v.o.introAt)], ws && ['Workspace', objOpenable(v.o.workspace.kind, ws) ? L(h(ws.name), OBJ_ROUTE[v.o.workspace.kind], { id: ws.id }) : h(ws.name)], v.o.dm && byId('dms', v.o.dm) && st === INTRO.OPEN && ['Conversation', L('Open conversation', 'messages', { c: v.o.dm, k: 'dms' })]]) : '';
+  if (INTRO_FINAL.includes(st)) return card('What happened next', '', done);
+  const via = v.kind === 'mb' ? { id: v.o.id } : { c: v.card, id: v.o.id };
+  const act = v.kind === 'mb' ? 'mbNext' : 'rbNext';
+  return card(
+    'What happened next?',
+    st === INTRO.OPEN ? 'The conversation is continuing. Record the outcome when you know it.' : 'Choose one. Either of you can record it; the other is told.',
+    done +
+      `<div class="col opp-stack">${introOutcomes().filter(([k]) => !(st === INTRO.OPEN && k === 'continue'))
+        .map(([k, l, t]) => (k === 'close' ? CB(l, act, { ...via, k }, 'Close this introduction? Nothing will be created, and the conversation becomes read-only.', 'btn-s btn-sm') : B(l, act, { ...via, k }, k === 'create' ? 'btn-p btn-sm' : 'btn-s btn-sm')) + `<p class="cap" style="margin:0 0 6px">${t}</p>`)
+        .join('')}</div>`,
+  );
+}
+
+// ---------- ROUTE B: direct authorised collaboration (no Match Brief) ----------
+// The record keeps who initiated it, the context, the authority source, the invitation and consent, and the resulting
+// workspace link. It is never a back door: the other party must consent, both must be active in the programme, and
+// cross-organisation proposals still need CROSS_ORG_DISCOVERY for both.
+const rbSources = () => [
+  ['programme', 'Members of the same approved programme'],
+  ['space', 'Already share a Circle, Rope Team or ' + WL()],
+  ['org', 'Known institutional collaborators (same organization)'],
+  ['lead', 'I lead existing work and am adding a known collaborator to it'],
+];
+function rbAuthority(type, from, to, c, spaceId) {
+  const act = pid => S.assign.some(a => a.pid === pid && a.ctx === c && a.status === 'Active');
+  if (!act(from) || !act(to)) return null;
+  if (type === 'programme') return { type, ref: c, label: 'Same approved programme · ' + ctxName(c) };
+  if (type === 'space') {
+    const sp = sharedSpaces(from, to, c)[0];
+    return sp && { type, ref: sp[1].id, label: 'Shared ' + OBJ_LABEL(sp[0]) + ' · ' + sp[1].name };
+  }
+  if (type === 'org') return P(from).org && P(from).org === P(to).org ? { type, ref: P(from).org, label: 'Same organization · ' + orgName(P(from).org) } : null;
+  if (type === 'lead') {
+    const k = objKind(spaceId);
+    const o = byId(k, spaceId);
+    return o && SPACE_KINDS.includes(k) && linkAuth(k, o) ? { type, ref: o.id, label: 'Lead of ' + OBJ_LABEL(k) + ' · ' + o.name } : null;
+  }
+  return null;
+}
+A.rbNext = d => {
+  const v = viaOf('pp:' + d.c + ':' + d.id);
+  return introNext(v, d.k);
+};
+function rbRecord(c, pp) {
+  const ws = pp.workspace && byId(pp.workspace.kind, pp.workspace.id);
+  return dl([
+    ['Initiated by', nm(pp.from) + (pp.at ? ' · ' + fmt(pp.at) : '')],
+    ['Invited', nm(pp.to)],
+    ['Context', h(ctxName(pp.ctx || c.ctx))],
+    ['Authority source', h((pp.authority && pp.authority.label) || pp.rel || '—')],
+    ['Consent', pill(pp.status) + (pp.consentAt ? ' <span class="cap">' + fmt(pp.consentAt) + '</span>' : '')],
+    ['Resulting workspace', ws ? (objOpenable(pp.workspace.kind, ws) ? L(h(ws.name), OBJ_ROUTE[pp.workspace.kind], { id: ws.id }) : h(ws.name)) : pp.introState ? h(INTRO_LABEL[pp.introState]) : '—'],
+  ]);
+}
 // ---------- COLLABORATOR MATCH FOR A PROJECT REQUIREMENT (Section 6.4, F06 Route A, D-05) ----------
 // The required skill is part of the project requirements. Rules compare it with collaborator records held in PHOENIX
 // (organization profile, published offers, shared claims) and show the actual rationale — never a score.
@@ -582,10 +770,16 @@ const words = s =>
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter(w => w.length > 2 && !['and', 'the', 'for', 'with', 'from', 'support', 'help'].includes(w));
+// CROSS_ORG_DISCOVERY: a candidate from another organization is proposed only if both organizations and the
+// programme allow it; if either person declined, the candidate is shown with that blocker. Same-organization
+// matching never needs this purpose.
+const xorgScopeOk = (pid, c) => tenantScope(personOrg(pid, c), 'xorg') && progScope(c, 'xorg');
 function collabCandidates(p, req) {
   const need = new Set(words(req));
   return S.assign
     .filter(a => a.ctx === p.ctx && roleBase(a.role) === 'C' && a.status === 'Active' && a.pid !== p.owner)
+    // records from a tenant (or programme) that disabled cross-organisation discovery are not proposed externally
+    .filter(a => !crossOrg(a.pid, p.owner, p.ctx) || (xorgScopeOk(a.pid, p.ctx) && xorgScopeOk(p.owner, p.ctx)))
     .map(a => {
       const per = P(a.pid);
       const org = S.orgs.find(o => o.id === per.org) || {};
@@ -601,6 +795,8 @@ function collabCandidates(p, req) {
       if (consent(a.pid, 'matching') !== 'Granted') blockers.push('No matching consent');
       if (consent(p.owner, 'matching') !== 'Granted') blockers.push('Project owner has not granted matching consent');
       if (!(a.mandate && a.mandate.valid)) blockers.push('No valid mandate to commit organization resources');
+      if (crossOrg(a.pid, p.owner, p.ctx))
+        [a.pid, p.owner].forEach(pid => !authorizePurpose('xorg', pid, { ctx: p.ctx }, 'Cross-organisation collaborator match').ok && blockers.push('Cross-organisation discovery not allowed by ' + P(pid).name));
       return { a, per, org, hits, blockers };
     })
     .sort((x, y) => y.hits.length - x.hits.length);
@@ -689,6 +885,9 @@ function collabInvite(m) {
   if (x) {
     if (!x.members.some(mm => mm.pid === m.b && mm.status !== 'Removed')) x.members.push({ pid: m.b, role: roleLbl, status: 'Invited', req: m.requirement, contrib: m.contribution, match: m.id });
     notify(m.b, 'Collaborator invitation: ' + p.title + ' — ' + m.requirement, 'room', { id: x.id });
+    // the requirement belongs to existing work: recorded as Link Existing Workspace (steward-approved, both consented)
+    addLink('rooms', x.id, 'matches', m.id, 'related-to', false);
+    Object.assign(m, { introState: INTRO.LINKED, introAt: now(), introBy: m.steward, workspace: { kind: 'rooms', id: x.id } });
   } else {
     (p.pendingCollab = p.pendingCollab || []).push({ pid: m.b, req: m.requirement, contrib: m.contribution, match: m.id });
     notify(m.b, 'Collaborator match accepted for “' + p.title + '”. You will be invited when its ' + WL() + ' is created.', 'match', { id: m.id });

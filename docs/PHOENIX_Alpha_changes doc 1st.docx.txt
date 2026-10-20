@@ -1,0 +1,637 @@
+﻿PHOENIX FOUNDATION ALPHA
+Consolidated Click-dummy User-Flow &amp; Build-Freeze Review
+Role requirements, onboarding routes, menu logic, collaboration spaces, profile evolution and Alpha-safe matchmaking
+Build-freeze position
+The clickdummy is a useful draft and several flows are already directionally strong, but it should not be frozen until the P0 contradictions in consent, voting, evidence state, sponsor scope, context switching and authority boundaries are corrected and demonstrated.
+Prepared By World Systems Solutions (WSS) for Shaligram Development Team
+Version 1.0 | 12 October 2026
+
+1. Executive view
+This report consolidates the current Alpha FRD, WSS clarification decisions, the 9 October wireframe meeting, the live clickdummy review evidence, the build-freeze review and the Shaligram implementation action report. It does not repeat every screen. Instead, it asks one practical question for each role and screen family: does the clickdummy help this user do what the Alpha says they should be able to do, with the correct permissions, privacy, human review and next action?
+Simple rule for the next iteration
+Design the platform around the user’s current role, context, purpose and next useful action - not around exposing every module. The same underlying services can remain reusable, but each user should see only the work, decisions and records relevant to them.
+Status
+Meaning for Shaligram
+KEEP
+Role-shaped dashboards; rule-based next action; scoped workspace lists; private mentor notes; explainable Match Briefs; AI sources/uncertainty; participant-controlled profile candidates.
+CHANGE BEFORE FREEZE
+Bundled consent; owner double-vote; invalid evidence-state model; staged sponsor funding; pathway editor without dependency rules; cross-context request leakage; platform-admin governance powers.
+DECIDE / FREEZE
+Entry route beyond invite-only; age-confirmation vs DOB; vote threshold/quorum/window; phone-first requirement; lightweight Bulletin Board and relationship view; final role/bundle fixtures.
+KEEP OUT OF ALPHA
+Universal or proxy person score; AI-ranked next actions; token economy; staged project funding/reallocation; autonomous stewards; real-time chat; graph analytics; full digital twins; hidden psychological inference.
+Separate role membership and authority:
+Replace embedded Access Role blocks in every persona flow with Collaborating actors and other roles involved. Maintain a separate permission matrix. A person collaborates with another role holder without inheriting that role, its data access or its approval powers.
+Concept
+Required implementation
+Person
+One identity and login. An existing verified person receiving a second invitation gains a contextual role assignment, not another account.
+Role assignment
+Record person, role, organisation or programme context and active or pending state. Show only active assignments as usable choices.
+Membership
+Record which Circle Rope Team or Action Workspace the person belongs to and the applicable period. A role title alone does not grant all workspace access.
+Authority bundle and mandate
+Record each separately delegated capability, approver, context, scope and validity. Reviewer Finance Trust Data AI and Incident authority must be explicit.
+Permission decision
+Check the current role assignment, object membership or mandate, object state, consent and audience or release rules for the requested action. Recheck on every service request.
+Collaboration link
+Keep related objects and permitted metadata linked. Do not copy private drafts raw Compass answers or protected Mentor notes into another space.
+
+2. Implement these authority boundaries
+Actor
+Own work and decision authority
+Boundary to enforce
+Participant
+Accept personal pathway and task commitments; control profile candidates and optional purposes; submit own work and evidence.
+Cannot inherit Mentor Reviewer Lead or admin powers by working with them.
+Facilitator or Circle Steward
+Recommend pathways; facilitate assigned Circles and proposals; steward review where assigned.
+Evidence or custom pathway approval requires Reviewer capability; consent policy is governed separately.
+Mentor
+Support assigned participants and Rope Teams; recommend actions; keep protected mentoring notes.
+No automatic evidence approval; notes excluded from shared spaces profiles Harvests sponsor reporting and AI retrieval.
+Partner Collaborator
+Act within the accepted mandate; consent to introductions; contribute to assigned work.
+Contact and work access follow mutual consent and context mandate; other assignees remain protected.
+Organisation Representative
+Invite and administer inside the delegated organisation envelope.
+Cannot edit permission bundles or see another organisation’s workspace or raw hurdle data.
+Programme Administrator
+Operate approved packs invitations queues and configuration; publish approved policy within delegation.
+Title alone grants none of Reviewer Finance Trust Data AI or Incident powers.
+Platform Administrator
+Operate technical deployment health integrations and recovery within approved settings.
+No default participant content access or independent authority to define governance or consent.
+Sponsor Funder
+Manage entitled seats and invoices; view approved safe outcomes and authorised reports.
+No workspace membership votes private notes raw profiles or identifiable content without explicit release approval.
+Specialist authority holder
+Reviewer approves consequential items; Trust Data defines policy; Finance AI and Incident owners act within their own assigned scope.
+Require an explicit assignment and correct context. A combined demo account cannot prove separate authority.
+
+For build freeze, the signed SOW and approved freeze decisions govern first, followed by the signed FRD. Until the FRD is signed, WSS written decisions and clarification responses remain important controlling context. The meeting itself records that the clickdummy is a working draft and that the frozen FRD governs where the prototype differs.
+Implement safe role transitions
+Observed failure. Samuel switched from Mentor in Excelsior to Participant in Riverside. A notification still opened Excelsior Mentor Requests with Accept and Decline controls under the Riverside Participant view. No action was submitted. This is a demonstrated route and control exposure; backend execution authority remains to be tested.
+Required transition behavior
+1. Provide a persistent header switcher listing each active role and its organisation or programme context. Use the invited context on first login and the last-used valid context afterwards. Pending or inactive assignments must not be selectable for work.
+2. On selection, re-evaluate the assignment and its validity. Save or prompt for an authorised unsaved draft before leaving. Never attach a draft from one context to an object in another.
+3. Rebuild the dashboard, navigation, review queue, requests, counts, search and object access for the new context. Close dialogs and invalidate stale action controls and cached object content.
+4. Recheck the destination on every notification and deep link. A permitted cross-context notice must name its context and require a safe switch to the correct active assignment before opening protected content or executing an action.
+5. Handle a revoked role, expired mandate, missing membership or changed consent without displaying protected content. Offer a valid context or a clear recovery route. Suspension in one organisation must leave other authorised contexts and the person’s identity available.
+3. The Alpha journey should feel like one coherent loop
+The FRD demonstration cycle is Authorize -&gt; Connect -&gt; Orient -&gt; Deliberate -&gt; Act -&gt; Evidence -&gt; Learn -&gt; Evolve. This is a coverage spine, not a mandatory sequence of Circle -&gt; Rope Team -&gt; Action Workspace. Users may enter different valid spaces depending on role and pack.
+Recommended navigation spine
+MY PHOENIX -&gt; Purpose / Next Action -&gt; relevant people and spaces -&gt; work / decision -&gt; evidence -&gt; Learning Harvest -&gt; profile candidate / next action. Circle, Rope Team and Action Workspace remain separate linked spaces and can be entered or linked in different orders.
+Space
+Why the user enters
+Primary actors
+Key boundary
+Circle
+Shared learning, sensemaking, reflection and collective decisions
+Facilitator + members
+Members only; one eligible member = one vote; not converted into another space.
+Rope Team
+Small mentoring, support and accountability
+Assigned mentor + participant(s)
+Protected notes never leave the Rope Team.
+Action Workspace
+Execution, tasks, milestones, risks, resources and evidence
+Project Lead + members + mandated partners
+Tasks begin after assignee acceptance; sponsor is never an automatic member.
+Opportunity / Match
+Responsible discovery and introduction
+Participant/Partner + Steward
+No contact before mutual consent; direct authorized collaboration is also valid.
+Evidence / Harvest
+Prove work, learn and feed the next cycle
+Submitter + Reviewer + Facilitator/Project Lead
+Review, E-level, confidentiality, lifecycle and release are separate; profile updates require participant acceptance.
+4. Onboarding: make entry simple, safe and reusable
+Onboarding should be progressive and role-aware. The goal is not to collect everything up front. It is to activate one person in a clear context, capture the minimum Purpose Compass, record the correct agreement/consent state, and land the user on My PHOENIX with a first next action.
+Route
+When it is used
+What the clickdummy should do
+Freeze note
+A. Standard invitation
+New Participant, Mentor, Facilitator or Partner
+Invite -&gt; verify email -&gt; required agreement + separate optional permissions -&gt; minimum Purpose Compass -&gt; role activates -&gt; My PHOENIX.
+Core Alpha route.
+B. Existing person + new role/context
+Same verified person is invited elsewhere or into another role
+Reuse the Person/login; create a new contextual Role Assignment; do not create a duplicate account.
+Must support role/context switcher.
+C. Sensitive role
+Org Rep, Programme Admin, Reviewer, Trust/Data, Finance, AI or Incident/Safety
+Onboard normally, then show Pending role approval shell until authorized.
+Do not treat all roles as sensitive.
+D. Resume incomplete onboarding
+User closes browser or stops midway
+Persist step state and resume at first incomplete step.
+Already demonstrated well in Ravi test.
+E. Agreement re-acceptance
+A material agreement change affects the user
+Gate only the affected function; keep own records, consent, correction, appeal and export available.
+Current clickdummy needs correction.
+F. Apply-to-Join request
+Public-facing discovery if WSS chooses to support it
+Collect a request only -&gt; authorized admin approves -&gt; issue normal invitation. No account until invitation.
+Proposed convenience layer; requires WSS freeze decision.
+G. Organization / sponsor entry
+Institutional representative or sponsor
+Use their specific agreement, scope and role; do not grant participant data or work authority because of payment/affiliation.
+Keep authority separate from commercial entitlement.
+4.1 Purpose Compass: IKIGAI-inspired, not psychometric
+The strongest Alpha-safe interpretation is to keep the FRD name “Purpose Compass” while explicitly using IKIGAI-inspired questions. This satisfies the current WSS clarification without introducing a separate IKIGAI scoring or alignment engine. The user authors their own direction; PHOENIX structures it and helps turn it into action.
+ID
+Minimum onboarding question
+What it adds to the profile
+PC1
+What matters most to you right now in this programme, community or stage of your life?
+Orientation / meaning
+PC2
+What would you like to accomplish, contribute to or become more capable of over the next 3-6 months?
+Goal / current direction
+PC3
+What is the main hurdle currently making that difficult?
+Constraint - high restriction
+PC4
+How much time can you realistically commit?
+Capacity / pathway realism
+PC5
+What is one meaningful milestone you could realistically reach in the next 2-4 weeks?
+First actionable milestone
+PC6
+What would help you know you are making meaningful progress?
+Participant-defined evidence
+Optional questions can progressively enrich strengths/capabilities, learning interests, contribution themes, support needs, opportunity preferences and practical constraints. They should appear later, in context, rather than making first-time onboarding heavy.
+4.2 How the profile should evolve
+The profile is a living, user-controlled record. The clickdummy’s version-history direction is good and should be retained, but every change must carry provenance and remain under participant control.
+Trigger
+Candidate / profile behavior
+Provenance
+Onboarding complete
+Create the first meaningful profile snapshot.
+Self-declared
+Accepted goal change
+Create a new snapshot; preserve old direction in history.
+Self-declared
+Completed activity
+May propose a claim such as participation or contribution.
+Activity-derived
+Approved evidence / milestone
+Offer a profile-change candidate; user Accepts / Edits / Rejects.
+Evidence-supported or Reviewer-verified
+AI suggestion
+Show as proposal with source; never silently write to profile.
+AI-proposed
+Learning Harvest
+Only attributable, participant-approved items become candidates. Team conflict or private mentoring notes never do.
+Depends on source
+
+Live clickdummy evidence: profile version history is directionally strong. Keep the history model, but ensure every profile change remains provenance-aware and participant-controlled.
+5. Background intelligence for profile and matchmaking - safe Alpha treatment
+WSS can use strong human-development and systems-thinking ideas without turning the Alpha into a psychological scoring engine. The rule should be: use explicit user answers, observed platform activity and reviewed evidence; do not infer hidden traits, diagnose people, or calculate a universal “fit”, “coherence”, “trustworthiness” or “worth” score.
+Method / lens
+Safe Alpha use
+Where it helps
+Do not do
+IKIGAI-inspired Purpose Compass
+Use reflective questions about meaning, capability, contribution, learning, support and practical constraints.
+Onboarding, profile, pathway, opportunities.
+No IKIGAI score, “true purpose” claim or purpose-deviation warning.
+Donella Meadows leverage lens
+Optional project-level tags/prompts: information flows, feedback loops, rules/processes, resources/incentives, goals and assumptions.
+Circle sensemaking, Opportunity Cards, Action Workspace and Harvest.
+Do not rate a person by “leverage level” or infer worldview.
+Critical-path / dependency logic
+Use accepted task dependencies, milestones, due dates and blocked states to calculate the next eligible action.
+Action Workspace and pathway.
+No new heavyweight project-planning module required for Alpha.
+Motivational-interviewing style
+Use autonomy-supportive questions: what matters, what feels possible, what support would help, what next step do you choose?
+Purpose Compass, Mentor prompts, Ask PHOENIX.
+No clinical interpretation or covert assessment.
+Implementation intentions / small commitments
+Help user turn a goal into a concrete next step, time and evidence of completion.
+Pathway, Rope Team, Action Workspace.
+Do not auto-commit the user.
+Reflective learning cycle
+Experience -&gt; evidence -&gt; reflection -&gt; learning -&gt; revised next action.
+Learning Harvest and profile evolution.
+Do not convert reflections into permanent traits.
+Strengths-based prompts
+Ask what skills, lived experience and relationships the user wishes to contribute.
+Profile, opportunities, match rationale.
+No personality typing or hidden strengths scoring.
+Important scope reconciliation
+The FRD currently places “IKIGAI alignment” and wider regenerative North Star logic outside Alpha. Therefore the build-freeze-safe approach is: IKIGAI-inspired Purpose Compass questions now; no IKIGAI alignment score/engine now. If WSS wants a branded IKIGAI module in Alpha, record it as an explicit scope decision rather than letting it enter implicitly.
+5.1 Matchmaking logic Shaligram can build now
+The Match Brief should show why a connection is being suggested, what information supports it, what is missing and what human action comes next. Matching may combine positive fit with governance/readiness gates; it should not hide behind a single number.
+Positive-fit dimensions
+Governance / readiness checks
+Never use as hidden matching factors
+Goal/purpose; need-offer complementarity; skills/capabilities; learning interest; availability; location/context; language/preferences; sector/project relevance; resources; role/affiliation.
+Matching consent; field visibility; context eligibility; valid role/mandate; opportunity state/expiry; prerequisites; restrictions; availability; unresolved safety/governance flags.
+Personality or psychological state; religion/political belief; health; deservingness; moral worth; trustworthiness; universal synergy/coherence score.
+Recommended Match Brief layout: Why suggested -&gt; source fields -&gt; missing information -&gt; readiness gaps -&gt; uncertainty -&gt; permission/authority status -&gt; restrictions -&gt; recommended next human action -&gt; “Do not introduce yet” reason where applicable.
+5.2 Matchmaking in plain language
+Shaligram does not need a complex scoring engine to demonstrate useful matching in Alpha. A simple governed sequence is enough:
+Step
+System behavior
+1
+Use only fields the person has allowed for matching in the active context.
+2
+Find possible complementarity across purpose/goal, need-offer, skills, learning interest, availability, language, location/context and resources.
+3
+Apply readiness gates: valid role/mandate, visibility, opportunity state, prerequisites, restrictions and safety/governance flags.
+4
+Create a Match Brief that explains why the match is suggested, what is uncertain and what is missing.
+5
+Human steward reviews a PHOENIX-generated match. Direct authorized collaboration may bypass the Match Brief route but not permission/consent checks.
+6
+Both parties consent before contact details are disclosed.
+7
+After introduction: Close / Continue Conversation / Link Existing Workspace / Create New Workspace.
+Example: a student who has shared an interest in climate-resilient cities and three hours/week availability may be suggested for a partner's urban-heat mapping opportunity because the need, capability, time and context fit. The Match Brief must still show the source fields, gaps and consent status; it must not infer personality or trustworthiness.
+6. Role-by-role build-freeze flow and menu map
+Each role below is expressed in user language first. The menu should follow the user’s job, not expose the platform architecture. Specialist authority bundles appear only when separately assigned.
+6.1 Participant / Learner / Practitioner
+What this user comes for
+“Help me understand what matters, choose a realistic next step, find the right people/opportunities, do meaningful work and keep a credible record of what I have learned and contributed.”
+Prescribed Alpha flow
+Invitation -&gt; required agreement + separate optional permissions -&gt; minimum Purpose Compass -&gt; accept 3-5 step pathway -&gt; join/link Circle or Rope Team as relevant -&gt; opportunity/match or direct collaboration -&gt; Action Workspace -&gt; evidence -&gt; Harvest -&gt; profile candidate -&gt; next action.
+Recommended menu
+My PHOENIX; Pathway; Circles; Rope Teams; Action Workspaces; Opportunities; Match Briefs; Evidence; Repository; Learning Harvests; Profile/My records &amp; consent; Messages; Help/Report concern. Keep “Projects” only if it clearly maps to Action Workspace/initiative objects. Remove Funding from normal participant Alpha navigation unless it is merely an entitlement/billing view.
+Keep from clickdummy
+Role-shaped home, pathway view, Circle/Rope/Action separation, evidence and profile version history.
+Change before freeze
+Fix consent bundling; show pathway dependencies and participant acceptance; do not require the same space sequence; remove staged funding; make Next Action deterministic; show explicit empty/reject/revise states.
+How the relationship evolves
+Purpose and profile become richer through accepted evidence, milestones and Harvest candidates. The user may accumulate multiple contextual roles without a second identity.
+
+6.2 Mentor / Advisor / Community Custodian
+What this user comes for
+“Show me the people I am assigned to support, what they chose to share, what support is due, and where I can recommend - without making me an approver by default.”
+Prescribed Alpha flow
+Invitation -&gt; Mentor role -&gt; assigned participant/Rope Team -&gt; check-ins/support actions -&gt; pathway recommendations or Satisfied by Prior Evidence where allowed -&gt; suggest opportunities -&gt; contribute to assigned workspace/Harvest -&gt; close or continue support.
+Recommended menu
+My PHOENIX; My People / Mentor Requests; Rope Teams; shared Pathways; Circles (only if invited); assigned Action Workspaces; Evidence comments; Messages; Help/Report concern. No broad participant search.
+Keep from clickdummy
+Private mentor-note separation and role/context switching are good directions.
+Change before freeze
+Restrict all requests to active context; never export protected notes to Action Workspace/Harvest/profile; rename “finalise requirements” to support/recommend language; no evidence approval or Project Lead authority unless separately assigned.
+How the relationship evolves
+Mentor sees only consented/shared progress. Support history may continue across cycles, but protected notes remain bounded to the mentoring relationship.
+
+6.3 Facilitator / Circle Steward
+What this user comes for
+“Help me create safe, clear collaboration spaces, surface decisions, support members and move agreed ideas into action without becoming every kind of approver.”
+Prescribed Alpha flow
+Facilitator role -&gt; create/approve Circle -&gt; run sessions/threads -&gt; proposals and equal voting -&gt; support indicators -&gt; review Match Briefs only if assigned as Steward -&gt; link/create Action Workspace -&gt; contribute/complete Harvest -&gt; close/continue Circle.
+Recommended menu
+My PHOENIX; Circles; Review Inbox (only assigned items); Match Briefs (if Steward); linked Action Workspaces; Learning Harvests; Evidence only if Reviewer bundle; Messages; Help/Concerns.
+Keep from clickdummy
+Circle structure, sessions, proposals, reflections, commitments and linked-space idea.
+Change before freeze
+Remove owner double-vote; keep AI advisory; separate Facilitator/Steward/Reviewer powers; use threaded discussion rather than real-time chat; keep vote parameters configurable until frozen.
+How the relationship evolves
+The facilitator’s history should show spaces facilitated, approved outputs and learning, not private member reflections or Rope notes.
+
+6.4 Project / Community Partner
+What this user comes for
+“Let me publish what we need or offer, connect safely with the right people, and contribute within a clear mandate.”
+Prescribed Alpha flow
+Invitation/partner agreement -&gt; publish Opportunity Card -&gt; search/save -&gt; PHOENIX match with steward + mutual consent OR direct authorized collaboration -&gt; Close / Continue / Link Existing / Create New Workspace -&gt; contribute tasks/evidence -&gt; review progress.
+Recommended menu
+My PHOENIX; Opportunities; Match Briefs; My Collaborations; Action Workspaces; Evidence; Organisation/Mandate; Messages; Help/Concern.
+Keep from clickdummy
+Opportunity, Match Brief and Action Workspace concepts are aligned.
+Change before freeze
+Add direct-collaboration route; withhold contacts until required consent; link existing workspace by reference; do not copy private/restricted material; ordinary Partner should not always be “pending approval” unless that specific mandate is sensitive.
+How the relationship evolves
+Partner may build a collaboration history across projects, but each relationship retains its original context, mandate and permissions.
+
+6.5 Organisation / University Representative
+What this user comes for
+“Let me operate my programme/cohort, invite people, assign approved roles and monitor progress without owning participants’ private lives.”
+Prescribed Alpha flow
+Sensitive-role onboarding -&gt; org agreement -&gt; programme/cohort configuration within envelope -&gt; invite cohort -&gt; assign approved mentors/facilitators/mandates -&gt; support Circles/workspaces -&gt; see authorized progress -&gt; reports/seats -&gt; suspend only own context.
+Recommended menu
+My PHOENIX; People/Cohorts; Invitations; Role assignments; Circles/Workspaces in own context; Programme Progress; Reports; Seat allocation (if delegated); Requests to Programme Admin; Help/Incidents.
+Keep from clickdummy
+Organization-level operational view is directionally useful.
+Change before freeze
+Never show raw Purpose Compass, hurdle, private reflections, AI conversations or Rope notes; show context banner; configuration stays inside approved pack envelope; “anything else” becomes a request rather than silent permission expansion.
+How the relationship evolves
+Organization sees trends and approved progress over time; a participant’s separate contexts remain invisible unless an explicit cross-context collaboration exists.
+
+6.6 Sponsor / Funder Observer
+What this user comes for
+“Show me what my support enabled, the approved evidence and reporting I am entitled to, and my seats/invoices - not private participant data or governance powers.”
+Prescribed Alpha flow
+Sponsor agreement -&gt; approved product/seat pool/donation -&gt; hosted payment/invoice -&gt; manage seats -&gt; view aggregate project/programme status, approved evidence and funder-safe Harvests -&gt; request identifiable story only through separate release.
+Recommended menu
+My PHOENIX; Seat utilisation; Approved initiatives/projects; Approved evidence; Funder-safe reports/Harvests; Invoices/Receipts; Resources; Help/Concern. Remove pitch/tranche workflow.
+Keep from clickdummy
+Sponsor dashboard concept and aggregate reporting are useful.
+Change before freeze
+Remove project pitches, staged funding tranches and automatic owner messaging from committed Alpha; no workspace membership or participant-level access because of payment; suppression must apply to charts, totals and reports.
+How the relationship evolves
+Sponsor follows approved outcomes and learning across time. Commercial entitlement never creates authority or restores revoked access.
+
+6.7 Programme Administrator
+What this user comes for
+“Let me operate the pilot: invitations, approved configuration, queues, resources and reports - while routing specialist decisions to the right owner.”
+Prescribed Alpha flow
+Provisioned/approved admin -&gt; invitations and sensitive-role approvals -&gt; configure packs/templates/pathways/notifications -&gt; publish WSS-approved agreements -&gt; resources/moderation -&gt; queues/incidents -&gt; products/seats with Finance -&gt; metrics -&gt; version export/restore.
+Recommended menu
+My PHOENIX; Invitations; Approval Inbox; Users/Roles; Pack Configuration; Template Library; Purpose Compass settings; Resources; Notifications; Reports/Exports; Incidents; Payments only if delegated; Configuration versions/restore.
+Keep from clickdummy
+Programme-level overview and template/configuration direction.
+Change before freeze
+Do not make Programme Admin the fallback approver for evidence, Match Briefs, trust policy, finance or incidents; protected policy comes from WSS/Trust/Data; show which settings are frozen vs configurable vs pending decision.
+How the relationship evolves
+Admin history should be a versioned operational/audit trail, not visibility into private user records.
+
+6.8 Platform Administrator / Technical Operator
+What this user comes for
+“Keep the platform secure, available and recoverable without becoming a programme governor or seeing participant content.”
+Prescribed Alpha flow
+Provisioned account + MFA -&gt; system health -&gt; create technical contexts and assign named programme admins -&gt; maintain role/bundle definitions as approved -&gt; integrations/service accounts -&gt; security/backups/restore tests -&gt; audit logs.
+Recommended menu
+System Health; Contexts/Tenants; Roles &amp; Bundles; Integrations; Security; Backups/Restore; Audit/Logs; Deployment status. No Circles, Pathways, private participant data or independent policy publishing.
+Keep from clickdummy
+Health/integration/operations concept is appropriate.
+Change before freeze
+Remove independent governance-policy publishing, Purpose Compass governance and unrestricted role-rule creation. Platform Admin implements approved configuration; Trust/Data and other accountable owners govern policy.
+How the relationship evolves
+Technical operator gains operational history and system diagnostics, not content authority.
+
+6.9 Specialist bundles are capabilities, not personas
+Reviewer, Trust/Data Steward, Finance Owner, AI Owner and Incident/Safety Owner should appear as explicit capability bundles attached to a person in a context. A demo user may hold several bundles, but the clickdummy must still prove that a plain Programme Admin or Facilitator does not inherit those powers.
+Bundle
+What it can do
+What it must not imply
+Reviewer
+Approve evidence or custom/AI pathways where assigned.
+Not general programme authority.
+Trust/Data Steward
+Define approved consent/agreement/data policy and protected governance rules.
+Not technical operations or participant ownership.
+Finance Owner
+Approve products/pricing/financial operations in scope.
+Payment does not grant governance or content rights.
+AI Owner
+Manage approved AI use cases, source registry and evaluation.
+Cannot make user/governance decisions.
+Incident/Safety Owner
+Triage, pause, remedy and route appeals.
+No automated sanctions.
+7. Consolidated clickdummy screen-family review
+This section replaces a page-by-page critique. It groups the live wireframe into the screen families Shaligram needs to correct once and reuse consistently.
+Screen family
+What already aligns
+What differs / risk
+Required change
+Priority
+Global shell / My PHOENIX
+Role-shaped home and visible next action are useful.
+Some navigation remains module-heavy; multi-role context leakage was observed.
+Persistent role+context switcher; rebuild nav/counts/queues on switch; one dominant next action; keep records/consent/help accessible.
+P0
+Onboarding / agreements
+Email verification, resume and policy comparison exist.
+Optional purposes were bundled into agreement; rights disappeared behind gate; future version gated early.
+Separate agreement from optional purposes; gate only affected functions; preserve rights routes; show version/effective state correctly.
+P0
+Purpose / pathway
+Pathway and history screens exist.
+Editor does not fully represent prerequisite, optional/conditional, prior-evidence and participant-acceptance rules.
+Expose step type, prerequisite, completion/evidence rule, dependency and Current/Blocked/Skipped/Satisfied states.
+P0
+Profile / evolution
+Version history and candidate model are directionally strong.
+Need stronger provenance/audience treatment and no score drift.
+Keep Accept/Edit/Reject; show source/provenance and audience; no silent rewrite or universal score.
+P1
+Circles / decisions
+Members, proposals, votes, reflections and links are present.
+Owner double weight; result totals inconsistent; “chat” implies real-time.
+One eligible member=one vote; single denominator; configurable threshold/quorum/window; threaded discussion only.
+P0
+Rope Teams / mentoring
+Private notes and support relationship are visible.
+Risk of mentor being treated as approver or protected notes moving into shared work.
+Keep protected surface; recommendations need participant acceptance; no approval powers unless bundle assigned.
+P0
+Opportunities / Match Brief
+Explainability, uncertainty and withheld contacts work well.
+Direct known-collaborator route and four post-introduction outcomes are incomplete.
+Add Route B and Close/Continue/Link Existing/Create New; reference links only.
+P1
+Action Workspace
+Tasks, milestones, decisions, risks, resources and evidence are aligned.
+Need stronger task acceptance/origin/related-object and protected-change rules.
+Show origin lineage; assignee accepts task before work; separate ordinary vs protected changes; trigger Harvest on close/continue.
+P1
+Evidence / repository
+Human review and release concepts exist.
+Restricted was accepted as review status; copy can blur evidence availability.
+Keep review status, E-level, confidentiality, lifecycle and release separate; validate file controls; no public portfolio.
+P0
+Learning Harvest
+Draft vs release direction is good.
+Need clear human completion and participant control of profile candidate/release.
+Human complete; preserve dissent/negative findings; profile change only through candidate; release separately authorized.
+P1
+Sponsor / commercial
+Aggregate dashboard concept is useful.
+Pitches and three funding tranches are outside Alpha.
+Use seats/products/donations/invoices + safe aggregate reporting; no staged funding/reallocation.
+P0
+Admin / configuration
+Configuration, queues, resources and metrics exist.
+Admin and specialist governance boundaries are blurred.
+Separate operational admin, specialist bundles and technical admin; version configuration and safe restore.
+P0/P1
+Mobile / accessibility
+Desktop experience is readable.
+Meeting says desktop/tablet; FRD says phone-first.
+WSS/Shaligram freeze one device rule; if FRD stands, design/test 360-390px, keyboard, touch and WCAG 2.2 AA.
+DECIDE
+8. Screenshot evidence: what to keep and what to correct
+
+Consent screen: useful clause comparison, but the live v3 wording bundled optional purposes and removed withdrawal choices. Correct by restoring separate purpose consent and preserving rights access even when re-acceptance is pending.
+
+Participant pathway: the visual progress model is useful. Add step type, prerequisite/dependency, participant acceptance, optional/conditional handling, Satisfied by Prior Evidence and Blocked reasons so the UI matches FR-F04.
+
+Circle voting: the current “weighted votes” screen conflicts with the Alpha decision. Replace owner double weight with one eligible member = one vote; show threshold, quorum/window and denominator separately.
+
+Evidence screen: record metadata and history are useful. Keep review status, E-level, confidentiality, lifecycle and release as separate fields; “Restricted” must not be a review outcome.
+
+Sponsor dashboard: visual reporting is promising, but project pitches and staged tranches exceed Alpha. Reframe around seat utilisation, approved initiatives, aggregate progress, approved evidence and funder-safe reports.
+9. Menu simplification and information architecture
+A scalable menu should have a small common spine and then role-specific work areas. This reduces cognitive load and prevents users seeing functions they cannot use.
+Layer
+Recommended contents
+Design rule
+Always visible
+My PHOENIX; role/context switcher; Messages/Notifications; Profile/My records &amp; consent; Help/Support; Report concern.
+Common across roles, but content and counts are context-filtered.
+Role work
+Only the 4-7 primary work areas for the active role.
+Hide, do not merely disable, unrelated modules unless visibility itself is useful.
+Specialist actions
+Review Inbox, Finance, Trust/Data, AI Admin, Incident queue.
+Appear only when the matching bundle is active.
+Discovery
+Opportunities, approved Bulletin Board Lite, relationship/collaboration list where authorized.
+No social-feed ranking or graph scoring.
+Admin/config
+Invitations, packs, templates, resources, reports, configuration versions.
+Only Programme/Org/Technical actors within scope.
+9.1 Bulletin Board Lite and Relationship List Lite
+These can fit the Alpha without creating a new social-network subsystem if Shaligram composes existing objects.
+Bulletin Board Lite: an Explore/Highlights view of approved Opportunity Cards, programme announcements/events and approved Visible Wins. Filters by context/type/status. No likes, follower graph, reputation ranking or public comments required.
+Relationship/Collaboration List Lite: an authorized list of confirmed introductions, Circle/Rope/Workspace memberships, organization affiliations and approved collaboration history. Show relationship type, context, role and status. No inferred relationship strength, influence score or trust score.
+10. Pack scalability: prove the same architecture works for various use-cases
+University/Community, Seva Hub, Women’s Empowerment and a fourth pack should reuse the same Person, Role Assignment, Agreement, Purpose Compass, Pathway, Circle, Rope Team, Opportunity, Match Brief, Action Workspace, Evidence and Harvest objects. Pack differences should be labels, onboarding questions, templates, enabled flows, evidence types, metrics and entitlements - not separate code branches.
+Pack
+Participant example
+What changes
+What must stay the same
+University / Community
+Student/faculty/community learner
+Terminology, pathways, cohort labels, project templates.
+Identity, consent, role authority, matching, evidence, Harvest and profile controls.
+Seva Hub
+Volunteer/community practitioner
+Service opportunities, support language, community templates.
+Same collaboration routes and data boundaries.
+Women’s Empowerment
+Entrepreneur/leader
+Enterprise pathway, mentor prompts, opportunity types.
+Same participant agency, evidence, consent and human review.
+Fourth pack
+e.g. Community Climate Action
+Labels, onboarding questions, templates, metrics, enabled flows.
+No code fork; WSS admin can configure, export, restore and re-run prior config safely.
+11. Build-freeze acceptance checklist
+WSS and Shaligram should freeze only when the following can be walked through in the clickdummy and then traced to FRD acceptance tests. A “yes” means the behavior is demonstrable, not merely acknowledged in email.
+☐ One invited person completes onboarding, minimum Purpose Compass and reaches My PHOENIX with a first deterministic Next Action.
+☐ Optional AI/research/cross-org/public-funder/external-exchange purposes can be declined independently while manual core flows remain available.--&gt;&gt; 
+☐ One identity accepts a second invitation and switches role/context safely without stale counts, actions or protected data.
+☐ A Pending sensitive role sees only the approval shell; a normal Participant/Mentor/Facilitator/Partner activates without unnecessary approval.
+☐ Pathway demonstrates Mandatory, Optional, Conditional, Satisfied by Prior Evidence, Blocked and participant acceptance behavior.
+☐ Circle vote demonstrates one eligible member = one vote; owner has no multiplier; AI advisory output cannot change state.
+☐ Circle, Rope Team and Action Workspace can be entered/linked in more than one valid order; protected Rope notes never leak.
+☐ Match route A shows steward review + bilateral consent; route B allows direct authorized collaboration; four post-introduction outcomes appear.
+☐ Action Workspace shows Primary Origin/Related Objects, accepted tasks, milestones, risks, resources, evidence and close/continue -&gt; Harvest.
+☐ Evidence keeps review status, E-level, confidentiality, lifecycle and release separate; Reviewer and Mentor permissions are distinct.
+☐ Learning Harvest preserves dissent/negative findings; release is separate; profile changes only through participant candidate approval.
+☐ Sponsor sees seats, approved project/programme status, aggregates, approved evidence and reports - no staged tranches or private member/workspace access.
+☐ Programme Admin, Org Rep and Platform Admin each have visibly different scopes; specialist bundles are testable independently.
+☐ Human Help/Support remains available separately from Ask PHOENIX, Mentor support and incident reporting.
+☐ Phone/device requirement is explicitly frozen and corresponding layouts/test cases exist.
+☐ Bulletin Board Lite / Relationship List Lite are either accepted with bounded implementation or deferred explicitly.
+☐ A trained WSS admin configures a thin fourth pack and restores a prior version without code/database/vendor-only scripts.
+☐ Each P0 finding has a before/after screenshot or demonstrable flow and a linked acceptance criterion.
+12. Final recommendation to Shaligram
+Recommended freeze disposition
+Proceed with one more controlled wireframe iteration. Do not expand the Alpha. Correct the P0 contradictions, simplify navigation by role, implement the Purpose Compass/profile/matching model consistently, resolve the remaining freeze decisions, then perform one linked participant journey plus independent role/bundle tests before WSS signs the build baseline.
+The key development principle is simple: PHOENIX should feel different to each user because their purpose, role, context, authority and next action are different - while the underlying architecture remains reusable. That is the balance that will improve usability now and scalability later.
+Continue work on explicit FRD corrections while these decisions are closed. Mark each disposition Accepted Amended Deferred or Rejected, with approver source date affected requirements and any cost or schedule impact.
+
+Decision
+WSS input required
+Shaligram return
+Policy and consent 
+Approved clause wording and separate controls for AI processing, research/evaluation, cross-organisation sharing, public/funder release and external exchange; affected-function access and scheduled activation behavior.
+Updated F02 state model receipts comparison screen and rights routes; time-boundary tests.
+Role activation and delegation
+Baseline activation rule sensitive bundles approvers bootstrap authority and protected setting owners.
+Role and capability matrix; approval queue and separate fixtures; updated persona diagrams.
+Age and invitation 
+Attestation versus justified DOB adult threshold and whether Request Access before invitation is accepted.
+Minimal entry form; invitation and age boundary tests.
+Voting
+Threshold quorum vote window reminders and eligibility rules. Equal weight is already explicit.
+Canonical calculation and eligible-member snapshot; consistent result and export tests.
+Privacy and expiry
+Risk-based suppression or combination parameter and permitted operational totals; expiry or future-cycle consent policy.
+All-surface privacy tests and corrected Match Brief lifecycle.
+Pathway and AI
+Six Compass texts; step statuses; enabled AI inventory; clarify reviewed AI draft versus excluded autonomous pathway assembly.
+Structured templates deterministic eligibility review and participant acceptance; failure cases.
+Dashboard and devices
+Approved brand device viewports and disposition of lightweight bulletin board and relationship list proposal.
+Effort assessment and revised dashboards. Permission-filtered existing records only if approved; no scores or protected notes.
+Baseline and delivery
+Controlling signed sources unresolved reference definitions and fourth-pack acceptance owner.
+Corrected FRD RTM decision and parameter register all role flows and 2 to 3 month roadmap with holidays.
+
+Appendix A. Quick role-navigation matrix
+Role
+Primary home focus
+Core work areas
+Do not show by default
+Participant
+Purpose + Next Action
+Pathway; spaces; opportunities/matches; evidence; Harvest; profile
+Funding tranches; admin; other-user private data
+Mentor
+Assigned people + support due
+Mentor Requests; Rope Teams; shared pathway; assigned work
+Broad participant search; evidence approval; protected data outside assignment
+Facilitator/Steward
+Circles + decisions/reviews
+Circles; Match Briefs if assigned; linked work; Harvest
+Private Rope notes; generic specialist approvals
+Partner
+Mandate + active collaborations
+Opportunities; Match Briefs; workspaces; evidence
+Private participant profile; sponsor/admin controls
+Org Rep
+Cohort + programme operations
+Invitations; people; scoped spaces; progress; reports
+Raw Compass/hurdle; other org data; protected policy controls
+Sponsor
+What support enabled
+Seats; approved initiatives; aggregate evidence; reports; receipts
+Workspace membership; participant list/profile; funding-tranche governance
+Programme Admin
+Operational queues + config
+Invitations; approvals; templates; packs; resources; reports; versions
+Independent Trust/Finance/AI/Safety authority
+Platform Admin
+System health + recovery
+Contexts; roles/bundles; integrations; security; backup; logs
+Participant workspaces/content; policy authorship by default
+Appendix B. Alpha-safe design language for Shaligram
+Use “My Purpose / Current Direction” rather than a purpose score or “alignment score”.
+Use “Why suggested” and “What is missing” in Match Briefs rather than a single match score.
+Use “Recommended next action” only when it is clear who recommended it and whether the participant must accept it.
+Use “Threaded discussion” rather than “real-time chat” unless WSS explicitly changes scope.
+Use “Action Workspace” as the canonical system concept; packs may display Action Room / Coherence Cell / Project Room.
+Use “Approved evidence summary” and “funder-safe Harvest” for sponsor reporting; avoid implying ownership of participant data.
+Use “participant-reported” or “activity-derived support indicator”; avoid well-being, personality, readiness or trustworthiness inference.
+Use “AI draft / advisory” with sources and uncertainty; never “AI approved”, “AI rejected” or “AI decided”.
+Appendix C. Freeze decisions still needing explicit disposition
+Decision
+Recommended treatment for freeze
+Controlled baseline / signature
+Issue one FRD/build-freeze version with owner, approval state and date; reconcile the 2 Oct / 6 Oct document-control mismatch.
+Apply-to-Join
+Either accept as request-only front door that issues no account until invitation, or defer. Do not leave an ambiguous self-registration route.
+Age data
+Resolve age-confirmation versus full DOB collection. Prefer the minimum data necessary unless WSS/legal requires DOB.
+Circle parameters
+Equal vote weight is frozen. Separately approve or configure threshold, quorum, window, reminders and minor-change challenge period.
+Device requirement
+Resolve meeting desktop/tablet statement against FRD phone-first NFR-08 and test the chosen target.
+Bulletin Board / relationship view
+Accept bounded Lite implementations over existing objects, or defer explicitly after Shaligram effort estimate.
+Role separation fixtures
+Add a stand-alone Org Rep and plain Programme Admin / Facilitator accounts so specialist bundle boundaries can be demonstrated.
+Fourth-pack proof
+WSS admin configures a thin fourth pack, exports/restores a prior version and shows no code/database/vendor-only work is required.

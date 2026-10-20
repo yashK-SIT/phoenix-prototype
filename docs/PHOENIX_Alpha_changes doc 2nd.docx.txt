@@ -1,0 +1,386 @@
+
+WORLD SYSTEMS SOLUTIONS / PHOENIX
+PHOENIX Alpha Click-dummy Wireframe
+Build-Freeze Action Pack for Shaligram
+Consolidated WSS requirements, click-dummy corrections, closure tests, priorities and next-call actions
+Build-freeze principle
+Freeze the agreed definition of this Alpha - not PHOENIX's future evolution, and not the obligation to test and correct what gets built.
+The click-dummy is evidence of interpretation. The FRD and accepted WSS clarifications remain the controlling behavioral baseline where the prototype differs.
+Prepared for: Shaligram Infotech development and BA team
+Purpose: Close high-consequence behavioral gaps, resolve remaining WSS choices, and establish a testable Alpha build baseline without unnecessary scope expansion.
+
+1. Executive position
+The clickdummy shows meaningful progress, but the remaining issues are mainly about system behavior rather than visual polish. WSS should therefore approve the build baseline only after the agreed rules are visible in the revised clickdummy and can be demonstrated through clean role and permission tests.
+P0 - Freeze blockers
+P1 - WSS decisions
+P2 - Optional / deferable
+Behavior already required by the FRD or accepted clarification is contradicted, ambiguous, or unproven in the clickdummy. Correct before freeze.
+Shaligram should not guess. WSS must close a parameter or interpretation so the build has one rule.
+Useful enhancements that should not hold the freeze. Include only if they reuse existing Alpha objects/services with negligible effort; otherwise defer.
+Commercial / scope rule: If the FRD or accepted WSS clarification already requires a behavior, correcting the clickdummy to match it is alignment, not a new feature request. New ideas such as Bulletin Board Lite or Relationship View Lite should be separately classified as included with negligible effort, deferred, or change request.
+2. What WSS needs Shaligram to return
+A revised clickdummy: showing the P0 corrections below, where ever applicable and accommodatable. 
+A Build-Freeze Closure Register: for every issue: Accepted / Amended / Deferred / Rejected; exact change; owner; test/demo; due date; schedule or cost effect.
+Clean role fixtures: separate accounts for each baseline role and separate specialist capability bundles so authority can be tested positively and negatively.
+One linked participant demonstration: Authorize -&gt; Connect -&gt; Orient -&gt; Deliberate -&gt; Act -&gt; Evidence -&gt; Learn -&gt; Evolve, including a declined optional consent and a context/role switch.
+A small set of WSS decisions: device baseline, onboarding/age approach, and unresolved voting parameters; Shaligram should not hard-code these while open.
+A dated roadmap: wireframe correction, baseline freeze, build, demo/UAT and holidays, with named owners.
+
+3. Build-freeze action matrix
+The following is the recommended working list for the next Shaligram revision. Detailed examples and closure tests follow in Section 4.
+ID
+Destination / issue
+Required Alpha position
+Pri.
+Scope / cost treatment
+BF-01
+Role + context isolation
+Re-authorise every screen/action using active context, scoped role, mandate and object permission.
+P0
+Existing permission model; no new scope.
+BF-02
+Optional consent
+Separate required agreement from five optional purposes; decline/withdrawal must not break the manual core.
+P0
+Already required by F02.
+BF-03
+Circle voting
+One eligible member = one vote. No owner multiplier or AI override.
+P0
+Existing governance rule.
+BF-04
+Evidence states
+Keep review, E0-E4 support, confidentiality, lifecycle and release as separate fields.
+P0
+Data/UX correction.
+BF-05
+Admin vs specialist authority
+Programme Admin, Reviewer, Finance, Trust/Data etc. must be independently assignable/testable.
+P0
+Permission + QA fixture correction.
+BF-06
+Profile evolution
+AI/evidence may propose a change; participant Accepts / Edits / Rejects with provenance.
+P0
+Already required by F03.
+BF-07
+Collaboration routes
+Circle, Rope Team and Action Workspace stay distinct and linked; no mandatory sequence.
+P0
+Navigation/flow correction.
+BF-08
+Sponsor boundary
+Remove project pitches/tranches/reallocation; keep seats, approved aggregates, evidence summaries and reports.
+P0
+Removes out-of-scope behavior.
+BF-09
+AI authority
+AI may advise/draft/fact-check; never passes votes, approvals, releases or sanctions.
+P0
+Existing AI boundary.
+BF-10
+Purpose Compass / IKIGAI
+Keep IKIGAI-inspired questions and evolving profile, but no person/coherence/IKIGAI score engine.
+P1
+Configuration/wording within Alpha.
+BF-11
+Device requirement
+WSS must freeze phone-first vs defined responsive minimum before UI acceptance.
+P1
+Decision; cost only if contracted baseline changes.
+BF-12
+Entry + age approach
+Freeze invitation-only vs Apply-to-Join -&gt; approval -&gt; invitation; minimize age data.
+P1
+Reuse onboarding workflow or defer.
+BF-13
+Voting parameters
+Freeze threshold, quorum, window and reminders separately from fixed equal vote weight.
+P1
+Configuration decision.
+BF-14
+Navigation + Help
+Role-specific menus; persistent My PHOENIX / role-context / notifications / rights / human Help.
+P1
+UI simplification, not new engine.
+BF-15
+Bulletin Board Lite
+Compose authorised existing records only; no new social feed/reputation layer.
+P2
+Include only if negligible effort; else defer.
+BF-16
+Relationship View Lite
+List confirmed authorised relationships/collaborations; no graph analytics or inferred trust.
+P2
+Include only if negligible effort; else defer.
+BF-17
+Controlled baseline
+One authoritative FRD + Decision Register + Parameter Table + traceability.
+P0
+Documentation/control, no product expansion.
+4. Detailed clickdummy changes and examples
+Each item below is written so Shaligram can translate it directly into wireframe logic and later into acceptance tests. Where the current clickdummy only exposed a control, WSS is not asserting that an unauthorised backend action already executed; the requirement is to remove the exposure and prove backend enforcement as well.
+P0
+BF-01  Role and context isolation
+Current observed risk
+Samuel was Mentor in Excelsior and Participant in Riverside. After switching to Riverside, a notification still opened Excelsior Mentor Requests with Accept/Decline controls. The review did not execute the action, so backend authorisation remains unproven.
+Required clickdummy revision
+On every role/context switch, close stale dialogs, clear cached object access, filter menus/notifications, and re-check the target action against the active context, effective role, mandate and object permission. Cross-context notices may appear only as labelled notifications that require an explicit safe context switch.
+Example
+"You have a Mentor Request in Excelsior" -&gt; Open -&gt; "Switch to Excelsior as Mentor?" -&gt; after confirmation show the request. Riverside Participant view must not render Accept/Decline.
+Freeze proof
+Direct URL, notification route, API/action and mid-modal switch all deny access until the authorised context is active.
+
+P0
+BF-02  Optional consent and rights
+Current observed risk
+The clickdummy agreement flow bundles optional permissions into the required agreement. That can make a user appear to consent to AI, research or release simply by accepting core terms.
+Required clickdummy revision
+Show required agreement acceptance separately from five optional purpose controls: AI processing, research/evaluation, cross-organisation sharing, public/funder release and external exchange. Each is Granted / Declined / Withdrawn.
+Example
+Mary accepts the Participant Agreement, declines AI and research, then still follows her pathway, joins a Circle, completes a task and submits evidence. "Ask PHOENIX" actions that require personal AI processing are hidden/disabled with a clear explanation.
+Freeze proof
+Decline and later withdraw each purpose independently; manual core still works; queued new AI use is stopped; audit history remains.
+
+P0
+BF-03  Circle voting
+Current observed risk
+Current Circle decision UI gives the owner double weight and does not clearly explain voter eligibility.
+Required clickdummy revision
+Use one eligible member = one vote. Owner has one normal vote. Eligibility comes from Circle membership and configured observer/non-voting status, not title-based weighting. AI cannot pass/fail a proposal.
+Example
+10 eligible members, approved threshold 60%: 6 Yes passes; 4 Yes fails; 5/5 tie returns to Shared for revision/re-vote or human escalation.
+Freeze proof
+Show the eligible voter list and the same vote total in member list, decision card and audit result. No owner override.
+
+P0
+BF-04  Evidence state model
+Current observed risk
+"Restricted" appears as a review outcome even though it is a confidentiality setting, which mixes quality review with access control.
+Required clickdummy revision
+Render five independent dimensions where relevant: Review status; Evidence Support E0-E4; Confidentiality; Lifecycle; Release. Never use Restricted/Withdrawn as review statuses.
+Example
+A record can simultaneously be: Review = Approved; Support = E2; Confidentiality = Restricted; Lifecycle = Active; Release = Not Cleared.
+Freeze proof
+Trying to save "Restricted" as review status fails. Funder/public reports cannot include it until a separate release decision permits that audience.
+
+P0
+BF-05  Programme Admin vs specialist authority
+Current observed risk
+Demo accounts bundle multiple specialist powers, so successful actions cannot prove which role actually authorised them.
+Required clickdummy revision
+Use separate demo/test fixtures for Participant, Mentor, Facilitator, Partner, Org Rep, Sponsor, Programme Admin and Platform Admin, plus separate Reviewer, Trust/Data, Finance, AI and Incident/Safety bundles.
+Example
+Pure Programme Admin may invite users and configure approved programme settings, but cannot approve evidence unless also assigned Reviewer; cannot publish policy unless Trust/Data workflow authorises it; cannot approve pricing unless Finance authority is assigned.
+Freeze proof
+For every consequential action demonstrate one authorised account succeeds and one similar but unauthorised account is denied.
+
+P0
+BF-06  Participant-controlled profile evolution
+Current observed risk
+Meeting language could be read as AI automatically updating a participant profile. Alpha requires participant control.
+Required clickdummy revision
+Every change from evidence, milestone, Harvest or AI is first a Profile Change Candidate showing source/provenance. Participant chooses Accept / Edit / Reject. Preserve prior history.
+Example
+After approved climate-project evidence, PHOENIX proposes "Stakeholder mapping - evidence supported". Mary opens the source evidence, edits wording if desired, and accepts. Reject leaves the profile unchanged.
+Freeze proof
+AI cannot silently mutate profile fields; candidate decision and provenance are auditable; correction/revocation keeps prior history.
+
+P0
+BF-07  Non-linear spaces and collaboration routes
+Current observed risk
+Overall flows can imply Project -&gt; Circle -&gt; Rope Team -&gt; Action Workspace is compulsory. That is not the Alpha model.
+Required clickdummy revision
+Keep Circle = shared learning/sensemaking; Rope Team = protected support/accountability; Action Workspace = execution. They may link, but each stays a separate object and users may enter through different valid routes.
+Example
+Student joins a Climate Circle then creates a pilot Workspace. Entrepreneur begins with a Mentor/Rope Team then links a market-validation Workspace. Existing university project starts directly as an Action Workspace with authorised members.
+Freeze proof
+Demonstrate at least three entry routes and show no space is destructively converted into another.
+
+P0
+BF-08  Sponsor / funder boundary
+Current observed risk
+Current Sponsor screens show project pitches, funded projects and three-tranche releases, which exceed the agreed Alpha commercial boundary.
+Required clickdummy revision
+Sponsor Alpha should focus on seat pools, entitlement/utilisation, approved initiatives, approved evidence summaries, aggregate programme signals, invoices/receipts and funder-safe reports. Remove staged project-funding and funding reallocation controls.
+Example
+A foundation buys 100 sponsored seats, sees 82 active seats and approved programme outcomes. It cannot release tranche 2 to a project or view participant Purpose Compass/private reflections.
+Freeze proof
+Search all sponsor and participant routes: no staged funding/reallocation actions; sponsor cannot enter Action Workspace by virtue of funding.
+
+P0
+BF-09  AI authority
+Current observed risk
+Older discussion introduced AI feasibility/fact-check gates that could be interpreted as decision authority.
+Required clickdummy revision
+AI may summarize, draft, identify missing sources/contradictions and suggest next questions. It cannot pass/fail votes, approve evidence, release content, impose sanctions or create authority.
+Example
+Circle proposal AI check says "two claims lack sources". Members still deliberate and vote under the human governance rule.
+Freeze proof
+AI result can never change vote/review/release state without an authorised human action.
+
+P1
+BF-10  Purpose Compass / IKIGAI-inspired onboarding
+Current decision need
+WSS wants purpose-centred onboarding and profile evolution without turning Alpha into a psychometric or scoring engine.
+Required clickdummy revision
+Keep the label Purpose Compass and use six minimum reflective questions: what matters now; 3-6 month goal/contribution; main hurdle; realistic time; first 2-4 week milestone; what would show progress. Ask skills, learning interests, support and opportunity preferences progressively later.
+Example
+A student says: "I want to contribute to climate-resilient urban systems; my hurdle is no project experience; I can commit 3 hours/week; first milestone is to join a local project briefing." This becomes user-authored context for pathway/matching, not an IKIGAI score.
+Freeze proof
+No universal purpose, coherence, personality or worth score exists; raw hurdle remains private by default.
+
+P1
+BF-11  Device acceptance target
+Current decision need
+FRD says phone-first while meeting/design discussion has leaned desktop/tablet with mobile scrolling. Both cannot silently govern.
+Required clickdummy revision
+WSS and Shaligram record one acceptance rule. Recommended pragmatic Alpha wording: responsive web; fully accepted desktop/tablet layouts plus defined minimum phone usability unless the signed SOW explicitly requires full phone-first parity.
+Example
+On phone, My PHOENIX, next action, consent, notifications and core participant actions remain usable without horizontal scrolling; complex admin tables may use responsive stacked views.
+Freeze proof
+Test agreed viewports, keyboard/touch focus, readable labels and no hidden critical controls.
+
+P1
+BF-12  Entry route and age data
+Current decision need
+FRD is invitation-only; broader accessibility discussion suggests a lightweight open front door. Age-data handling also needs one rule.
+Required clickdummy revision
+Preferred low-scope pattern if WSS approves: Apply/Request Access -&gt; human/programme approval -&gt; invitation -&gt; normal onboarding. Application does not create an account. Collect only the minimum age confirmation required for the agreed policy.
+Example
+Community volunteer submits name/email + programme of interest. Programme Admin approves -&gt; PHOENIX sends normal single-use invitation.
+Freeze proof
+Unapproved applicant cannot sign in; existing invitation flow remains unchanged; age data is not collected beyond approved need.
+
+P1
+BF-13  Role-specific menus and human Help
+Current observed risk
+Large nearly-identical menus and long explanatory text increase cognitive load and can expose irrelevant destinations.
+Required clickdummy revision
+Keep a persistent spine: My PHOENIX, Role/Context, Notifications, Profile/My Records &amp; Consent, human Help, Report Concern. Then expose only 4-7 work areas relevant to the active role.
+Example
+Mentor sees Assigned People, Mentor Requests, Rope Teams, Shared Pathways and Assigned Work - not Finance or programme-wide evidence queues. Sponsor sees Seats, Approved Initiatives, Reports and Billing - not Circles or private workspaces.
+Freeze proof
+Eight role dashboards show a clear primary action and no irrelevant authority-bearing destinations.
+
+P2
+BF-15  Bulletin Board Lite
+Optional proposal
+Meeting requested a common wall for network value, but it is not yet a committed Alpha requirement.
+Required clickdummy revision
+Only if effort is negligible: compose existing authorised Opportunity Cards, programme announcements/events and approved Visible Wins/initiative summaries into an Explore/Board view. No likes, follower graph, public comment engine or reputation score.
+Example
+"Campus food-resilience pilot reached Milestone 2" appears because the workspace released a Visible Win to the programme audience.
+Freeze proof
+Every board item inherits source audience/release; private notes and unreleased evidence never appear.
+
+P2
+BF-16  Relationship / Collaboration List Lite
+Optional proposal
+WSS wants visible network value without a new graph analytics engine.
+Required clickdummy revision
+Only if effort is negligible: create an authorised list from confirmed introductions, Circle/Rope/Workspace membership, organisation affiliation and approved collaboration history.
+Example
+Mary sees "Leah Park - collaborator - Ward 3 Action Workspace - Active" because both already share that authorised workspace. No inferred friendship, trust strength or hidden score.
+Freeze proof
+List follows original permissions and disappears/changes when relationship or access ends.
+
+5. Required evidence before WSS freezes the Alpha definition
+The freeze should be evidence-based. It is not necessary to prove full production readiness at this stage, but WSS should be able to see that the agreed behavior has been correctly interpreted and can be tested.
+Gate
+What must be shown
+Freeze meaning
+G1
+Controlled baseline
+One authoritative FRD/version; decision register; parameter freeze table; requirement-to-screen/test traceability; each outstanding WSS comment has Accepted / Amended / Deferred / Rejected disposition.
+G2
+Corrected clickdummy
+Consent, voting, evidence, sponsor scope, role/context, pathway/profile controls and navigation corrected with before/after evidence.
+G3
+Persona and permission proof
+Separate base-role and specialist-bundle accounts; positive and negative tests for authority; invitation/context/mandate/expiry branches shown.
+G4
+One linked participant cycle
+Authorize -&gt; Connect -&gt; Orient -&gt; Deliberate -&gt; Act -&gt; Evidence -&gt; Learn -&gt; Evolve, including declined optional consent, human review and participant-controlled profile update.
+G5
+Reusable design proof
+A fourth thin pack can be configured without code fork/database manipulation/vendor-only scripts; configuration restore preserves current rights and participant data.
+G6+
+Implementation/UAT later
+API/job/export authorisation, security, file safety, payments, AI failure, restore and load testing continue after the baseline freeze; freeze is not software acceptance.
+
+6. Suggested structure for the next call
+Time
+Discussion
+Expected output
+5 min
+Confirm freeze definition
+Freeze requirements/behavior/boundaries and acceptance basis - not future PHOENIX evolution and not final software acceptance.
+20 min
+Close P0 contradictions
+Role/context, consent, voting, evidence, authority bundles, profile evolution, collaboration routes, sponsor boundary and AI authority.
+10 min
+Close WSS decisions
+Device target; entry/age; vote threshold/quorum/window; Purpose Compass wording/configuration.
+5 min
+Classify optional items
+Bulletin Board Lite and Relationship List Lite: Include/no material effort, Defer, or Change Request.
+10 min
+Agree demonstration package
+Clean role accounts, negative permission tests, one end-to-end participant journey and fourth-pack proof.
+10 min
+Owners and dates
+Record disposition, exact change, responsible WSS/Shaligram owner, demo/test, due date and schedule/cost effect.
+7. Build-Freeze Closure Register - requested return format
+Shaligram can return this as a spreadsheet or table. The purpose is to turn review language into an auditable implementation decision, without producing another long narrative document.
+ID
+Issue
+Disposition
+Exact change
+Demo / test
+Owner
+Due
+Scope / cost
+BF-01
+Cross-context Mentor Request
+Accepted
+Filter by active context; safe switch + re-authorise
+Samuel Riverside -&gt; Excelsior Mentor Request
+Shaligram
+[date]
+None
+BF-02
+Optional consent
+Accepted
+Five separate optional purpose controls
+Mary declines AI but completes core flow
+Shaligram + WSS policy
+[date]
+None
+BF-03
+Circle vote
+Accepted
+Remove owner multiplier; freeze parameters separately
+10 eligible: 6 pass / 4 fail / tie revise
+Both
+[date]
+None
+BF-04
+Profile evolution
+Accepted
+Candidate -&gt; Accept/Edit/Reject with provenance
+Evidence -&gt; candidate -&gt; reject/edit/accept
+Shaligram
+[date]
+None
+BF-15
+Bulletin Board Lite
+Deferred / Include
+Compose existing authorised records only if low effort
+Release-safe board if included
+Both
+[date]
+TBC / none
+Recommended disposition vocabulary: Accepted = implement as stated; Amended = same intent with agreed implementation variation; Deferred = explicitly outside this Alpha; Rejected = not adopted, with reason and WSS confirmation.
+
+Working principle for both teams: correct what is already agreed -&gt; decide the few remaining parameters -&gt; explicitly defer nonessential additions -&gt; demonstrate permissions and one coherent journey -&gt; freeze one controlled Alpha baseline.

@@ -221,6 +221,25 @@ const G = {
       'only a party can consent, after steward approval'
     );
   },
+  // post-introduction outcomes: only a party, only on an active introduction, only until a final outcome is recorded
+  mbNext: d => {
+    const m = byId('matches', d.id);
+    return (m && (m.a === myId() || m.b === myId()) && m.status === 'Introduced' && !m.project && !INTRO_FINAL.includes(m.introState)) || 'only a party records what happened next, once, after both have consented';
+  },
+  rbNext: d => {
+    const c = byId('cards', d.c);
+    const p = c && (c.proposals || []).find(x => x.id === d.id);
+    return (p && [p.from, p.to].includes(myId()) && p.status === 'Accepted' && !INTRO_FINAL.includes(p.introState)) || 'only a party records what happened next, once the direct collaboration is accepted';
+  },
+  introLink: d => {
+    const v = viaOf(d.via);
+    return (v && v.parties.includes(myId()) && !INTRO_FINAL.includes(v.o.introState)) || 'only a party can link this introduction to a workspace';
+  },
+  ilk: d => {
+    const v = viaOf(d.via);
+    return (v && v.parties.includes(myId()) && !INTRO_FINAL.includes(v.o.introState)) || 'only a party can link this introduction to a workspace';
+  },
+  rb: d => (['P', 'C', 'F', 'M'].includes(role()) && !!byId('cards', d.id)) || 'direct collaboration is proposed by a programme member from an opportunity',
   rbDecide: d => {
     const c = byId('cards', d.c);
     const p = c && (c.proposals || []).find(x => x.id === d.id);
@@ -265,10 +284,16 @@ const G = {
   hvCand: () => canComplete() || 'only an authorised Facilitator, Reviewer or Project Lead can offer candidates',
   // pathway & profile
   pwReview: () => hasB('Reviewer') || 'only an authorised Reviewer approves custom or AI-drafted pathways',
-  pwAccept: d => byId('pathways', d.id)?.pid === myId() || 'only the participant can accept their pathway',
-  pwChange: d => byId('pathways', d.id)?.pid === myId() || 'only the participant can request a change',
+  // Recommend Pathways: only the participant activates a recommendation; recommenders never activate it
+  pwAccept: d => (byId('pathways', d.id)?.pid === myId() && byId('pathways', d.id).state === PW_REC) || 'only the participant accepts a pathway recommended to them',
+  pwChange: d => (byId('pathways', d.id)?.pid === myId() && byId('pathways', d.id).state === PW_REC) || 'only the participant asks for changes to a pathway recommended to them',
+  pwc: d => G.pwChange(d),
   pwStep: d => byId('pathways', d.id)?.pid === myId() || 'only the participant completes their own steps',
-  proposePathway: () => ['F', 'M'].includes(role()) || 'only a facilitator or mentor proposes pathways',
+  proposePathway: d => pwCanRecommend(d.pid) || 'only a Facilitator, Circle Steward or the participant’s Rope Team mentor recommends a pathway, within their context',
+  pp: d => G.proposePathway(d),
+  pwAsk: () => roleBase(role()) === 'P' || 'only participants request a pathway recommendation',
+  pwa: d => (roleBase(role()) === 'P' && (d.to === 'any' || pwAskTo().some(([x]) => x === d.to))) || 'send the request to a Facilitator, Circle Steward or your Rope Team mentor in this programme',
+  pwAskWithdraw: d => (byId('pwReqs', d.id)?.pid === myId() && byId('pwReqs', d.id).status === 'Open') || 'only the participant withdraws their open request',
   cand: d => byId('candidates', d.id)?.pid === myId() || 'only the participant decides on their profile',
   // funding & payments
   // BF-08: staged project funding, tranches, progress summaries and pitches are outside the Alpha boundary.
@@ -406,6 +431,12 @@ Object.assign(G, {
   circleSummary: d => isFac(d.id) || 'only the facilitator drafts a Circle summary',
   summaryDecide: d => isFac(d.id) || 'only the facilitator reviews the summary',
   tplOrg: () => ['A', 'O'].includes(role()) || 'only administrators edit templates',
+  // Programme Administrator owns the approved template library (create, version, publish / retire)
+  tplNew: () => role() === 'A' || 'only the Programme Administrator creates pathway templates',
+  tpl: () => role() === 'A' || 'only the Programme Administrator creates pathway templates',
+  tplEdit: d => (role() === 'A' && !!byId('templates', d.id)) || 'only the Programme Administrator versions pathway templates',
+  tple: d => (role() === 'A' && !!byId('templates', d.id)) || 'only the Programme Administrator versions pathway templates',
+  tplState: () => role() === 'A' || 'only the Programme Administrator publishes or retires pathway templates',
 });
 // ---- chat, stage journey, Rope Team reviews, room contributions, collaborator matching
 const ropeMod = id => {
@@ -443,12 +474,22 @@ Object.assign(G, {
   stageReport: d => {
     const o = byId(d.kind, d.id);
     if (!o || o.state !== 'Active') return 'reports can be sent only from an active space';
-    return (d.kind === 'circles' ? o.owner === myId() || (role() === 'F' && o.facilitator === myId()) : o.owner === myId() || o.mentor === myId()) || 'only the space owner sends this report';
+    return reportAuthor(d.kind, o) || 'only the space owner, facilitator, mentor or lead sends this report';
   },
   srep: d => {
     const o = byId(d.kind, d.id);
-    return (!!o && (d.kind === 'circles' ? o.owner === myId() || isFac(d.id) : o.owner === myId() || o.mentor === myId())) || 'only the space owner sends this report';
+    return (!!o && o.state === 'Active' && reportAuthor(d.kind, o)) || 'only the space owner, facilitator, mentor or lead sends this report';
   },
+  // links: the source object's lead creates links; a link never changes membership on either side
+  linkMake: d => canMake(d.k, byId(d.k, d.id), d.make) || 'you cannot create a linked ' + OBJ_LABEL(d.make) + ' from here',
+  linkExisting: d => linkAuth(d.k, byId(d.k, d.id)) || 'only the owner, lead, facilitator or mentor links objects here',
+  lkx: d => linkAuth(d.k, byId(d.k, d.id)) || 'only the owner, lead, facilitator or mentor links objects here',
+  unlinkObj: d => {
+    const l = allLinks().find(x => x.id === d.id);
+    return (l && !l.primary && (l.created_by === myId() || linkAuth(l.source_type, byId(l.source_type, l.source_id)) || linkAuth(l.target_type, byId(l.target_type, l.target_id)))) || 'only the person who linked it, or the lead of a linked object, removes a link (never the Primary Origin)';
+  },
+  newRope: d => (['P', 'M', 'F'].includes(role()) && (!d.fromKind || canMake(d.fromKind, byId(d.fromKind, d.fromId), 'ropes'))) || 'Participants, Mentors and Faculty/Stewards form Rope Teams — from a space only as one of its contributing members',
+  nrt: d => (['P', 'M', 'F'].includes(role()) && (!d.fromKind || canMake(d.fromKind, byId(d.fromKind, d.fromId), 'ropes'))) || 'Participants, Mentors and Faculty/Stewards form Rope Teams — from a space only as one of its contributing members',
   returnTo: d => activeMember(d.from, d.id) || 'only members of an active space can return an issue',
   ret: d => activeMember(d.from, d.id) || 'only members of an active space can return an issue',
   revNew: d => (activeMember('ropes', d.id) && byId('ropes', d.id).mentor !== myId()) || 'only Rope Team participants share work for review',
@@ -504,12 +545,15 @@ Object.assign(G, {
     return (x && ropeJoinable(x)) || 'you can ask to join only Rope Teams linked to your Circles';
   },
   joinWithdraw: d => (memberRec(byId(d.kind, d.id) || {}) || {}).status === 'Requested' || 'there is no pending request to withdraw',
-  newCircle: () => canCreateCircle() || 'you cannot create Circles in this role',
-  nc: d =>
-    canCreateCircle() &&
-    (role() !== 'P' || !d.project || ownCircleProjects().some(p => p.id === d.project))
-      ? true
-      : 'you can create a Circle only for your own accepted project',
+  // Directly (with a stated basis), for an accepted project, or as a linked Circle from an object you lead.
+  newCircle: d => canCreateCircle() || (d.fromKind && canMake(d.fromKind, byId(d.fromKind, d.fromId), 'circles')) || 'you cannot create Circles in this role',
+  nc: d => {
+    const from = d.fromKind && byId(d.fromKind, d.fromId);
+    if (d.fromKind && !canMake(d.fromKind, from, 'circles')) return 'you can create a linked Circle only from an object you lead or facilitate';
+    if (!d.fromKind && !canCreateCircle()) return 'you cannot create Circles in this role';
+    const pid = d.fromKind === 'projects' ? d.fromId : d.project;
+    return role() !== 'P' || !pid || pid === NC_NONE || d.fromKind === 'projects' || ownCircleProjects().some(p => p.id === pid) || 'you can create a Circle only for your own accepted project';
+  },
   rec: d => {
     const c = byId('circles', d.c);
     return (c && c.state === 'Active' && (sCan('circles', c, 'record') || isFac(d.c))) || 'records can be added only by contributing members while the Circle is active';
@@ -593,25 +637,54 @@ Object.assign(G, {
   // step rules (FR-F04): a Blocked step (prerequisite still open) cannot be completed — see pwStepGuard in views/profile.js
   pwStep: d => pwStepGuard(d),
   pws: d => pwStepGuard(d),
+  // Skipping applies to Optional steps only; skipping never needs the step to be open.
   pwStepSet: d => {
     const p = byId('pathways', d.id);
     const s = p && p.steps[d.i];
     if (!s || p.pid !== myId() || p.state !== 'Current') return 'only the participant changes steps of their current pathway';
-    if (d.v !== 'undo' && pwStepState(p, +d.i).st === 'Blocked') return 'this step is blocked — ' + pwStepState(p, +d.i).why;
-    return d.v === 'undo' || !pwClosed(s) || 'this step is already ' + pwStepState(p, +d.i).st.toLowerCase();
+    if (d.v === 'skip') return (s.type === 'Optional' && !pwClosed(s) && !s.pend) || 'only an open Optional step can be skipped';
+    return s.st === 'Skipped' || 'there is nothing to undo on this step';
   },
+  pwStart: d => {
+    const p = byId('pathways', d.id);
+    return (p && p.pid === myId() && p.state === 'Current' && [PW_S.AVAILABLE, PW_S.NOT_STARTED].includes(pwStepState(p, +d.i).st)) || 'only the participant starts an open step of their current pathway';
+  },
+  // Condition answers: the participant answers questions about themselves; a Facilitator confirms staff-set facts.
+  pwFact: d => {
+    const p = byId('pathways', d.id);
+    const s = p && p.steps[d.i];
+    if (!s || s.type !== 'Conditional' || !pwFactDef(s) || p.state !== 'Current' || s.done || s.pend) return 'this step has no open condition to answer';
+    if (!['yes', 'no', 'clear'].includes(d.v)) return 'answer Yes or No';
+    return pwFactWho(p, s) || (pwFactDef(s).who === 'S' ? 'only a Facilitator of this participant confirms this condition' : 'only the participant answers this question');
+  },
+  pwUseEv: d => {
+    const p = byId('pathways', d.id);
+    const s = p && p.steps[d.i];
+    return (s && p.pid === myId() && p.state === 'Current' && s.prior && !pwClosed(s) && !s.pend && ![PW_S.LOCKED, PW_S.NA].includes(pwStepState(p, +d.i).st)) || 'only the participant selects prior evidence for an open step that allows it';
+  },
+  pwue: d => G.pwUseEv(d),
+  // A Facilitator or Mentor suggests; a Reviewer of this programme may select and confirm directly.
   pwPrior: d => {
     const p = byId('pathways', d.id);
     const s = p && p.steps[d.i];
-    return (s && ['F', 'M'].includes(role()) && p.pid !== myId() && pwCanView(p) && p.state === 'Current' && s.prior && !pwClosed(s)) || 'only a facilitator or mentor of this participant recommends prior evidence, on steps that allow it';
+    const who = (['F', 'M'].includes(role()) && pwCanView(p)) || pwStepReviewers(p || {}).includes(myId());
+    return (s && who && p.pid !== myId() && p.state === 'Current' && s.prior && !pwClosed(s) && !s.pend) || 'only a facilitator, mentor or Reviewer of this participant uses prior evidence, on open steps that allow it';
   },
+  pwStepRev: d => {
+    const p = byId('pathways', d.id);
+    const s = p && p.steps[d.i];
+    return (s && s.pend && p.state === 'Current' && p.pid !== myId() && pwStepReviewers(p).includes(myId())) || 'only an authorised Reviewer decides on a step waiting for review, and not on their own';
+  },
+  pwsr: d => G.pwStepRev(d),
+  pwNewVer: d => pwCanNewVer(byId('pathways', d.id)) || 'only the recommender or a Facilitator of this participant proposes a changed version of an active pathway, one at a time',
+  pwnv: d => G.pwNewVer(d),
   pwpe: d => G.pwPrior(d),
   pwPriorDecide: d => {
     const p = byId('pathways', d.id);
     const s = p && p.steps[d.i];
     return (s && p.pid === myId() && s.rec && s.rec.status === 'Awaiting participant' && !pwClosed(s)) || 'only the participant accepts or declines a recommendation on their pathway';
   },
-  pwDecline: d => byId('pathways', d.id)?.pid === myId() && byId('pathways', d.id).state === 'Proposed to participant' || 'only the participant declines a pathway proposed to them',
+  pwDecline: d => (byId('pathways', d.id)?.pid === myId() && byId('pathways', d.id).state === PW_REC) || 'only the participant declines a pathway recommended to them',
   pwdc: d => G.pwDecline(d),
   // profile change candidates and evolution suggestions: only the person decides
   candDlg: d => byId('candidates', d.id)?.pid === myId() || 'only the participant decides on their profile',
@@ -669,6 +742,26 @@ const roomFor = d => {
 Object.assign(G, {
   rdoc: d => activeMember('ropes', d.id) || 'only members of an active Rope Team upload documents',
   // owners edit their own records
+  // optional purposes, capability scopes and integration adapters (purposes.js)
+  scopeSet: d =>
+    d.level === 'tenant'
+      ? role() === 'T' || 'only the Platform Administrator sets organization-level capability scopes'
+      : (role() === 'A' && d.id === ctxId()) || 'only the Programme Administrator of this programme sets its optional purposes',
+  adapterSet: () => role() === 'T' || 'only the Platform Administrator manages integration adapters',
+  evpur: d => byId('evidence', d.id)?.owner === myId() || 'only the record owner restricts its purposes',
+  payVerify: d => ((role() === 'A' || hasB('Finance Owner')) && byId('ents', d.id)?.state === 'PAYMENT_PENDING') || 'only the Finance Owner or Programme Administrator confirms a pending payment',
+  prc: d => ((role() === 'A' || hasB('Finance Owner')) && byId('ents', d.id)?.state === 'PAYMENT_PENDING') || 'only the Finance Owner or Programme Administrator confirms a pending payment',
+  storyReq: d => {
+    const e = byId('evidence', d.id);
+    if (!(role() === 'S' && sponsorCleared().some(x => x.id === d.id))) return 'only a sponsor can request a story, and only about evidence already cleared for funder reports';
+    return purposeOn('public', e.owner, { ctx: e.ctx, rec: e }) || 'this person has not allowed public/funder exchange, so their personal story cannot be requested';
+  },
+  story: d => {
+    const e = byId('evidence', d.id);
+    if (!(role() === 'S' && sponsorCleared().some(x => x.id === d.id))) return 'only a sponsor can request a story, and only about evidence already cleared for funder reports';
+    return purposeOn('public', e.owner, { ctx: e.ctx, rec: e }) || 'this person has not allowed public/funder exchange, so their personal story cannot be requested';
+  },
+  projDelete: d => projDeletable(byId('projects', d.id)) || 'only the owner can delete a project, and only while it is a draft',
   projEdit: d => projEditable(byId('projects', d.id)) || 'only the project owner edits it, until it is closed or rejected',
   pje: d => projEditable(byId('projects', d.id)) || 'only the project owner edits it, until it is closed or rejected',
   spaceEdit: d => (SPACE_EDIT[d.kind] && spaceEditable(d.kind, byId(d.kind, d.id))) || 'only the owner edits this space while it is open',
@@ -753,17 +846,15 @@ Object.assign(G, {
     return (p && p.by === myId() && p.state === 'Clarification requested') || 'only the creator can update a pathway after a clarification request';
   },
   pwUpd: d => (byId('pathways', d.id)?.by === myId() && byId('pathways', d.id)?.state === 'Clarification requested') || 'only the creator can update a pathway after a clarification request',
-  pwAssign: d => (role() === 'A' && ['Awaiting reviewer', 'In review', 'Clarification requested'].includes(byId('pathways', d.id)?.state)) || 'only the Programme Administrator assigns a Steward to a pathway under review',
-  pwas: d => (role() === 'A' && ['Awaiting reviewer', 'In review', 'Clarification requested'].includes(byId('pathways', d.id)?.state)) || 'only the Programme Administrator assigns a Steward to a pathway under review',
+  pwAssign: d => (role() === 'A' && ['Awaiting reviewer', 'In review', 'Clarification requested'].includes(byId('pathways', d.id)?.state)) || 'only the Programme Administrator assigns a reviewer to a pathway under review',
+  pwas: d => (role() === 'A' && ['Awaiting reviewer', 'In review', 'Clarification requested'].includes(byId('pathways', d.id)?.state)) || 'only the Programme Administrator assigns a reviewer to a pathway under review',
+  // Any authorised Reviewer may act on a queued pathway (and picks it up); after that only its reviewer decides.
   // The approver may reject while waiting on a clarification; approving or asking again needs it back in review.
   pwDec: d => {
     const p = byId('pathways', d.id);
-    return (p && p.reviewer === myId() && (p.state === 'In review' || (d.v === 'Rejected' && p.state === 'Clarification requested'))) || 'only the assigned reviewer decides on this pathway';
+    return (p && pwCanReview(p) && (['Awaiting reviewer', 'In review'].includes(p.state) || (d.v === 'Rejected' && p.state === 'Clarification requested'))) || 'only an authorised Reviewer decides on this pathway, and not on their own';
   },
-  pwd: d => {
-    const p = byId('pathways', d.id);
-    return (p && p.reviewer === myId() && (p.state === 'In review' || (d.v === 'Rejected' && p.state === 'Clarification requested'))) || 'only the assigned reviewer decides on this pathway';
-  },
+  pwd: d => G.pwDec(d),
 });
 // Bundle and mandate assignment had no guard entry: protect them like other role management.
 Object.assign(G, {

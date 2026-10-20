@@ -89,18 +89,28 @@ function inboxItems() {
             ]),
           ),
       );
-  if (r === "F")
-    S.pathways
-      .filter((p) => inCtx(p) && p.reviewer === me_ && p.state === "In review")
-      .forEach((p) =>
-        out.push([
-          "Pathway approval",
-          p.name,
-          "From " + P(p.by).name,
-          "pathway",
-          { id: p.id },
-        ]),
-      );
+  // Pathway review: your own reviews plus the shared Reviewer queue (no Programme Administrator assignment needed).
+  S.pathways
+    .filter((p) => inCtx(p) && ((p.reviewer === me_ && p.state === "In review") || (!p.reviewer && pwCanReview(p))))
+    .forEach((p) =>
+      out.push([
+        "Pathway approval",
+        p.name,
+        (p.reviewer ? "From " : "Review queue · from ") + P(p.by).name,
+        "pathway",
+        { id: p.id },
+      ]),
+    );
+  // Pathway steps waiting for a Reviewer (prior evidence or a completion check)
+  if (typeof pwPendItems === "function")
+    pwPendItems().forEach(([p, i, s]) =>
+      out.push(["Pathway step review", P(p.pid).name + " · " + s.t, s.pend.kind === "prior" ? "Prior evidence proposed" : "Completion to check", "pathway", {}]),
+    );
+  // Participants asking for a pathway recommendation
+  if (r === "F" || r === "M")
+    pwReqsForMe().forEach((q) =>
+      out.push(["Pathway recommendation request", P(q.pid).name, "“" + q.goal + "”", "pathway", {}]),
+    );
   if (r === "F")
     S.matches
       .filter(
@@ -356,9 +366,9 @@ function nextAction() {
         { tab: "cand" },
       ];
     const pw = S.pathways.find(
-      (p) => p.pid === pid && inCtx(p) && p.state === "Proposed to participant",
+      (p) => p.pid === pid && inCtx(p) && p.state === PW_REC,
     );
-    if (pw) return ["Review a proposed pathway", h(pw.name), "pathway", {}];
+    if (pw) return ["Review a recommended pathway", h(pw.name) + " · recommended by " + pwRoleLine(pw) + ". Nothing becomes active until you accept.", "pathway", {}];
     const cur = S.pathways.find(
       (p) => p.pid === pid && inCtx(p) && p.state === "Current",
     );
@@ -368,14 +378,12 @@ function nextAction() {
       const ri = cur.steps.findIndex((s) => s.rec && s.rec.status === "Awaiting participant" && !pwClosed(s));
       if (ri >= 0)
         return [`Accept or decline a recommendation for step ${ri + 1}`, `${nm(cur.steps[ri].rec.by)} recommends that prior evidence satisfies “${h(cur.steps[ri].t)}”. Nothing changes unless you accept.`, "pathway", {}];
+      pwSync(cur);
+      // a condition only the participant can answer comes before the next step
+      const qi = cur.steps.findIndex((s, j) => s.type === "Conditional" && pwCond(cur, j) === null && pwFactDef(s) && pwFactDef(s).who === "P" && !s.done);
+      if (qi >= 0) return [`Answer a question for step ${qi + 1} of your pathway`, h(pwFactDef(cur.steps[qi]).q) + " Your answer decides whether the step applies.", "pathway", {}];
       const i = pwNext(cur);
-      if (i >= 0)
-        return [
-          cur.steps[i].type === "Conditional" && !cur.steps[i].applies ? `Check whether step ${i + 1} of your pathway applies` : `Complete step ${i + 1} of your pathway`,
-          h(cur.steps[i].t),
-          "pathway",
-          {},
-        ];
+      if (i >= 0) return [`${pwStepState(cur, i).st === PW_S.PROGRESS ? "Finish" : "Complete"} step ${i + 1} of your pathway`, h(cur.steps[i].t), "pathway", {}];
     }
     return [
       "Define your first project",
@@ -813,7 +821,7 @@ function roleJourney() {
     const rolesOk = !S.assign.some((x) => x.ctx === ctxId() && x.status === "Pending role approval");
     const vers = (S.configVersions || []).length > 0;
     return journeyRail("Admin flow", "Your programme operations", "Queues → people → packs → versions (Doc 1 §6.7)", [
-      { k: "Approval inbox", done: queue, r: "admin", p: { tab: "requests" }, meta: queue ? "No unassigned reviews" : "Assign reviewers" },
+      { k: "Approval inbox", done: queue, r: "admin", p: { tab: "requests" }, meta: queue ? "No reviews stuck without a reviewer" : "Assign reviewers" },
       { k: "Users & roles", done: rolesOk, r: "admin", p: { tab: "users" }, meta: rolesOk ? "No pending role approvals" : "Role requests waiting" },
       { k: "Invitations", done: S.invites.some((i) => i.ctx === ctxId()), r: "admin", p: { tab: "invites" }, meta: "Programme invitations" },
       { k: "Packs", done: packs, r: "admin", p: { tab: "packs" }, meta: packs ? "Pack configuration live" : "Configure a pack" },
@@ -903,13 +911,13 @@ function homeP() {
       ),
     );
   S.pathways
-    .filter((p) => p.pid === pid && p.state === "Proposed to participant")
+    .filter((p) => p.pid === pid && inCtx(p) && p.state === PW_REC)
     .forEach((p) =>
       pend.push(
         hrow(
           "route",
-          "Pathway proposed: " + h(p.name),
-          "Mode " + h(p.mode),
+          "Pathway recommended: " + h(p.name),
+          "By " + pwRoleLine(p) + (p.reason ? " · " + h(p.reason) : ""),
           B("Review", "go", { r: "pathway" }),
         ),
       ),
@@ -1027,10 +1035,10 @@ function homeP() {
    B(ic("upload", 16) + "Upload evidence", "go", { r: "newevidence" }),
    "hm-tbl",
  )}`,
-   `${card("My pathway", pw ? h(pw.name) : "", pw ? `<div class="hm-prog"><div class="progress"><span class="bar" style="width:${(pwProg(pw).n / pw.steps.length) * 100}%"></span></div><span class="cap">${pwProg(pw).n} of ${pw.steps.length}</span></div><ol class="hm-steps">${pw.steps.map((s, i) => { const x = pwStepState(pw, i); return `<li class="${pwClosed(s) ? "done" : x.st === "Current" ? "cur" : ""}"><span class="hm-step-m" aria-hidden="true">${pwClosed(s) ? ic("check", 12) : i + 1}</span><span class="hm-step-t"><b>${h(s.t)}</b><span class="cap">${h(s.type || "Mandatory")} · ${x.st === "Current" ? "Next step" : h(x.st)}${x.st === "Blocked" ? " — " + h(x.why) : ""}${s.rec && s.rec.status === "Awaiting participant" && !pwClosed(s) ? " · recommendation waiting for you" : ""}</span></span></li>`; }).join("")}</ol>` : empty("route", "No current pathway", "A facilitator or mentor may propose one. You decide whether to accept it."), pw ? L("Open", "pathway") : "", "hm-list")}
+   `${card("My pathway", pw ? h(pw.name) : "", pw ? `<div class="hm-prog"><div class="progress"><span class="bar" style="width:${(pwProg(pw).n / pw.steps.length) * 100}%"></span></div><span class="cap">${pwProg(pw).n} of ${pw.steps.length}</span></div><ol class="hm-steps">${pw.steps.map((s, i) => { const x = pwStepState(pw, i); const nx = i === pwNext(pw); return `<li class="${pwClosed(s) ? "done" : nx ? "cur" : ""}"><span class="hm-step-m" aria-hidden="true">${pwClosed(s) ? ic("check", 12) : i + 1}</span><span class="hm-step-t"><b>${h(s.t)}</b><span class="cap">${h(s.type || "Mandatory")} · ${h(x.st)}${nx ? " · next step" : ""}${x.st === "Blocked" ? " — " + h(x.why) + " Next action: " + h(x.next) : ""}${s.rec && s.rec.status === "Awaiting participant" && !pwClosed(s) ? " · recommendation waiting for you" : ""}</span></span></li>`; }).join("")}</ol>` : empty("route", "No current pathway", "A facilitator or mentor may propose one. You decide whether to accept it."), pw ? L("Open", "pathway") : "", "hm-list")}
  ${card("Collaborations", "In this context", [...myCircles().map((c) => hrow("users", h(c.name), "Circle · " + c.members.length + " members" + (unreadIn(c) ? " · " + unreadIn(c) + " unread" : ""), unr(c) + pill(c.state) + " " + L("Open", "circle", { id: c.id }), "t-purple")), ...myRopes().map((c) => hrow("route", h(c.name), "Rope Team · mentor " + (c.mentor ? nm(c.mentor) : "—") + (unreadIn(c) ? " · " + unreadIn(c) + " unread" : ""), unr(c) + pill(c.state) + " " + L("Open", "rope", { id: c.id }), "t-teal")), ...myRooms().map((c) => hrow("room", h(c.name), WL(), pill(c.state) + " " + L("Open", "room", { id: c.id }), "t-navy"))].join("") || empty("users", "No collaborations yet", "When a steward accepts your project, they create a Circle and invite you."), "", "hm-list")}
  ${card("Opportunities for you", "Cards visible to you", opps.map((c) => hrow("megaphone", h(c.title), h(c.kind) + " · expires " + fmt(c.expires), L("View", "card", { id: c.id }))).join("") || empty("megaphone", "No open opportunities", "New cards for your audience appear here."), L("Browse", "opportunities"), "hm-list")}
- <section class="card hm-ask"><div class="hm-ask-h"><span class="tile t-soft" aria-hidden="true">${ic("sparkle", 18)}</span><div><b>Ask PHOENIX</b><p class="cap">${consent(pid, "ai") === "Granted" ? "Private answers from approved sources. Nothing is saved to your record." : `AI processing is off for you, so Ask PHOENIX is unavailable. Everything else keeps working. You can change this in ${L("My records & consent", "privacy", { tab: "consent" })}.`}</p></div></div>${consent(pid, "ai") === "Granted" ? B("What should I do next to reach my milestone?", "askPreset", { q: "What should I do next to reach my milestone?" }, "btn-s") : `<button type="button" class="btn btn-s" disabled title="AI processing is off for you">What should I do next to reach my milestone?</button>`}</section>`,
+ <section class="card hm-ask"><div class="hm-ask-h"><span class="tile t-soft" aria-hidden="true">${ic("sparkle", 18)}</span><div><b>Ask PHOENIX</b><p class="cap">${purposeOn("ai", pid) ? "Private answers from approved sources. Nothing is saved to your record." : `AI processing is off for you, so Ask PHOENIX is unavailable. Everything else keeps working. You can change this in ${L("My records & consent", "privacy", { tab: "consent" })}.`}</p></div></div>${purposeOn("ai", pid) ? B("What should I do next to reach my milestone?", "askPreset", { q: "What should I do next to reach my milestone?" }, "btn-s") : `<button type="button" class="btn btn-s" disabled title="AI processing is off for you">What should I do next to reach my milestone?</button>`}</section>`,
  )}</div>`
   );
 }
@@ -1047,8 +1055,9 @@ function homeF() {
     .filter((x) => inCtx(x) && msIsSteward(x))
     .flatMap((x) => msPending(x).map(([m, it]) => [x, m, it]))
     .filter(([, , it]) => byId("evidence", it.ev)?.owner !== pid);
+  // Support indicators are ROPE_TEAM_ONLY and mentor/facilitator-only: never a dashboard snippet for other members.
   const attention = S.ropes
-    .filter((r) => inCtx(r) && memberOf(r))
+    .filter((r) => inCtx(r) && memberOf(r) && (sCan("ropes", r, "mentor") || spaceRole("ropes", r) === "Facilitator"))
     .flatMap((r) =>
       Object.entries(r.indicators || {})
         .filter(
@@ -1519,7 +1528,7 @@ function homeT() {
    "AI gateway",
    "",
    dl([
-     ["Provider", pill(S.settings.aiAvailable ? "Healthy" : "Unavailable")],
+     ["Provider", pill(adapterUp('ai') ? "Healthy" : "Unavailable")],
      [
        "Quota used",
        S.settings.aiUsed + " of " + S.settings.aiQuota + " requests today",

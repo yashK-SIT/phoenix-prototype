@@ -311,7 +311,7 @@ function migrate() {
   S.pathways.forEach((p) => {
     p.thread = p.thread || [];
     if (p.state === "Changes requested") p.state = "Clarification requested";
-    // custom pathways now wait for the Programme Administrator to assign a Steward
+    // custom pathways without a reviewer wait in the shared Reviewer queue
     if (p.state === "In review" && !p.reviewer) p.state = "Awaiting reviewer";
   });
   sqMigrate(); // support requests: ID, context, statuses, history (views/freeze.js)
@@ -330,11 +330,18 @@ function migrate() {
       if (!x.members.some((m) => m.pid === s)) x.members.push({ pid: s, role: "Facilitator", status: "Active" });
     });
   });
-  // Rope Teams carry their own documents plus a copy of the linked Circle's documents
+  // Rope Teams hold only their own documents; earlier copies of a linked Circle's documents are removed
+  // (WSS clarification 6: a link is a reference, never a data copy). Protected content is ROPE_TEAM_ONLY.
   S.ropes.forEach((x) => {
     x.docs = x.docs || [];
-    if (!x.circleDocs) x.circleDocs = circleDocsCopy(byId("circles", x.circle));
+    delete x.circleDocs;
+    x.contentVis = ROPE_ONLY;
   });
+  // Circle, Rope Team and Action Room relationships are explicit ObjectLinks (derived once from older fields)
+  allLinks();
+  // integrations are adapters with enabled / provider_status / consent_required / data_scope / purpose / last_* fields
+  adaptersMigrate();
+  scopeStore();
   // Role approvals moved into Programme admin → Users
   S.notifs.forEach((n) => {
     if (n.r === "admin" && n.p && n.p.tab === "approvals") n.p.tab = "users";
@@ -962,12 +969,8 @@ F.coh = (d) => {
 // ---- Facilitator AI summary of a Circle (FCS-09, class B)
 A.circleSummary = (d) => {
   const c = byId("circles", d.id);
-  if (consent(myId(), "ai") !== "Granted" || !S.settings.aiAvailable)
-    return deny(
-      S.settings.aiAvailable
-        ? "AI processing consent is not granted"
-        : "AI is unavailable right now",
-    );
+  const r = adapterCall("ai", { op: "AI Circle summary" });
+  if (r.state !== "OK") return aiFallback(r, "Write the summary yourself from the Circle’s records.");
   busy("Drafting a summary from authorised Circle records…", () => {
     const open = c.commitments
       .filter((x) => x.status === "Open")

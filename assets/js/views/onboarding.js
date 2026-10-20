@@ -277,7 +277,7 @@ function polDiffHtml(prev, cur) {
 function polSeedText(g) {
   const v3 = g.type === 'Participant Agreement' && g.ver >= 3;
   const use =
-    'AI processing, research and evaluation, cross-organisation sharing, public or funder release and external-system exchange are five separate optional choices. You make each one yourself, after accepting, and can change it at any time. Saying no never blocks the core collaboration features: your pathway, Circles, Rope Teams, tasks and evidence keep working.' +
+    'AI processing, research and evaluation, cross-organisation sharing, public or funder release and external-system exchange are five separate optional choices. You make each one yourself, after accepting, and can change it at any time. Saying no never blocks the core collaboration features: your pathway, Circles, Rope Teams, tasks and evidence keep working. Only a pathway step that itself needs a permission waits for it, and it tells you why.' +
     (g.ver === 2 || v3 ? ' AI only drafts, and every draft stays a draft until a person accepts it.' : '') +
     (v3 ? ' New in this version: research use of anonymised reflections is part of the separate Research and evaluation choice. If you have not granted it, your reflections are not used.' : '');
   const rights = 'You can correct information, grant, decline or withdraw any optional purpose, export your authorised records, appeal a decision and request deletion at any time — including while an agreement update is waiting for you.';
@@ -518,7 +518,7 @@ const consentChoice = (f, k, l, t, cur) =>
 function consentStep(steps) {
   const f = 'cons';
   const cur = S.consents[myId()] || {};
-  return `<div class="col onb-h"><p class="over">Step 3 of ${steps.length}</p><h1 class="h1">Your optional permissions</h1><p class="sub">These are separate from your agreement. Choose each one yourself. Saying no never blocks your pathway, Circles, Rope Teams, tasks or evidence, and you can change any choice later in My records & consent.</p></div>${errSum(f)}
+  return `<div class="col onb-h"><p class="over">Step 3 of ${steps.length}</p><h1 class="h1">Your optional permissions</h1><p class="sub">These are separate from your agreement. Choose each one yourself. Saying no never blocks your pathway, Circles, Rope Teams, tasks or evidence (only a pathway step that itself needs a permission waits for it), and you can change any choice later in My records & consent.</p></div>${errSum(f)}
   <form data-f="cons" class="card col onb-card" novalidate><h2 class="h3">Five optional purposes</h2>${OPT_PURPOSES.map(([k, l, t]) => consentChoice(f, k, l, t, cur)).join('')}
   <h2 class="h3">Matching</h2>${consentChoice(f, 'matching', 'Matching visibility', 'Lets a steward consider the profile fields you allow when suggesting a Match Brief. Contact details are never shared before both sides consent.', cur)}
   <span class="help">Each choice is stored with a date and kept in your consent history.</span>

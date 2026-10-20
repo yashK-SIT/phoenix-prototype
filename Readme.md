@@ -68,6 +68,69 @@ This section summarises the October 2026 change request. The rest of the documen
 | 14  | Visual design                 | The PHOENIX design system. **Colour:** primary **#004369** is the structural brand (navigation rail, primary buttons, links, active tabs); amber **#E09900** is the highlighter (the current place, the next action, unread counts, the role you hold in a space, keyboard focus), with amber text set in the darker **#8A5C00** for contrast; aqua **#B4DBDC** is the tint (selected and active states, avatars, your own messages); cool neutrals are derived from the primary; muted plum, pine and slate mark Circles, Rope Teams and Action Rooms. **Type:** Public Sans throughout with tabular figures; JetBrains Mono only for task keys. **Components:** 4px corners, ruled panel headers, flush tables with light sentence-case headers, rectangular tinted status tags, aligned empty states with a next step, a loading indicator that keeps the screen visible, and a high-visibility yellow keyboard-focus ring. **Layout:** the rail narrows on mid-size laptops, becomes icons only on tablets and a bottom bar on phones; tabs overflow into **More**; the project journey collapses to one line per stage on small screens; tables become labelled rows on phones. Every text colour pairing meets WCAG AA; there is no horizontal overflow from 1920 px down to 360 px. Styles are in `assets/css/theme.css`, loaded last. | 6.1             |
 | 15  | Organizations (tenants)       | Platform Administrators create, edit, suspend and reactivate organizations with name, short name, type, contact, email, phone, website, email domains, brand colour, brand logo, address, country, time zone, language and data residency. The organization list feeds the **Organization** dropdown in **Create context**, and the organization’s logo or brand-coloured initials appear in the top-bar context switcher. | 0.6, 5.26       |
 | 16  | Role management               | Primary roles are data, seeded with the specification’s defaults. Platform Administrators edit each role’s module permissions, create custom roles that behave as a predefined role, reset seeded roles to default and archive unused custom roles. Access changes apply immediately. | 0.7, 3.1, 5.26  |
+| 17  | Recommend Pathways            | **Recommend pathway** is an action over the existing pathway system (WSS clarification 1). A Facilitator, Circle Steward or the participant’s Rope Team mentor recommends an approved template (unchanged, or adapted within its rules) or a custom pathway, with a required reason. Nothing becomes active until the participant accepts. Custom pathways and adaptations outside the template’s rules go to a shared Reviewer queue — the Programme Administrator no longer assigns a reviewer to every pathway. Participants can **Request a recommendation** and can start an approved template unchanged without review. | 0.8, 5.6, 8.9   |
+| 18  | Pathway step types and acceptance | Three separate layers (WSS clarification 5): the step **requirement type** (Mandatory, Optional, Conditional), the **runtime step status** (Locked, Available, In progress, Pending review, Completed, Satisfied by prior evidence, Skipped – allowed, Not applicable, Blocked — always derived, never set by hand) and the pathway-level **participant acceptance** (Proposed, Accepted, Declined, Superseded). Conditional steps use explicit, testable rules. Prior evidence is selected by the participant or a Reviewer and confirmed by a Reviewer. Blocked steps always show a reason and the next action. A changed version of an active pathway needs the participant’s acceptance again. | 0.9, 5.6 |
+| 19  | Circle, Rope Team and Action Room linking | Three autonomous objects, not stages (WSS clarification 6). Each can be entered directly with a stated basis (cohort Circle, mentoring Rope Team, mandated Action Room) or created/linked from another in any order. Relationships are stored as **ObjectLinks** (`S.links`: source, target, link type, context, created by/at) with one **Primary Origin** plus related objects. Links never copy content, members, roles or permissions. Rope Team content is **ROPE_TEAM_ONLY**. | 0.10 |
+| 20  | Optional purposes as capability + consent scopes | Five independent scopes — `AI_ASSIST`, `RESEARCH_USE`, `CROSS_ORG_DISCOVERY`, `PUBLIC_FUNDER_EXCHANGE`, `EXTERNAL_DATA_EXCHANGE` — checked at organization (tenant), programme, person and record level at every protected operation. Optional providers sit behind **integration adapters** that return Unavailable / Retry / Use manual flow. Payment outage shows “Payment service temporarily unavailable. No charge has been made.”; unverified payments stay **PAYMENT_PENDING**. | 0.11 |
+| 21  | Match routes and the four post-introduction outcomes | Route A: steward review → Consent A → Consent B → introduction, with a 14-day consent window. A decline, rejection, card withdrawal or expiry ends the proposal and is not an outcome. After an introduction, exactly four outcomes are recorded as states: `INTRODUCTION_CLOSED`, `INTRODUCTION_OPEN`, `INTRODUCTION_LINKED_EXISTING` and `INTRODUCTION_CREATED_WORKSPACE`. Route B (no Match Brief) records the initiator, context, authority source, invitation, consent and resulting workspace. | 0.12 |
+
+## 0.8 Recommend Pathways (WSS clarification 1)
+
+**Authority.** Participant: choose an approved template, request a recommendation, draft a custom pathway, accept / ask for changes / decline a recommendation. Facilitator: recommend to participants in their context. Circle Steward (a Facilitator who facilitates a Circle the participant belongs to): recommend and optionally connect the pathway to that Circle. Mentor: recommend only to participants in their own Rope Teams. Programme Administrator: manages the template library; does not need to assign reviewers. Reviewer (bundle): approves custom pathways and adaptations outside a template’s rules. PHOENIX/AI: not used to draft pathways in this prototype; anything AI-drafted would follow the custom route.
+
+**Routes.**
+
+| What is recommended | Route |
+| --- | --- |
+| Approved template, unchanged | Recommended → participant accepts → Current |
+| Adaptation within the template’s rules | Recommended → participant accepts → Current |
+| Adaptation outside the rules, or custom | Awaiting reviewer (shared queue) → Reviewer approves / asks for clarification / rejects → Recommended → participant accepts → Current |
+| Participant’s own unchanged template | Current immediately (choosing it is the acceptance) |
+| Participant’s own changed template or custom pathway | Awaiting reviewer → Reviewer approves → Current |
+
+Alternative branches: Recommended → Declined (reason shared with the recommender; no loss of platform access); Recommended → Ask for changes → revised → re-recommended (re-checked against the template rules) → Accepted.
+
+**Adaptation rules — Assumed rule.** WSS did not define the "permitted adaptation envelope". The prototype assumes: every Mandatory template step is kept with the same wording and stays Mandatory; Optional and Conditional steps may be added, removed or reworded; 3–5 steps in total. Pressing **Check adaptation rules** in the recommend form shows whether the adaptation is inside or outside the rules. Needs WSS confirmation.
+
+**Review queue.** Custom pathways go to every active Reviewer-bundle holder in the context (not the author or the participant). The first Reviewer to approve, ask for clarification or reject picks it up. The Programme Administrator is notified only when no Reviewer exists in the context, and can still assign a named reviewer (optional).
+
+**Recorded on each recommendation:** template id (`tpl`), template version (`tplVer`), participant (`pid`), recommender (`by`), recommender role (`byRole`: Facilitator, Circle Steward, Mentor), context (`ctx`), optional Circle (`circle`), reason (`reason`), recommended at (`proposedAt`), status (`state`), accepted at / declined at (`acceptedAt`, `declinedAt`), and the request answered (`req`).
+
+**Request a recommendation.** The participant writes what they want to be able to do (prefilled from their Purpose Compass goal) and sends it to any Facilitator / Circle Steward in the programme, a named one, or their Rope Team mentor. Recipients see it in **Recommendation requests** on the Pathways page and in their Review inbox. Answering it with **Recommend pathway** marks it Answered; the participant can withdraw an open request.
+
+**Acceptance tests (passed in the prototype).** A Facilitator can recommend but cannot accept or activate a participant’s pathway. A plain Facilitator (no Reviewer bundle) cannot approve a custom pathway. A participant can decline and still use Circles and every other module.
+
+Screenshots: `assets/images/recommend-pathways/before` and `after`.
+
+## 0.9 Pathway step types, runtime statuses and participant acceptance (WSS clarification 5)
+
+**A. Requirement type (set when the pathway or template is designed).**
+
+| Type | Behaviour in the prototype |
+| --- | --- |
+| Mandatory | Needed to complete the pathway. Closed by completing it, or by approved prior evidence. |
+| Optional | May be completed or skipped (**Skipped – allowed**). A skip satisfies later steps' dependencies unless a step says it **needs it completed** — then that step shows Blocked with the reason. |
+| Conditional | Needed only when its stored rule is true. Rule kinds (from the client text): *IF work involves minors = Yes* (participant answers; point 5), *IF the participant also holds the Facilitator / Mentor / Partner role* (automatic; point 5 "participant_role = Facilitator"), *IF the steps it depends on are completed* (automatic; point 1 "Conditional on Steps 1–2" — not applicable if one of them is skipped), or *IF the participant answers Yes to a question* written by whoever designs the step (the explicit, testable rule an authorised human writes; used by the testimony consent check). Each answer is stored with who and when. Rule false → **Not applicable**; not yet answered → **Blocked** with the question as the next action. AI never decides. |
+
+Other design-time rules per step: dependencies on earlier steps ("done or skipped" or "completed"), **available from** a date, **needs an optional permission** (one of the five consent purposes), **requires evidence review** (a Reviewer approves completion) and **may be satisfied by prior evidence**. Prior evidence the participant selects is always confirmed by a Reviewer; a Reviewer may select it directly.
+
+**B. Runtime step status (always derived).** Locked (pathway not accepted yet) · **Available** (the step the rules offer next: lowest-numbered required open step) · **Not started** (any other open step not yet begun) · In progress (participant pressed **Start**, or a Reviewer returned it) · Pending review · Completed · Satisfied by prior evidence · Skipped – allowed · Not applicable · Blocked. The next step is the lowest-numbered required step that is Available or In progress.
+
+**Blocked** always shows **Reason** and **Next action**, never just a disabled button. Causes: an earlier step not complete ("Complete step n first"), an earlier step's evidence awaiting review ("Step 2 evidence is awaiting review." → "Await Reviewer decision"), a skipped step that must be completed, a date ("This activity becomes available on 15 Nov 2026." → "Nothing to do until then"), a condition not yet answered, or a **missing permission** the step needs ("This step needs your “AI processing” permission, which is not asked." → "Grant it in My records & consent, or skip this optional step", with a link). All reasons are listed; the first gives the next action.
+
+**Prior evidence.** The pathway suggests matching approved evidence by words from the step's title and rule ("Existing evidence may satisfy this requirement: “Certified Community Facilitation – 2025”"). Nothing changes until the participant selects it (**Use this evidence**). Where review is needed: Evidence proposed → **Pending review** → Reviewer **Approve** → Satisfied by prior evidence (evidence, selected by, confirmed by and date kept) or **Return** with a reason. A Reviewer may also select and confirm evidence directly; a Facilitator or Mentor may only suggest it. A keyword match never completes a step on its own.
+
+**Steps that need a Reviewer.** Marking such a step complete sends it to **Pathway steps waiting for your review** (Pathways page and Review inbox) for Reviewer-bundle holders in the context, except the participant. A plain Facilitator cannot approve.
+
+**C. Participant acceptance (pathway level).** Proposed → Accepted / Declined; Superseded when a newer version is accepted; "Not yet proposed" while a pathway is in review. Shown as a separate tag from the pathway state. **Propose a changed version** (recommender or a Facilitator of the participant, from the participant row menu). A **material** change — steps added, removed or reordered, requirement type, rule, condition, dependency, date, permission, review or evidence settings — creates version n+1 as a recommendation (unchanged template / allowed adaptation → straight to the participant; otherwise a Reviewer first); the current version stays active until the participant accepts; closed steps carry over where the step is unchanged. A **minor** change (step titles only) applies in place, keeps progress, is logged and the participant is told — no re-acceptance.
+
+**Template library (Programme Administrator).** Templates are authored with the same step editor (types, conditions, dependencies, dates, permissions, review, prior evidence). **New version** publishes v n+1; accepted pathways keep the version they were accepted with; **Retire / Publish** controls which templates can be recommended.
+
+**Demo data.** Template *Community Project Facilitator* (client example). **Daniel Kim** (new demo sign-in) has an accepted pathway showing Completed, Pending review (his certificate), Skipped – allowed, a Conditional step waiting for his answer, and a step blocked by review, prerequisites and a date; Dr Asha Rao reviews it. Mary's recommended *Community AI facilitation* has an optional AI module that needs the AI-processing permission.
+
+**How the client's points are applied.** Missing consent blocks only a step configured to need that permission; the rest of the pathway, Circles, tasks and evidence keep working (BF-02 copy updated to say so). Conditions are explicit stored rules; AI never sets or decides them. Evidence suggestions use fixed keywords; a suggestion never completes a step.
+
+Screenshots: `assets/images/pathway-step-types/before` and `after`.
 
 ## 0.1 Space roles (project-wise roles)
 
@@ -156,6 +219,102 @@ This section summarises the October 2026 change request. The rest of the documen
 - **Creating a role:** name, description, Behaves as, Start permissions from (any active role, copied), Joins by, Needs approval. Active custom roles are offered in invitations according to their base, and show by name everywhere the app displays a role.
 
 ---
+
+## 0.10 Circle, Rope Team and Action Room as linked objects (WSS clarification 6)
+
+**Model.** Circle (learning, dialogue, sensemaking), Rope Team (support, accountability) and Action Room (execution, evidence) are separate objects. There is no Circle → Rope Team → Action Room hierarchy. Relationships live in `S.links` (`views/links.js`): `source_type`, `source_id`, `target_type`, `target_id`, `link_type` (originated-from, supports, reflects-on, executes, related-to), `context_id`, `created_by`, `created_at`, and `primary` for the one Primary Origin. Existing data is converted to links once, on load.
+
+**Entry and linking.** Every Circle, Rope Team, Action Room and accepted Project has a **Linked objects** panel (Primary origin, related objects, Create linked Circle / Form linked Rope Team / Create or Propose linked Action Room, Link existing, Unlink). The Overview tab shows the lineage.
+
+| Sequence | How it works in the prototype |
+| --- | --- |
+| Circle → Rope Team → Action Room | Any contributing Circle member forms a private Rope Team with a mentor they choose. From the Rope Team, they create or propose a linked Action Room. |
+| Circle → Action Room → Rope Team | The Circle lead creates a linked Action Room. Any Action Room member forms a linked Rope Team; it does not control the project. |
+| Action Room → linked Circle | The Action Room lead creates a linked Circle (relationship, for example, *Reflects on*). |
+| Rope Team → linked Action Room | The Rope Team owner or mentor creates or proposes an Action Room with the Rope Team as Primary Origin. The Rope Team stays private. |
+| Direct initiative → Action Room | Primary origin *Direct institutional or community initiative*. A **Mandate and accountable owner** field is required. No card or match is needed. |
+| Opportunity / Match → Action Room | Unchanged route; the card is the Primary Origin. |
+| Direct entry, later linking | Circles can be created without a project (a **Basis** is required). Rope Teams can be formed directly (**Form a Rope Team**, with a basis and a mentor). Seed example: *Daniel — employability mentoring* (`rt2`). |
+
+**Rules enforced.**
+- Creating or linking never adds members. Invitees are chosen explicitly, and each person must accept. Mentor Request acceptance no longer copies Circle members into the Rope Team.
+- No content is copied. The copy of Circle documents inside Rope Teams was removed, including from stored data.
+- Rope Team chat, reviews, check-ins, support, notes and documents open only to Rope Team members. Admins and stewards who are not members see the charter and members only. Linked spaces show the Rope Team's name with **Link only**.
+- Support indicators no longer appear on non-mentor dashboards. Rope Team Learning Harvests stay with members until released.
+- Only a report written on purpose (**Send a report**) or an issue (**Send an issue to …**) crosses a link.
+- Closing a project no longer closes its linked Circle or Rope Team. They are notified and close by their own owner's decision.
+- Funding tranches for Circle, Rope Team and Action Room are reached when that space is linked, not by stage order.
+- A participant's Circle that is not for their accepted project starts as *Pending Review*. A participant's Action Room without a creator role is *Proposed*.
+
+Screenshots: `assets/images/linked-objects/before|after/`.
+
+## 0.11 Optional purposes, capability scopes and integration adapters (WSS clarification 7, BF-02)
+
+**Scopes, not one switch.** `views/purposes.js` defines five scopes mapped to the five BF-02 purposes: `AI_ASSIST` (ON/OFF), `RESEARCH_USE`, `CROSS_ORG_DISCOVERY`, `PUBLIC_FUNDER_EXCHANGE`, `EXTERNAL_DATA_EXCHANGE` (ALLOW/DENY). `purposeCheck(purpose, person, {ctx, rec})` answers *is this purpose authorised for this user + data + context + current consent?* in this order:
+
+| Level | Who sets it | Where |
+| --- | --- | --- |
+| Tenant (organization) | Platform Administrator | Platform administration → Capability scopes |
+| Programme (context) | Programme Administrator | Programme administration → Optional purposes |
+| Person | The person (Granted / Declined / Withdrawn, unchanged from BF-02) | My records & consent — now also shows each scope code and the **effective** state |
+| Record (sensitive cases) | The record owner | Evidence detail → Optional purposes for this record |
+
+Turning a purpose off at organization or programme level overrides a person's Granted; it never turns on anything a person declined, and the person's own choice is kept. Every check made by an action is written to the audit log (`Purpose check · <SCOPE>`).
+
+**Where each scope is enforced.**
+- `AI_ASSIST`: Ask PHOENIX, AI project drafts, Circle summaries, chat summaries, vote source checks, Match Brief and Harvest AI drafts. When it is off, Ask PHOENIX says it cannot use the person's data and lists what still works.
+- `RESEARCH_USE`: new **Research dataset (de-identified, consented only)** export. It includes only people allowed at every level, leaves out records restricted by their owner, and reports how many people were left out. Research-related Action Room access also checks it.
+- `CROSS_ORG_DISCOVERY`: collaborator matching and Match Briefs between different organizations. If an organization or programme turns it off, its people are not proposed to other organizations at all. If a person declined, the match shows a blocker. Same-organization work is never affected.
+- `PUBLIC_FUNDER_EXCHANGE`: funder and public reports recheck it at render time (a decline or withdrawal removes the record straight away), and so do the owner's release authorisation and the disclosure decision. Sponsors cannot request an identifiable story about someone who has not allowed it.
+- `EXTERNAL_DATA_EXCHANGE`: pathway step completion is sent to the learning platform only when allowed. If not, nothing is sent and the step completes normally.
+
+**Adapters.** Core workflow → adapter → provider. Each integration shows `enabled`, `provider_status`, `consent_required`, `data_scope`, `purpose`, `last_success`, `last_failure`. The Platform Administrator can turn an adapter off or on, simulate an outage or a slow provider, and restore it. `adapterCall()` never throws. It returns **Manual** (purpose not authorised), **Unavailable** (adapter off or provider down) or **Retry** (provider degraded). On an AI failure the work is kept (for example, the Ask PHOENIX question stays in the box) and the manual route is offered.
+
+**Payments.**
+- **Provider down:** “Payment service temporarily unavailable. No charge has been made.” Browsing, existing entitlements, own records, consent, correction, withdrawal and incident reporting carry on.
+- **Provider slow:** the same message with **Try again**.
+- **Confirmation delayed:** the provider-hosted page has a **Paid — confirmation delayed** outcome. It creates a `PAYMENT_PENDING` entitlement that grants no access until a **verified callback** or an authorised **manual reconciliation** with a reference, done by the Finance Owner or Programme Administrator under Payments → Entitlements.
+
+**Demo data.** Mary has AI Declined, Research Declined, Cross-org Granted, Public/Funder Declined and External Declined, and still completes the core flow. GreenGrid's partner allows cross-organisation discovery. Daniel allows research use. The payment provider starts Healthy; simulate outages under Platform administration → Integrations.
+
+Screenshots: `assets/images/optional-purposes/before|after/`.
+
+## 0.12 Match routes and the four post-introduction outcomes (WSS clarification 7)
+
+**Route A: PHOENIX-assisted, steward-mediated.** Discovery → proposed match → Match Brief → steward review → Consent A → Consent B → introduction.
+- Steward approval opens a **14-day consent window**.
+- The introduction becomes active only when both people have consented. Contact details are released only then.
+- Before that point, a proposal ends without an outcome when one of the following happens:
+
+| How it ends | Match status |
+| --- | --- |
+| A party declines | `Declined` |
+| The steward rejects it | `Rejected` |
+| The card is withdrawn or closed | `Withdrawn` |
+| The card expires, or the consent window runs out | `Expired` |
+
+**The four outcomes.** The introduction screen asks **What happened next?** Either party can record the answer, and the other party and the steward are notified.
+
+| Outcome | State | What happens |
+| --- | --- | --- |
+| Close | `INTRODUCTION_CLOSED` | Nothing is created. The introduction conversation becomes read-only. Final. |
+| Continue Conversation | `INTRODUCTION_OPEN` | A private two-person conversation opens in Messages. A final outcome can still be recorded later. |
+| Link Existing Workspace | `INTRODUCTION_LINKED_EXISTING` | Offers only active Circles, Rope Teams and Action Rooms where **both** parties are active members, and checks this again on submit. Records an ObjectLink. Nothing is copied and no one is added. |
+| Create New Workspace | `INTRODUCTION_CREATED_WORKSPACE` | Opens the Action Room form with the **introduction as Primary Origin**. The other party is pre-selected as an invitee and must accept. Recorded only once the room exists. Only origin metadata is kept; the Match Brief's fit notes, gaps and source records are not copied. |
+
+Collaborator matches for a project requirement are recorded automatically:
+- If the project's Action Room already exists: `INTRODUCTION_LINKED_EXISTING`.
+- If the room is created later: `INTRODUCTION_CREATED_WORKSPACE`, set when it is created.
+
+**Route B: direct authorised collaboration.** No Match Brief. The proposer chooses an **authority source**, which PHOENIX verifies:
+- same approved programme;
+- already share a Circle, Rope Team or Action Room;
+- same organization (known institutional collaborators);
+- the proposer leads existing work and is adding a known collaborator to it.
+
+People in different organizations both need `CROSS_ORG_DISCOVERY`, and the other party must accept. The record keeps the initiator, context, authority source, invitation, consent time and resulting workspace. It is shown on the card and in **Match Briefs → Direct collaborations (Route B)**. After acceptance, the same four outcomes apply.
+
+Screenshots: `assets/images/match-outcomes/before|after/`.
 
 # 1. Product overview
 
@@ -500,9 +659,9 @@ Additional screen-level checks: `org` only renders for O; `admin` only for A; `c
 | Start / contribute to Harvest                                        | ✓                                     | ✓                                      | ✓                                            | ✓                      | —                           | —                | ✓                          | —                      |
 | Approve / reject Harvest; offer candidates                           | —                                     | ✓                                      | Reviewer/Project Lead bundle                 | —                      | —                           | —                | Reviewer bundle            | —                      |
 | Approve Harvest funder release                                       | —                                     | —                                      | —                                            | —                      | —                           | —                | ✓                          | —                      |
-| Propose pathway                                                      | —                                     | ✓                                      | ✓                                            | —                      | —                           | —                | —                          | —                      |
-| Approve mode-3 pathway                                               | —                                     | Reviewer bundle                        | —                                            | —                      | —                           | —                | Reviewer bundle            | —                      |
-| Accept pathway / complete step                                       | Participant owner                     | —                                      | —                                            | —                      | —                           | —                | —                          | —                      |
+| Recommend pathway                                                    | —                                     | ✓ (context)                            | ✓ (own Rope Team participants)               | —                      | —                           | —                | —                          | —                      |
+| Approve custom / outside-rules pathway (shared queue)                | —                                     | Reviewer bundle                        | —                                            | —                      | —                           | —                | Reviewer bundle            | —                      |
+| Accept / decline / ask for changes; request a recommendation; complete step | Participant owner              | —                                      | —                                            | —                      | —                           | —                | —                          | —                      |
 | Pitch sponsor; submit progress summary                               | Owner                                 | —                                      | —                                            | —                      | —                           | —                | —                          | —                      |
 | Funding request; sign; release tranche; accept/hold summary          | —                                     | —                                      | —                                            | —                      | —                           | ✓                | —                          | —                      |
 | Approve funding request                                              | —                                     | —                                      | —                                            | —                      | —                           | —                | Finance Owner              | —                      |
@@ -799,10 +958,10 @@ All roles except Platform Administrator. Tabs:
 
 | Viewer                                                                              | Content                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Participant                                                                         | Header **Draft my own pathway** (modal: name, 3–5 steps → status In review for a Reviewer). **Proposed** pathway cards with steps, mode, proposer; **View activity**, **Request a change** (modal: reason → state Draft, proposer notified, logged) / **Accept pathway** (becomes Current; previous Current → Superseded; both logged). **Current** pathway with progress bar and steps; **Mark complete** opens *Complete step n* (optional note, several supporting files) → step records who and when, proposer notified, profile candidate "Completed milestone"; done steps show date, completer, note and file cards; when all steps are done → Completed + candidate "Completed learning activity". **Pathway history** table: pathway, mode, proposed by, state (Change requested shown), **View activity**. |
-| Facilitator, Mentor (participants in own Rope Teams, plus anyone they proposed a pathway to), Org Rep, Programme Admin | Table Participant, Current pathway (name · done/total · last step completed date, by whom, file count · **View activity**), Other pathways with state, **View activity** and — for the proposer of a Draft — **Revise and re-propose**; **Propose pathway** (F, M). A: **Template library** button. Reviewer bundle: **Awaiting your approval (mode 3)** list with **View activity**, **Return** (reason required → Draft, drafter notified) / **Approve** (→ Proposed to participant). **View activity** is shown only to people allowed to see the pathway (Section 0.2). |
+| Participant                                                                         | Header **Request a recommendation** (goal, send to) and **Create a pathway** (start from an approved template — unchanged it becomes Current at once; changed, or own steps, it goes to the Reviewer queue). **Your recommendation requests** table (Open / Answered / Withdrawn, **Withdraw**). **Recommended** pathway cards: Recommended by (name — role), Why, Template and version, steps; **Conversation & activity**, **Decline** (reason → Declined), **Ask for changes** (reason → Draft, recommender notified) / **Accept pathway** (becomes Current; previous Current → Superseded; both logged). **Current** pathway with progress bar and steps; **Mark complete** opens *Complete step n* (optional note, several supporting files) → step records who and when, recommender notified, profile candidate "Completed milestone"; when all required steps are done → Completed + candidate "Completed learning activity". **Pathway history** table: pathway, mode, recommended by, state, **Conversation & activity**. |
+| Facilitator, Mentor (participants in own Rope Teams, plus anyone they recommended a pathway to), Org Rep, Programme Admin | **Recommendation requests** card (F, M) with **Recommend pathway**. Reviewer bundle: **Pathways waiting for your review** (shared queue plus your own) with **Reject**, **Request clarification**, **Approve** (recommended pathway → Recommended to the participant; participant’s own → Current). A: **Pathway review queue** (shows how many Reviewers can pick each one up; **Assign reviewer** is optional and highlighted only when no Reviewer exists) and **Pathways with a reviewer**; **Template library** button. Participants table: current pathway and progress, other pathways with state, **Revise and re-recommend** for the recommender of a Draft, **Recommend pathway** (F; M only for own Rope Team participants). |
 
-Propose pathway modal: Mode (1 Pre-approved template / 2 Adapted / 3 Custom) + **Update** button to refresh the form for the chosen mode; Template (modes 1–2); Pathway name (mode 3); Steps 3–5 (modes 2–3). Mode 3 → In review (Reviewers notified); modes 1–2 → Proposed to participant.
+Recommend pathway modal: What you recommend (1 Approved template unchanged / 2 Adapted / 3 Custom) — the form changes as soon as this or the template is selected; Approved template with version (modes 1–2); Pathway name (mode 3); Steps 3–5 (modes 2–3) with an inside/outside-the-rules check for mode 2; **Why you recommend it** (required, shown to the participant); **Connect to a Circle you steward** (optional, Circle Stewards only). Unchanged template or adaptation within the rules → Recommended; custom or outside the rules → Awaiting reviewer (shared queue).
 
 ## 5.7 Ask PHOENIX — docked assistant
 
@@ -1120,12 +1279,15 @@ Notation: **R** = required. "Rule" lists validation. All forms also enforce the 
 | Edit candidate             | Value                            | R             | text                                                                                                                                          | accepts the edited value                 |
 | Privacy request            | Request type                     | R             | Correction, Permitted export, Deletion request, Withdraw from programme                                                                       |                                          |
 |                            | Details                          | R             | textarea                                                                                                                                      |                                          |
-| Propose pathway            | Mode                             |               | 1 / 2 / 3                                                                                                                                     | press **Update** after changing          |
+| Recommend pathway          | What you recommend               |               | 1 / 2 / 3                                                                                                                                     | form updates on change; mode 2 has **Check adaptation rules** |
 |                            | Template                         | R (modes 1–2) | approved templates                                                                                                                            |                                          |
 |                            | Pathway name                     | R (mode 3)    | text                                                                                                                                          |                                          |
-|                            | Steps                            | R (modes 2–3) | one per line                                                                                                                                  | 3–5 lines                                |
+|                            | Steps                            | R (modes 2–3) | step editor (type, prerequisites, rule)                                                                                                       | 3–5 steps; mode 2 checked against the template rules |
+|                            | Why you recommend it             | R             | textarea, ≥ 10 characters, max 300                                                                                                            | shown to the participant                 |
+|                            | Connect to a Circle              |               | Circles the recommender facilitates that the participant belongs to                                                                           | sets role to Circle Steward              |
+| Request a recommendation   | What do you want to be able to do?, Send to | R  | textarea (≥ 10) prefilled from Purpose Compass goal; any Facilitator / named Facilitator / Rope Team mentor                                  |                                          |
 | Draft own pathway          | Name, Steps                      | R             |                                                                                                                                               | 3–5 steps; always mode 3                 |
-| Request a change (pathway) | What would you like changed?     | R             | textarea                                                                                                                                      |                                          |
+| Ask for changes (pathway)  | What would you like changed?     | R             | textarea                                                                                                                                      |                                          |
 | Ask PHOENIX                | Question                         |               | text                                                                                                                                          | empty question ignored                   |
 
 ## 7.3 Projects
@@ -1417,10 +1579,10 @@ Each step: **Who → Where → Input/click → Validation → System response �
 
 | Step | Who         | Action                                                        | Result                                                                                                      |
 | ---- | ----------- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| 1    | F or M      | Pathway → **Propose pathway** (mode 1/2 template or 3 custom) | Modes 1–2 → **Proposed to participant** (participant notified); mode 3 → **In review** (Reviewers notified) |
-| 1b   | Participant | **Draft my own pathway**                                      | **In review**                                                                                               |
-| 2    | Reviewer    | **Approve** / **Return**                                      | Proposed to participant / Draft (drafter notified)                                                          |
-| 3    | Participant | **Accept pathway** / **Request a change**                     | **Current** (old Current → Superseded; proposer notified) / **Draft** (proposer notified with reason)       |
+| 1    | F, Circle Steward or M (own Rope Team) | Pathway → **Recommend pathway** (reason required) | Unchanged template or adaptation within the rules → **Recommended** (participant notified); custom or outside the rules → **Awaiting reviewer** (all Reviewers in the context notified) |
+| 1b   | Participant | **Create a pathway** / **Request a recommendation**           | Unchanged approved template → **Current**; changed or custom → **Awaiting reviewer**; request → Facilitators / mentor notified |
+| 2    | Reviewer    | **Approve** / **Request clarification** / **Reject** (first Reviewer picks it up) | Recommended (or Current for the participant’s own) / Clarification requested / Rejected |
+| 3    | Participant | **Accept pathway** / **Ask for changes** / **Decline**        | **Current** (old Current → Superseded) / **Draft** → recommender revises and re-recommends / **Declined** |
 | 4    | Participant | **Mark complete** on steps                                    | Candidate "Completed milestone"; all steps → **Completed** + candidate "Completed learning activity"        |
 
 ## 8.10 Opportunity → match → introduction (F06)
@@ -1784,7 +1946,7 @@ There is no separate "settings" page for individuals. Personal settings = **Prof
 | Consent purpose                 | Granted, Declined, Withdrawn                                                                                                                | Onboarding toggles; Privacy toggles (Granted ↔ Withdrawn)                                                                                             |
 | Profile claim                   | Current, Revoked                                                                                                                            | Add/accept → Current; Revoke                                                                                                                          |
 | Change candidate                | Pending, Accepted, Deferred, Rejected                                                                                                       | Participant decides                                                                                                                                   |
-| Pathway                         | Draft, In review, Proposed to participant, Current, Completed, Superseded                                                                   | Section 8.9                                                                                                                                           |
+| Pathway                         | Draft, Awaiting reviewer, In review, Clarification requested, Rejected, Recommended, Declined, Current, Completed, Superseded. Acceptance (separate): Proposed, Accepted, Declined, Superseded. Step status (derived): Locked, Available, In progress, Pending review, Completed, Satisfied by prior evidence, Skipped – allowed, Not applicable, Blocked | Section 8.9                                                                                                                                           |
 | Project status                  | Draft, Submitted, Clarification requested, Accepted                                                                                         | Section 8.2                                                                                                                                           |
 | Project stage                   | (none), Circle, Rope Team, Room, Final review, Closed                                                                                       | Circle created → Circle; mentor accepts → Rope Team; Room active → Room; final submit → Final review; changes → Room; approve → Closed                |
 | Project section                 | To review, Accepted, Edited, Rejected                                                                                                       | Section editor                                                                                                                                        |
@@ -1868,8 +2030,8 @@ All data lives in one in-memory object saved to local storage. Entity names belo
 | `claims` Profile claim                                                                                                    | id, pid, field, value, prov, vis, state                                                                                                                                                                                                                                                             | created from candidates                                                                             |
 | `candidates`                                                                                                              | id, pid, field, value, source, prov, status                                                                                                                                                                                                                                                         | generated by evidence approval, milestones, pathway steps, Harvests, contributions, project closure |
 | `compass`                                                                                                                 | pid → {PC1…PC12}                                                                                                                                                                                                                                                                                    | PC2 shown as North Star                                                                             |
-| `templates` Pathway template                                                                                              | id, name, status, steps[]                                                                                                                                                                                                                                                                           | pathways mode 1/2                                                                                   |
-| `pathways`                                                                                                                | id, pid, ctx, name, tpl, mode, state, by, steps[{t, done}], changeReq                                                                                                                                                                                                                               | participant                                                                                         |
+| `templates` Pathway template                                                                                              | id, name, status, ver, steps[], rules[]                                                                                                                                                                                                                                                                           | pathways mode 1/2                                                                                   |
+| `pathways`                                                                                                                | id, pid, ctx, name, tpl, tplVer, ver, prev, mode, state, by, byRole, reason, circle, req, proposedAt, acceptedAt, declinedAt, reviewer, facts{}, steps[{t, type, pre, preDone, rule, when, cond, from, review, prior, priorReview, started, done, pend, priorEv, priorBy, priorOk}], changeReq                                                                                                                                                                                                                               | participant                                                                                         |
 | `projects`                                                                                                                | id, owner, ctx, type, title, desc, tags[], area, fundingNeed, status, stage, stewards[], supportPath, circle, rope, room, sections[{text, ai, st}], clar[], history[], funding, finalNote, changesNote, pendingCollab[]                                                                             | 1 Circle, 0–1 Rope Team, 0–1 Room, 0–1 funding                                                      |
 | `circles`                                                                                                                 | id, ctx, name, purpose, outcome, owner, facilitator, project, visibility, state, agreement, members[{pid, role, status}], chat[], sessions[], reflections[], commitments[], concerns[], decisions[], polls[], pause, aiSummary                                                                      | linked to project                                                                                   |
 | `ropes` Rope Team                                                                                                         | id, ctx, name, charter, mentor, owner, circle, project, state, members[], chat[], checkins[], support[], reviews[], contribs[], engagement, indicators{}, privateNotes[], reqFinal, outcome                                                                                                         | linked to Circle and project                                                                        |

@@ -9,10 +9,8 @@ const ropeInviter = x => {
   const pr = byId('projects', x.project);
   return x.owner === myId() || (role() === 'F' && ((pr && pr.stewards.includes(myId())) || isRopeFac(x)));
 };
-// Documents: the Rope Team's own uploads, plus the Circle's documents copied in when the Rope Team was formed.
-const ropeCircleDocs = x => x.circleDocs || [];
-const ropeDocs = x => [...(x.docs || []), ...ropeCircleDocs(x)];
-const circleDocsCopy = c => (c && c.docs ? c.docs.map(d => ({ ...d, from: c.id })) : []);
+// Documents: the Rope Team's own uploads only. Linked spaces keep their documents; nothing is copied across a link.
+const ropeDocs = x => x.docs || [];
 // Rope Teams a person may ask to join: those linked to a Circle they belong to.
 const ropeJoinable = x => !!x.circle && memberOf(byId('circles', x.circle) || {}) && !memberOf(x) && x.state === 'Active';
 A.mentorRequest = d => {
@@ -76,19 +74,21 @@ A.mentorReq = d => {
         circle: pr.circle,
         project: pr.id,
         state: 'Active',
+        // Only the people the request names: the owner, the accepting mentor and the facilitator who raised it.
+        // Circle members are not carried over — the owner invites anyone else, and each person accepts.
         members: [
           { pid: pr.owner, role: 'Project owner', status: 'Active' },
-          ...(circle ? circle.members.filter(x => x.status === 'Active' && x.pid !== pr.owner && normRole(x.role) === 'Member').map(x => ({ pid: x.pid, role: 'Member', status: 'Active' })) : []),
           { pid: myId(), role: 'Mentor', status: 'Active' },
           ...ropeFacilitator(pr, m, circle),
         ],
+        origin: { type: 'Mentor Request', id: m.id },
+        contentVis: ROPE_ONLY,
         chat: [],
         checkins: [],
         support: [],
         reviews: [],
         contribs: [],
         docs: [],
-        circleDocs: circleDocsCopy(circle),
         engagement: null,
         indicators: {},
         privateNotes: [],
@@ -97,10 +97,12 @@ A.mentorReq = d => {
       rt.members.filter(x => ['Project owner', 'Member'].includes(x.role)).forEach(x => (rt.indicators[x.pid] = { pacing: 'On track', workload: '—', availability: '—', support: 'None reported', absence: 'None' }));
       S.ropes.push(rt);
       pr.rope = rt.id;
-      pr.stage = 'Rope Team';
-      pr.history.push({ at: today(), t: 'Rope Team formed; moved to Rope Team stage' });
+      if (!pr.stage) pr.stage = 'Rope Team';
+      addLink('ropes', rt.id, 'projects', pr.id, 'originated-from', true);
+      if (circle) addLink('ropes', rt.id, 'circles', circle.id, 'supports', false);
+      pr.history.push({ at: today(), t: 'Rope Team formed and linked to the project' + (circle ? ' and its Circle' : '') });
       sysMsg(rt, 'Rope Team formed. ' + me().name + ' joined as mentor for: ' + m.need);
-      if (circle) sysMsg(circle, 'Project moved to the Rope Team stage — ' + rt.name);
+      if (circle) sysMsg(circle, 'A Rope Team was linked: ' + rt.name + '. Its conversations stay private to its members.');
       rt.members.filter(x => x.pid !== myId()).forEach(x => notify(x.pid, 'Rope Team formed for “' + pr.title + '”', 'rope', { id: rt.id }));
     } else if (!memberOf(rt)) {
       rt.members.push({ pid: myId(), role: 'Mentor', status: 'Active' });
@@ -120,6 +122,7 @@ route('ropeteams', 'ropeteams', () => {
     head(
       r === 'M' ? 'Rope Teams & Mentor Requests' : 'Rope Teams',
       'Small mentoring, support and accountability groups. Not a clinical or care-management system.',
+      ['P', 'M', 'F'].includes(r) ? B(ic('plus', 16) + 'Form a Rope Team', 'newRope', {}, 'btn-p') : '',
     ) +
     (reqs.length || r === 'M'
       ? card(
@@ -176,11 +179,11 @@ route('ropeteams', 'ropeteams', () => {
           lead: `<span class="tile t-teal" aria-hidden="true">${ic('route', 18)}</span>`,
           title: L(h(x.name), 'rope', { id: x.id }, 'dv-link') + wsUnread(x),
           sub: h(x.charter || ''),
-          meta: ['Mentor <b>' + (x.mentor ? nm(x.mentor) : '—') + '</b>', 'Your role <b>' + h(wsRoleTxt('ropes', x)) + '</b>', cName(x.circle) + ' · ' + cName(x.project), wsMem(x)],
+          meta: ['Mentor <b>' + (x.mentor ? nm(x.mentor) : '—') + '</b>', 'Your role <b>' + h(wsRoleTxt('ropes', x)) + '</b>', primaryLink(x.id) ? 'Origin: ' + cName(primaryLink(x.id).target_id) : h((x.origin || {}).type || 'Direct'), wsMem(x)],
           badges: pill(x.state) + (joinState(x) === 'pending' ? pill('Pending') : joinState(x) === 'invited' ? pill('Invited') : ''),
           primary: joinState(x) === 'pending' ? B('Withdraw request', 'joinWithdraw', { id: x.id, kind: 'ropes' }) : joinState(x) === 'invited' ? B('Respond to invite', 'go', { r: 'rope', id: x.id }, 'btn-p btn-sm') : L('Open', 'rope', { id: x.id }, 'btn btn-s btn-sm'),
         }),
-        empty: ['route', 'No Rope Teams.', 'One is formed when a mentor accepts a Mentor Request.', ''],
+        empty: ['route', 'No Rope Teams.', 'Form one directly with a mentor, from a Circle or ' + WL() + ' you belong to, or when a mentor accepts a Mentor Request.', ''],
       }),
     ) +
     (joinable.length
@@ -234,15 +237,17 @@ route('rope', 'ropeteams', () => {
     'rt_' + x.id,
     [
       ['overview', 'Overview'],
-      ['chat', 'Chat', isMem && unreadIn(x) ? unreadIn(x) : null],
-      ['reviews', 'Work reviews', x.reviews.filter(v => v.status === 'Awaiting review').length || null],
-      ['checkins', 'Check-ins & sessions'],
-      ['support', 'Support requests', x.support.filter(s => s.status !== 'Resolved').length || null],
+      // ROPE_TEAM_ONLY: chat, reviews, check-ins, support and documents open only for members — never through a
+      // link, a platform role or programme administration.
+      isMem && ['chat', 'Chat', unreadIn(x) || null],
+      isMem && ['reviews', 'Work reviews', x.reviews.filter(v => v.status === 'Awaiting review').length || null],
+      isMem && ['checkins', 'Check-ins & sessions'],
+      isMem && ['support', 'Support requests', x.support.filter(s => s.status !== 'Resolved').length || null],
       (isMentor || isFac) && ['ind', 'Support indicators'],
       (isMentor || isFac) && ['notes', 'Private notes'],
-      ['docs', 'Documents', ropeDocs(x).length || null],
+      isMem && ['docs', 'Documents', ropeDocs(x).length || null],
       ['members', 'Members', x.members.filter(m => m.status === 'Requested').length || null],
-      ['about', 'Charter & stage'],
+      ['about', 'Charter & links'],
     ],
     UI.p.tab,
     {
@@ -337,22 +342,18 @@ route('rope', 'ropeteams', () => {
   if (t.cur === 'notes')
     body = card(
       'Private mentor notes',
-      'Never copied to profiles, Harvests or sponsor reports.',
+      pill(ROPE_ONLY, 'p-grey') + ' Never shown in linked spaces, previews, search, notifications, dashboards, exports, Harvests, profiles, AI context or sponsor reports.',
       x.privateNotes.map(n => lrow('lock', h(n.t), nm(n.by))).join('') || '<p class="cap">None.</p>',
       isMentor ? B(ic('plus', 14) + 'Add note', 'privNote', { id: x.id }, 'btn-s btn-sm') : '',
     );
   if (t.cur === 'docs') {
     const own = x.docs || [];
-    const fromCircle = ropeCircleDocs(x);
-    const row = (d, src) => [`<span class="att">${ic('file', 14)}${h(d.n)}</span>`, src, d.mb != null ? d.mb + ' MB' : '—', nm(d.by), fmt(d.at)];
+    const row = d => [`<span class="att">${ic('file', 14)}${h(d.n)}</span>`, d.mb != null ? d.mb + ' MB' : '—', nm(d.by), fmt(d.at)];
+    const lc = linkedObjs(x.id, 'circles').filter(c => canOpenSpace('circles', c));
     body = card(
       'Documents',
-      'Documents for this Rope Team, including the documents of the linked Circle. Visible to everyone in the Rope Team.',
-      table(
-        ['Document', 'Source', 'Size', 'Uploaded by', 'Date'],
-        [...own.map(d => row(d, pill('Rope Team', 'p-teal'))), ...fromCircle.map(d => row(d, pill('Circle', 'p-purple') + ' <span class="cap">' + cName(x.circle) + '</span>'))],
-        'No documents yet.',
-      ),
+      'Documents uploaded to this Rope Team. Visible only to its members. Documents of linked spaces stay in those spaces' + (lc.length ? ': ' + lc.map(c => L(h(c.name), 'circle', { id: c.id, tab: 'docs' })).join(', ') : '') + '.',
+      table(['Document', 'Size', 'Uploaded by', 'Date'], own.map(row), 'No documents yet.'),
       !ro ? `<form data-f="rdoc" class="row wrap" style="gap:8px" novalidate><input type="hidden" name="id" value="${x.id}"><input type="file" name="f" class="input" style="padding:6px;max-width:320px" multiple aria-label="Choose documents"><button class="btn btn-p btn-sm" type="submit">${ic('upload', 14)}Upload</button></form>` : '',
     );
   }
@@ -403,25 +404,31 @@ route('rope', 'ropeteams', () => {
         ['Charter', h(x.charter)],
         ['Mentor', x.mentor ? nm(x.mentor) : '—'],
         ['Rope Team owner', nm(x.owner)],
-        ['Circle', x.circle ? L(cName(x.circle), 'circle', { id: x.circle }) : '—'],
+        ['Primary origin', primaryLink(x.id) ? OBJ_LABEL(primaryLink(x.id).target_type) + ' · ' + cName(primaryLink(x.id).target_id) : h((x.origin || {}).type || 'Direct entry') + ((x.origin || {}).basis ? ' · ' + h(x.origin.basis) : '')],
         ['Project', pr ? L(h(pr.title), 'project', { id: pr.id }) : '—'],
+        ['Content classification', pill(ROPE_ONLY, 'p-grey')],
         ['State', pill(x.state)],
         ['Members', x.members.filter(m => !m.status || m.status === 'Active').map(m => nm(m.pid) + ' <span class="cap">(' + h(roleLabel(spaceRole('ropes', x, m.pid) || normRole(m.role))) + ')</span>').join(', ')],
       ]),
       L('Members', 'rope', { id: x.id, tab: 'members' }),
       'c7',
-    )}${pr ? `<div class="c5 col ws-stack">${stageGate(pr, 'ropes', x)}</div>` : ''}
+    )}<div class="c5 col ws-stack">${linkCard('ropes', x)}${stageGate(pr, 'ropes', x)}</div>
  ${secs ? card('Authorised project context', 'Only what the Rope Team needs to guide effectively. Purpose Compass, hurdles and private records are never shown here.', dl([[SECTIONS[0], h(secs[0].text)], [SECTIONS[1], `<span class="ws-pre">${h(secs[1].text)}</span>`], [SECTIONS[2], `<span class="ws-pre">${h(secs[2].text)}</span>`], [SECTIONS[3], `<span class="ws-pre">${h(secs[3].text)}</span>`]]), '', 'c7') : ''}
- <div class="${secs ? 'c5' : 'c12'} col ws-stack">${pr ? reportsCard(pr, 'ropes', x) : ''}${card(
+ <div class="${secs ? 'c5' : 'c12'} col ws-stack">${isMem ? reportsCard(pr, 'ropes', x) : ''}${isMem ? card(
    'Mentor engagement',
    'When the need is addressed, the mentor and Faculty/Steward decide whether the engagement continues or ends.',
    `${eng ? dl([['Decision', pill(eng.status)], ['Need addressed', h(eng.addressed)], ['Note', h(eng.note || '—')], ['Proposed by', nm(eng.by) + ' · ' + fmt(eng.at)]]) : '<p class="cap">Engagement is active.</p>'}<div class="row wrap ws-acts">${isMentor && !ro && (!eng || eng.status === 'Continuing') ? B('Review engagement', 'engage', { id: x.id }, 'btn-s btn-sm') : ''}${isFac && eng && eng.status === 'Exit proposed' && !ro ? B('Continue instead', 'engageDecide', { id: x.id, v: 'Continuing' }) + B('Confirm mentor exit', 'engageDecide', { id: x.id, v: 'Exited' }, 'btn-p btn-sm') : ''}${isMentor && !ro ? B('Feedback to facilitator', 'ropeFeedback', { id: x.id }) + B('Suggest an opportunity', 'suggestOpp', { id: x.id }) : ''}${!ro && (isMentor || isFac) ? B(ic('alert', 14) + 'Escalate a concern', 'escalateRope', { id: x.id }) : ''}${(isFac || isMentor) && x.state === 'Active' ? B('Close Rope Team', 'ropeClose', { id: x.id }) : ''}</div>`,
- )}${isFac ? card('Mentor feedback', 'Feedback the mentor sent to the facilitator.', S.feedback.filter(f => f.rope === x.id).map(f => lrow('message', h(f.t), nm(f.by) + ' · ' + fmt(f.at))).join('') || '<p class="cap">No feedback yet.</p>') : ''}</div>
+ ) : ''}${isFac ? card('Mentor feedback', 'Feedback the mentor sent to the facilitator.', S.feedback.filter(f => f.rope === x.id).map(f => lrow('message', h(f.t), nm(f.by) + ' · ' + fmt(f.at))).join('') || '<p class="cap">No feedback yet.</p>') : ''}</div>
  ${returnsCard(x) ? `<div class="c12">${returnsCard(x)}</div>` : ''}</div>`;
   }
   const acts = spaceEditBtn('ropes', x) + (isMem ? L(ic('message', 16) + 'Open in Messages', 'messages', { c: x.id, k: 'ropes' }, 'btn btn-s') : '');
   // the space header, its facts and the project journey live in Overview; other sections get a one-line context bar
-  if (t.cur === 'overview') body = spaceHead('ropes', x, h(x.charter), null, acts) + roleNote('ropes', x) + (pr ? stageTrack(pr, 'ropes') : '');
+  if (t.cur === 'overview')
+    body =
+      spaceHead('ropes', x, h(x.charter), null, acts) +
+      roleNote('ropes', x) +
+      (!isMem ? banner('info', 'Charter and members only', 'You can see who is in this Rope Team because of your role. Its chat, notes, support, check-ins and documents are ' + ROPE_ONLY + ' and open only to its members.', 'lock') : '') +
+      linkStrip('ropes', x);
   else body = wsBar('ropes', x, acts) + body;
   return crumbsHtml(crumbs) + withSubnav(t, body);
 });
@@ -694,4 +701,79 @@ A.ropeInvite = d => {
     return go('ropeteams');
   }
   ok();
+};
+// ---- form a Rope Team directly or from an object you belong to (WSS clarification 6)
+// Voluntary and private: the person forming it chooses a mentor and anyone else; each invitee must accept. Nobody
+// joins because they are in the linked Circle or Action Room, and nothing from that space is copied in.
+const ropeMentors = () => S.assign.filter(a => a.ctx === ctxId() && roleBase(a.role) === 'M' && a.status === 'Active' && a.pid !== myId()).map(a => a.pid).filter((v, i, l) => l.indexOf(v) === i);
+A.newRope = d => {
+  clearF('nrt');
+  mselReset('nrt', 'm');
+  const from = (d.fromKind && byId(d.fromKind, d.fromId)) || null;
+  UI.form.nrt = { ltype: 'supports', mentor: role() === 'M' ? myId() : '', name: from ? me().name.split(' ')[0] + ' — support for ' + (from.name || from.title) : '' };
+  modal('Form a Rope Team', () => {
+    const cands = eligiblePeople([myId()], ['P', 'F', 'M']);
+    return `<form data-f="nrt" class="col" style="gap:14px" novalidate><input type="hidden" name="fromKind" value="${h(d.fromKind || '')}"><input type="hidden" name="fromId" value="${h(d.fromId || '')}">${
+      from
+        ? dl([['Primary origin', OBJ_LABEL(d.fromKind) + ' · ' + h(from.name || from.title)]]) + fi('nrt', 'ltype', 'Relationship', { type: 'select', req: true, opts: LINK_TYPES.filter(([v]) => v !== 'executes'), help: 'Stored as a link. The ' + OBJ_LABEL(d.fromKind) + ' does not control this Rope Team, and its members do not join it.' })
+        : fi('nrt', 'basis', 'Basis for this Rope Team', { req: true, ph: 'e.g. Mentoring relationship agreed with the programme for employability skills', help: 'Direct entry needs a legitimate context: a mentoring relationship, invitation or programme mandate.' })
+    }${fi('nrt', 'name', 'Name', { req: true })}${fi('nrt', 'charter', 'What support is this for?', { type: 'textarea', rows: 3, req: true, ph: 'e.g. Confidence and workload support while we adopt the new assessment model' })}${fi('nrt', 'mentor', 'Mentor', { type: 'select', req: true, ph: 'Choose a mentor', opts: [...(role() === 'M' ? [[myId(), 'Me — ' + me().name]] : []), ...ropeMentors().map(pid => [pid, P(pid).name])], help: role() === 'M' ? '' : 'The mentor is invited and joins only if they accept.' })}${msel('nrt', 'm', 'Invite others (optional)', cands, [], { help: 'Each person is invited and must accept.' })}${banner('info', ROPE_ONLY, 'Chat, private mentor notes, support details, check-ins and reflections stay inside this Rope Team. Only a report a member writes on purpose crosses to a linked space.', 'lock')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Form Rope Team</button></div></form>`;
+  });
+};
+F.nrt = d => {
+  const from = (d.fromKind && byId(d.fromKind, d.fromId)) || null;
+  if (!validate('nrt', d, { name: ['req'], charter: ['req'], mentor: [['req', 'Choose a mentor.']], ...(from ? { ltype: ['req'] } : { basis: ['req'] }) })) return render();
+  const iAmMentor = d.mentor === myId();
+  if (!iAmMentor && !ropeMentors().includes(d.mentor)) {
+    UI.err.nrt = { mentor: 'Choose an active mentor in this programme.' };
+    return render();
+  }
+  const pr = d.fromKind === 'projects' ? from : null;
+  const x = {
+    id: uid('rt'),
+    ctx: ctxId(),
+    name: d.name,
+    charter: d.charter,
+    mentor: d.mentor,
+    owner: myId(),
+    circle: null,
+    project: pr ? pr.id : null,
+    origin: from ? { type: OBJ_LABEL(d.fromKind), id: from.id } : { type: 'Direct — mentoring relationship', basis: d.basis, by: myId() },
+    contentVis: ROPE_ONLY,
+    state: 'Active',
+    members: [{ pid: myId(), role: iAmMentor ? 'Mentor' : 'Project owner', status: 'Active' }],
+    chat: [],
+    checkins: [],
+    support: [],
+    reviews: [],
+    contribs: [],
+    docs: [],
+    engagement: null,
+    indicators: {},
+    privateNotes: [],
+    reqFinal: false,
+  };
+  if (!iAmMentor) {
+    x.members.push({ pid: d.mentor, role: 'Mentor', status: 'Invited' });
+    x.indicators[myId()] = { pacing: 'On track', workload: '—', availability: '—', support: 'None reported', absence: 'None' };
+  }
+  [].concat(d.m || []).filter(pid => !x.members.some(m => m.pid === pid)).forEach(pid => x.members.push({ pid, role: defaultSpaceRole(ctxRole(pid, x.ctx)), status: 'Invited' }));
+  S.ropes.push(x);
+  if (from) {
+    addLink('ropes', x.id, d.fromKind, from.id, d.ltype, true);
+    // the source space learns only that a Rope Team is linked — not who is in it or what it discusses
+    if (SPACE_KINDS.includes(d.fromKind)) sysMsg(from, 'A Rope Team was linked to this ' + OBJ_LABEL(d.fromKind) + '. Its conversations stay private to its members.');
+    if (pr) {
+      if (!pr.rope) pr.rope = x.id;
+      pr.history.push({ at: today(), t: 'Rope Team linked by ' + me().name });
+    }
+  }
+  sysMsg(x, 'Rope Team formed by ' + me().name + (from ? ', linked to ' + (from.name || from.title) : ''));
+  x.members.filter(m => m.status === 'Invited').forEach(m => notify(m.pid, me().name + ' invited you to the Rope Team “' + x.name + '”' + (m.pid === d.mentor ? ' as mentor' : ''), 'rope', { id: x.id }));
+  audit('Rope Team formed', x.id, (from ? 'linked from ' + d.fromKind + ' ' + from.id : 'direct: ' + d.basis) + ' · mentor ' + d.mentor);
+  UI.modal = null;
+  clearF('nrt');
+  mselReset('nrt', 'm');
+  save();
+  go('rope', { id: x.id });
 };

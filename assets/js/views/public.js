@@ -6,6 +6,7 @@ const authWrap = (inner, wide) =>
 // shown succeeding for the authorised account and refused for a similar unauthorised one.
 const DEMO = [
   ['p1', 'a1', 'Participant · Excelsior + Riverside (2 contexts)'],
+  ['p9', 'a9', 'Participant · pathway in progress (every step status)'],
   ['p3', 'a3', 'Mentor · Excelsior + Participant · Riverside'],
   ['p13', 'a13', 'Facilitator / Steward (plain, no bundles)'],
   ['p2', 'a2', 'Facilitator / Steward + Reviewer bundle'],

@@ -138,8 +138,8 @@ const uncTag = u => {
 function askDrawer() {
   if (UI.panel !== 'ask' || !S.session || !can('ai')) return '';
   const hist = (S.askHist || []).filter(x => x.pid === myId());
-  const okAI = consent(myId(), 'ai') === 'Granted';
-  const up = S.settings.aiAvailable;
+  const okAI = purposeOn('ai', myId());
+  const up = adapterUp('ai');
   const live = okAI && up;
   const bubbles = hist
     .map(
@@ -153,10 +153,13 @@ function askDrawer() {
   const intro = !hist.length && !UI.askPending
     ? `<div class="aintro"><b>Ask about your programme</b><p>Answers come only from approved PHOENIX sources and show where they came from. Questions about other people are refused.</p><div class="asugg">${ASK_SUGGEST.map(q => `<button type="button" class="asg" data-a="askPreset" data-q="${h(q)}" ${live ? '' : 'disabled'}>${h(q)}</button>`).join('')}</div></div>`
     : '';
+  // AI_ASSIST off (at any level) or the provider down: say why, keep the question, offer the manual routes.
+  const pc = purposeCheck('ai');
+  const manual = `<span class="cap">Without AI you can still: ${CORE_WITHOUT_OPTIONAL.join(' · ')}. ${L('Ask a person (Help & support)', 'help')}</span>`;
   const notice = !up
-    ? banner('warn', 'AI is temporarily unavailable', 'Your question cannot be processed right now. Everything else in PHOENIX keeps working.')
+    ? banner('warn', 'AI temporarily unavailable', 'Your question is kept and nothing was sent. Everything else in PHOENIX keeps working.') + manual
     : !okAI
-      ? banner('info', 'AI processing is off for you', `Ask PHOENIX needs AI processing of your own records, so it is unavailable. Everything else keeps working. You can change this in ${L('My records & consent', 'privacy', { tab: 'consent' })}.`)
+      ? banner('info', 'Ask PHOENIX cannot use your personal data', h(pc.why) + (pc.level === 'user' ? ` You can change this in ${L('My records & consent', 'privacy', { tab: 'consent' })}.` : '')) + manual
       : '';
   return `<aside class="assist" id="assist" role="complementary" aria-label="Ask PHOENIX">
   <header class="assist-h"><span class="aav big" aria-hidden="true">${ic('sparkle', 16)}</span><div class="assist-ht"><b>Ask PHOENIX</b><span class="cap">Private to you · nothing changes on your record</span></div><button type="button" class="iconbtn" data-a="closePanel" aria-label="Close Ask PHOENIX">${ic('x')}</button></header>

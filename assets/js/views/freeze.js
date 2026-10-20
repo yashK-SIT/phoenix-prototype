@@ -183,7 +183,7 @@ route('help', 'any', () => {
   }
   const mine = S.supportQueries.filter(q => q.by === myId());
   const rope = S.ropes.find(r => inCtx(r) && memberOf(r) && r.mentor && r.mentor !== myId());
-  const aiOk = consent(myId(), 'ai') === 'Granted';
+  const aiOk = purposeOn('ai', myId());
   const f = 'helpq';
   const sending = !!UI.sqSending;
   const tile = (icon, t, sub, act) => `<section class="card help-tile"><span class="tile t-soft" aria-hidden="true">${ic(icon, 18)}</span><div class="col" style="gap:4px"><b>${t}</b><p class="cap">${sub}</p></div><div class="row wrap" style="gap:8px">${act}</div></section>`;
@@ -530,7 +530,7 @@ function relationRows(pid = myId()) {
   };
   S.matches
     .filter(m => m.status === 'Introduced' && (m.a === pid || m.b === pid) && inCtx(m))
-    .forEach(m => add(m.a === pid ? m.b : m.a, 'Confirmed introduction', 'Match Brief', 'match', { id: m.id }, '—', m.outcome || 'Introduced'));
+    .forEach(m => add(m.a === pid ? m.b : m.a, 'Confirmed introduction', 'Match Brief', 'match', { id: m.id }, '—', m.introState ? INTRO_LABEL[m.introState] : 'Introduced — outcome not recorded yet'));
   [
     ['circles', 'Circle member', 'circle'],
     ['ropes', 'Rope Team', 'rope'],

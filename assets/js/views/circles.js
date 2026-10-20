@@ -113,10 +113,10 @@ function aiCheckBlock(c, p, isMem, ro) {
     ? `<div class="ai-adv">${aiTag('AI draft / advisory')}<p class="cap" style="margin:6px 0">Source check requested by ${nm(x.by)} · ${fmt(x.at.slice(0, 16))}. Advisory only — it cannot pass, fail or change this vote. Members deliberate and vote under the Circle’s human rule.</p><b>Claims that lack a source</b><ul>${x.flags.map(f => `<li>${h(f)}</li>`).join('') || '<li>None found in the proposal text.</li>'}</ul><b>Possible contradictions</b><ul>${(x.contra || []).map(f => `<li>${h(f)}</li>`).join('') || '<li>None detected.</li>'}</ul><b>Suggested questions before voting</b><ul>${x.questions.map(q => `<li>${h(q)}</li>`).join('')}</ul></div>`
     : '';
   if (p.status !== 'Open' || !isMem || ro) return res;
-  const okAI = consent(myId(), 'ai') === 'Granted' && S.settings.aiAvailable;
+  const okAI = purposeOn('ai', myId()) && adapterUp('ai');
   const btn = okAI
     ? B(ic('sparkle', 14) + (x ? 'Run the AI source check again' : 'AI source check (advisory)'), 'aiCheck', { c: c.id, p: p.id })
-    : `<button class="btn btn-s btn-sm" type="button" disabled>${ic('sparkle', 14)}AI source check (advisory)</button><span class="cap">${S.settings.aiAvailable ? 'AI processing is off for you, so the source check is unavailable. Turn it on in ' + L('My records & consent', 'privacy', { tab: 'consent' }) + ' if you want it.' : 'AI is unavailable right now.'} Voting works exactly the same either way.</span>`;
+    : `<button class="btn btn-s btn-sm" type="button" disabled>${ic('sparkle', 14)}AI source check (advisory)</button><span class="cap">${adapterUp('ai') ? 'AI processing is off for you, so the source check is unavailable. Turn it on in ' + L('My records & consent', 'privacy', { tab: 'consent' }) + ' if you want it.' : 'AI is unavailable right now.'} Voting works exactly the same either way.</span>`;
   return res + `<div class="row wrap ws-acts" style="gap:8px">${btn}</div>`;
 }
 // Circles a project owner can create: their own accepted projects that do not have a Circle yet.
@@ -242,27 +242,38 @@ A.joinWithdraw = d => {
   toast('Request withdrawn.');
   ok();
 };
+// A Circle can start for an accepted project, directly (a programme cohort, an institutional or community mandate),
+// or from another object it is linked to (e.g. an Action Room that needs a participatory sensemaking space).
+// Linking records provenance only: nobody from the source object becomes a member; the creator invites people.
+const NC_NONE = '_none';
+const ncProjects = () => (role() === 'P' ? ownCircleProjects() : S.projects.filter(p => inCtx(p) && p.status === 'Accepted' && !p.circle && (role() === 'O' || stewardOf(p))));
+const ncFrom = d => (d.fromKind && byId(d.fromKind, d.fromId)) || null;
 A.newCircle = d => {
   clearF('nc');
   mselReset('nc', 'm');
-  const isP = role() === 'P';
-  const ownP = isP ? ownCircleProjects() : [];
-  const firstP = isP ? ownP[0] : S.projects.find(p => inCtx(p) && p.status === 'Accepted' && !p.circle && (role() === 'O' || stewardOf(p)));
-  const pid0 = d.project || (firstP ? firstP.id : '');
-  const pr = pid0 && byId('projects', pid0);
+  const from = ncFrom(d);
+  const firstP = ncProjects()[0];
+  const pid0 = d.project || (d.fromKind === 'projects' ? d.fromId : '') || (from ? NC_NONE : firstP ? firstP.id : NC_NONE);
+  const pr = byId('projects', pid0);
   UI.form.nc = {
-    project: pid0 || '',
-    name: pr ? pr.title + ' Circle' : '',
-    purpose: pr ? 'Discuss and agree requirements for “' + pr.title + '”' : '',
+    project: pid0,
+    ltype: d.fromKind === 'rooms' ? 'reflects-on' : 'related-to',
+    name: pr ? pr.title + ' Circle' : from ? from.name + ' — Circle' : '',
+    purpose: pr ? 'Discuss and agree requirements for “' + pr.title + '”' : from ? 'A shared space to interpret, discuss and learn from “' + from.name + '”.' : '',
   };
   modal('Create a Circle', () => {
     const cur = byId('projects', fv('nc', 'project'));
-    const exclude = [myId(), cur ? cur.owner : null];
-    const def = cur ? (cur.owner !== myId() ? [cur.owner] : []) : [];
-    const projOpts = (isP ? ownP : S.projects.filter(p => inCtx(p) && p.status === 'Accepted' && !p.circle && (role() === 'O' || stewardOf(p)))).map(p => [p.id, p.title]);
-    return `<form data-f="nc" class="col" style="gap:14px" novalidate>${projOpts.length ? fi('nc', 'project', 'Project', { type: 'select', req: true, opts: projOpts, ch: 'ncProject', help: isP ? 'Your accepted projects that do not have a Circle yet. A project steward joins as facilitator.' : 'Accepted projects you steward that do not have a Circle yet.' }) : banner('warn', 'No project available', isP ? 'You can create a Circle once one of your projects has been accepted.' : 'There are no accepted projects you steward that still need a Circle.')}${fi('nc', 'name', 'Name', { req: true })}${fi('nc', 'purpose', 'Purpose', { type: 'textarea', rows: 2, req: true })}${fi('nc', 'outcome', 'Expected outcome', { type: 'textarea', rows: 3, req: true })}${fi('nc', 'agreement', 'Working agreement', { type: 'select', opts: ['Circle working agreement v1'], req: true })}
- <div class="field"><label class="lbl" for="nc_docs">Documents <span class="req">*</span></label><input id="nc_docs" type="file" name="docs" class="input${fe('nc', 'docs') ? ' err' : ''}" style="padding:8px" multiple aria-invalid="${!!fe('nc', 'docs')}">${fe('nc', 'docs') ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe('nc', 'docs')}</span>` : ''}<span class="help">Upload at least one document the Circle needs, such as a brief, charter or terms of reference. Up to ${S.settings.maxFileMB} MB each. Choose the project first; changing it clears the selection.</span></div>
- <div class="actions"><span></span><button class="btn btn-p" type="submit" ${projOpts.length ? '' : 'disabled'}>Create Circle</button></div></form>`;
+    const projOpts = ncProjects().map(p => [p.id, 'Project · ' + p.title]);
+    const fromFixed = from && d.fromKind !== 'projects';
+    const cands = eligiblePeople([myId()], ['P', 'F', 'M', 'C', 'O']);
+    return `<form data-f="nc" class="col" style="gap:14px" novalidate><input type="hidden" name="fromKind" value="${h(d.fromKind || '')}"><input type="hidden" name="fromId" value="${h(d.fromId || '')}">${
+      fromFixed
+        ? dl([['Primary origin', OBJ_LABEL(d.fromKind) + ' · ' + h(from.name)]]) + fi('nc', 'ltype', 'Relationship to ' + h(from.name), { type: 'select', req: true, opts: LINK_TYPES.filter(([v]) => v !== 'originated-from'), help: 'Stored as a link. The ' + OBJ_LABEL(d.fromKind) + ' stays unchanged and keeps its own members and privacy.' })
+        : fi('nc', 'project', 'Primary origin', { type: 'select', req: true, opts: [...projOpts, [NC_NONE, 'No project — programme cohort, institutional or community Circle']], ch: 'ncProject', help: 'A Circle does not need a project. Choose a project only if this Circle exists for it.' })
+    }${!fromFixed && !cur ? fi('nc', 'basis', 'Basis for this Circle', { req: true, ph: 'e.g. Food-resilience cohort 2026, approved by the programme', help: 'The legitimate context, mandate or programme this Circle runs under.' }) : ''}${fi('nc', 'name', 'Name', { req: true })}${fi('nc', 'purpose', 'Purpose', { type: 'textarea', rows: 2, req: true })}${fi('nc', 'outcome', 'Expected outcome', { type: 'textarea', rows: 3, req: true })}${fi('nc', 'agreement', 'Working agreement', { type: 'select', opts: ['Circle working agreement v1'], req: true })}
+ ${msel('nc', 'm', 'Invite people (optional)', cands, [], { help: 'Linking adds no one. Each person you choose is invited and must accept.' })}
+ <div class="field"><label class="lbl" for="nc_docs">Documents <span class="req">*</span></label><input id="nc_docs" type="file" name="docs" class="input${fe('nc', 'docs') ? ' err' : ''}" style="padding:8px" multiple aria-invalid="${!!fe('nc', 'docs')}">${fe('nc', 'docs') ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe('nc', 'docs')}</span>` : ''}<span class="help">Upload at least one document the Circle needs, such as a brief, charter or terms of reference. Up to ${S.settings.maxFileMB} MB each.</span></div>
+ <div class="actions"><span></span><button class="btn btn-p" type="submit">Create Circle</button></div></form>`;
   });
 };
 A.ncProject = (d, el) => {
@@ -277,11 +288,14 @@ A.ncProject = (d, el) => {
   }
   clearF('nc');
   UI.form.nc = f;
-  mselReset('nc', 'm');
   render();
 };
 F.nc = (d, form) => {
-  if (!validate('nc', d, { project: [['req', 'Choose the project this Circle is for.']], name: ['req'], purpose: ['req'], outcome: ['req'] })) return render();
+  const from = ncFrom(d);
+  const fromFixed = from && d.fromKind !== 'projects';
+  const prId = fromFixed ? '' : d.fromKind === 'projects' ? d.fromId : d.project;
+  const pr = prId && prId !== NC_NONE ? byId('projects', prId) : null;
+  if (!validate('nc', d, { name: ['req'], purpose: ['req'], outcome: ['req'], ...(fromFixed ? { ltype: ['req'] } : { project: [['req', 'Choose the primary origin.']] }), ...(!fromFixed && !pr ? { basis: ['req'] } : {}) })) return render();
   const files = [...(form?.querySelector('input[name="docs"]')?.files || [])];
   const big = files.find(f => f.size > S.settings.maxFileMB * 1048576);
   const bad = files.find(f => /\.(exe|bat|cmd|sh|msi|js)$/i.test(f.name));
@@ -289,13 +303,14 @@ F.nc = (d, form) => {
     UI.err.nc = { ...(UI.err.nc || {}), docs: !files.length ? 'Upload at least one document.' : big ? big.name + ' is over ' + S.settings.maxFileMB + ' MB.' : bad.name + ' is not a supported file type.' };
     return render();
   }
-  const pr = d.project && byId('projects', d.project);
   const isP = role() === 'P';
   if (pr && isP && (pr.owner !== myId() || pr.status !== 'Accepted' || pr.circle))
     return deny('you can create a Circle only for your own accepted project that does not have one yet');
   const steward = pr && (pr.stewards.find(s => S.assign.some(a => a.pid === s && a.ctx === pr.ctx && roleBase(a.role) === 'F' && a.status === 'Active')) || pr.stewards[0]);
-  const fac = isP ? steward || (S.assign.find(a => a.ctx === ctxId() && roleBase(a.role) === 'F' && a.status === 'Active') || {}).pid : myId();
+  const fac = role() === 'F' ? myId() : steward || (S.assign.find(a => a.ctx === ctxId() && roleBase(a.role) === 'F' && a.status === 'Active') || {}).pid;
   const owner = pr ? pr.owner : myId();
+  // A participant creating a Circle that is not for their accepted project needs a facilitator's review first.
+  const authorised = !isP || !!pr;
   const c = {
     id: uid('ci'),
     ctx: ctxId(),
@@ -305,9 +320,10 @@ F.nc = (d, form) => {
     owner,
     facilitator: fac,
     project: pr?.id || null,
+    origin: from && fromFixed ? { type: OBJ_LABEL(d.fromKind), id: from.id } : pr ? { type: 'Project', id: pr.id } : { type: 'Direct — programme, institutional or community Circle', basis: d.basis, by: myId() },
     visibility: 'Members only',
     docs: files.map(f => ({ id: uid('dc'), n: f.name, mb: +(f.size / 1048576).toFixed(2), by: myId(), at: now() })),
-    state: isP && !pr ? 'Pending Review' : 'Active',
+    state: authorised ? 'Active' : 'Pending Review',
     agreement: d.agreement,
     members: [{ pid: owner, role: pr || isP ? 'Project owner' : 'Facilitator', status: 'Active' }],
     chat: [],
@@ -320,19 +336,30 @@ F.nc = (d, form) => {
     pause: null,
     createdBy: myId(),
   };
+  if (owner !== myId() && !c.members.some(m => m.pid === myId())) c.members.push({ pid: myId(), role: defaultSpaceRole(role()), status: 'Active' });
   if (fac && !c.members.some(m => m.pid === fac)) c.members.push({ pid: fac, role: 'Facilitator', status: 'Active' });
+  [].concat(d.m || []).filter(pid => !c.members.some(m => m.pid === pid)).forEach(pid => {
+    c.members.push({ pid, role: defaultSpaceRole(ctxRole(pid, c.ctx)), status: 'Invited' });
+    notify(pid, 'You were invited to the Circle “' + c.name + '”', 'circle', { id: c.id });
+  });
   S.circles.push(c);
   sysMsg(c, 'Circle created by ' + me().name);
+  if (fromFixed) {
+    addLink('circles', c.id, d.fromKind, from.id, d.ltype, true);
+    sysMsg(from, 'Linked Circle created: ' + c.name + ' (reference only — no members or content were copied)');
+  }
   if (pr) {
-    pr.circle = c.id;
-    pr.stage = 'Circle';
+    addLink('circles', c.id, 'projects', pr.id, 'originated-from', true);
+    if (!pr.circle) pr.circle = c.id;
+    if (!pr.stage) pr.stage = 'Circle';
     pr.history.push({ at: today(), t: 'Circle created by ' + me().name });
     if (pr.owner !== myId()) notify(pr.owner, 'Circle created for your project', 'circle', { id: c.id });
   }
-  if (isP && fac) notify(fac, (pr ? 'You are facilitator of the new Circle “' : 'Circle awaiting your review: “') + c.name + '”', 'circle', { id: c.id });
-  audit('Circle created', c.id, c.state + (pr ? ' · project ' + pr.id : ''));
+  if (fac && fac !== myId()) notify(fac, (c.state === 'Active' ? 'You are facilitator of the new Circle “' : 'Circle awaiting your review: “') + c.name + '”', 'circle', { id: c.id });
+  audit('Circle created', c.id, c.state + ' · origin ' + c.origin.type + (c.origin.id ? ' ' + c.origin.id : ''));
   UI.modal = null;
   clearF('nc');
+  mselReset('nc', 'm');
   save();
   go('circle', { id: c.id });
 };
@@ -519,8 +546,8 @@ route('circle', 'circles', () => {
     const hvDone = S.harvests.some(x => x.scope === c.id && ['Approved', 'Released'].includes(x.state));
     body = `<div class="g12">${c.aiSummary && c.aiSummary.status === 'Draft' && mgr ? `<div class="c12">${card('AI-drafted Circle summary', 'Class B workflow draft — review before it is shared with members.', `<p class="muted">${h(c.aiSummary.text)}</p><div style="margin:10px 0">${aiTag('AI draft · sources: chat, sessions, decisions')}</div><div class="row">${B('Reject', 'summaryDecide', { id: c.id, v: 'Rejected' })}${B('Approve and share', 'summaryDecide', { id: c.id, v: 'Approved' }, 'btn-p btn-sm')}</div>`)}</div>` : ''}${card('About', '', dl([['Purpose', h(c.purpose)], ['Expected outcome', h(c.outcome)], ['Owner', nm(c.owner)], ['Facilitator', nm(c.facilitator)], ['Agreement', h(c.agreement)], ['Project', pr ? L(h(pr.title), 'project', { id: pr.id }) : '—'], ['State', pill(c.state)], paused && ['Pause reason', h(c.pause.reason) + ' · restart when: ' + h(c.pause.restart)]]), '', 'c7')}
   ${card('Lifecycle', 'Pending Review → Active → Paused/Repair', `<div class="col" style="gap:8px">${mgr ? [c.state === 'Pending Review' && B('Approve Circle', 'circleState', { id: c.id, v: 'Active' }, 'btn-p btn-sm'), c.state === 'Active' && B(ic('pause', 14) + 'Pause and repair', 'pauseCircle', { id: c.id }), paused && B('Resume Circle', 'circleState', { id: c.id, v: 'Active' }, 'btn-p btn-sm')].filter(Boolean).join('') || '<p class="cap">Nothing to change right now.</p>' : '<p class="cap">Managed by the project owner and facilitator.</p>'}</div>`, '', 'c5')}
-  ${pr ? `<div class="c7 col ws-stack">${stageGate(pr, 'circles', c)}${reportsCard(pr, 'circles', c)}</div>` : ''}
-  ${card('Move toward action', 'Create or link — the Circle always stays intact.', `<div class="col" style="gap:8px">${!ro && sCan('circles', c, 'card') && can('opportunities', 'CM') ? B(ic('megaphone', 14) + 'Create Opportunity Card from this Circle', 'go', { r: 'newcard', from: c.id }) : ''}${mgr && !ro && !pr ? B(ic('room', 14) + 'Create or link ' + WL(), 'newRoom', { origin: 'Circle decision', oid: c.id }) : ''}${!ro && (sCan('circles', c, 'harvest') || mgr) ? B(ic('sparkle', 14) + 'Start a Learning Harvest', 'newHarvest', { scope: c.id }) : ''}</div>`, '', pr ? 'c5' : 'c12')}
+  <div class="c7 col ws-stack">${linkCard('circles', c)}${stageGate(pr, 'circles', c)}${reportsCard(pr, 'circles', c)}</div>
+  ${card('Move toward action', 'Create or link — the Circle always stays intact.', `<div class="col" style="gap:8px">${!ro && sCan('circles', c, 'card') && can('opportunities', 'CM') ? B(ic('megaphone', 14) + 'Create Opportunity Card from this Circle', 'go', { r: 'newcard', from: c.id }) : ''}${!ro && (sCan('circles', c, 'harvest') || mgr) ? B(ic('sparkle', 14) + 'Start a Learning Harvest', 'newHarvest', { scope: c.id }) : ''}<p class="cap">Linked Rope Teams and ${WL()}s are created from <b>Linked objects</b>. Circle members do not become their members automatically.</p></div>`, '', 'c5')}
   ${card('Opportunity Cards from this Circle', 'Cards created here link back to this Circle. Audience is set by each card’s creator.', fromCards.map(k => lrow('megaphone', h(k.title), h(k.kind) + ' · ' + h(k.vis === 'Circle members' ? 'This Circle’s members' : k.vis) + ' · ' + nm(k.owner), pill(k.status) + ' ' + L('Open', 'card', { id: k.id }))).join('') || '<p class="cap">None yet.</p>', '', 'c12')}
   ${returnsCard(c) ? `<div class="c12">${returnsCard(c)}</div>` : ''}</div>`;
   }
@@ -545,10 +572,9 @@ route('circle', 'circles', () => {
       }),
       !ro && (isMem || mgr) ? `<form data-f="cdoc" class="row wrap ws-upform" novalidate><input type="hidden" name="c" value="${c.id}"><input type="file" name="f" class="input ws-file" multiple aria-label="Choose documents"><button class="btn btn-p btn-sm" type="submit">${ic('upload', 14)}Upload</button></form>` : '',
     );
-  const prj = byId('projects', c.project);
   const acts = spaceEditBtn('circles', c) + (!isMem && !mgr && c.state === 'Active' ? joinBtn(c) : isMem ? L(ic('message', 16) + 'Open in Messages', 'messages', { c: c.id, k: 'circles' }, 'btn btn-s') : '');
-  // the space header, its facts and the project journey live in Overview; other sections get a one-line context bar
-  if (t.cur === 'overview') body = spaceHead('circles', c, h(c.purpose), null, acts) + roleNote('circles', c) + (prj ? stageTrack(prj, 'circles') : '');
+  // the space header, its facts and its lineage (linked objects) live in Overview; other sections get a one-line context bar
+  if (t.cur === 'overview') body = spaceHead('circles', c, h(c.purpose), null, acts) + roleNote('circles', c) + linkStrip('circles', c);
   else body = wsBar('circles', c, acts) + body;
   return (
     crumbsHtml([['Circles', 'circles'], [h(c.name)]]) +
@@ -952,8 +978,8 @@ A.aiCheck = d => {
   const c = byId('circles', d.c);
   const p = c && c.polls.find(x => x.id === d.p);
   if (!p || p.status !== 'Open') return deny('the source check runs on an open vote only');
-  if (consent(myId(), 'ai') !== 'Granted' || !S.settings.aiAvailable)
-    return deny(S.settings.aiAvailable ? 'AI processing consent is not granted — voting still works without it' : 'AI is unavailable right now — voting still works');
+  const r = adapterCall('ai', { op: 'AI source check on a Circle vote' });
+  if (r.state !== 'OK') return aiFallback(r, 'Voting works without it; check the sources in the proposal yourself.');
   busy('Checking the proposal for sources and contradictions…', () => {
     const text = [p.q, p.desc].filter(Boolean).join('. ');
     const sentences = text.split(/(?<=[.!?])\s+|\n+/).map(x => x.trim()).filter(x => x.length > 12);

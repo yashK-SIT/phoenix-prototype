@@ -82,62 +82,90 @@ route("rooms", "rooms", () => {
     }))
   );
 });
-// Primary origin: the actual projects this person can start an Action Room for, then the non-project origins.
-// Creators see accepted projects in the programme without an Action Room; a project owner sees their own.
+// Primary origin (WSS clarification 6): exactly one, chosen at creation. It can be the object the button was pressed
+// on (a Circle, Rope Team, Opportunity Card or Match Brief), an accepted project, a learning pathway, or a direct
+// institutional / community initiative that already has its own mandate. Other objects can be linked afterwards.
 const NR_PATHWAY = "_pathway";
 const NR_NONE = "_none";
-const NR_PROJECT_ORIGINS = ["Project", "Circle decision", "Rope Team recommendation"];
+const NR_OBJ = "obj:";
 const nrProjects = () =>
   canCreateRoom()
     ? S.projects.filter((p) => inCtx(p) && p.status === "Accepted" && !p.room && !["Final review", "Closed"].includes(p.stage))
     : ownRoomProjects();
-const nrOtherOrigins = (otype) =>
+const nrOtherOrigins = () =>
   canCreateRoom() || S.settings.participantCanProposeWorkspace
     ? [
         [NR_PATHWAY, "Learning pathway"],
-        [NR_NONE, "No project — " + (otype && !["Project", "Learning pathway"].includes(otype) ? otype.toLowerCase() : "institutional or community initiative")],
+        [NR_NONE, "Direct institutional or community initiative (existing mandate)"],
       ]
     : [];
-const nrOriginOpts = (otype) => [
-  ...nrProjects().map((p) => [p.id, "Project · " + p.title + " (" + P(p.owner).name + ")"]),
-  ...nrOtherOrigins(otype),
-];
-// The project behind what the button was pressed on: the project itself, or the project of a Circle or Rope Team.
-const nrProjectOf = (d) => byId("projects", d.project) || S.projects.find((p) => d.oid && [p.circle, p.rope].includes(d.oid)) || null;
+// The object the button was pressed on, when it is not a project (projects are listed in their own right).
+const nrSource = (oid) => {
+  const k = objKind(oid);
+  return k && k !== "projects" ? [k, byId(k, oid)] : null;
+};
+const nrOriginOpts = (oid) => {
+  const src = nrSource(oid);
+  return [
+    ...(src ? [[NR_OBJ + oid, OBJ_LABEL(src[0]) + " · " + objName(oid)]] : []),
+    ...nrProjects().map((p) => [p.id, "Project · " + p.title + " (" + P(p.owner).name + ")"]),
+    ...nrOtherOrigins(),
+  ];
+};
+// The project behind the chosen origin, if any: the project itself, or the project its source space belongs to.
+const nrProjectFor = (v) => {
+  if (!v) return null;
+  if (v.startsWith(NR_OBJ)) {
+    const src = nrSource(v.slice(NR_OBJ.length));
+    const pr = src && byId("projects", src[1].project);
+    return pr && !pr.room && pr.status === "Accepted" ? pr : null;
+  }
+  return byId("projects", v) || null;
+};
+const nrInvitable = (v) => {
+  const src = v && v.startsWith(NR_OBJ) ? nrSource(v.slice(NR_OBJ.length)) : null;
+  return eligiblePeople([myId()], ["P", "F", "M", "C", "O"]).map((p) => ({ ...p, sub: p.sub + (src && SPACE_KINDS.includes(src[0]) && memberOf(src[1], p.pid) && src[0] !== "ropes" ? " · in " + (src[1].name || "") : "") }));
+};
 A.newRoom = (d) => {
   clearF("nr");
-  const p0 = nrProjectOf(d);
-  const opts = nrOriginOpts(d.origin);
-  const def = p0 && opts.some(([v]) => v === p0.id)
-    ? p0.id
-    : d.origin === "Learning pathway"
-      ? NR_PATHWAY
-      : d.origin && !["Project", "Learning pathway"].includes(d.origin) && opts.some(([v]) => v === NR_NONE)
-        ? NR_NONE
-        : !canCreateRoom() && nrProjects().length === 1
-          ? nrProjects()[0].id
-          : "";
-  const pr = byId("projects", def);
+  mselReset("nr", "inv");
+  const opts = nrOriginOpts(d.oid);
+  const p0 = byId("projects", d.project);
+  const def = nrSource(d.oid)
+    ? NR_OBJ + d.oid
+    : p0 && opts.some(([v]) => v === p0.id)
+      ? p0.id
+      : d.origin === "Learning pathway"
+        ? NR_PATHWAY
+        : opts.some(([v]) => v === NR_NONE) && d.origin !== "Project"
+          ? NR_NONE
+          : nrProjects().length === 1
+            ? nrProjects()[0].id
+            : "";
+  const pr = nrProjectFor(def);
   UI.form.nr = { name: pr ? pr.title + " — execution" : "", project: def };
   modal(
-    (canCreateRoomFor(pr) ? "Create " : "Propose ") + (/^[aeiou]/i.test(WL()) ? "an " : "a ") + WL(),
+    (canCreateRoom() || canCreateRoomFor(pr) ? "Create " : "Propose ") + (/^[aeiou]/i.test(WL()) ? "an " : "a ") + WL(),
     () => {
-      const cp = byId("projects", fv("nr", "project"));
-      const rope = cp && byId("ropes", cp.rope);
+      const v = fv("nr", "project");
+      const cp = nrProjectFor(v);
       const creator = canCreateRoomFor(cp);
-      const linked = d.oid && (!cp || !p0 || cp === p0) ? "Linked to " + cName(d.oid) + " (linked, not duplicated). " : "";
-      return `<form data-f="nr" class="col" style="gap:14px" novalidate><input type="hidden" name="oid" value="${h(d.oid || "")}"><input type="hidden" name="p0" value="${p0 ? p0.id : ""}"><input type="hidden" name="otype" value="${h(d.origin || "")}">
- ${opts.length ? fi("nr", "project", "Primary origin", { type: "select", req: true, ph: "Choose the project this " + WL() + " is for", opts, ch: "nrProject", help: linked + (canCreateRoom() ? "Accepted projects in this programme that do not have an " + WL() + " yet." : "Your accepted projects that do not have an " + WL() + " yet.") }) : banner("warn", "No project available", "There is no accepted project without an " + WL() + " that you can start one for.")}
+      return `<form data-f="nr" class="col" style="gap:14px" novalidate><input type="hidden" name="oid" value="${h(d.oid || "")}"><input type="hidden" name="otype" value="${h(d.origin || "")}"><input type="hidden" name="via" value="${h(d.via || "")}">
+ ${opts.length ? fi("nr", "project", "Primary origin", { type: "select", req: true, ph: "Choose what this " + WL() + " comes from", opts, ch: "nrProject", help: "One Primary Origin. Other Circles, Rope Teams, projects or cards can be linked afterwards, by reference." }) : banner("warn", "No origin available", "There is no object you can start an " + WL() + " from.")}
+ ${v === NR_NONE ? fi("nr", "mandate", "Mandate and accountable owner", { req: true, ph: "e.g. 90-Day AI Resilience Pilot approved by the University Leadership Team, owner Prof. N. Shah", help: "Direct creation needs an existing mandate: a leadership or board decision, grant commitment or community-authorised programme. No Opportunity Card or Match Brief is needed." }) : ""}
  ${fi("nr", "name", "Name", { req: true })}${fi("nr", "purpose", "Purpose / charter", { type: "textarea", rows: 3, req: true })}${fi("nr", "outcome", "Expected outcome", { type: "textarea", rows: 3, req: true })}
- ${cp && !canCreateRoom() ? banner("info", "", "You lead this " + WL() + " as project owner. Your project’s Steward joins as facilitator to validate milestones, and Circle members are invited." + (rope && !rope.reqFinal ? " The Rope Team has not finalised requirements yet — you can still start, and keep working with your mentor." : "")) : ""}
+ ${msel("nr", "inv", "Invite people (optional)", nrInvitable(v), [], { help: "Linking adds no one. Members of the origin are not added automatically; each person you choose is invited and must accept." })}
+ ${d.via ? banner("info", "Origin metadata only", "This " + WL() + " records the introduction as its origin: who was introduced, when, and from which opportunity. The Match Brief’s fit notes, gaps and source records are not copied, and the other person joins only if they accept the invitation.") : ""}
+ ${cp && !canCreateRoom() ? banner("info", "", "You lead this " + WL() + " as project owner. Your project’s Steward joins as facilitator to validate milestones.") : ""}
+ ${!creator ? banner("info", "Proposal", "An authorised Faculty/Steward, Project Lead, Partner, Organization Representative or Programme Administrator activates it.") : ""}
  <div class="actions"><span></span><button class="btn btn-p" type="submit" ${opts.length ? "" : "disabled"}>${creator ? "Create" : "Propose"}</button></div></form>`;
     },
   );
 };
 A.nrProject = (d, el) => {
-  const pr = byId("projects", el.value);
+  const pr = nrProjectFor(el.value);
   const f = {};
-  new FormData(el.form).forEach((v, k) => (f[k] = v));
+  new FormData(el.form).forEach((v, k) => k !== "inv" && (f[k] = v));
   if (pr) f.name = pr.title + " — execution";
   UI.form.nr = f;
   render();
@@ -147,34 +175,28 @@ F.nr = (d) => {
     !validate("nr", d, {
       project: [
         ["req", "Choose the primary origin."],
-        ["fn", { f: (v) => nrOriginOpts(d.otype).some(([o]) => o === v), m: "Choose one of the listed origins." }],
+        ["fn", { f: (v) => nrOriginOpts(d.oid).some(([o]) => o === v), m: "Choose one of the listed origins." }],
       ],
       name: ["req"],
       purpose: ["req"],
       outcome: ["req"],
+      ...(d.project === NR_NONE ? { mandate: ["req"] } : {}),
     })
   )
     return render();
   const flags = [];
-  const pr = byId("projects", d.project) || null;
-  const p0 = byId("projects", d.p0);
-  // Keep the caller's specific origin (e.g. a Circle decision) only while its project is still the one chosen.
-  d.origin = pr
-    ? pr === p0 && NR_PROJECT_ORIGINS.includes(d.otype)
-      ? d.otype
-      : "Project"
-    : d.project === NR_PATHWAY
-      ? "Learning pathway"
-      : d.otype && !["Project", "Learning pathway"].includes(d.otype)
-        ? d.otype
-        : "Institutional project";
-  if (d.oid && pr && pr !== p0 && ![pr.circle, pr.rope].includes(d.oid)) d.oid = "";
+  const introVias = [];
+  const src = d.project.startsWith(NR_OBJ) ? nrSource(d.project.slice(NR_OBJ.length)) : null;
+  const pr = nrProjectFor(d.project);
+  const origin = src
+    ? { type: d.otype && !["Project", "Institutional project", "Community initiative"].includes(d.otype) ? d.otype : OBJ_LABEL(src[0]), id: src[1].id }
+    : pr
+      ? { type: "Project", id: pr.id }
+      : d.project === NR_PATHWAY
+        ? { type: "Learning pathway", id: null }
+        : { type: "Institutional or community initiative", id: null, basis: d.mandate, by: myId() };
   const creator = canCreateRoomFor(pr);
-  const st = !creator
-    ? "Proposed"
-    : flags.length
-      ? "Pending approval"
-      : "Active";
+  const st = !creator ? "Proposed" : flags.length ? "Pending approval" : "Active";
   const x = {
     id: uid("ar"),
     ctx: ctxId(),
@@ -183,13 +205,12 @@ F.nr = (d) => {
     charter: d.purpose,
     outcome: d.outcome,
     lead: pr ? pr.owner : myId(),
-    origin: { type: d.origin, id: d.oid || pr?.id || null },
+    origin,
+    mandate: d.project === NR_NONE ? d.mandate : null,
     related: pr ? [pr.id] : [],
     state: st,
     flags,
-    members: [
-      { pid: pr ? pr.owner : myId(), role: "Project owner", status: "Active" },
-    ],
+    members: [{ pid: pr ? pr.owner : myId(), role: "Project owner", status: "Active" }],
     chat: [],
     joinReqs: [],
     tasks: [],
@@ -201,58 +222,39 @@ F.nr = (d) => {
     wins: [],
     changes: [],
     returns: [],
+    links: [],
     final: null,
   };
-  if (pr && !x.members.some((m) => m.pid === myId()))
-    x.members.push({
-      pid: myId(),
-      role:
-        defaultSpaceRole(role()) === "Observer"
-          ? "Member"
-          : defaultSpaceRole(role()),
-      status: "Active",
-    });
+  if (!x.members.some((m) => m.pid === myId()))
+    x.members.push({ pid: myId(), role: defaultSpaceRole(role()) === "Observer" ? "Member" : defaultSpaceRole(role()), status: "Active" });
   // The project's Steward joins as facilitator: they review contributions and validate milestones.
   if (pr)
     pr.stewards.forEach((s) => {
       if (!x.members.some((m) => m.pid === s)) x.members.push({ pid: s, role: "Facilitator", status: "Active" });
     });
-  if (pr) {
-    const c = byId("circles", pr.circle);
-    if (c)
-      c.members
-        .filter(
-          (m) =>
-            m.status === "Active" && m.pid !== pr.owner && m.role === "Member",
-        )
-        .forEach((m) =>
-          x.members.push({ pid: m.pid, role: "Member", status: "Invited" }),
-        );
-  }
+  // Only the people chosen here are invited. Circle or Rope Team members are never added because of a link.
+  [].concat(d.inv || []).filter((pid) => !x.members.some((m) => m.pid === pid)).forEach((pid) => x.members.push({ pid, role: defaultSpaceRole(ctxRole(pid, x.ctx)) === "Observer" ? "Member" : defaultSpaceRole(ctxRole(pid, x.ctx)), status: "Invited" }));
   if (pr && pr.pendingCollab) {
     pr.pendingCollab.forEach((pc) => {
+      if (pc.match) introVias.push("mb:" + pc.match);
       if (!x.members.some((m) => m.pid === pc.pid))
-        x.members.push({
-          pid: pc.pid,
-          role: "Partner",
-          label: pc.req,
-          status: "Invited",
-          req: pc.req,
-          contrib: pc.contrib,
-          match: pc.match,
-        });
+        x.members.push({ pid: pc.pid, role: "Partner", label: pc.req, status: "Invited", req: pc.req, contrib: pc.contrib, match: pc.match });
     });
     pr.pendingCollab = [];
   }
   S.rooms.push(x);
-  if (pr) {
+  // an introduction or direct collaboration that led here records Create New Workspace now the room exists
+  [d.via, ...introVias].filter(Boolean).forEach((v) => introCreated(v, x));
+  if (src) {
+    addLink("rooms", x.id, src[0], src[1].id, "originated-from", true);
+    if (SPACE_KINDS.includes(src[0])) sysMsg(src[1], "Linked " + WL() + " created: " + x.name + ". Nothing from here was copied, and no one was added automatically.");
+  }
+  if (pr) addLink("rooms", x.id, "projects", pr.id, src ? "executes" : "originated-from", !src);
+  if (pr && !pr.room) {
     pr.room = x.id;
     if (st === "Active") {
       pr.stage = "Room";
-      pr.history.push({
-        at: today(),
-        t: WL() + " created by " + me().name + "; moved to " + WL() + " stage",
-      });
+      pr.history.push({ at: today(), t: WL() + " created and linked by " + me().name });
       pr.stewards
         .filter((s) => s !== myId())
         .forEach((s) => notify(s, me().name + " created the " + WL() + " for “" + pr.title + "”. You are its facilitator.", "room", { id: x.id }));
@@ -261,19 +263,12 @@ F.nr = (d) => {
   if (st !== "Active")
     S.assign
       .filter((a) => a.ctx === ctxId() && ["F", "A"].includes(roleBase(a.role)))
-      .forEach((a) =>
-        notify(a.pid, `${WL()} ${st.toLowerCase()}: ${x.name}`, "room", {
-          id: x.id,
-        }),
-      );
-  x.members
-    .filter((m) => m.status === "Invited")
-    .forEach((m) =>
-      notify(m.pid, "Invitation to join " + x.name, "room", { id: x.id }),
-    );
-  audit(WL() + " " + st, x.id, flags.join(", "));
+      .forEach((a) => notify(a.pid, `${WL()} ${st.toLowerCase()}: ${x.name}`, "room", { id: x.id }));
+  x.members.filter((m) => m.status === "Invited").forEach((m) => notify(m.pid, "Invitation to join " + x.name, "room", { id: x.id }));
+  audit(WL() + " " + st, x.id, "Primary origin: " + origin.type + (origin.id ? " " + origin.id : origin.basis ? " — " + origin.basis : ""));
   UI.modal = null;
   clearF("nr");
+  mselReset("nr", "inv");
   save();
   go("room", { id: x.id });
 };
@@ -286,7 +281,9 @@ route("room", "rooms", () => {
   const canReview = sCan("rooms", x, "review") || r === "A";
   const canPropose = sCan("rooms", x, "propose");
   const myM = memberRec(x);
-  if (!isM && !(myM && myM.status === "Invited") && !["A", "O"].includes(r) && !msIsSteward(x))
+  // an authorised creator reviews a proposed Action Room before it has members of their own
+  const reviewing = ["Proposed", "Pending approval"].includes(x.state) && canCreateRoom() && inCtx(x);
+  if (!isM && !(myM && myM.status === "Invited") && !["A", "O"].includes(r) && !msIsSteward(x) && !reviewing)
     return deniedView("rooms");
   if (myM && myM.status === "Invited")
     return (
@@ -637,8 +634,8 @@ route("room", "rooms", () => {
         : "",
     );
   if (t.cur === "about")
-    body = `<div class="g12">${card("Charter", "", dl([["Purpose / charter", h(x.charter)], ["Expected outcome", h(x.outcome || "—")], ["Lead", nm(x.lead)], ["State", pill(x.state)], x.flags.length && ["Approval flags", x.flags.map(h).join(", ")], ["Primary origin", originLink(x)], ["Related objects (linked by reference)", x.related.map(relLink).join(", ") || "—"], ["Sponsors", "Never members because of funding"], ["Linked learning activities and records", x.links.map((l) => pill(l.type, "p-grey") + " " + h(l.label)).join("<br>") || "—"]]), !ro && isM ? B(ic("link", 14) + "Link by reference", "roomLink", { r: x.id }) : "", "c7")}
- ${card("Lifecycle", "Draft · Proposed · Pending approval · Active · Closed", `<div class="col" style="gap:8px">${x.state === "Proposed" && canCreateRoom() ? B("Activate", "roomState", { r: x.id, v: x.flags.length ? "Pending approval" : "Active" }, "btn-p btn-sm") + B("Decline (back to Draft)", "roomDecline", { r: x.id }) : ""}${x.state === "Proposed" && !canCreateRoom() ? '<p class="cap">Proposed. An authorised Faculty/Steward, Project Lead, Partner, Organization Representative or Programme Administrator activates it.</p>' : ""}${x.state === "Pending approval" && (r === "F" || r === "A") ? B("Approve activation", "roomState", { r: x.id, v: "Active" }, "btn-p btn-sm") + B("Decline (back to Draft)", "roomDecline", { r: x.id }) : ""}${x.state === "Draft" && isM ? B("Re-propose", "roomState", { r: x.id, v: "Proposed" }) : ""}${x.declineReason ? banner("warn", "Approval declined", h(x.declineReason)) : ""}${!ro && isM && !pr ? B(ic("refresh", 14) + "Return issue to Circle", "returnTo", { from: "rooms", id: x.id, to: "circle" }) : ""}${!ro && isM ? B(ic("sparkle", 14) + "Start a Learning Harvest", "newHarvest", { scope: x.id }) : ""}${x.state === "Active" && lead ? B(ic("refresh", 14) + "Continue to a new cycle", "roomContinue", { r: x.id }) : ""}${x.state === "Active" && lead && !pr ? B("Close " + WL(), "roomClose", { r: x.id }) : ""}<p class="cap">Closing or continuing starts a Learning Harvest for this cycle. A person completes it; nothing is harvested automatically.</p>${pr ? `<p class="cap">Final deliverables are submitted from the Overview tab or the ${L("project", "project", { id: pr.id })}. Backward movement is on the Overview tab.</p>` : ""}</div>`, "", "c5")}
+    body = `<div class="g12">${card("Charter", "", dl([["Purpose / charter", h(x.charter)], ["Expected outcome", h(x.outcome || "—")], ["Lead", nm(x.lead)], ["State", pill(x.state)], x.flags.length && ["Approval flags", x.flags.map(h).join(", ")], ["Primary origin", primaryLink(x.id) ? OBJ_LABEL(primaryLink(x.id).target_type) + " · " + relLink(primaryLink(x.id).target_id) : originLink(x)], x.mandate && ["Mandate", h(x.mandate)], ["Related objects (linked by reference)", linksOf(x.id).filter((l) => !l.primary || l.source_id !== x.id).map((l) => relLink(linkOther(l, x.id)) + ' <span class="cap">' + h(l.source_id === x.id ? linkTypeLabel(l.link_type) : LINK_INVERSE[l.link_type]) + "</span>").join("<br>") || "—"], ["Sponsors", "Never members because of funding"], ["Linked learning activities and records", x.links.map((l) => pill(l.type, "p-grey") + " " + h(l.label)).join("<br>") || "—"]]), !ro && isM ? B(ic("link", 14) + "Link by reference", "roomLink", { r: x.id }) : "", "c7")}
+ ${card("Lifecycle", "Draft · Proposed · Pending approval · Active · Closed", `<div class="col" style="gap:8px">${x.state === "Proposed" && canCreateRoom() ? B("Activate", "roomState", { r: x.id, v: x.flags.length ? "Pending approval" : "Active" }, "btn-p btn-sm") + B("Decline (back to Draft)", "roomDecline", { r: x.id }) : ""}${x.state === "Proposed" && !canCreateRoom() ? '<p class="cap">Proposed. An authorised Faculty/Steward, Project Lead, Partner, Organization Representative or Programme Administrator activates it.</p>' : ""}${x.state === "Pending approval" && (r === "F" || r === "A") ? B("Approve activation", "roomState", { r: x.id, v: "Active" }, "btn-p btn-sm") + B("Decline (back to Draft)", "roomDecline", { r: x.id }) : ""}${x.state === "Draft" && isM ? B("Re-propose", "roomState", { r: x.id, v: "Proposed" }) : ""}${x.declineReason ? banner("warn", "Approval declined", h(x.declineReason)) : ""}${!ro && isM ? B(ic("sparkle", 14) + "Start a Learning Harvest", "newHarvest", { scope: x.id }) : ""}${x.state === "Active" && lead ? B(ic("refresh", 14) + "Continue to a new cycle", "roomContinue", { r: x.id }) : ""}${x.state === "Active" && lead && !pr ? B("Close " + WL(), "roomClose", { r: x.id }) : ""}<p class="cap">Closing or continuing starts a Learning Harvest for this cycle. A person completes it; nothing is harvested automatically.</p>${pr ? `<p class="cap">Final deliverables are submitted from the Overview tab or the ${L("project", "project", { id: pr.id })}. Backward movement is on the Overview tab.</p>` : ""}</div>`, "", "c5")}
  ${returnsCard(x) ? `<div class="c12">${returnsCard(x)}</div>` : ""}</div>`;
   const acts =
     spaceEditBtn("rooms", x) +
@@ -659,7 +656,7 @@ route("room", "rooms", () => {
               : "")
         : "");
   // the space header, its facts and the project journey live in Overview; other sections get a one-line context bar
-  if (t.cur === "overview") body = spaceHead("rooms", x, h(x.purpose), null, acts) + roleNote("rooms", x) + (pr ? stageTrack(pr, "rooms") : "") + body;
+  if (t.cur === "overview") body = spaceHead("rooms", x, h(x.purpose), null, acts) + roleNote("rooms", x) + linkStrip("rooms", x) + body;
   else body = wsBar("rooms", x, acts) + body;
   // approval / proposal states carry their own actions, so they stay above the sections
   return (
@@ -1234,10 +1231,10 @@ F.rin = (d) => {
   }
   if (
     d.kind === "Research-related access" &&
-    consent(d.pid, "research") !== "Granted"
+    !authorizePurpose("research", d.pid, { ctx: x.ctx }, "Research-related access to " + x.name).ok
   ) {
     UI.modal = null;
-    return deny("research permission is not granted by this person");
+    return deny(purposeCheck("research", d.pid, { ctx: x.ctx }).why);
   }
   if (
     d.kind === "Institutional representative (can bind the organization)" &&
@@ -1344,11 +1341,13 @@ F.rdc = (d) => {
 };
 // Primary origin and related objects are shown with links so lineage is visible without copying content.
 const ORIGIN_ROUTE = { circles: "circle", ropes: "rope", rooms: "room", projects: "project", cards: "card", matches: "match" };
+// A linked object the viewer cannot open independently (e.g. a Rope Team they are not in) shows its name only.
 function relLink(id) {
   const k = ["circles", "ropes", "rooms", "projects", "cards", "matches"].find((c) => byId(c, id));
-  return k ? L(cName(id), ORIGIN_ROUTE[k], { id }) : h(id);
+  if (!k) return h(id);
+  return objOpenable(k, byId(k, id)) ? L(cName(id), ORIGIN_ROUTE[k], { id }) : cName(id) + " " + ic("lock", 12);
 }
-const originLink = (x) => h(x.origin.type) + (x.origin.id ? " · " + relLink(x.origin.id) : "");
+const originLink = (x) => h(x.origin.type) + (x.origin.id ? " · " + relLink(x.origin.id) : x.origin.basis ? " · " + h(x.origin.basis) : "");
 // Continue: harvest this cycle (human-completed), then start the next cycle with the same members and links.
 A.roomContinue = (d) => {
   const x = byId("rooms", d.r);
@@ -1516,8 +1515,8 @@ function roomOverview(x, pr, lead, ro) {
             : "The project lead adds milestones.",
         ),
     L("Tasks & milestones", "room", { id: x.id, tab: "plan" }),
-  )}${pr ? reportsCard(pr, "rooms", x) : ""}</div>
-  <aside class="ws-ov-rail" aria-label="Moving forward">${pr ? stageGate(pr, "rooms", x) : ""}${returnsCard(x)}${wsTeamCard("rooms", x)}</aside></div>`;
+  )}${reportsCard(pr, "rooms", x)}</div>
+  <aside class="ws-ov-rail" aria-label="Moving forward">${linkCard("rooms", x)}${stageGate(pr, "rooms", x)}${returnsCard(x)}${wsTeamCard("rooms", x)}</aside></div>`;
 }
 A.taskDecide = (d) => {
   const x = byId("rooms", d.r);

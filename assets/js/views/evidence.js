@@ -50,8 +50,11 @@ const evRelStr = e => ((e.cleared || []).length ? 'Cleared: ' + e.cleared.map(c 
 // Records that may appear in a report for `audience` ('Funder report' | 'Public showcase' | 'Organisation report'):
 // approved, active, cleared for that audience at (or above) the record's current confidentiality, and the owner has
 // not withdrawn public/funder consent. Other screens (sponsor reports, metrics) use this; nothing else counts as released.
+// PUBLIC_FUNDER_EXCHANGE is checked again at the moment of reporting, at every level (organization, programme,
+// owner's current consent, record restriction): a later decline or withdrawal takes the record out of funder and
+// public reports straight away. An organization report is internal and does not need this purpose.
 function evReleasedTo(audience, list = S.evidence) {
-  return (list || []).filter(e => e.review === 'Approved' && e.lifecycle === 'Active' && !!evClear(e, audience) && consent(e.owner, 'public') !== 'Withdrawn');
+  return (list || []).filter(e => e.review === 'Approved' && e.lifecycle === 'Active' && !!evClear(e, audience) && (audience === 'Organisation report' || purposeOn('public', e.owner, { ctx: e.ctx, rec: e })));
 }
 // One history entry per dimension that changed.
 const evHist = (e, dim, from, to, note) => {
@@ -359,6 +362,7 @@ function evDetail(e) {
  ${!rev && !own && role() === 'F' && reviewable ? card('Review', '', '<p class="cap">Approving or rejecting evidence needs the Reviewer bundle. You can comment on it.</p>') : ''}
  ${own && e.review === 'Needs Revision' && e.lifecycle === 'Active' ? card('Revise and resubmit', 'History is kept.', B('Resubmit', 'evResub', { id: e.id }, 'btn-p btn-block')) : ''}
  ${own ? evReleaseCard(e, rr) : ''}
+ ${own ? recordPurposesCard(e) : ''}
  ${own && e.lifecycle === 'Active' ? CB('Withdraw evidence', 'evWithdraw', { id: e.id }, 'Withdraw this evidence? Its lifecycle becomes Withdrawn: it leaves review and stops counting in any release. Its review status and history are kept.') : ''}
  ${
    hasB('Trust/Data Steward')
@@ -626,8 +630,8 @@ F.rel = d => {
     ? 'choose one of the listed audiences'
     : !evReleasable(e)
       ? 'only approved, active evidence can be released'
-      : consent(e.owner, 'public') !== 'Granted'
-        ? 'public/funder release permission is not granted — change it in My records & consent first'
+      : d.aud !== 'Organisation report' && !authorizePurpose('public', e.owner, { ctx: e.ctx, rec: e }, 'Release authorisation').ok
+        ? purposeCheck('public', e.owner, { ctx: e.ctx, rec: e }).why + ' Change it first if you want this released.'
         : evClear(e, d.aud) || S.releases.some(x => x.ev === e.id && x.kind !== 'story' && (x.aud || relAudOf(x.audience)) === d.aud && x.status === 'Owner authorised — disclosure review')
           ? 'this audience is already cleared or in disclosure review'
           : '';
@@ -648,7 +652,7 @@ A.relDecide = d => {
   const e = byId('evidence', x.ev);
   const aud = (x.aud = x.aud || relAudOf(x.audience));
   if (d.v.startsWith('Owner authorised')) {
-    if (consent(e.owner, 'public') !== 'Granted') return deny('public/funder release permission is not granted — change it in My records & consent first');
+    if (aud !== 'Organisation report' && !authorizePurpose('public', e.owner, { ctx: e.ctx, rec: e }, 'Release decision').ok) return deny(purposeCheck('public', e.owner, { ctx: e.ctx, rec: e }).why);
     if (!evReleasable(e)) return deny('only approved, active evidence can be released', e.id);
   }
   if (['Released', 'Withheld after disclosure review'].includes(d.v) && x.status !== 'Owner authorised — disclosure review') return deny('the owner has not authorised this release', x.id);
@@ -1062,9 +1066,11 @@ route('harvests', 'harvest', () => {
   if (r === 'S') return deniedView('harvest');
   const list = S.harvests.filter(x => {
     const o = byId('circles', x.scope) || byId('rooms', x.scope) || byId('ropes', x.scope);
+    const rope = !!byId('ropes', x.scope);
+    // A Rope Team's Harvest stays with its members (ROPE_TEAM_ONLY) unless a release decision says otherwise.
     return (
-      r === 'A' ||
-      (o && (memberOf(o) || r === 'F')) ||
+      (r === 'A' && !rope) ||
+      (o && (memberOf(o) || (r === 'F' && !rope))) ||
       x.personal === myId() ||
       (r === 'O' && (x.cleared || []).some(c => c.aud === 'Organisation report'))
     );
@@ -1109,7 +1115,7 @@ A.newHarvest = d => {
   modal(
     'Start a Learning Harvest',
     () =>
-      `<form data-f="hv" class="col prj-dlg" novalidate>${fi('hv', 'scope', 'For', { type: 'select', req: true, ph: 'Select', opts: [...pids.map(s => [s.id, s.name]), ['personal', 'My personal Harvest (pathway)']], value: d.scope })}${fi('hv', 'trigger', 'Trigger', { type: 'select', req: true, opts: ['Session completion', 'Milestone', 'Visible win', 'Periodic review', 'Workspace closure', 'Pathway completion'] })}${consent(myId(), 'ai') === 'Granted' && S.settings.aiAvailable ? fi('hv', 'ai', 'Let PHOENIX draft it from authorised source records (Class B)', { type: 'checkbox' }) : banner('info', '', consent(myId(), 'ai') !== 'Granted' ? `AI processing is off for you, so PHOENIX will not draft the Harvest; you write it yourself. You can change this in ${L('My records & consent', 'privacy', { tab: 'consent' })}.` : 'AI drafting unavailable — you will write the Harvest manually.')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Start</button></div></form>`,
+      `<form data-f="hv" class="col prj-dlg" novalidate>${fi('hv', 'scope', 'For', { type: 'select', req: true, ph: 'Select', opts: [...pids.map(s => [s.id, s.name]), ['personal', 'My personal Harvest (pathway)']], value: d.scope })}${fi('hv', 'trigger', 'Trigger', { type: 'select', req: true, opts: ['Session completion', 'Milestone', 'Visible win', 'Periodic review', 'Workspace closure', 'Pathway completion'] })}${purposeOn('ai', myId()) && adapterUp('ai') ? fi('hv', 'ai', 'Let PHOENIX draft it from authorised source records (Class B)', { type: 'checkbox' }) : banner('info', '', !purposeOn('ai', myId()) ? `AI processing is off for you, so PHOENIX will not draft the Harvest; you write it yourself. You can change this in ${L('My records & consent', 'privacy', { tab: 'consent' })}.` : 'AI drafting unavailable — you will write the Harvest manually.')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Start</button></div></form>`,
   );
 };
 F.hv = d => {
@@ -1186,7 +1192,10 @@ route('harvest', 'harvest', () => {
   const o = byId('circles', x.scope) || byId('rooms', x.scope) || byId('ropes', x.scope);
   const mem = o ? memberOf(o) : x.personal === myId();
   if (r === 'S' || (r === 'O' && !(x.cleared || []).some(c => c.aud === 'Organisation report'))) return deniedView('harvest');
-  const comp = canComplete() && (mem || r === 'F');
+  // a Rope Team's Harvest is ROPE_TEAM_ONLY until released: members only, whatever the platform role
+  const rope = !!byId('ropes', x.scope);
+  if (rope && !mem && x.state !== 'Released') return deniedView('harvest');
+  const comp = canComplete() && (mem || (r === 'F' && !rope));
   const edit = ['Draft', 'Review'].includes(x.state) && (x.by === myId() || comp);
   if (x.tpl === 2) return hv2View(x, mem, comp, edit);
   return (
@@ -1320,6 +1329,7 @@ A.rbDecide = d => {
   const c = byId('cards', d.c);
   const pp = c.proposals.find(x => x.id === d.id);
   pp.status = d.v;
+  pp.consentAt = now();
   notify(pp.from, `${me().name} ${d.v.toLowerCase()} your direct collaboration proposal`, 'card', { id: c.id });
   if (
     d.v === 'Accepted' &&
@@ -1334,25 +1344,8 @@ A.rbDecide = d => {
   audit('Route B ' + d.v, c.id, pp.from + '→' + pp.to);
   ok();
 };
-A.linkRoom = d => {
-  const m = byId('matches', d.id);
-  const rooms = myRooms();
-  modal(
-    'Link an existing ' + WL(),
-    `<form data-f="lnk" class="col" style="gap:14px"><input type="hidden" name="id" value="${m.id}">${fi('lnk', 'room', WL(), { type: 'select', req: true, opts: rooms.map(x => [x.id, x.name]) })}${banner('info', 'Linked by reference', 'Only authorised shared context carries forward: title and purpose, agreed participants and roles, next milestone and approved evidence references. Private discussions and restricted records stay where they are.')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Link</button></div></form>`,
-  );
-};
-F.lnk = d => {
-  const x = byId('rooms', d.room);
-  const m = byId('matches', d.id);
-  if (!x.related.includes(m.card)) x.related.push(m.card);
-  m.next2 = 'Link existing ' + WL();
-  m.outcome = 'Opportunity progressed';
-  audit('Linked by reference', x.id, m.id);
-  UI.modal = null;
-  toast('Linked to ' + x.name + ' by reference.');
-  ok();
-};
+// Linking an introduction to an existing workspace now lives in opportunities.js (A.introLink): any Circle, Rope Team
+// or Action Room both parties belong to, validated for both, recorded as an ObjectLink.
 
 A.hvRedraft = d => {
   const x = byId('harvests', d.id);

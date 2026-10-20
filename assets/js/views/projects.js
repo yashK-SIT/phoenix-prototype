@@ -123,7 +123,7 @@ route('projects', 'projects', () => {
             p.submitted ? 'Submitted ' + fmt(p.submitted) : '',
           ],
           badges: pill(p.status) + (p.stage ? pill(stageLabel(p.stage), SC[p.stage]) : ''),
-          primary: L('Open', 'project', { id: p.id }, 'btn btn-s btn-sm'),
+          primary: L('Open', 'project', { id: p.id }, 'btn btn-s btn-sm') + (projDeletable(p) ? projDeleteBtn(p) : ''),
         }),
         empty: r === 'P' ? ['folder', 'You have no projects yet', 'Start one from an idea, need or opportunity.', B(ic('plus', 16) + 'Start a project', 'go', { r: 'newproject' }, 'btn-p btn-sm')] : ['folder', 'No projects yet', 'Submitted projects in this programme appear here.', ''],
       }),
@@ -142,7 +142,7 @@ route('newproject', 'aireq', () => {
   const pr = pid ? byId('projects', pid) : null;
   if (pr && pr.owner !== myId()) return deniedView('aireq');
   const st = pr && pr.sections ? UI.tab.npStage || 'review' : 'intake';
-  const okAI = consent(myId(), 'ai') === 'Granted' && S.settings.aiAvailable;
+  const okAI = purposeOn('ai', myId()) && adapterUp('ai');
   if (st === 'intake')
     return (
       head(
@@ -170,7 +170,7 @@ route('newproject', 'aireq', () => {
   <div class="np-sec"><div class="np-sh"><span class="np-n" aria-hidden="true">3</span><h2 class="h3">Place</h2></div>
   <div class="f2">${fi(f, 'area', 'Location or programme area (optional)', { value: pr?.area, ph: 'e.g. Ward 7, Excelsior City' })}</div></div>
   <div class="actions">${L('Cancel', 'projects', {}, 'btn btn-g')}<div class="row wrap"><button class="btn btn-s" type="submit" name="go" value="save">Save draft</button><button class="btn btn-p" type="submit" name="go" value="gen">${okAI ? 'Draft sections with PHOENIX' : 'Continue to sections'}</button></div></div></form>
-  <aside class="c4 col np-side">${okAI ? `<div class="card col np-ai">${aiTag('AI-assisted · Class B workflow draft')}<b>PHOENIX will draft 8 sections</b><ol class="np-seclist">${SECTIONS.map(s => `<li>${s}</li>`).join('')}</ol><p class="cap">Each stays a draft until you accept, edit or reject it.</p></div>` : banner('warn', S.settings.aiAvailable ? 'AI processing is off' : 'AI is unavailable', S.settings.aiAvailable ? `AI processing is off for you, so PHOENIX will not draft sections. You can write each section yourself. To get drafts, change this in ${L('My records & consent', 'privacy', { tab: 'consent' })}.` : 'You can write each section yourself; drafting will work again when the service is back.')}${card('What happens next', '', '<p class="cap">You submit for Faculty/Steward review. They may ask for clarification, then accept it and set up a Circle.</p>', '', 'quiet')}</aside></div>`
+  <aside class="c4 col np-side">${okAI ? `<div class="card col np-ai">${aiTag('AI-assisted · Class B workflow draft')}<b>PHOENIX will draft 8 sections</b><ol class="np-seclist">${SECTIONS.map(s => `<li>${s}</li>`).join('')}</ol><p class="cap">Each stays a draft until you accept, edit or reject it.</p></div>` : banner('warn', adapterUp('ai') ? 'AI processing is off' : 'AI is unavailable', adapterUp('ai') ? `AI processing is off for you, so PHOENIX will not draft sections. You can write each section yourself. To get drafts, change this in ${L('My records & consent', 'privacy', { tab: 'consent' })}.` : 'You can write each section yourself; drafting will work again when the service is back.')}${card('What happens next', '', '<p class="cap">You submit for Faculty/Steward review. They may ask for clarification, then accept it and set up a Circle.</p>', '', 'quiet')}</aside></div>`
     );
   // review sections
   const secs = pr.sections;
@@ -231,7 +231,7 @@ F.np = (d, form) => {
     save();
     return go('projects');
   }
-  const okAI = consent(myId(), 'ai') === 'Granted' && S.settings.aiAvailable;
+  const okAI = purposeOn('ai', myId()) && adapterUp('ai');
   if (!p.sections || p.sections.every(s => s.st === 'To review')) {
     const dr = draftSections(p.title, p.desc, p.type);
     p.sections = SECTIONS.map((s, i) => ({ text: okAI ? dr[i] : '', ai: okAI, st: 'To review' }));
@@ -341,8 +341,9 @@ route('project', 'projects', () => {
   const lastRej = p.status === 'Rejected' && (p.thread || []).filter(m => m.kind === 'reject').slice(-1)[0];
   if (r === 'F' && stewardOf(p) && p.stage === 'Closed') actions = '';
   if (own && ownRoomProjects().includes(p))
-    actions += B(ic('room', 14) + 'Create ' + WL(), 'newRoom', { origin: 'Project', project: p.id, oid: p.rope || p.circle || '' }, p.circle ? 'btn-p btn-sm' : 'btn-s btn-sm');
+    actions += B(ic('room', 14) + 'Create ' + WL(), 'newRoom', { origin: 'Project', project: p.id }, p.circle ? 'btn-p btn-sm' : 'btn-s btn-sm');
   if (projEditable(p)) actions = B(ic('edit', 14) + 'Edit details', 'projEdit', { id: p.id }) + actions;
+  if (projDeletable(p)) actions += projDeleteBtn(p);
   // A project submitted without the 8-section draft can still be resubmitted after a clarification.
   const ready = p.sections ? p.sections.every(s => ['Accepted', 'Edited'].includes(s.st)) : p.status !== 'Draft';
   return (
@@ -385,7 +386,7 @@ route('project', 'projects', () => {
          : '<p class="cap">—</p>',
      )}</div>
  <aside class="c4 col prj-side">${own && ['Draft', 'Clarification requested'].includes(p.status) ? card('Before you submit', '', `<form data-f="submitProj" class="col prj-submit" novalidate><input type="hidden" name="id" value="${p.id}">${!ready ? banner('warn', '', 'All 8 sections must be accepted or edited first.') : ''}${fi('sp', 'c1', 'I have reviewed every AI-drafted section and accept responsibility for the content.', { type: 'checkbox', req: true })}${fi('sp', 'c2', 'I understand reviewers in this programme will see this project.', { type: 'checkbox', req: true })}${p.status === 'Clarification requested' ? fi('sp', 'note', 'What you changed (optional)', { type: 'textarea', rows: 3, max: 2000, help: 'Added to the review conversation.' }) : ''}<button class="btn btn-p btn-block" type="submit" ${ready ? '' : 'disabled'}>${p.status === 'Clarification requested' ? 'Resubmit for review' : 'Submit for review'}</button></form>`, '', 'accent') : ''}
- ${card('Linked spaces', '', [p.circle && lrow('users', cName(p.circle), 'Circle', L('Open', 'circle', { id: p.circle }), 't-purple'), p.rope && lrow('route', cName(p.rope), 'Rope Team', L('Open', 'rope', { id: p.rope }), 't-teal'), p.room && lrow('room', cName(p.room), WL(), L('Open', 'room', { id: p.room }), 't-navy')].filter(Boolean).join('') || '<p class="cap">Circle, Rope Team and ' + WL() + ' are separate spaces, linked in any order and never converted. Once the project is accepted, start with whichever fits.</p>', '', 'prj-panel')}
+ ${p.status === 'Draft' ? '' : linkCard('projects', p)}
  ${card(
    'Reviewer and starting space',
    '',
@@ -440,6 +441,21 @@ F.submitProj = d => {
   ok();
 };
 // ---- the project owner edits the project's details until it is closed or rejected (the 8 sections have their own flow)
+// A draft has never been submitted: only its owner has seen it, it has no reviewer and no linked spaces, so the owner
+// can delete it outright. Once submitted, a project is part of the review record and cannot be deleted.
+const projDeletable = p => !!p && p.owner === myId() && p.status === 'Draft';
+const projDeleteBtn = p => CB(ic('trash', 14) + 'Delete draft', 'projDelete', { id: p.id }, 'Delete the draft “' + p.title + '”? This cannot be undone.', 'btn-s btn-sm', 'Delete draft');
+A.projDelete = d => {
+  const p = byId('projects', d.id);
+  S.projects = S.projects.filter(x => x !== p);
+  S.notifs = S.notifs.filter(n => !(n.p && n.p.id === p.id));
+  if (S.links) S.links = S.links.filter(l => l.source_id !== p.id && l.target_id !== p.id);
+  audit('Project draft deleted', p.id, p.title);
+  UI.modal = null;
+  toast('Draft deleted.');
+  save();
+  go('projects');
+};
 const projEditable = p => !!p && p.owner === myId() && p.status !== 'Rejected' && p.stage !== 'Closed';
 A.projEdit = d => {
   const p = byId('projects', d.id);
@@ -653,14 +669,12 @@ A.finalReview = d => {
     rm.state = 'Closed';
     sysMsg(rm, 'Final deliverables approved; ' + WL() + ' closed');
   }
-  const rt = byId('ropes', p.rope);
-  if (rt && rt.state === 'Active') {
-    rt.state = 'Closed';
-    rt.outcome = 'Closed with the project after final approval';
-    sysMsg(rt, 'Project approved and closed');
-  }
-  const c = byId('circles', p.circle);
-  if (c && c.state === 'Active') c.state = 'Completed';
+  // Linked Circles and Rope Teams are autonomous: they are told, not closed. Each closes by its own owner's decision.
+  linksOf(p.id)
+    .map(l => linkOther(l, p.id))
+    .map(id => byId('circles', id) || byId('ropes', id))
+    .filter(o => o && o.state === 'Active')
+    .forEach(o => sysMsg(o, 'Linked project “' + p.title + '” was approved and closed. This space continues until its own owner closes it.'));
   S.candidates.push({
     id: uid('cd'),
     pid: p.owner,

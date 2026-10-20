@@ -130,14 +130,14 @@ function rfFlows() {
           [
             rfD('Where does the pathway come from?', [
               rfB('Template or your own steps', [rfA('Choose a template or draft 3–5 steps')]),
-              rfB('Recommended to you', [rfH('F/M', 'A Facilitator or Mentor proposes a pathway')]),
+              rfB('Recommended to you', [rfH('F/M', 'A Facilitator, Circle Steward or Mentor recommends a pathway')]),
             ]),
-            rfY('Each step has a type and prerequisites', 'Mandatory, Optional or Conditional. A step whose prerequisites are not met is Blocked.'),
+            rfY('Each step has a requirement type and rules', 'Mandatory, Optional or Conditional (an explicit IF rule). Statuses are worked out at run time: Available, In progress, Pending review, Completed, Satisfied by prior evidence, Skipped – allowed, Blocked (with reason and next action).'),
             rfD('Your answer', [
               rfB('Accept', [rfY('Pathway becomes current', 'Nothing becomes current without your acceptance.')]),
               rfB('Request a change', [rfH('F/M', 'Revises and proposes again')], 'Your answer'),
             ]),
-            rfA('Work through the steps', 'Complete a step, skip an optional one (Skipped), or accept a mentor’s “Satisfied by prior evidence” recommendation.'),
+            rfA('Work through the steps', 'Complete a step, skip an optional one, answer a condition question, or select approved prior evidence — a Reviewer confirms it where the step needs review.'),
           ],
         ],
         [
@@ -361,7 +361,7 @@ function rfFlows() {
           [
             rfD('What do you recommend?', [
               rfB('A pathway step or change', [rfA('Recommend pathway steps')]),
-              rfB('Prior evidence covers a step', [rfA('Recommend “Satisfied by prior evidence”')]),
+              rfB('Prior evidence covers a step', [rfA('Suggest prior evidence (a Reviewer confirms it)')]),
             ]),
             rfH('P', 'The participant accepts or declines', 'Mentors recommend; only the participant makes it current.'),
           ],

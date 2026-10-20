@@ -112,6 +112,7 @@ const mine = pid => pid === S.session?.pid;
 const myId = () => S.session?.pid;
 // BF-02: the required agreement is separate from five optional purposes. Each purpose is Granted, Declined or
 // Withdrawn on its own; declining or withdrawing never blocks the manual core (pathway, Circles, tasks, evidence).
+// Exception (WSS clarification 5): a pathway step configured to need a purpose shows Blocked with the reason.
 // "matching" is not one of the five purposes: it is the person's matching-visibility choice used by Match Briefs.
 const OPT_PURPOSES = [
   ['ai', 'AI processing', 'Ask PHOENIX and AI drafts that use your own records. Every AI output stays a draft until a person accepts it.'],
@@ -249,6 +250,7 @@ const SC = {
   'On hold': 'p-red',
   'Summary submitted': 'p-amber',
   'Proposed to participant': 'p-amber',
+  Recommended: 'p-amber',
   'Change requested': 'p-amber',
   Proposed: 'p-amber',
   Open: 'p-amber',

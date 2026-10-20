@@ -4,7 +4,18 @@
 // reallocation and sponsor ↔ owner messaging are outside the Alpha (their handlers stay, and guards.js denies them).
 // Commercial entitlement never creates workspace membership, participant-level access or authority.
 const STAGE_ORDER = ['Circle', 'Rope Team', 'Room', 'Final review', 'Closed'];
-const stageReached = (p, stage) => p.stage && STAGE_ORDER.indexOf(p.stage) >= STAGE_ORDER.indexOf(stage);
+// Circle, Rope Team and Action Room are linked in any order (WSS clarification 6), so a tranche for one of them is
+// reached when that space is linked — not when an earlier "stage" is passed. Final review and closure stay ordered.
+const stageReached = (p, stage) =>
+  ['Final review', 'Closed'].includes(p.stage)
+    ? STAGE_ORDER.indexOf(p.stage) >= STAGE_ORDER.indexOf(stage) || ['Circle', 'Rope Team', 'Room'].includes(stage)
+    : stage === 'Circle'
+      ? !!p.circle || linkedIds(p.id, 'circles').length > 0
+      : stage === 'Rope Team'
+        ? !!p.rope || linkedIds(p.id, 'ropes').length > 0
+        : stage === 'Room'
+          ? !!p.room || linkedIds(p.id, 'rooms').length > 0
+          : false;
 // ---- small-number suppression: any count or bucket below 5 is shown as "Fewer than 5" (tables, totals, charts)
 const SUPP_MIN = 5;
 const SUPP = '<span class="suppressed">Fewer than 5</span>';
@@ -204,7 +215,7 @@ function sponsorReports() {
             'award',
             h(e.title),
             [h(e.claim || ''), h(e.type || ''), e.level ? 'Support level ' + h(e.level) : '', p ? 'Project: ' + h(p.title) : ''].filter(Boolean).join(' · '),
-            open ? pill('Story requested', 'p-grey') : B('Request an identifiable story', 'storyReq', { id: e.id }),
+            open ? pill('Story requested', 'p-grey') : purposeOn('public', e.owner, { ctx: e.ctx, rec: e }) ? B('Request an identifiable story', 'storyReq', { id: e.id }) : '<span class="cap">Personal stories not available</span>',
           );
         })
         .join('') || empty('award', 'No approved evidence summaries yet', 'Evidence appears here only after its owner authorises a funder release and the disclosure review clears it.'),
@@ -706,7 +717,7 @@ route('billing', 'payments', () => {
         label: 'entitlements',
         items: S.ents,
         search: e => P(e.pid).name + ' ' + byId('products', e.product).name + ' ' + e.source,
-        quick: { label: 'State', options: ['Active', 'Grace', 'Suspended', 'Cancelled', 'Expired', 'Refunded', 'Pending'].filter(v => S.ents.some(e => e.state === v)).map(v => [v, v]), test: (e, v) => e.state === v },
+        quick: { label: 'State', options: ['PAYMENT_PENDING', 'Active', 'Grace', 'Suspended', 'Cancelled', 'Expired', 'Refunded', 'Pending'].filter(v => S.ents.some(e => e.state === v)).map(v => [v, v]), test: (e, v) => e.state === v },
         filters: [
           { key: 'prod', label: 'Product', options: [...new Set(S.ents.map(e => e.product))].map(v => [v, byId('products', v).name]), test: (e, v) => e.product === v },
           { key: 'src', label: 'Source', options: [['Seat pool', 'Seat pool'], ['Card payment', 'Card payment'], ['Admin grant', 'Admin grant']], test: (e, v) => e.source.startsWith(v) },
@@ -720,9 +731,12 @@ route('billing', 'payments', () => {
           lead: `<span class="av" aria-hidden="true">${ini(e.pid)}</span>`,
           title: nm(e.pid),
           sub: h(byId('products', e.product).name),
-          meta: ['Source <b>' + h(e.source) + '</b>', 'Until ' + fmt(e.until)],
-          badges: pill(e.state),
-          primary: B('Revoke', 'entRevoke', { id: e.id }),
+          meta: ['Source <b>' + h(e.source) + '</b>', e.until ? 'Until ' + fmt(e.until) : 'Not active until payment is verified'],
+          badges: pill(e.state, e.state === 'PAYMENT_PENDING' ? 'p-amber' : ''),
+          primary:
+            e.state === 'PAYMENT_PENDING'
+              ? B('Verified callback received', 'payVerify', { id: e.id, how: 'callback' }, 'btn-p btn-sm') + B('Reconcile manually', 'payVerify', { id: e.id, how: 'manual' })
+              : B('Revoke', 'entRevoke', { id: e.id }),
         }),
         empty: ['card', 'No entitlements yet', 'Use “Grant access” to give someone access.', ''],
       }),
@@ -816,15 +830,24 @@ function prodAct(p) {
       ? CB('Retire', 'prodRetire', { id: p.id }, 'Retire ' + p.name + '? It leaves checkout; existing entitlements are not affected.')
       : '';
 }
+// Checkout goes through the payment adapter. If the provider is down or slow, nothing is charged and nothing else
+// pauses: own records, consent, correction, withdrawal, incident reporting and existing entitlements keep working.
+const PAY_KEEPS = 'You can keep browsing and using everything you already have. Your records, consent choices, corrections, withdrawal and incident reporting never depend on payment.';
 A.checkout = d => {
   const p = byId('products', d.id);
+  const r = adapterCall('pay', { op: 'Checkout · ' + p.name });
+  if (r.state !== 'OK')
+    return modal(
+      'Checkout',
+      `${banner(r.state === 'Retry' ? 'warn' : 'err', r.state === 'Retry' ? 'Payment service is responding slowly. No charge has been made.' : 'Payment service temporarily unavailable. No charge has been made.', PAY_KEEPS)}<div class="actions">${B('Close', 'closeM')}${r.state === 'Retry' ? B('Try again', 'checkout', { id: p.id }, 'btn-p btn-sm') : ''}</div>`,
+    );
   modal(
     'Checkout',
     `<div class="card quiet chk-sum">${dl([
       ['Product', h(p.name)],
       ['Price', h(p.price)],
       ['Billing', h(p.cycle)],
-    ])}</div>${p.kind === 'Donation' ? fi('don', 'amt', 'Donation amount (USD)', { type: 'number', min: 1, value: '50' }) : ''}<p class="cap">You are on the payment provider’s page. PHOENIX receives only a verified event.</p><div class="row wrap">${B('Payment fails', 'payResult', { id: p.id, v: 'fail' })}${B('Cancel', 'payResult', { id: p.id, v: 'cancel' })}${B('Pay successfully', 'payResult', { id: p.id, v: 'ok' }, 'btn-p btn-sm')}</div>`,
+    ])}</div>${p.kind === 'Donation' ? fi('don', 'amt', 'Donation amount (USD)', { type: 'number', min: 1, value: '50' }) : ''}<p class="cap">You are on the payment provider’s page. PHOENIX receives only a verified event.</p><div class="row wrap">${B('Payment fails', 'payResult', { id: p.id, v: 'fail' })}${B('Cancel', 'payResult', { id: p.id, v: 'cancel' })}${p.kind !== 'Donation' && p.id !== 'pd5' ? B('Paid — confirmation delayed', 'payResult', { id: p.id, v: 'pending' }) : ''}${B('Pay successfully', 'payResult', { id: p.id, v: 'ok' }, 'btn-p btn-sm')}</div>`,
   );
 };
 A.payResult = d => {
@@ -845,6 +868,20 @@ A.payResult = d => {
     S.payments.push(ev);
     UI.modal = null;
     toast('Checkout cancelled.', 'warn');
+    return ok();
+  }
+  if (d.v === 'pending') {
+    // The provider page finished but no verified callback has arrived: the entitlement waits as PAYMENT_PENDING and
+    // gives no access until a verified callback or an authorised manual reconciliation.
+    ev.type = 'payment_pending';
+    ev.state = 'Awaiting verification';
+    ev.processed = false;
+    S.payments.push(ev);
+    S.ents.push({ id: uid('en'), pid: myId(), ctx: ctxId(), product: p.id, source: 'Card payment (provider-hosted) ' + ev.id, state: 'PAYMENT_PENDING', until: null, evt: ev.id });
+    S.assign.filter(a => (a.bundles || []).includes('Finance Owner') && a.status === 'Active').forEach(a => notify(a.pid, 'Payment awaiting verification: ' + p.name + ' · ' + me().name, 'billing', { tab: 'ents' }));
+    audit('Payment pending verification', ev.id, p.name + ' · entitlement PAYMENT_PENDING, not active');
+    UI.modal = null;
+    toast('Payment is waiting for the provider’s confirmation. Access starts once it is verified. ' + PAY_KEEPS, 'warn');
     return ok();
   }
   ev.type = 'payment_succeeded';
@@ -1113,4 +1150,31 @@ A.poolActivate = d => {
   audit('Seat pool activated against invoice', sp.id, 'Finance Owner');
   toast('Seat pool activated.');
   ok();
+};
+
+// A PAYMENT_PENDING entitlement becomes Active only on a verified provider callback or an authorised manual
+// reconciliation (with a reference). Both are recorded in the audit/event log.
+A.payVerify = d => {
+  const e = byId('ents', d.id);
+  if (d.how === 'manual' && !d.ref) {
+    clearF('prc');
+    return modal('Reconcile payment manually', () => `<form data-f="prc" class="col fgap" novalidate><input type="hidden" name="id" value="${e.id}">${dl([['Person', nm(e.pid)], ['Product', h(byId('products', e.product).name)], ['Provider event', h(e.evt || '—')]])}${fi('prc', 'ref', 'Provider reference or bank statement line', { req: true, help: 'Checked against the provider dashboard. Recorded with your name.' })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Confirm payment and activate</button></div></form>`);
+  }
+  const p = byId('products', e.product);
+  const until = new Date();
+  until.setMonth(until.getMonth() + (p.cycle === 'Annual' ? 12 : p.cycle === 'Monthly' ? 1 : 3));
+  e.state = 'Active';
+  e.until = until.toISOString().slice(0, 10);
+  const ev = S.payments.find(x => x.id === e.evt);
+  if (ev) Object.assign(ev, { state: 'Successful', processed: true, type: 'payment_succeeded' });
+  notify(e.pid, 'Payment verified. ' + p.name + ' is active. Receipt issued.', 'billing');
+  audit(d.how === 'manual' ? 'Payment reconciled manually' : 'Verified webhook → entitlement Active', e.evt || e.id, p.name + (d.ref ? ' · ref ' + d.ref : ''));
+  UI.modal = null;
+  clearF('prc');
+  toast('Entitlement active.');
+  ok();
+};
+F.prc = d => {
+  if (!validate('prc', d, { ref: ['req'] })) return render();
+  A.payVerify({ id: d.id, how: 'manual', ref: d.ref });
 };

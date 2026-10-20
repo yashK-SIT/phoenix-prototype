@@ -667,7 +667,7 @@ F.cfg = d => {
 function reportsView(isOrg) {
   const c = ctxId();
   const rows = S.metrics.filter(m => m.status === 'Active');
-  const xs = ['Participation summary (aggregate)', 'Evidence summary (approved)', 'Learning Harvests (released)', ...(isOrg ? [] : ['Audit log', 'Payments & entitlements', 'Full configuration'])];
+  const xs = ['Participation summary (aggregate)', 'Evidence summary (approved)', 'Learning Harvests (released)', ...(isOrg ? [] : [RESEARCH_EXPORT, 'Audit log', 'Payments & entitlements', 'Full configuration'])];
   return `<div class="adm-report"><dl class="adm-rmeta"><div><dt>Context</dt><dd>${h(ctx().name)}</dd></div><div><dt>Period</dt><dd>Programme to date · as of ${fmt(today())}</dd></div><div><dt>Metrics shown</dt><dd>${rows.length}</dd></div><div><dt>Exports</dt><dd>${xs.length} authorised</dd></div></dl><div class="g12">${card(
     `Starter metrics <span class="adm-n">${rows.length}</span>`,
     'Aggregate only. Metrics never determine trustworthiness, deservingness or fundability.',
@@ -695,7 +695,32 @@ function reportsView(isOrg) {
   )}
  ${card('Authorised exports', 'Machine-readable; relationships and governance metadata kept. Small groups are suppressed.', `<div class="adm-xlist">${xs.map(x => B(`<span class="adm-x-ic" aria-hidden="true">${ic('file', 16)}</span><span class="adm-x-t">${x}</span><span class="adm-x-f">JSON</span>${ic('download', 16)}`, 'doExport', { n: x }, 'adm-x')).join('')}</div>`, '', 'c4 adm-panel adm-exports')}</div></div>`;
 }
+// RESEARCH_USE: only participants for whom research use is authorised at every level (organization, programme,
+// person) are included, de-identified; everyone else is left out and only counted.
+const RESEARCH_EXPORT = 'Research dataset (de-identified, consented only)';
+function researchDataset() {
+  const c = ctxId();
+  const ps = [...new Set(S.assign.filter(a => a.ctx === c && roleBase(a.role) === 'P' && a.status === 'Active').map(a => a.pid))];
+  const inc = ps.filter(pid => authorizePurpose('research', pid, { ctx: c }, 'Research dataset export').ok);
+  return {
+    included: inc.map((pid, i) => ({ subject: 'R' + String(i + 1).padStart(3, '0'), pathwaySteps: (S.pathways.find(w => w.pid === pid && w.state === 'Current') || { steps: [] }).steps.filter(st => st.status === 'Completed').length, evidenceApproved: S.evidence.filter(e => e.owner === pid && e.review === 'Approved' && recordScope(e, 'research')).length })),
+    excluded: ps.length - inc.length,
+  };
+}
 A.doExport = d => {
+  if (d.n === RESEARCH_EXPORT) {
+    const rs = researchDataset();
+    const data = { export: d.n, context: ctx().name, generated: now(), rule: 'RESEARCH_USE authorised at organization, programme and person level; records restricted by their owner are left out', subjects: rs.included, excludedWithoutResearchPermission: rs.excluded };
+    try {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+      a.download = 'research-dataset.json';
+      a.click();
+    } catch (e) {}
+    audit('Export', d.n, rs.included.length + ' included · ' + rs.excluded + ' left out (no research permission)');
+    toast('Research dataset prepared: ' + rs.included.length + ' included, ' + rs.excluded + ' left out without research permission.');
+    return ok();
+  }
   const data = {
     export: d.n,
     context: ctx().name,
@@ -737,10 +762,12 @@ route('admin', 'admin', () => {
           (S.requests || []).filter(r => r.status === 'Open').length,
       ],
       ['reports', 'Reports & exports'],
+      ['purposes', 'Optional purposes'],
     ],
     UI.p.tab,
   );
   let body = '';
+  if (t.cur === 'purposes') body = `<div class="adm-stack">${programmeScopesView()}</div>`;
   const n = k => `<span class="adm-n">${k}</span>`;
   if (t.cur === 'requests')
     body =
@@ -807,14 +834,21 @@ route('admin', 'admin', () => {
   if (t.cur === 'library')
     body = card(
       'Approved pathway templates ' + n(S.templates.length),
-      'Mode 1 pathways come from this library.',
+      'Facilitators, Circle Stewards and mentors recommend from published templates. A new version applies to new recommendations; pathways already accepted keep the version they were accepted with.',
       dataView('adm:library', {
         label: 'templates',
         items: S.templates,
         search: x => x.name + ' ' + x.steps.join(' '),
         quick: { label: 'Status', options: [...new Set(S.templates.map(x => x.status))].map(v => [v, v]), test: (x, v) => x.status === v },
         sorts: [['name', 'Name', (a, b) => a.name.localeCompare(b.name)], ['steps', 'Number of steps', (a, b) => a.steps.length - b.steps.length]],
-        row: x => ({ lead: `<span class="tile t-soft">${ic('route', 18)}</span>`, title: h(x.name), sub: `<span class="adm-steps">${x.steps.map(h).join(' → ')}</span>`, meta: [x.steps.length + ' steps'], badges: pill(x.status), primary: B(x.status === 'Approved' ? 'Retire' : 'Approve', 'tplState', { id: x.id }) }),
+        row: x => ({
+          lead: `<span class="tile t-soft">${ic('route', 18)}</span>`,
+          title: h(x.name) + ' · v' + (x.ver || 1),
+          sub: `<span class="adm-steps">${pwStepsFromTpl(x).map(s => h(s.t) + ' (' + s.type + (s.type === 'Conditional' ? ': ' + h(pwWhenTxt(s)) : '') + ')').join(' → ')}</span>`,
+          meta: [x.steps.length + ' steps', (x.history || []).length ? 'Last version ' + fmt(x.history.slice(-1)[0].at) + ' by ' + nm(x.history.slice(-1)[0].by) : ''],
+          badges: pill(x.status),
+          primary: B(ic('edit', 14) + 'New version', 'tplEdit', { id: x.id }) + B(x.status === 'Approved' ? 'Retire' : 'Publish', 'tplState', { id: x.id }),
+        }),
         empty: ['route', 'No templates yet', 'Add an approved template for Mode 1 pathways.', ''],
       }),
       B(ic('plus', 14) + 'Add template', 'tplNew', {}, 'btn-p btn-sm'),
@@ -921,27 +955,53 @@ A.tplState = d => {
   audit('Template ' + x.status, x.id, '');
   ok();
 };
+// Templates carry the same step rules as pathways (requirement type, conditions, dependencies, dates, review,
+// prior evidence, permissions). Editing publishes a new version; accepted pathways keep their version.
+const pwTplForm = (f, x) =>
+  `<form data-f="${f}" class="col adm-form" novalidate>${errSum(f)}${x ? `<input type="hidden" name="id" value="${x.id}">` : ''}${fi(f, 'name', 'Name', { req: true, max: 120 })}${pwStepFields(f)}${
+    x ? banner('info', '', 'Saving publishes version ' + ((x.ver || 1) + 1) + '. Pathways already accepted keep version ' + (x.ver || 1) + '; new recommendations use the new version.') : ''
+  }<div class="actions"><span></span><button class="btn btn-p" type="submit">${x ? 'Publish new version' : 'Add as approved'}</button></div></form>`;
+const pwTplFromForm = d => {
+  const steps = pwStepsRead(d);
+  return { steps: steps.map(s => s.t), rules: steps.map(pwDesignOf) };
+};
 A.tplNew = () => {
   clearF('tpl');
-  modal(
-    'Add pathway template',
-    () =>
-      `<form data-f="tpl" class="col adm-form" novalidate>${fi('tpl', 'name', 'Name', { req: true })}${fi('tpl', 'steps', 'Steps (3–5, one per line)', { type: 'textarea', rows: 5, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Add as approved</button></div></form>`,
-  );
+  UI.form.tpl = { name: '', ...pwStepsToForm([]) };
+  modal('Add pathway template', () => pwTplForm('tpl', null));
 };
 F.tpl = d => {
-  const st = (d.steps || '').split('\n').filter(x => x.trim());
-  if (
-    !validate('tpl', d, {
-      name: ['req'],
-      steps: ['req', ['fn', { f: () => st.length >= 3 && st.length <= 5, m: 'Enter 3 to 5 steps.' }]],
-    })
-  )
-    return render();
-  S.templates.push({ id: uid('t'), name: d.name, status: 'Approved', steps: st });
-  audit('Template added', d.name, '');
+  if (!validate('tpl', d, { name: ['req'], ...pwStepRules(d) })) return render();
+  const x = { id: uid('t'), name: d.name.trim(), status: 'Approved', ver: 1, ...pwTplFromForm(d), history: [{ ver: 1, at: now(), by: myId() }] };
+  S.templates.push(x);
+  audit('Template added', x.id, x.name + ' v1');
   UI.modal = null;
   clearF('tpl');
+  toast('Template added and published as version 1.');
+  ok();
+};
+A.tplEdit = d => {
+  const x = byId('templates', d.id);
+  clearF('tple');
+  UI.form.tple = { name: x.name, ...pwStepsToForm(pwStepsFromTpl(x)) };
+  modal('New version of ' + h(x.name), () => pwTplForm('tple', x));
+};
+F.tple = d => {
+  if (!validate('tple', d, { name: ['req'], ...pwStepRules(d) })) return render();
+  const x = byId('templates', d.id);
+  const nx = pwTplFromForm(d);
+  if (d.name.trim() === x.name && pwStepsSig(pwStepsRead(d)) === pwStepsSig(pwStepsFromTpl(x))) {
+    UI.err.tple = { name: 'Nothing changed, so no new version was published.' };
+    return render();
+  }
+  x.history = x.history || [{ ver: x.ver || 1, at: null, by: null }];
+  x.history[x.history.length - 1].snapshot = { name: x.name, steps: x.steps.slice(), rules: JSON.parse(JSON.stringify(x.rules || [])) };
+  Object.assign(x, { name: d.name.trim(), ...nx, ver: (x.ver || 1) + 1 });
+  x.history.push({ ver: x.ver, at: now(), by: myId() });
+  audit('Template new version', x.id, 'v' + x.ver);
+  UI.modal = null;
+  clearF('tple');
+  toast('Version ' + x.ver + ' published. Accepted pathways keep their version.');
   ok();
 };
 F.ann = d => {
@@ -968,6 +1028,7 @@ route('platform', 'platform', () => {
     'plat',
     [
       ['integrations', 'Integrations'],
+      ['scopes', 'Capability scopes'],
       ['security', 'Security & access'],
       ['health', 'Health & alerts'],
       ['storage', 'Storage & backups'],
@@ -977,24 +1038,10 @@ route('platform', 'platform', () => {
   );
   let body = '';
   const n = k => `<span class="adm-n">${k}</span>`;
+  if (t.cur === 'scopes') body = `<div class="adm-stack">${tenantScopesView()}</div>`;
   if (t.cur === 'integrations')
     body =
-      `<div class="adm-stack">${card(
-        'External integrations ' + n(S.integrations.length),
-        'Shared organisation-controlled accounts with tenant separation in configuration and audit.',
-        `<ul class="ops-list">${S.integrations
-          .map(
-            (i, n) =>
-              `<li class="ops-item"><span class="tile t-soft" aria-hidden="true">${ic('link', 16)}</span><div class="ops-item-t"><b>${h(i.name)}</b></div><div class="ops-item-s">${pill(i.status)}</div><div class="ops-item-a">${
-                n === 1
-                  ? B(S.settings.aiAvailable ? 'Simulate provider outage' : 'Restore provider', 'aiToggle', {})
-                  : ''
-              }</div></li>`,
-          )
-          .join('')}</ul><div class="ops-quota">${dl([['AI quota today', S.settings.aiUsed + ' / ' + S.settings.aiQuota]])}<div class="progress" aria-hidden="true"><div class="bar" style="width:${Math.min(100, Math.round((100 * S.settings.aiUsed) / (S.settings.aiQuota || 1)))}%"></div></div></div>`,
-        '',
-        'adm-panel',
-      )}${card(
+      `<div class="adm-stack">${adaptersView()}${card(
         'Provider settings',
         'Credentials are stored in the platform secret store, never in this console.',
         `<form data-f="prov" class="col adm-form" novalidate><div class="g3">${fi('prov', 'ai', 'AI provider', { value: S.providers.ai.name, req: true })}${fi('prov', 'aimode', 'AI mode', { type: 'select', opts: ['Production', 'Sandbox'], value: S.providers.ai.mode })}${fi('prov', 'quota', 'Daily AI request quota', { type: 'number', min: 1, value: S.settings.aiQuota, req: true })}</div><div class="g3">${fi('prov', 'pay', 'Payment provider', { value: S.providers.pay.name, req: true })}${fi('prov', 'paymode', 'Payment mode', { type: 'select', opts: ['Sandbox', 'Live'], value: S.providers.pay.mode })}${fi('prov', 'email', 'Email service', { value: S.providers.email.name, req: true })}</div><div class="actions"><span></span><button class="btn btn-p" type="submit">Save provider settings</button></div></form>`,
@@ -1134,16 +1181,8 @@ route('platform', 'platform', () => {
   );
 });
 
-A.aiToggle = () => {
-  S.settings.aiAvailable = !S.settings.aiAvailable;
-  S.integrations[1].status = S.settings.aiAvailable ? 'Healthy' : 'Unavailable';
-  S.security.unshift({
-    at: now(),
-    t: 'AI provider ' + (S.settings.aiAvailable ? 'restored' : 'unavailable — AI requests fail safely'),
-  });
-  audit('AI provider status', S.integrations[1].status, '');
-  ok();
-};
+// kept for older callers: the AI provider is now one adapter among the integrations (purposes.js)
+A.aiToggle = () => A.adapterSet({ id: 'ai', f: 'status', v: adapterUp('ai') ? 'Unavailable' : 'Healthy' });
 A.revokeSessions = () => {
   S.security.unshift({ at: now(), t: 'All sessions revoked by ' + me().name });
   audit('Sessions revoked', 'platform', '');
