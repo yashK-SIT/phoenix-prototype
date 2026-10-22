@@ -1,0 +1,182 @@
+/* PHOENIX screens: Documents. Built on the tokens and components in ../phoenix.css.
+   Every rule is scoped to a class owned by this area (doc-*). */
+
+/* ---------- visibility label ---------- */
+.pill.doc-vis::before {
+  display: none;
+}
+.pill.doc-vis {
+  gap: 4px;
+}
+.doc-lock {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-3);
+  cursor: help;
+}
+.doc-n {
+  overflow-wrap: anywhere;
+}
+
+/* ---------- folder tiles on a project ---------- */
+.doc-folds {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--s-3);
+  margin-bottom: var(--s-4);
+}
+.doc-fold {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: 1fr auto;
+  gap: var(--s-2) var(--s-3);
+  align-items: start;
+  padding: var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.doc-fold:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-2);
+}
+.doc-fold .tile {
+  width: 40px;
+  height: 40px;
+}
+.doc-fold-t {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.doc-fold-sp {
+  color: var(--text-2);
+  font-weight: 600;
+}
+.doc-fold-n {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding-top: var(--s-2);
+  border-top: 1px solid var(--line-soft);
+  font-variant-numeric: tabular-nums;
+}
+.doc-fold-n b {
+  font-size: 1.25rem;
+}
+.doc-fold-n .cap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ---------- sub-folders (Milestones, Tasks, each milestone or task) ---------- */
+.doc-subs {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--s-5) var(--s-2);
+}
+.doc-sub {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  padding: var(--s-3) 0;
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.doc-subs li:last-child .doc-sub {
+  border-bottom: 0;
+}
+.doc-sub:hover .doc-sub-t b {
+  color: var(--link);
+  text-decoration: underline;
+}
+.doc-sub-t {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.doc-sub-n {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.doc-info {
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* ---------- files with a milestone or task in its Action Room ---------- */
+.doc-line-l {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+.doc-line-l .att {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+.doc-line-a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  width: fit-content;
+}
+
+@media (max-width: 639px) {
+  .doc-folds {
+    grid-template-columns: 1fr;
+  }
+  .doc-subs {
+    padding: 0 var(--s-4) var(--s-2);
+  }
+  .doc-sub {
+    flex-wrap: wrap;
+  }
+  .doc-sub-t {
+    flex-basis: calc(100% - 60px);
+  }
+  .doc-sub-n {
+    margin-left: 52px;
+  }
+}
+
+/* ---------- Public Projects and publication (views/publish.js) ---------- */
+.pill.pub-pill::before { display: none; }
+.pill.pub-pill { gap: 4px; }
+.pub-steps { display: flex; flex-wrap: wrap; gap: var(--s-2) var(--s-4); list-style: none; margin: 0 0 var(--s-3); padding: 0; font-size: var(--fs-sm); color: var(--text-2); }
+.pub-steps li { display: inline-flex; align-items: center; gap: 6px; }
+.pub-steps .n { width: 20px; height: 20px; border-radius: 50%; display: inline-grid; place-items: center; font-size: var(--fs-xs); font-weight: 800; border: 1px solid var(--line-strong); background: var(--surface); }
+.pub-steps .is-done .n { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.pub-steps .is-cur { color: var(--text); font-weight: 700; }
+.pub-steps .is-cur .n { border: 2px solid var(--signal); }
+.pub-vote { display: flex; flex-direction: column; gap: var(--s-2); padding: var(--s-3); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface-2); }
+.pub-vote p { margin: 0; }
+.pub-opts { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.pub-hist { margin-top: var(--s-3); font-size: var(--fs-sm); }
+.pub-hist summary { cursor: pointer; font-weight: 600; color: var(--primary-text); }
+.pub-hist p { margin: var(--s-2) 0 0; }
+.pub-chk { align-items: flex-start; gap: 10px; cursor: pointer; }
+.pub-chk .col { gap: 2px; }
+.pub-desc { margin: 0 0 var(--s-3); white-space: pre-line; }
+.pub-fold + .pub-fold { margin-top: var(--s-4); }
+.pub-fold-h { display: flex; align-items: center; gap: var(--s-2); margin: 0 0 var(--s-2); font-size: 15px; }
+.pub-fold-h .tile { width: 26px; height: 26px; }
+@media (max-width: 639px) { .pub-opts .btn { flex: 1 1 auto; } }
+.pub-fold .lrow > :last-child { margin-left: auto; }

@@ -166,8 +166,10 @@ const notifHere = n => !n.aid || n.aid === S.session?.aid;
 function toast(t, k = 'ok') {
   UI.toast = { t, k };
   clearTimeout(UI._tt);
+  // Keep what the person has typed in an open form: this re-render is passive, so snapshot the fields first.
   UI._tt = setTimeout(() => {
     UI.toast = null;
+    snapForms();
     render();
   }, 4200);
 }
@@ -465,6 +467,15 @@ const dobRules = () => [
 ];
 const dobField = (f, value, o = {}) =>
   fi(f, 'dob', 'Date of birth (optional)', { type: 'date', value, maxv: today(), auto: 'bday', vis: 'You and authorised administration', help: 'Only if your programme policy asks for it.', ...o, req: false });
+// ---- country: one list for every form that records where something happens (projects, Opportunity Cards)
+const COUNTRIES = ['Afghanistan', 'Albania', 'Algeria', 'Andorra', 'Angola', 'Antigua and Barbuda', 'Argentina', 'Armenia', 'Australia', 'Austria', 'Azerbaijan', 'Bahamas', 'Bahrain', 'Bangladesh', 'Barbados', 'Belarus', 'Belgium', 'Belize', 'Benin', 'Bhutan', 'Bolivia', 'Bosnia and Herzegovina', 'Botswana', 'Brazil', 'Brunei', 'Bulgaria', 'Burkina Faso', 'Burundi', 'Cabo Verde', 'Cambodia', 'Cameroon', 'Canada', 'Central African Republic', 'Chad', 'Chile', 'China', 'Colombia', 'Comoros', 'Congo', 'Costa Rica', 'Côte d’Ivoire', 'Croatia', 'Cuba', 'Cyprus', 'Czechia', 'Democratic Republic of the Congo', 'Denmark', 'Djibouti', 'Dominica', 'Dominican Republic', 'Ecuador', 'Egypt', 'El Salvador', 'Equatorial Guinea', 'Eritrea', 'Estonia', 'Eswatini', 'Ethiopia', 'Fiji', 'Finland', 'France', 'Gabon', 'Gambia', 'Georgia', 'Germany', 'Ghana', 'Greece', 'Grenada', 'Guatemala', 'Guinea', 'Guinea-Bissau', 'Guyana', 'Haiti', 'Honduras', 'Hungary', 'Iceland', 'India', 'Indonesia', 'Iran', 'Iraq', 'Ireland', 'Israel', 'Italy', 'Jamaica', 'Japan', 'Jordan', 'Kazakhstan', 'Kenya', 'Kiribati', 'Kosovo', 'Kuwait', 'Kyrgyzstan', 'Laos', 'Latvia', 'Lebanon', 'Lesotho', 'Liberia', 'Libya', 'Liechtenstein', 'Lithuania', 'Luxembourg', 'Madagascar', 'Malawi', 'Malaysia', 'Maldives', 'Mali', 'Malta', 'Marshall Islands', 'Mauritania', 'Mauritius', 'Mexico', 'Micronesia', 'Moldova', 'Monaco', 'Mongolia', 'Montenegro', 'Morocco', 'Mozambique', 'Myanmar', 'Namibia', 'Nauru', 'Nepal', 'Netherlands', 'New Zealand', 'Nicaragua', 'Niger', 'Nigeria', 'North Korea', 'North Macedonia', 'Norway', 'Oman', 'Pakistan', 'Palau', 'Palestine', 'Panama', 'Papua New Guinea', 'Paraguay', 'Peru', 'Philippines', 'Poland', 'Portugal', 'Qatar', 'Romania', 'Russia', 'Rwanda', 'Saint Kitts and Nevis', 'Saint Lucia', 'Saint Vincent and the Grenadines', 'Samoa', 'San Marino', 'São Tomé and Príncipe', 'Saudi Arabia', 'Senegal', 'Serbia', 'Seychelles', 'Sierra Leone', 'Singapore', 'Slovakia', 'Slovenia', 'Solomon Islands', 'Somalia', 'South Africa', 'South Korea', 'South Sudan', 'Spain', 'Sri Lanka', 'Sudan', 'Suriname', 'Sweden', 'Switzerland', 'Syria', 'Taiwan', 'Tajikistan', 'Tanzania', 'Thailand', 'Timor-Leste', 'Togo', 'Tonga', 'Trinidad and Tobago', 'Tunisia', 'Türkiye', 'Turkmenistan', 'Tuvalu', 'Uganda', 'Ukraine', 'United Arab Emirates', 'United Kingdom', 'United States', 'Uruguay', 'Uzbekistan', 'Vanuatu', 'Vatican City', 'Venezuela', 'Vietnam', 'Yemen', 'Zambia', 'Zimbabwe'];
+const countryRules = () => [
+  ['req', 'Choose the country.'],
+  ['fn', { f: v => COUNTRIES.includes(v), m: 'Choose a country from the list.' }],
+];
+const countryField = (f, o = {}) => fi(f, 'country', 'Country name', { type: 'select', req: true, ph: 'Select a country', opts: COUNTRIES, ...o });
+// The country of a programme's organization, used to fill in records created before the field existed.
+const ctxCountry = id => ((S.orgs || []).find(o => o.id === (S.contexts.find(c => c.id === id) || {}).org) || {}).country || '';
 // Accounts are soft-deleted; a deleted account no longer matches an email address.
 const personByEmail = e => S.people.find(p => p.status !== 'Deleted' && (p.email || '').toLowerCase() === String(e || '').trim().toLowerCase());
 const errSum = f => {
@@ -478,6 +489,8 @@ const errSum = f => {
 };
 // ---- modal
 function modal(title, body, wide) {
+  // a row menu left open would close on the dialog's first click and swallow it (dataView menus)
+  UI.dvMenu = null;
   UI.modal = { title, body, wide };
   render();
 }
@@ -502,6 +515,7 @@ function navItems() {
     if (hasB('Finance Owner')) items.push(['billing', 'Finance: products & payments', 'card']);
     if (hasB('AI Owner')) items.push(['aiadmin', 'AI Owner: sources', 'sparkle']);
     if (hasB('Incident/Safety Owner')) items.push(['incidents', 'Incident queue', 'alert']);
+    items.push(['publicprojects', 'Public projects', 'globe']);
     if (r !== 'T') {
       items.push(['profile', 'Profile', 'user']);
       items.push(['privacy', 'My records & consent', 'lock']);
@@ -537,8 +551,10 @@ function navItems() {
     add('opportunities', 'opportunities', 'Opportunities', 'megaphone');
     add('matching', 'matches', 'Match Briefs', 'link');
     add(null, 'board', 'Explore board', 'grid');
+    add(null, 'challenges', 'Open challenges', 'flag');
     add(null, 'relations', 'My collaborations', 'users');
     add('evidence', 'evidence', 'Evidence', 'award');
+    add(null, 'documents', 'Documents', 'folder');
     add('repository', 'repository', 'Repository', 'archive');
     add('harvest', 'harvests', 'Learning Harvests', 'sparkle');
   } else if (r === 'M') {
@@ -549,17 +565,21 @@ function navItems() {
     add('rooms', 'rooms', 'Assigned ' + W + 's', 'room', inMy('rooms'));
     add(null, 'relations', 'My collaborations', 'users');
     add('evidence', 'evidence', 'Evidence comments', 'award');
+    add(null, 'documents', 'Documents', 'folder', docProjects().length > 0);
     add('repository', 'repository', 'Repository', 'archive');
   } else if (r === 'F') {
     // Doc 1 §6.3 / Table 28 — Circles, reviews, linked work (Match Briefs are steward work, not discovery)
     add('circles', 'circles', 'Circles', 'users');
     add(null, 'inbox', 'Review inbox', 'inbox');
+    // independent Steward on an open-challenge dispute (challenges.js)
+    add(null, 'disputes', 'Dispute reviews', 'shield', (S.disputes || []).some(d => d.steward === myId() && inCtx(d)));
     add('projects', 'projects', 'Project reviews', 'folder');
     add('pathways', 'pathway', 'Pathways', 'route');
     add('matching', 'matches', 'Match Briefs', 'link', S.matches.some(m => m.steward === myId()));
     add('rooms', 'rooms', 'Linked ' + W + 's', 'room');
     add('ropeteams', 'ropeteams', 'Rope Teams', 'route', inMy('ropes'));
     add('harvest', 'harvests', 'Learning Harvests', 'sparkle');
+    add(null, 'documents', 'Documents', 'folder');
     if (hasB('Reviewer')) {
       add('evidence', 'evidence', 'Evidence review', 'award');
       add('repository', 'repository', 'Repository', 'archive');
@@ -572,8 +592,10 @@ function navItems() {
     add('opportunities', 'opportunities', 'Opportunities', 'megaphone');
     add('matching', 'matches', 'Match Briefs', 'link');
     add(null, 'board', 'Explore board', 'grid');
+    add(null, 'challenges', 'Open challenges', 'flag');
     add(null, 'relations', 'My collaborations', 'users');
     add('evidence', 'evidence', 'Evidence', 'award');
+    add(null, 'documents', 'Documents', 'folder');
     add('repository', 'repository', 'Repository', 'archive');
     add('harvest', 'harvests', 'Learning Harvests', 'sparkle');
   } else if (r === 'O') {
@@ -588,8 +610,9 @@ function navItems() {
       ['metrics', 'Programme progress', 'chart'],
     );
   } else if (r === 'S') {
-    // Doc 1 §6.6 — seats & funder-safe reporting (no pitches/tranches)
+    // Doc 1 §6.6 — open challenges, seats & funder-safe reporting (no pitches/tranches)
     items.push(
+      ['challenges', 'Open challenges', 'megaphone'],
       ['funding:seats', 'Seat utilisation', 'card'],
       ['funding:initiatives', 'Approved initiatives', 'folder'],
       ['funding:reports', 'Funder-safe reports', 'chart'],
@@ -600,6 +623,7 @@ function navItems() {
     // Doc 1 §6.7 — operational queues & config (not specialist authority)
     items.push(
       ['admin:requests', 'Approval inbox', 'inbox'],
+      ['disputes', 'Challenge disputes', 'shield'],
       ['admin:invites', 'Invitations', 'mail'],
       ['admin:users', 'Users & roles', 'users'],
       ['admin:packs', 'Pack configuration', 'settings'],
@@ -609,6 +633,7 @@ function navItems() {
       ['metrics', 'Reports & exports', 'chart'],
       ['admin:versions', 'Configuration versions', 'archive'],
       ['audit', 'Audit log', 'file'],
+      ['documents', 'Project documents', 'folder'],
     );
   }
   return always();
@@ -624,6 +649,8 @@ const PARENT = {
   match: 'matches',
   newevidence: 'evidence',
   harvest: 'harvests',
+  challenge: 'challenges',
+  dispute: 'disputes',
 };
 const GROUP = {
   home: '',
@@ -639,19 +666,23 @@ const GROUP = {
   opportunities: 'Discover',
   matches: 'Discover',
   board: 'Discover',
+  challenges: 'Discover',
   relations: 'Discover',
   evidence: 'Records',
+  documents: 'Records',
   repository: 'Records',
   harvests: 'Records',
   funding: 'Sponsorship',
   org: 'Organisation',
   admin: 'Administration',
+  disputes: 'Administration',
   compassqs: 'Administration',
   metrics: 'Administration',
   audit: 'Administration',
   policies: 'Specialist',
   billing: 'Specialist',
   aiadmin: 'Specialist',
+  publicprojects: 'Always available',
   privacy: 'Always available',
   resources: 'Always available',
   help: 'Always available',
@@ -669,6 +700,8 @@ function navGroup(rt) {
   if (rt === 'inbox' && r !== 'F') return 'Specialist';
   if (rt === 'metrics' && r === 'O') return 'Organisation';
   if (rt === 'evidence' && r === 'S') return 'Sponsorship';
+  if (rt === 'challenges' && r === 'S') return 'Sponsorship';
+  if (rt === 'disputes' && r === 'F') return 'Work';
   return GROUP[rt] || '';
 }
 function navCount(r) {
@@ -684,6 +717,9 @@ function navCount(r) {
     ).length;
   }
   if (r === 'inbox') return typeof inboxItems === 'function' ? inboxItems().length : 0;
+  if (r === 'challenges') return chTodo().length;
+  if (r === 'disputes')
+    return (S.disputes || []).filter(d => inCtx(d) && (role() === 'A' ? d.status === 'Awaiting Steward assignment' : d.steward === pid && ['Awaiting Steward acceptance', 'Under review'].includes(d.status))).length;
   if (r === 'ropeteams' && role() === 'M')
     return S.mentorReqs.filter(m => m.to === pid && m.status === 'Pending' && mentorReqVisible(m)).length;
   return 0;
@@ -747,8 +783,12 @@ const SHORT = {
   opportunities: 'Offers',
   matches: 'Matches',
   board: 'Board',
+  challenges: 'Challenges',
+  disputes: 'Disputes',
   relations: 'Links',
   evidence: 'Evidence',
+  documents: 'Docs',
+  publicprojects: 'Public',
   repository: 'Repo',
   harvests: 'Harvest',
   funding: 'Funding',
@@ -786,7 +826,7 @@ function deniedView(m) {
   return `<div class="denied card"><span class="tile t-soft" style="width:56px;height:56px;margin:0 auto">${ic('lock', 24)}</span><h1 class="h2" style="margin-top:12px">You do not have access to this area</h1><p class="muted" style="margin-top:8px">Your effective permission for <b>${h(m)}</b> as ${ROLE[role()]} in ${h(ctx()?.name)} is: <b>${LV[lvl(m)] || 'no access'}</b>.</p><p class="cap" style="margin-top:8px">Effective permission = identity + scoped role + context + mandate + object permission + consent + lifecycle state + entitlement. This attempt has been recorded.</p><div style="margin-top:16px">${B('Back to My PHOENIX', 'go', { r: 'home' }, 'btn-p')}</div></div>`;
 }
 // ---- deep links and notices are re-checked against the active context (BF-01)
-const CTX_OBJ = { circle: 'circles', rope: 'ropes', room: 'rooms', project: 'projects', card: 'cards', match: 'matches', harvest: 'harvests' };
+const CTX_OBJ = { circle: 'circles', rope: 'ropes', room: 'rooms', project: 'projects', card: 'cards', match: 'matches', harvest: 'harvests', challenge: 'challenges', dispute: 'disputes' };
 // The object a detail route opens, when it belongs to a different context than the active one.
 function ctxObj() {
   const k = CTX_OBJ[UI.route];
@@ -1037,6 +1077,8 @@ const CB = (label, act, data, msg, cls = 'btn-s btn-sm', yes) =>
   B(label, 'confirmAct', { ...data, act, msg, yes: yes || String(label).replace(/<[^>]+>/g, '') }, cls);
 A.confirmAct = d => {
   const { act, msg, yes, a, ...rest } = d;
+  // a row menu left open would re-render on the dialog's first mousedown and swallow the click
+  UI.dvMenu = null;
   modal(
     'Please confirm',
     `<p class="muted">${h(msg)}</p><div class="actions">${B('Cancel', 'closeM')}${B(h(yes), 'confirmYes', { ...rest, act }, 'btn-d btn-sm')}</div>`,
@@ -1049,6 +1091,7 @@ A.confirmYes = d => {
 };
 A.toastX = () => {
   UI.toast = null;
+  snapForms();
   render();
 };
 document.addEventListener('change', e => {
@@ -1643,6 +1686,7 @@ document.addEventListener('mousedown', e => {
   const t = e.target;
   if (UI.dvMenu && !(t.closest && t.closest('.dv-menuwrap'))) {
     UI.dvMenu = null;
+    snapForms();
     render();
   }
   if (UI.dvOpen && !(t.closest && t.closest('.dv-fwrap'))) {

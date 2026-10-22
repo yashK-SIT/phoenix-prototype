@@ -333,14 +333,12 @@ function ONB() {
       save();
       return ONB();
     }
-    const prev = polPrev(g);
     const f = 'agr';
     body = `${UI.p.notnow ? banner('info', 'You can come back to this later', 'Access starts once you accept. Until then this is the only screen available.') : ''}
   <div class="col onb-h"><p class="over">Step 2 of ${steps.length}</p><h1 class="h1">Review your agreement</h1><p class="sub">This agreement applies to your role in ${h(ctxName(a.ctx))}. Optional uses of your information are separate choices on the next step.</p></div>
   <section class="card col onb-card"><div class="kv onb-meta"><div class="col"><span class="cap">Agreement</span><b>${h(g.type)}</b></div><div class="col"><span class="cap">Version</span><b>v${g.ver}</b></div><div class="col"><span class="cap">Effective</span><b>${fmt(g.effective)}</b></div></div>
   <div class="scrollbox" tabindex="0" aria-label="Agreement text"><div class="col onb-pol">${polBody(g)}<p class="cap">Published by the Trust/Data Steward for this programme.</p></div></div>
-  <div class="row wrap onb-tools">${B(ic('download', 16) + 'Download policy', 'polDownload', { id: g.id })}${B(ic('eye', 16) + (UI.tab.agrCmp === g.id ? 'Hide comparison' : 'Compare policy with prior'), 'agrCmp', { id: g.id }, 'btn-s btn-sm', `aria-expanded="${UI.tab.agrCmp === g.id}"`)}</div>
-  ${UI.tab.agrCmp === g.id ? `<div class="col onb-cmp">${prev ? `<h2 class="h3">What changed since v${prev.ver}</h2>${g.summary ? `<p class="muted">${h(g.summary)}</p>` : ''}` : ''}${polDiffHtml(prev, g)}</div>` : ''}
+  <div class="row wrap onb-tools">${B(ic('download', 16) + 'Download policy', 'polDownload', { id: g.id })}</div>
   <form data-f="agr" class="col onb-agr" id="agrf" novalidate>${fi(f, 'a1', `I have read and accept <b>${h(g.type)} v${g.ver}</b>.`, { type: 'checkbox', req: true })}${fi(f, 'a2', 'I accept the PHOENIX service terms.', { type: 'checkbox', req: true })}<input type="hidden" name="g" value="${g.id}"><span class="help">A dated receipt of your acceptance is stored in Privacy & agreements.</span>
   <div class="actions">${B('Not now', 'agrNotNow', {}, 'btn-s')}<button class="btn btn-p" type="submit">Accept and continue</button></div></form></section>`;
   } else if (cur === 3) {

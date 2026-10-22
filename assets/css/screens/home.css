@@ -843,10 +843,279 @@ p.evo-act {
   color: var(--text-2);
 }
 .pw-act {
-  gap: var(--s-4);
+  gap: var(--s-5);
 }
 .pw-h {
   margin-bottom: var(--s-2);
+}
+/* pathway details dialog: status strip, sections, and one block per step instead of a wide table */
+.pw-act-st {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+.pw-act-sec {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  min-width: 0;
+}
+.pw-act-sec > .h3,
+.pw-act-sh > .h3 {
+  margin: 0;
+}
+.pw-act-sh {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+.pw-legend .pw-lg-i {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.pw-sds {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pw-sd {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  min-width: 0;
+}
+.pw-sd-h {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--s-3);
+  align-items: start;
+}
+.pw-sd-n {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--sunk);
+  color: var(--text-2);
+  font-weight: 700;
+  font-size: var(--fs-sm);
+}
+.pw-sd-t {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding-top: 3px;
+  overflow-wrap: anywhere;
+}
+.pw-sd-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.pw-sd-why {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--s-2) var(--s-3);
+  border-left: 3px solid var(--line-strong);
+  background: var(--surface-2);
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+}
+.pw-sd-why.is-blocked {
+  border-left-color: var(--bad);
+}
+.pw-sd-kv {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--s-3) var(--s-4);
+}
+.pw-sd-f {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.pw-sd-f .pw-files {
+  margin-top: 6px;
+}
+/* attachment cards fit the field: long file names are cut with an ellipsis instead of spilling out */
+.pw-sd-f .pw-files {
+  flex-direction: column;
+  align-items: stretch;
+}
+.pw-sd-f .matt {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+.pw-sd-f .mattb {
+  flex: 1;
+  min-width: 0;
+}
+.pw-sd-f .mattn {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pw-sd-a {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--s-2);
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--line-soft);
+}
+@media (max-width: 600px) {
+  .pw-sd {
+    padding: var(--s-3);
+  }
+  .pw-sd-h {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .pw-sd-tags {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+  .pw-sd-a {
+    justify-content: stretch;
+  }
+  .pw-sd-a .btn {
+    flex: 1;
+  }
+}
+/* participants list: pathway names are links that open the pathway; actions live in the row's three-dot menu */
+.dv-meta > span.pw-req {
+  gap: 6px;
+}
+.pw-name-l {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link, var(--primary-text));
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.pw-name-l:hover {
+  text-decoration-thickness: 2px;
+}
+/* choose a pathway for Edit pathway or Conversation & activity */
+.pw-pick-w {
+  gap: var(--s-3);
+}
+.pw-pick {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pw-pick-i {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+button.pw-pick-i:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-2);
+}
+.pw-pick-i.is-off {
+  background: var(--surface-2);
+  color: var(--text-3);
+  cursor: not-allowed;
+}
+.pw-pick-t {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.pw-pick-why {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+.pw-pick-why svg {
+  flex: none;
+  margin-top: 2px;
+}
+.pw-pick-s {
+  flex: none;
+}
+/* Edit pathway and the pathway dialog: way back to the list, and the switch between edit and conversation */
+.pw-ed-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+}
+.pw-ed-nav .cnt {
+  margin-left: 4px;
+}
+@media (max-width: 600px) {
+  .pw-pick-i {
+    flex-wrap: wrap;
+    padding: var(--s-3);
+  }
+  .pw-pick-s {
+    order: 3;
+    width: 100%;
+  }
+}
+.dv-menu .menu-i.is-off {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  height: auto;
+  min-height: 38px;
+  line-height: 20px;
+  padding: 8px var(--s-3);
+  color: var(--text-3);
+  cursor: not-allowed;
+}
+.dv-menu .menu-i.is-off svg {
+  flex: none;
+  margin-top: 2px;
+}
+.dv-menu .menu-i.is-off .menu-t b {
+  color: var(--text-2);
 }
 /* pathway activity dialog: step history */
 .ph:has(> .app[data-route='pathway']) ~ .mback .mtl,
@@ -1708,4 +1977,40 @@ p.evo-act {
 }
 .pf-dv .dv-row .dv-meta .pill {
   margin-left: 4px;
+}
+
+/* ---------- pathway form and step editor (create, recommend, edit, revise, new version) ---------- */
+.pw-form { gap: var(--s-5); }
+.pw-sec { display: flex; flex-direction: column; gap: var(--s-3); padding-bottom: var(--s-5); border-bottom: 1px solid var(--line-soft); }
+.pw-sec:last-of-type { border-bottom: 0; padding-bottom: 0; }
+.pw-sec > .h3 { margin: 0; font-family: var(--font-head); font-feature-settings: normal; }
+.pw-top { align-items: start; }
+.pw-ed { display: flex; flex-direction: column; gap: var(--s-3); }
+.pw-ed-h { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-3); flex-wrap: wrap; }
+.pw-ed-h .h3 { margin: 0; font-family: var(--font-head); font-feature-settings: normal; }
+.pw-ed-help, .pw-ed-note { margin: 0; }
+.pw-ed-step { display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-4); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface-2); }
+.pw-ed-sh { display: flex; align-items: center; gap: var(--s-2); min-height: 28px; }
+.pw-ed-sh .cap { margin-right: auto; }
+.pw-ed-rm { margin-left: auto; }
+/* title takes the room it needs; type stays compact. Labels are one line so inputs line up. */
+.pw-ed-main { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--s-3); align-items: start; }
+.pw-ed-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-3); align-items: start; }
+.pw-ed-step .field { margin: 0; min-width: 0; }
+.pw-ed-step .lbl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pw-ed-more { border-top: 1px solid var(--line-soft); padding-top: var(--s-2); }
+.pw-ed-more > summary { display: flex; align-items: center; gap: var(--s-2); cursor: pointer; list-style: none; font-weight: 600; font-size: var(--fs-sm); color: var(--primary-text); padding: var(--s-1) 0; border-radius: var(--r-xs); }
+.pw-ed-more > summary::-webkit-details-marker { display: none; }
+.pw-ed-more > summary svg { margin-left: auto; transition: transform var(--t-fast, 0.15s); }
+.pw-ed-more[open] > summary svg { transform: rotate(180deg); }
+.pw-ed-body { display: flex; flex-direction: column; gap: var(--s-3); padding-top: var(--s-3); }
+.pw-ed-checks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-2) var(--s-3); }
+.pw-ed-deps { display: flex; flex-direction: column; gap: var(--s-2); }
+.pw-ed-add { display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap; margin: 0; }
+.pw-acts { position: sticky; bottom: calc(-1 * var(--s-6)); background: var(--overlay); padding: var(--s-3) 0; margin-bottom: calc(-1 * var(--s-3)); border-top: 1px solid var(--line-soft); }
+@media (max-width: 639px) {
+  .pw-ed-step { padding: var(--s-3); }
+  .pw-ed-main, .pw-ed-grid, .pw-ed-checks { grid-template-columns: minmax(0, 1fr); }
+  .pw-ed-step .lbl { white-space: normal; }
+  .pw-acts { bottom: calc(-1 * var(--s-5)); }
 }

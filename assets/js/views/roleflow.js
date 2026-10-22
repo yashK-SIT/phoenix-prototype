@@ -467,10 +467,29 @@ function rfFlows() {
       ],
     },
     S: {
-      lead: 'Sponsor / Funder. Buys seat pools or donates, follows aggregate seat use and sees approved, funder-safe outcomes. Identifiable stories need a separate release.',
+      lead: 'Sponsor / Funder. Posts open challenges under an alias and funds the selected team’s agreed milestones offline; buys seat pools or donates, follows aggregate seat use and sees approved, funder-safe outcomes. Identifiable stories need a separate release.',
       side: [],
       phases: [
         ['Authorize', 'Access, Sponsor agreement and sign-in', rfAccess('S')],
+        [
+          'Challenges',
+          'From an open challenge to confirmed milestone payments',
+          [
+            rfA('Post an open challenge on the Explore board', 'Shown under an alias made for that post; name and organisation hidden.'),
+            rfH('P', 'Participants and Partners ask to take part and join the challenge chat room'),
+            rfA('Evaluate, shortlist and discuss in the chat room', 'All selection discussion stays in the chat room.'),
+            rfA('Form the team’s Circle and start the project in a Circle, Rope Team or Action Room'),
+            rfA('Stop new applications or archive the post', 'The selection chat room closes and stays readable.'),
+            rfA('Commit the full agreed amount', 'The Circle owner confirms the same figure before execution begins.'),
+            rfH('P', 'Circle owner agrees milestones with you and submits completed work'),
+            rfD('Is the milestone complete?', [
+              rfB('Yes', [rfA('Approve it, pay offline and record the payment'), rfH('P', 'Circle owner confirms receipt independently')]),
+              rfB('Not yet', [rfA('Request the missing information'), rfH('P', 'Circle owner resubmits')]),
+              rfB('Cannot agree', [rfH('A', 'Assigns a Steward with no tie to either side'), rfH('F', 'Steward decides from the evidence; both sides under aliases')]),
+            ]),
+            rfS('End: payments confirmed by both sides; continue from My PHOENIX'),
+          ],
+        ],
         [
           'Seats',
           'Seat pool or donation',

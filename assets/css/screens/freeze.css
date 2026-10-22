@@ -180,7 +180,7 @@ iframe.sq-pv { height: 70vh; }
 }
 
 /* ---- Explore board and collaborations */
-.board-f { margin-bottom: var(--s-4); }
+.board-f { margin-bottom: var(--s-4); max-width: 100%; overflow-x: auto; }
 .board-list { display: grid; gap: var(--s-3); }
 .board-i { display: flex; gap: var(--s-4); align-items: flex-start; }
 .board-b { flex: 1; gap: 2px; min-width: 0; }

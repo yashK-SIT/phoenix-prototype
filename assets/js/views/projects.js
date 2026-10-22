@@ -74,6 +74,7 @@ route('projects', 'projects', () => {
   const list = S.projects.filter(
     p =>
       inCtx(p) &&
+      !chHidden(p) &&
       (r === 'P'
         ? p.owner === myId()
         : r === 'F'
@@ -99,11 +100,12 @@ route('projects', 'projects', () => {
       dataView('projects:list', {
         label: 'projects',
         items: list,
-        search: p => [p.title, p.type, P(p.owner).name, p.area || '', ...(p.tags || []), ...p.stewards.map(s => P(s).name)].join(' '),
+        search: p => [p.title, p.type, P(p.owner).name, p.country || '', p.area || '', ...(p.tags || []), ...p.stewards.map(s => P(s).name)].join(' '),
         quick: { label: 'Phase', options: phases.map(x => [x, x]), test: (p, v) => projPhase(p) === v },
         filters: [
           dvOpts(list, p => p.status).length > 1 && { key: 'status', label: 'Status', options: dvOpts(list, p => p.status), test: (p, v) => p.status === v },
           dvOpts(list, p => p.stage).length && { key: 'stage', label: 'Stage', options: dvOpts(list, p => p.stage, stageLabel), test: (p, v) => p.stage === v },
+          dvOpts(list, p => p.country).length > 1 && { key: 'country', label: 'Country', options: dvOpts(list, p => p.country), test: (p, v) => p.country === v },
           dvOpts(list, p => p.tags || []).length && { key: 'area', label: 'Area of interest', options: dvOpts(list, p => p.tags || []), test: (p, v) => (p.tags || []).includes(v) },
           dvOpts(list, p => p.owner).length > 1 && { key: 'owner', label: 'Owner', options: dvOpts(list, p => p.owner, id => P(id).name), test: (p, v) => p.owner === v },
         ].filter(Boolean),
@@ -115,14 +117,14 @@ route('projects', 'projects', () => {
         row: p => ({
           lead: `<span class="tile t-navy" aria-hidden="true">${ic('folder', 18)}</span>`,
           title: L(h(p.title), 'project', { id: p.id }, 'dv-link'),
-          sub: h(p.type) + (p.area ? ' · ' + h(p.area) : ''),
+          sub: h(p.type) + (p.country ? ' · ' + h(p.country) : '') + (p.area ? ' · ' + h(p.area) : ''),
           meta: [
             r !== 'P' ? 'Owner <b>' + nm(p.owner) + '</b>' : '',
             'Steward <b>' + (p.stewards.map(nm).join(', ') || 'not assigned') + '</b>',
             (p.tags || []).length ? `<span class="rec-tags">${p.tags.slice(0, 3).map(x => `<span class="rec-tag">${h(x)}</span>`).join('')}${p.tags.length > 3 ? `<span class="cap">+${p.tags.length - 3}</span>` : ''}</span>` : '',
             p.submitted ? 'Submitted ' + fmt(p.submitted) : '',
           ],
-          badges: pill(p.status) + (p.stage ? pill(stageLabel(p.stage), SC[p.stage]) : ''),
+          badges: pill(p.status) + (p.stage ? pill(stageLabel(p.stage), SC[p.stage]) : '') + (pubEligible(p) ? pubPill(p) : ''),
           primary: L('Open', 'project', { id: p.id }, 'btn btn-s btn-sm') + (projDeletable(p) ? projDeleteBtn(p) : ''),
         }),
         empty: r === 'P' ? ['folder', 'You have no projects yet', 'Start one from an idea, need or opportunity.', B(ic('plus', 16) + 'Start a project', 'go', { r: 'newproject' }, 'btn-p btn-sm')] : ['folder', 'No projects yet', 'Submitted projects in this programme appear here.', ''],
@@ -166,9 +168,9 @@ route('newproject', 'aireq', () => {
   ${fi(f, 'title', 'Working title', { req: true, value: pr?.title, ph: 'e.g. Community cooling map for Ward 7', max: 120 })}
   ${fi(f, 'desc', 'Describe it in your own words', { type: 'textarea', rows: 6, req: true, value: pr?.desc, ph: 'What is the need or idea? Who is affected? What would be different if it worked?', help: 'At least 40 characters.' })}</div>
   <div class="np-sec"><div class="np-sh"><span class="np-n" aria-hidden="true">2</span><h2 class="h3">Who should find it</h2></div>
-  <fieldset class="np-fs col"><legend class="lbl">Areas of interest</legend><div class="np-chips">${[...PROJECT_AREAS, ...(pr?.tags || []).filter(t => !PROJECT_AREAS.includes(t))].map(a => `<label class="chipchk np-chip"><input type="checkbox" name="tags" value="${h(a)}" ${[].concat(fv(f, 'tags', pr?.tags || [])).includes(a) ? 'checked' : ''}><span>${h(a)}</span></label>`).join('')}</div><div class="field np-other"><label class="lbl" for="np_areaOther">Add your own</label><input id="np_areaOther" name="areaOther" class="input" value="${h(fv(f, 'areaOther', ''))}" placeholder="Comma-separated, e.g. Air quality, School gardens" maxlength="160"></div><span class="help">Helps stewards and collaborators find relevant projects. Sponsors never browse or fund individual projects.</span></fieldset></div>
+  <fieldset class="np-fs col"><legend class="lbl">Areas of interest</legend><div class="np-chips">${[...PROJECT_AREAS, ...(pr?.tags || []).filter(t => !PROJECT_AREAS.includes(t))].map(a => `<label class="chipchk np-chip"><input type="checkbox" name="tags" value="${h(a)}" ${[].concat(fv(f, 'tags', pr?.tags || [])).includes(a) ? 'checked' : ''}><span>${h(a)}</span></label>`).join('')}</div><div class="field np-other"><label class="lbl" for="np_areaOther">Add your own</label><input id="np_areaOther" name="areaOther" class="input" value="${h(fv(f, 'areaOther', ''))}" placeholder="Comma-separated, e.g. Air quality, School gardens" maxlength="160"></div><span class="help">Helps stewards and collaborators find relevant projects. Sponsors never browse individual projects; they fund only teams formed from their own open challenges.</span></fieldset></div>
   <div class="np-sec"><div class="np-sh"><span class="np-n" aria-hidden="true">3</span><h2 class="h3">Place</h2></div>
-  <div class="f2">${fi(f, 'area', 'Location or programme area (optional)', { value: pr?.area, ph: 'e.g. Ward 7, Excelsior City' })}</div></div>
+  <div class="f2">${countryField(f, { value: pr?.country, help: 'The country the project takes place in.' })}${fi(f, 'area', 'Location or programme area (optional)', { value: pr?.area, ph: 'e.g. Ward 7, Excelsior City' })}</div></div>
   <div class="actions">${L('Cancel', 'projects', {}, 'btn btn-g')}<div class="row wrap"><button class="btn btn-s" type="submit" name="go" value="save">Save draft</button><button class="btn btn-p" type="submit" name="go" value="gen">${okAI ? 'Draft sections with PHOENIX' : 'Continue to sections'}</button></div></div></form>
   <aside class="c4 col np-side">${okAI ? `<div class="card col np-ai">${aiTag('AI-assisted · Class B workflow draft')}<b>PHOENIX will draft 8 sections</b><ol class="np-seclist">${SECTIONS.map(s => `<li>${s}</li>`).join('')}</ol><p class="cap">Each stays a draft until you accept, edit or reject it.</p></div>` : banner('warn', adapterUp('ai') ? 'AI processing is off' : 'AI is unavailable', adapterUp('ai') ? `AI processing is off for you, so PHOENIX will not draft sections. You can write each section yourself. To get drafts, change this in ${L('My records & consent', 'privacy', { tab: 'consent' })}.` : 'You can write each section yourself; drafting will work again when the service is back.')}${card('What happens next', '', '<p class="cap">You submit for Faculty/Steward review. They may ask for clarification, then accept it and set up a Circle.</p>', '', 'quiet')}</aside></div>`
     );
@@ -206,7 +208,7 @@ A.npBack = () => {
 };
 F.np = (d, form) => {
   const sub = d.go || 'gen';
-  if (!validate('np', d, { type: ['req'], title: ['req'], desc: ['req', ['min', 40]] })) return render();
+  if (!validate('np', d, { type: ['req'], title: ['req'], desc: ['req', ['min', 40]], country: countryRules() })) return render();
   let p = d.id && byId('projects', d.id);
   if (!p) {
     p = {
@@ -223,7 +225,7 @@ F.np = (d, form) => {
   }
   const own = (d.areaOther || '').split(',').map(x => x.trim()).filter(Boolean).map(x => x.slice(0, 40));
   const tags = [...new Set([...[].concat(d.tags || []), ...own].map(x => x.trim()).filter(Boolean))];
-  Object.assign(p, { type: d.type, title: d.title.trim(), desc: d.desc.trim(), tags, area: (d.area || '').trim() });
+  Object.assign(p, { type: d.type, title: d.title.trim(), desc: d.desc.trim(), tags, country: d.country, area: (d.area || '').trim() });
   clearF('np');
   if (sub === 'save') {
     audit('Project draft saved', p.id, '');
@@ -284,6 +286,7 @@ F.sec = d => {
 route('project', 'projects', () => {
   const p = byId('projects', UI.p.id);
   if (!p) return empty('folder', 'Project not found', '');
+  if (chHidden(p)) return chHiddenView();
   const r = role();
   const own = p.owner === myId();
   if (r === 'P' && !own) return deniedView('projects');
@@ -343,6 +346,7 @@ route('project', 'projects', () => {
   if (own && ownRoomProjects().includes(p))
     actions += B(ic('room', 14) + 'Create ' + WL(), 'newRoom', { origin: 'Project', project: p.id }, p.circle ? 'btn-p btn-sm' : 'btn-s btn-sm');
   if (projEditable(p)) actions = B(ic('edit', 14) + 'Edit details', 'projEdit', { id: p.id }) + actions;
+  if (docCanOpen(p)) actions = L(ic('folder', 14) + 'Documents', 'documents', { id: p.id }, 'btn btn-s btn-sm') + actions;
   if (projDeletable(p)) actions += projDeleteBtn(p);
   // A project submitted without the 8-section draft can still be resubmitted after a clarification.
   const ready = p.sections ? p.sections.every(s => ['Accepted', 'Edited'].includes(s.st)) : p.status !== 'Draft';
@@ -351,8 +355,9 @@ route('project', 'projects', () => {
       ['Projects', 'projects'],
       [h(p.title)],
     ]) +
-    `<div class="shead-main prj-head"><span class="tile" aria-hidden="true">${ic('folder', 20)}</span><div class="shead-t"><div class="shead-kind">Project · ${h(p.stage ? stageLabel(p.stage) : p.status)}</div><div class="row wrap prj-ttl"><h1 class="h1">${h(p.title)}</h1>${pill(p.status)}</div><div class="shead-meta"><span>${h(p.type)}</span><span>Owner · ${nm(p.owner)}</span><span>${p.stewards.length ? 'Steward · ' + p.stewards.map(nm).join(', ') : 'No reviewer yet'}</span>${p.area ? `<span>${h(p.area)}</span>` : ''}</div>${(p.tags || []).length ? `<div class="rec-tags prj-tags">${p.tags.map(x => `<span class="rec-tag">${h(x)}</span>`).join('')}</div>` : ''}</div>${actions.trim() ? `<div class="shead-a">${actions}</div>` : ''}</div>` +
+    `<div class="shead-main prj-head"><span class="tile" aria-hidden="true">${ic('folder', 20)}</span><div class="shead-t"><div class="shead-kind">Project · ${h(p.stage ? stageLabel(p.stage) : p.status)}</div><div class="row wrap prj-ttl"><h1 class="h1">${h(p.title)}</h1>${pill(p.status)}</div><div class="shead-meta"><span>${h(p.type)}</span><span>Owner · ${nm(p.owner)}</span><span>${p.stewards.length ? 'Steward · ' + p.stewards.map(nm).join(', ') : 'No reviewer yet'}</span>${p.country ? `<span>Country · ${h(p.country)}</span>` : ''}${p.area ? `<span>${h(p.area)}</span>` : ''}</div>${(p.tags || []).length ? `<div class="rec-tags prj-tags">${p.tags.map(x => `<span class="rec-tag">${h(x)}</span>`).join('')}</div>` : ''}</div>${actions.trim() ? `<div class="shead-a">${actions}</div>` : ''}</div>` +
     tl +
+    projRoomBar(p, 'projects') +
     stageTrack(p, 'projects') +
     `<div class="prj-notes">` +
     p.clar
@@ -386,7 +391,10 @@ route('project', 'projects', () => {
          : '<p class="cap">—</p>',
      )}</div>
  <aside class="c4 col prj-side">${own && ['Draft', 'Clarification requested'].includes(p.status) ? card('Before you submit', '', `<form data-f="submitProj" class="col prj-submit" novalidate><input type="hidden" name="id" value="${p.id}">${!ready ? banner('warn', '', 'All 8 sections must be accepted or edited first.') : ''}${fi('sp', 'c1', 'I have reviewed every AI-drafted section and accept responsibility for the content.', { type: 'checkbox', req: true })}${fi('sp', 'c2', 'I understand reviewers in this programme will see this project.', { type: 'checkbox', req: true })}${p.status === 'Clarification requested' ? fi('sp', 'note', 'What you changed (optional)', { type: 'textarea', rows: 3, max: 2000, help: 'Added to the review conversation.' }) : ''}<button class="btn btn-p btn-block" type="submit" ${ready ? '' : 'disabled'}>${p.status === 'Clarification requested' ? 'Resubmit for review' : 'Submit for review'}</button></form>`, '', 'accent') : ''}
+ ${chProjCard(p)}
  ${p.status === 'Draft' ? '' : linkCard('projects', p)}
+ ${pubCard(p)}
+ ${projMovesCard(p)}
  ${card(
    'Reviewer and starting space',
    '',
@@ -460,25 +468,26 @@ const projEditable = p => !!p && p.owner === myId() && p.status !== 'Rejected' &
 A.projEdit = d => {
   const p = byId('projects', d.id);
   clearF('pje');
-  UI.form.pje = { type: p.type, title: p.title, desc: p.desc || '', tags: (p.tags || []).join(', '), area: p.area || '' };
+  UI.form.pje = { type: p.type, title: p.title, desc: p.desc || '', tags: (p.tags || []).join(', '), country: p.country || '', area: p.area || '' };
   modal(
     'Edit project details',
     () =>
-      `<form data-f="pje" class="col prj-submit" novalidate>${errSum('pje')}<input type="hidden" name="id" value="${p.id}"><div class="f2">${fi('pje', 'title', 'Working title', { req: true, max: 120 })}${fi('pje', 'type', 'Starting point', { type: 'select', req: true, opts: ['Need', 'Opportunity', 'Project idea'] })}</div>${fi('pje', 'desc', 'Description', { type: 'textarea', rows: 5, req: true, help: 'At least 40 characters.' })}${fi('pje', 'tags', 'Areas of interest', { ph: 'e.g. Urban heat, Water', help: 'Comma-separated.' })}${fi('pje', 'area', 'Location or programme area')}${banner('info', '', p.status === 'Draft' ? 'The 8 sections are edited with Edit sections.' : 'Your reviewer is told what changed. The 8 sections are not changed here.')}<div class="actions">${B('Cancel', 'closeM')}<button class="btn btn-p" type="submit">Save changes</button></div></form>`,
+      `<form data-f="pje" class="col prj-submit" novalidate>${errSum('pje')}<input type="hidden" name="id" value="${p.id}"><div class="f2">${fi('pje', 'title', 'Working title', { req: true, max: 120 })}${fi('pje', 'type', 'Starting point', { type: 'select', req: true, opts: ['Need', 'Opportunity', 'Project idea'] })}</div>${fi('pje', 'desc', 'Description', { type: 'textarea', rows: 5, req: true, help: 'At least 40 characters.' })}${fi('pje', 'tags', 'Areas of interest', { ph: 'e.g. Urban heat, Water', help: 'Comma-separated.' })}<div class="f2">${countryField('pje')}${fi('pje', 'area', 'Location or programme area')}</div>${banner('info', '', p.status === 'Draft' ? 'The 8 sections are edited with Edit sections.' : 'Your reviewer is told what changed. The 8 sections are not changed here.')}<div class="actions">${B('Cancel', 'closeM')}<button class="btn btn-p" type="submit">Save changes</button></div></form>`,
     true,
   );
 };
 F.pje = d => {
-  if (!validate('pje', d, { title: ['req'], type: ['req'], desc: ['req', ['min', 40]] })) return render();
+  if (!validate('pje', d, { title: ['req'], type: ['req'], desc: ['req', ['min', 40]], country: countryRules() })) return render();
   const p = byId('projects', d.id);
   const next = {
     type: d.type,
     title: d.title.trim(),
     desc: d.desc.trim(),
     tags: [...new Set((d.tags || '').split(',').map(x => x.trim().slice(0, 40)).filter(Boolean))],
+    country: d.country,
     area: (d.area || '').trim(),
   };
-  const ch = changedFields({ ...p, tags: (p.tags || []).join(',') }, { ...next, tags: next.tags.join(',') }, { title: 'title', type: 'starting point', desc: 'description', tags: 'areas', area: 'location' });
+  const ch = changedFields({ ...p, tags: (p.tags || []).join(',') }, { ...next, tags: next.tags.join(',') }, { title: 'title', type: 'starting point', desc: 'description', tags: 'areas', country: 'country', area: 'location' });
   UI.modal = null;
   clearF('pje');
   if (!ch.length) {

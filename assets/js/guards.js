@@ -701,6 +701,10 @@ Object.assign(G, {
     return (p && p.by === myId() && p.state === 'Draft') || 'only the person who proposed this pathway can revise it';
   },
   pwActivity: d => pwCanView(byId('pathways', d.id)) || 'you cannot view this pathway',
+  // participants list: choose a pathway for an action, open a pathway by its name, go from Edit to its conversation
+  pwPick: d => S.pathways.some(x => x.pid === d.pid && inCtx(x) && pwCanView(x)) || 'you cannot see this participant’s pathways',
+  pwOpen: d => pwCanView(byId('pathways', d.id)) || 'you cannot view this pathway',
+  pwEditTalk: d => pwCanView(byId('pathways', d.id)) || 'you cannot view this pathway',
 });
 // ---- organizations and role management: Platform Administrator only
 const platformOnly = what => () => role() === 'T' || 'only the Platform Administrator ' + what;
@@ -871,6 +875,207 @@ Object.assign(G, {
     return (a && (role() === 'A' || (role() === 'O' && a.ctx === ctxId()))) || 'only an administrator in this context revokes mandates';
   },
 });
+// Documents (views/documents.js): visibility follows the file's space; Rope Team files never leave its members.
+Object.assign(G, {
+  docUpOpen: d => {
+    const p = byId('projects', d.id);
+    return (docCanOpen(p) && (d.x ? docUpOk(d.f, byId(SPACE_KIND[d.f], d.x)) : docUpSpaces(p, d.f).some(y => docUpOk(d.f, y)))) || 'only active members of this space upload files to it';
+  },
+  docUp: d => {
+    const p = byId('projects', d.id);
+    const x = byId(SPACE_KIND[d.f], d.x);
+    return (docCanOpen(p) && docUpSpaces(p, d.f).includes(x) && docUpOk(d.f, x) && !!docUpTarget(d)) || 'only active members of this space upload files to it';
+  },
+  docDl: d => {
+    const p = byId('projects', d.id);
+    const x = docCanOpen(p) && docFind(p, d.k);
+    return (x && docSees(p, x)) || 'this file is Private to its space';
+  },
+  docVis: d => {
+    const p = byId('projects', d.id);
+    const x = docCanOpen(p) && docFind(p, d.k);
+    return (x && docCanVis(p, x)) || (x && x.lock) || 'only the person who shared a file, the project owner, its steward or a Programme Administrator changes its visibility';
+  },
+  docZip: d => docCanOpen(byId('projects', d.id)) || 'only people who can open this project download its Public files',
+});
+// Public Projects (views/publish.js): a team vote first, then only the owner publishes; only Public files leave.
+Object.assign(G, {
+  pubVoteNew: d => {
+    const p = byId('projects', d.id);
+    return (pubOpener(p) && ['priv', 'no'].includes(pubState(p))) || 'only the project owner or its steward opens the team vote, on an accepted project with no open vote';
+  },
+  pubv: d => {
+    const p = byId('projects', d.id);
+    return (pubOpener(p) && ['priv', 'no'].includes(pubState(p))) || 'only the project owner or its steward opens the team vote, on an accepted project with no open vote';
+  },
+  pubCast: d => {
+    const p = byId('projects', d.id);
+    return pubCanVote(p, pubOpen(p)) || 'only eligible members of the project team vote, while the vote is open';
+  },
+  pubCloseNow: d => {
+    const p = byId('projects', d.id);
+    return (pubOpener(p) && !!pubOpen(p)) || 'only the project owner or its steward closes the vote';
+  },
+  pubPublish: d => {
+    const p = byId('projects', d.id);
+    return (p && p.owner === myId() && pubState(p) === 'ok') || 'only the project owner publishes, after the team approves it by vote';
+  },
+  pubp: d => {
+    const p = byId('projects', d.id);
+    return (p && p.owner === myId() && pubState(p) === 'ok') || 'only the project owner publishes, after the team approves it by vote';
+  },
+  pubUnpublish: d => pubCanUnpublish(byId('projects', d.id)) || 'only the project owner, its steward or a Programme Administrator unpublishes',
+  pubDl: d => {
+    const p = byId('projects', d.id);
+    return pubDocs(p).some(x => x.key === d.k) || 'this file is not public';
+  },
+  pubZip: d => pubPublished(byId('projects', d.id)) || 'this project is not public',
+});
+// Project room moves (views/journey.js): an accepted, open project; its owner, steward or a Programme Administrator.
+Object.assign(G, {
+  projMove: d => projMover(byId('projects', d.id)) || 'only the project owner, its steward or a Programme Administrator moves the project',
+  pmvConfirm: d => projMover(byId('projects', d.id)) || 'only the project owner, its steward or a Programme Administrator moves the project',
+  pmv: d => projMover(byId('projects', d.id)) || 'only the project owner, its steward or a Programme Administrator moves the project',
+});
+// Open challenges (views/challenges.js): the Sponsor runs the post and the selection; the Sponsor and the Circle owner
+// are the two parties to the agreement; a Programme Administrator assigns an independent Steward, who decides disputes.
+const chEditable = ch => chMine(ch) && !ch.project && ch.status !== 'Archived';
+const chMsOf = d => {
+  const ch = chById(d.id);
+  return [ch, ch && ch.milestones.find(m => m.id === d.m)];
+};
+const chTeamSees = ch => !!ch && (chMine(ch) || chOnTeam(ch));
+const chMsEditOk = d => {
+  const [ch, m] = chMsOf(d);
+  return !!m && !!chSide(ch) && !dspOn(ch, 'ms', m.id) && ((['Proposed', 'Changes requested'].includes(m.status) && m.by === myId()) || m.status === 'Agreed');
+};
+const chMsVote = d => {
+  const [ch, m] = chMsOf(d);
+  const s = m && chSide(ch);
+  return (!!s && m.status === 'Proposed' && !m.ok[s]) || 'only the other side approves a proposed milestone or asks for changes';
+};
+const chMsDoneOk = d => {
+  const [ch, m] = chMsOf(d);
+  return (!!m && chOwner(ch) && chLive(ch) && ['Agreed', 'More information requested'].includes(m.status) && !dspOn(ch, 'ms', m.id)) || 'only the Circle owner marks an agreed milestone complete, once the funding commitment is confirmed';
+};
+const chMsReview = d => {
+  const [ch, m] = chMsOf(d);
+  return (!!m && chMine(ch) && m.status === 'Submitted' && !dspOn(ch, 'ms', m.id)) || 'only the sponsor reviews a milestone awaiting review';
+};
+const chPayConfOk = d => {
+  const ch = chById(d.id);
+  const p = ch && ch.payments.find(x => x.id === d.p);
+  const s = p && chSide(ch);
+  return (!!s && !dspOn(ch, 'pay', p.id) && ((p.status === 'Pending verification' && !payRec(p, s)) || p.status === 'Flagged for review')) || 'only the other side confirms a pending payment; either side corrects a flagged one';
+};
+const chDspNewOk = d => {
+  const ch = chById(d.id);
+  if (!chParty(ch) || !ch.project) return 'only the sponsor or the Circle owner raises a dispute';
+  if (dspOn(ch, d.kind, d.s)) return 'there is already an open dispute about this';
+  if (d.kind === 'ms') {
+    const m = ch.milestones.find(x => x.id === d.s);
+    return (!!m && ['Submitted', 'More information requested'].includes(m.status)) || 'a milestone dispute is about a completion awaiting review or a request for more information';
+  }
+  const p = ch.payments.find(x => x.id === d.s);
+  return (d.kind === 'pay' && !!p && p.status === 'Flagged for review') || 'a payment dispute is about a flagged payment';
+};
+const chDsp = d => byId('disputes', d.id);
+Object.assign(G, {
+  chNew: d => (d.id ? chEditable(chById(d.id)) : role() === 'S') || 'only a Sponsor posts an open challenge, and edits it until the team is formed',
+  chEdit: d => chEditable(chById(d.id)) || 'only the sponsor edits the post, until the team is formed',
+  chn: d => (d.id ? chEditable(chById(d.id)) : role() === 'S') || 'only a Sponsor posts an open challenge, and edits it until the team is formed',
+  chState: d => {
+    const ch = chById(d.id);
+    if (!chMine(ch) || ch.status === 'Archived') return 'only the sponsor changes the post, until it is archived';
+    if (d.v === 'Open') return (!ch.project && ch.status === 'Requests closed') || 'applications reopen only before the team is formed';
+    return (['Requests closed', 'Archived'].includes(d.v) && d.v !== ch.status) || 'not permitted';
+  },
+  chApply: d => chCanApply(chById(d.id)) || 'only Participants and Partners apply, while the challenge accepts applications',
+  cha: d => chCanApply(chById(d.id)) || 'only Participants and Partners apply, while the challenge accepts applications',
+  chWithdraw: d => {
+    const ch = chById(d.id);
+    const a = ch && chApp(ch);
+    return (!!a && !ch.project && ['Submitted', 'Shortlisted'].includes(a.status)) || 'you can withdraw only a pending application, before the team is formed';
+  },
+  chAppView: d => (chMine(chById(d.id)) && chById(d.id).apps.some(a => a.id === d.app)) || 'only the sponsor of this challenge reviews its applications',
+  chev: d => {
+    const ch = chById(d.id);
+    const a = ch && ch.apps.find(x => x.id === d.app);
+    return (chMine(ch) && !!a && !ch.project && ch.status !== 'Archived' && !['Withdrawn', 'Selected'].includes(a.status)) || 'only the sponsor evaluates pending applications, before the team is formed';
+  },
+  chForm: d => {
+    const ch = chById(d.id);
+    return (chEditable(ch) && ch.apps.some(a => a.status === 'Shortlisted')) || 'only the sponsor forms the team, once, from a shortlist';
+  },
+  chf: d => {
+    const ch = chById(d.id);
+    return (chEditable(ch) && ch.apps.some(a => a.status === 'Shortlisted')) || 'only the sponsor forms the team, once, from a shortlist';
+  },
+  chCommit: d => {
+    const ch = chById(d.id);
+    return (chMine(ch) && !!ch.project && (!ch.commit || ch.commit.status !== 'Confirmed')) || 'only the sponsor records the commitment, until both sides have confirmed it';
+  },
+  chcm: d => {
+    const ch = chById(d.id);
+    return (chMine(ch) && !!ch.project && (!ch.commit || ch.commit.status !== 'Confirmed')) || 'only the sponsor records the commitment, until both sides have confirmed it';
+  },
+  chCommitConf: d => {
+    const ch = chById(d.id);
+    return (chOwner(ch) && !!ch.commit && ch.commit.status !== 'Confirmed') || 'only the Circle owner confirms the funding commitment';
+  },
+  chco: d => {
+    const ch = chById(d.id);
+    return (chOwner(ch) && !!ch.commit && ch.commit.status !== 'Confirmed') || 'only the Circle owner confirms the funding commitment';
+  },
+  chMs: d => (!!chMsOf(d)[1] && chTeamSees(chMsOf(d)[0])) || 'only the sponsor and the project team see milestones',
+  chmc: d => (!!chMsOf(d)[1] && chTeamSees(chMsOf(d)[0])) || 'only the sponsor and the project team discuss milestones',
+  chMsNew: d => (d.m ? chMsEditOk(d) : chParty(chById(d.id)) && !!chById(d.id).project) || 'only the sponsor and the Circle owner propose or revise milestones',
+  chMsEdit: d => chMsEditOk(d) || 'only the proposer revises a milestone, and either side proposes a change to an agreed one',
+  chms: d => (d.m ? chMsEditOk(d) : chParty(chById(d.id)) && !!chById(d.id).project) || 'only the sponsor and the Circle owner propose or revise milestones',
+  chMsAgree: chMsVote,
+  chMsChanges: chMsVote,
+  chmr: chMsVote,
+  chMsDone: chMsDoneOk,
+  chmd: chMsDoneOk,
+  chMsMore: chMsReview,
+  chmi: chMsReview,
+  chMsApprove: chMsReview,
+  chma: chMsReview,
+  chPay: d => {
+    const ch = chById(d.id);
+    const opts = ch && chLive(ch) ? chPayFor(ch) : [];
+    return (chParty(ch) && opts.length > 0 && (!d.ms || opts.some(([v]) => v === 'ms:' + d.ms))) || 'the sponsor or the Circle owner records a payment once the commitment is confirmed, for initial funding or an approved milestone';
+  },
+  chp: d => (chParty(chById(d.id)) && chLive(chById(d.id))) || 'the sponsor or the Circle owner records a payment once the commitment is confirmed',
+  chPayConf: chPayConfOk,
+  chpc: chPayConfOk,
+  chDspNew: chDspNewOk,
+  chdn: chDspNewOk,
+  chDspAssign: d => (role() === 'A' && !!chDsp(d) && inCtx(chDsp(d)) && chDsp(d).status === 'Awaiting Steward assignment') || 'only a Programme Administrator in this programme assigns a Steward',
+  chda: d => (role() === 'A' && !!chDsp(d) && inCtx(chDsp(d)) && chDsp(d).status === 'Awaiting Steward assignment') || 'only a Programme Administrator in this programme assigns a Steward',
+  chdsa: d => (role() === 'F' && !!chDsp(d) && chDsp(d).steward === myId() && chDsp(d).status === 'Awaiting Steward acceptance') || 'only the assigned Steward accepts or declines',
+  chds: d => {
+    const dp = chDsp(d);
+    return (!!dp && dspOpen(dp) && (!!dspMine(dp) || (role() === 'F' && dp.steward === myId() && !!dp.accepted))) || 'only the two sides, and the Steward once they have accepted, post here';
+  },
+  chdd: d => (role() === 'F' && !!chDsp(d) && chDsp(d).steward === myId() && chDsp(d).status === 'Under review') || 'only the independent Steward decides, after confirming independence',
+  chDspWithdraw: d => {
+    const dp = chDsp(d);
+    return (!!dp && dp.raisedBy === myId() && dspOpen(dp) && !!dspMine(dp)) || 'only the side that raised the dispute withdraws it, before a decision';
+  },
+});
+// A closed Circle, Rope Team or Action Room is read-only: any guarded action aimed at it is refused, whatever the
+// screen shows. Viewing, downloads and moving the project back (which reopens it) stay allowed (RO_OK, journey.js).
+const closedRoomIn = d => {
+  for (const v of [d.c, d.r, d.x, d.id]) {
+    if (!v) continue;
+    for (const k of SPACE_KINDS) {
+      const o = byId(k, v);
+      if (o && roomClosed(o)) return [k, o];
+    }
+  }
+  return null;
+};
 // Wrap handlers. Same key may exist in A (click) and F (form submit); both are guarded.
 Object.keys(G).forEach(k => {
   [A, F].forEach(T => {
@@ -880,7 +1085,8 @@ Object.keys(G).forEach(k => {
         if (!S.session) return;
         let r;
         try {
-          r = G[k](d || {});
+          const cl = !RO_OK.includes(k) && closedRoomIn(d || {});
+          r = cl ? 'this ' + OBJ_LABEL(cl[0]) + ' is closed, so it is read-only' : G[k](d || {});
         } catch (e) {
           r = 'not permitted';
         }

@@ -315,6 +315,12 @@ function migrate() {
     if (p.state === "In review" && !p.reviewer) p.state = "Awaiting reviewer";
   });
   sqMigrate(); // support requests: ID, context, statuses, history (views/freeze.js)
+  // Country name became required on projects and Opportunity Cards: earlier records take their organization’s country
+  [...S.projects, ...S.cards].forEach((x) => {
+    if (!x.country) x.country = (x.project && (byId("projects", x.project) || {}).country) || ctxCountry(x.ctx) || "";
+  });
+  docsMigrate(); // project and document visibility, demo files (views/documents.js)
+  pubMigrate(); // the seeded Public project gets its approved team vote (views/publish.js)
   profileMigrate(); // pathway step rules, candidate source/audience (views/profile.js)
   // Milestones hold a list of evidence, each approved by the Steward; the project's Steward facilitates its Action Room
   S.rooms.forEach((x) => {
@@ -342,6 +348,7 @@ function migrate() {
   // integrations are adapters with enabled / provider_status / consent_required / data_scope / purpose / last_* fields
   adaptersMigrate();
   scopeStore();
+  chMigrate(); // sponsors' open challenges, their chat rooms and disputes (views/challenges.js)
   // Role approvals moved into Programme admin → Users
   S.notifs.forEach((n) => {
     if (n.r === "admin" && n.p && n.p.tab === "approvals") n.p.tab = "users";

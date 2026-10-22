@@ -135,7 +135,7 @@ function linkRow(o, l) {
   const name = open ? L(h(objName(oid)), OBJ_ROUTE[k], { id: oid }, 'lnk') : h(objName(oid));
   const lock = !open && SPACE_KINDS.includes(k) ? `<span class="pill p-grey" title="A link does not give access. Open it only if you are independently a member.">${ic('lock', 12)} Link only</span>` : '';
   const unlink = !l.primary && (l.created_by === myId() || linkAuth(objKind(o.id), o)) && o.state !== 'Closed' ? B('Unlink', 'unlinkObj', { id: l.id }, 'btn-g btn-sm') : '';
-  return lrow(OBJ_ICON[k] || 'link', name, `${h(rel)} · ${OBJ_LABEL(k)}${objState(k, t) ? ' · ' + h(objState(k, t)) : ''}${l.created_by ? ' · linked by ' + nm(l.created_by) : ''}${l.created_at ? ' · ' + fmt(l.created_at) : ''}`, `<span class="row" style="gap:6px">${lock}${unlink}</span>`, OBJ_TILE[k] || 't-soft');
+  return lrow(OBJ_ICON[k] || 'link', name, `${h(rel)} · ${OBJ_LABEL(k)}${objState(k, t) ? ' · ' + h(objState(k, t)) : ''}${l.created_by ? ' · linked by ' + (l.byLabel ? h(l.byLabel) : nm(l.created_by)) : ''}${l.created_at ? ' · ' + fmt(l.created_at) : ''}`, `<span class="row" style="gap:6px">${lock}${unlink}</span>`, OBJ_TILE[k] || 't-soft');
 }
 function linkCard(k, o) {
   if (!o) return '';
@@ -159,8 +159,11 @@ function linkCard(k, o) {
 }
 // A compact strip on the Overview tab: this object, where it came from and what it is linked to.
 function linkStrip(k, o) {
+  // a room that belongs to a project shows where the project is now, and lets its owner or steward move it here
+  const pj = SPACE_KINDS.includes(k) ? projOf(k, o) || linkedObjs(o.id, 'projects')[0] : null;
+  const bar = pj ? projRoomBar(pj, k) : '';
   const ls = linksOf(o.id);
-  if (!ls.length && !(o.origin && o.origin.type)) return '';
+  if (!ls.length && !(o.origin && o.origin.type)) return bar;
   const prim = ls.find(l => l.source_id === o.id && l.primary);
   const step = (kk, t, lbl, here) =>
     `<li class="jstep is-done${here ? ' is-here' : ''}"${here ? ' aria-current="step"' : ''}><span class="tile ${OBJ_TILE[kk] || 't-soft'}">${ic(OBJ_ICON[kk] || 'flag', 16)}</span><div class="jbody"><span class="jlabel">${lbl}${here ? ' <span class="jhere">You are here</span>' : ''}</span><span class="jname">${t}</span></div></li>`;
@@ -178,7 +181,7 @@ function linkStrip(k, o) {
     const out = l.source_id === o.id;
     items.push(step(objKind(id), ref(id), (out ? linkTypeLabel(l.link_type) : LINK_INVERSE[l.link_type]) + ' · ' + OBJ_LABEL(objKind(id))));
   });
-  return `<section class="journey" aria-label="Linked objects"><div class="jhead"><span class="jtitle">${ic('link', 15)}Lineage</span><span class="cap jsum">separate objects · linked by reference · no membership or permission is inherited</span></div><ol class="jsteps jsteps-free">${items.join('')}</ol></section>`;
+  return bar + `<section class="journey" aria-label="Linked objects"><div class="jhead"><span class="jtitle">${ic('link', 15)}Lineage</span><span class="cap jsum">separate objects · linked by reference · no membership or permission is inherited</span></div><ol class="jsteps jsteps-free">${items.join('')}</ol></section>`;
 }
 
 // ---- create a linked object from here

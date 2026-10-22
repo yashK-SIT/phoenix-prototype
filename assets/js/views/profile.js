@@ -1410,8 +1410,10 @@ route("pathway", "pathways", () => {
         ["done", "Complete", (f) => f === 1],
         ["none", "No current pathway", (f) => f < 0],
       ];
-      const actMenu = (x, cur) =>
-        pwCanView(x) ? B(ic("message", 16) + menuT("Conversation & activity", h(x.name) + " · " + h(cur ? "Current" : label(x))), "pwActivity", { id: x.id }, "menu-i", 'role="menuitem"') : "";
+      // A pathway name opens that pathway: its Edit pathway form when this person may edit it, otherwise its details.
+      const pwName = (x) => `<button type="button" class="pw-name-l" data-a="pwOpen" data-id="${x.id}" title="${pwEditable(x) ? "Edit this pathway" : "Open this pathway"}">${h(x.name)}</button>`;
+      const mi = (icon, t, sub, a, data) => B(ic(icon, 16) + menuT(t, sub), a, data, "menu-i", 'role="menuitem"');
+      const miOff = (icon, t, why) => `<div class="menu-i is-off" role="menuitem" aria-disabled="true">${ic(icon, 16)}${menuT(t, "Not available: " + h(why))}</div>`;
       return card(
         "Participants",
         parts.length + " participant" + (parts.length === 1 ? "" : "s"),
@@ -1439,23 +1441,27 @@ route("pathway", "pathways", () => {
             const c = curOf(p);
             const last = lastOf(c);
             const others = ls.filter((x) => x !== c);
-            const revise = others.filter((x) => x.state === "Draft" && x.by === myId());
             return {
               lead: `<span class="av" aria-hidden="true">${ini(p)}</span>`,
               title: nm(p),
-              sub: c ? `${h(c.name)} · ${pwProg(c).n}/${c.steps.length}${pwNext(c) >= 0 ? " · next by rule: step " + (pwNext(c) + 1) : ""}` : "No current pathway",
+              sub: c ? `${pwName(c)} · ${pwProg(c).n}/${c.steps.length}${pwNext(c) >= 0 ? " · next by rule: step " + (pwNext(c) + 1) : ""}` : "No current pathway",
               meta: [
                 c && c.steps.some((s) => s.rec && s.rec.status === "Awaiting participant") ? "Prior-evidence recommendation waiting for the participant" : "",
                 c && c.steps.some((s, i) => pwStepState(c, i).st === "Blocked") ? "Blocked: " + c.steps.map((s, i) => [i, pwStepState(c, i)]).filter(([, x]) => x.st === "Blocked").map(([i, x]) => "step " + (i + 1) + " — " + h(x.why)).join("; ") : "",
                 last ? `Last step completed ${fmt(last.doneAt)} by ${nm(last.doneBy)}${(last.files || []).length ? " · " + last.files.length + " file" + (last.files.length > 1 ? "s" : "") : ""}` : "",
                 c ? "Acceptance: " + pwAcceptance(c) + (c.ver > 1 ? " · version " + c.ver : "") : "",
-                ...others.map((x) => `${h(x.name)} ${pill(label(x))}`),
+                ...others.map((x) => `<span class="pw-req">${pwName(x)}${pill(label(x))}</span>`),
               ],
               badges: c ? `<span class="pw-mini" title="${Math.round(frac(c) * 100)}% complete"><span class="progress"><span class="bar" style="width:${frac(c) * 100}%"></span></span></span>` : "",
-              primary:
-                revise.map((x) => B("Revise and re-propose", "pwRevise", { id: x.id }, "btn-p btn-sm")).join("") +
-                (["F", "M"].includes(r) ? (pwCanRecommend(p) ? B("Recommend pathway", "proposePathway", { pid: p }) : c ? pwActBtn(c) : "") : c ? pwActBtn(c) : ""),
-              menu: [["F", "M"].includes(r) && c ? actMenu(c, true) : "", c && pwCanNewVer(c) ? B(ic("refresh", 16) + menuT("Propose a changed version", "The participant accepts it before it replaces the current one"), "pwNewVer", { id: c.id }, "menu-i", 'role="menuitem"') : "", ["F", "M"].includes(r) && c && c.pid !== myId() && c.steps.some((s) => s.prior && !pwClosed(s)) ? B(ic("award", 16) + menuT("Recommend prior evidence", "Steps where approved evidence may count"), "pwActivity", { id: c.id }, "menu-i", 'role="menuitem"') : "", ...others.map((x) => actMenu(x)), ...others.filter(pwEditable).map((x) => B(ic("edit", 16) + menuT("Edit pathway", h(x.name)), "pwEdit", { id: x.id }, "menu-i", 'role="menuitem"'))].filter(Boolean).join(""),
+              primary: ["F", "M"].includes(r) && pwCanRecommend(p) ? B("Recommend pathway", "proposePathway", { pid: p }) : "",
+              // One three-dot menu per participant. Conversation & activity and Edit pathway first list this person's
+              // pathways to choose from; an action nobody here can use is shown disabled with the reason.
+              menu: [
+                ls.some(pwCanView) ? mi("message", "Conversation & activity", "Choose from " + ls.filter(pwCanView).length + " pathway" + (ls.filter(pwCanView).length === 1 ? "" : "s"), "pwPick", { pid: p, v: "talk" }) : "",
+                ls.length ? (ls.some(pwEditable) ? mi("edit", "Edit pathway", ls.filter(pwEditable).length + " you can edit · choose one", "pwPick", { pid: p, v: "edit" }) : miOff("edit", "Edit pathway", "none of these pathways can be edited by you")) : "",
+                ...ls.filter((x) => x.state === "Draft" && x.by === myId()).map((x) => mi("refresh", "Revise and re-propose", h(x.name) + " · changes requested", "pwRevise", { id: x.id })),
+                c && pwCanNewVer(c) ? B(ic("refresh", 16) + menuT("Propose a changed version", "The participant accepts it before it replaces the current one"), "pwNewVer", { id: c.id }, "menu-i", 'role="menuitem"') : "", ["F", "M"].includes(r) && c && c.pid !== myId() && c.steps.some((s) => s.prior && !pwClosed(s)) ? B(ic("award", 16) + menuT("Recommend prior evidence", "Steps where approved evidence may count"), "pwActivity", { id: c.id }, "menu-i", 'role="menuitem"') : "",
+              ].filter(Boolean).join(""),
             };
           },
           empty: ["users", "No participants yet", "Participants in this context appear here.", ""],
@@ -1504,7 +1510,7 @@ A.proposePathway = (d) => {
         ? fi("pp", "circle", "Connect to a Circle you steward (optional)", { type: "select", opts: [["", "No Circle"], ...circles.map((c) => [c.id, c.name])], help: "Links the pathway to that Circle’s learning and action. You recommend as its Circle Steward." })
         : ""
     }${banner("info", "", nm(d.pid) + " must accept before it becomes their pathway. They can ask for changes or decline without losing access to anything else.")}<div class="actions">${m === "2" ? B("Check adaptation rules", "ppRefresh") : "<span></span>"}<button class="btn btn-p" type="submit">Send recommendation</button></div></form>`;
-  });
+  }, true);
 };
 A.ppRefresh = () => {
   const f = document.querySelector('[data-f="pp"]');
@@ -1527,7 +1533,6 @@ const pwFiles = (files) =>
     : "";
 const pwStepDone = (s) =>
   `Completed ${s.doneAt ? fmt(s.doneAt) : ""}${s.doneBy ? " by " + nm(s.doneBy) : ""}${s.note ? `<span class="pw-note-q">“${h(s.note)}”</span>` : ""}${pwFiles(s.files)}`;
-const pwActBtn = (p) => (pwCanView(p) ? B("Conversation & activity", "pwActivity", { id: p.id }) : "");
 // ---- Pathway engine (FR-F04, WSS clarification 5). Three separate layers, never one enum:
 //  A. design-time requirement type of a step: Mandatory | Optional | Conditional, with the rules below;
 //  B. runtime step status, always derived (pwStepState): Locked, Not started, Available, In progress, Pending review,
@@ -1785,8 +1790,17 @@ function pwStepsList(p, withState) {
     })
     .join("")}</ol>`;
 }
+// Each tag stays with its explanation when the legend wraps.
 const pwLegend = () =>
-  `<p class="pw-legend cap">${pill("Mandatory", PW_TY_C.Mandatory)} needed to complete the pathway ${pill("Optional", PW_TY_C.Optional)} you may skip it ${pill("Conditional", PW_TY_C.Conditional)} needed only when its rule is true · ${pill("Available", PW_ST_C.Available)} the next step by the rules ${pill("Not started", PW_ST_C["Not started"])} open, not begun</p>`;
+  `<p class="pw-legend cap">${[
+    [pill("Mandatory", PW_TY_C.Mandatory), "needed to complete the pathway"],
+    [pill("Optional", PW_TY_C.Optional), "you may skip it"],
+    [pill("Conditional", PW_TY_C.Conditional), "needed only when its rule is true"],
+    [pill("Available", PW_ST_C.Available), "the next step by the rules"],
+    [pill("Not started", PW_ST_C["Not started"]), "open, not begun"],
+  ]
+    .map(([t, l]) => `<span class="pw-lg-i">${t}${l}</span>`)
+    .join("")}</p>`;
 // Called by the guards: only the participant completes an Available or In-progress step of their current pathway.
 function pwStepGuard(d) {
   const p = byId("pathways", d.id);
@@ -2078,21 +2092,103 @@ function pwStepsToForm(steps) {
   }
   return o;
 }
-function pwStepFields(f) {
-  let out = `<div class="col" style="gap:10px"><p class="lbl" style="margin:0">Steps (3–5) <span class="req">*</span></p><p class="help" style="margin:0">Each step has a requirement type (Mandatory, Optional or Conditional) and rules. Statuses such as Blocked or Satisfied by prior evidence are worked out while the participant follows the pathway — they are not set here. The next step is the lowest-numbered required step that is available.</p>`;
-  for (let i = 0; i < PW_ROWS; i++) {
+// Three step cards are always shown; rows 4 and 5 appear when filled in or added. Each card keeps the essentials
+// (what, type, completion rule) open; conditions, timing, review and dependencies sit in a panel that opens by
+// itself when any of them is set, has an error, or the step is Conditional.
+const PW_MIN = 3;
+const pwRowsShown = (f) => {
+  const d = UI.form[f] || {};
+  let last = -1;
+  for (let i = 0; i < PW_ROWS; i++) if ((d["s" + i + "t"] || "").trim()) last = i;
+  return Math.min(PW_ROWS, Math.max(PW_MIN, last + 1, +d._rows || 0));
+};
+const PW_LEAN_HIDE = ["w", "c", "fr", "cs"];
+const pwRowMore = (f, i, lean) => {
+  const d = UI.form[f] || {};
+  const k = ["w", "c", "fr", "rv", "pe", "cs", ...[...Array(i).keys()].map((j) => "p" + j)].filter((x) => !lean || !PW_LEAN_HIDE.includes(x));
+  return k.filter((x) => d["s" + i + x]).length;
+};
+// o.lean (Create pathway): no "Applies when", "Yes / no question", "Available from" or "Needs an optional permission"
+// fields. Values a template already set for them are kept as hidden fields, so an unchanged template stays unchanged.
+function pwStepFields(f, o = {}) {
+  const lean = !!o.lean;
+  const rows = pwRowsShown(f);
+  const d = UI.form[f] || {};
+  const err = UI.err[f] || {};
+  let out = `<section class="pw-ed" aria-labelledby="${f}_steps_h"><div class="pw-ed-h"><h3 class="h3" id="${f}_steps_h">Steps <span class="req">*</span></h3><span class="cap">${rows} of ${PW_ROWS} · at least ${PW_MIN}</span></div><p class="help pw-ed-help">Give each step a requirement type and, if needed, rules. Statuses such as Blocked or Satisfied by prior evidence are worked out while the participant follows the pathway — they are not set here.</p><input type="hidden" name="_rows" value="${rows}">`;
+  for (let i = 0; i < rows; i++) {
+    const s = "s" + i;
     const pre = [];
-    for (let j = 0; j < i; j++) pre.push(fi(f, "s" + i + "p" + j, "Step " + (j + 1), { type: "select", opts: [["", "No dependency"], ["yes", "Needs it done or skipped"], ["done", "Needs it completed (a skip is not enough)"]] }));
-    out += `<fieldset class="card col" style="gap:8px;padding:12px;margin:0"><legend class="lbl" style="padding:0 4px">Step ${i + 1}${i < 3 ? "" : " (optional row)"}</legend><div class="g2" style="gap:8px">${fi(f, "s" + i + "t", "What the participant does", { max: 120, req: i < 3 })}${fi(f, "s" + i + "ty", "Requirement type", { type: "select", opts: PW_TYPES })}</div>${fi(f, "s" + i + "r", "Completion / evidence rule", { max: 200, ph: PW_RULE_DEF })}<div class="g2" style="gap:8px">${fi(f, "s" + i + "w", "Conditional steps: applies when", { type: "select", opts: pwWhenOpts(), help: "A stored, testable rule — never decided by AI." })}${fi(f, "s" + i + "c", "Question (for “answers Yes to the question”)", { max: 200, ph: "e.g. Will you run sessions outdoors?" })}</div><div class="g2" style="gap:8px">${fi(f, "s" + i + "fr", "Available from (optional)", { type: "date" })}<div class="col" style="gap:6px;padding-top:22px">${fi(f, "s" + i + "rv", "Requires evidence review (a Reviewer approves completion)", { type: "checkbox" })}${fi(f, "s" + i + "pe", "May be satisfied by prior evidence (a Reviewer confirms it)", { type: "checkbox" })}</div></div><div class="g2" style="gap:8px">${fi(f, "s" + i + "cs", "Needs an optional permission", { type: "select", opts: [["", "None"], ...OPT_PURPOSES.map(([k, l]) => [k, l])], help: "Only this step waits for it; the rest of the pathway is unaffected." })}</div>${pre.length ? `<div class="g2" style="gap:8px">${pre.join("")}</div>` : ""}</fieldset>`;
-  }
-  return out + `</div>`;
+    for (let j = 0; j < i; j++) {
+      const t = (d["s" + j + "t"] || "").trim();
+      pre.push(fi(f, s + "p" + j, "Step " + (j + 1) + (t ? ": " + h(t.length > 28 ? t.slice(0, 27) + "…" : t) : ""), { type: "select", opts: [["", "No dependency"], ["yes", "Done or skipped"], ["done", "Completed (a skip is not enough)"]] }));
+    }
+    const n = pwRowMore(f, i, lean);
+    const errIn = Object.keys(err).some((k) => k !== "s0t" && k.startsWith(s) && !/^s\d+(t|ty|r)$/.test(k));
+    const ui = (UI.pwOpen || {})[f + i];
+    const open = ui != null ? ui : n > 0 || errIn || d[s + "ty"] === "Conditional";
+    const rm = i === rows - 1 && i >= PW_MIN ? `<button type="button" class="btn btn-g btn-sm pw-ed-rm" data-a="pwRowRm" data-f="${f}" data-i="${i}" aria-label="Remove step ${i + 1}">${ic("x", 14)}<span class="hide-sm">Remove</span></button>` : "";
+    out += `<div class="pw-ed-step" role="group" aria-labelledby="${f}_${s}_h"><div class="pw-ed-sh"><span class="np-n" aria-hidden="true">${i + 1}</span><b id="${f}_${s}_h">Step ${i + 1}</b><span class="cap">${i < PW_MIN ? "Required row" : "Extra row"}</span>${rm}</div>
+<div class="pw-ed-main">${fi(f, s + "t", "What the participant does", { max: 120, req: i < PW_MIN, ph: "e.g. Complete the safeguarding module" })}${fi(f, s + "ty", "Requirement type", { type: "select", opts: PW_TYPES, ch: "pwTy" })}</div>
+${fi(f, s + "r", "Completion or evidence rule", { max: 200, ph: PW_RULE_DEF })}
+<details class="pw-ed-more" data-open="${f + i}" ${open ? "open" : ""}><summary><span>${lean ? "Review and dependencies" : "Conditions, timing and review"}</span>${n ? `<span class="pill p-teal">${n} set</span>` : '<span class="cap">Optional</span>'}${ic("chev", 14)}</summary><div class="pw-ed-body">
+${
+  lean
+    ? PW_LEAN_HIDE.map((k) => `<input type="hidden" name="${s + k}" value="${h(d[s + k] || "")}">`).join("")
+    : `<div class="pw-ed-grid">${fi(f, s + "w", "Applies when (Conditional only)", { type: "select", opts: pwWhenOpts() })}${fi(f, s + "c", "Yes / no question", { max: 200, ph: "e.g. Will you run sessions outdoors?" })}${fi(f, s + "fr", "Available from", { type: "date" })}${fi(f, s + "cs", "Needs an optional permission", { type: "select", opts: [["", "None"], ...OPT_PURPOSES.map(([k, l]) => [k, l])] })}</div>
+<p class="help pw-ed-note">Conditions are stored, testable rules — never decided by AI. A permission holds back only this step; the rest of the pathway is unaffected.</p>`
 }
+<div class="pw-ed-checks">${fi(f, s + "rv", "Requires evidence review (a Reviewer approves completion)", { type: "checkbox" })}${fi(f, s + "pe", "May be satisfied by prior evidence (a Reviewer confirms it)", { type: "checkbox" })}</div>
+${pre.length ? `<div class="pw-ed-deps"><span class="lbl">Depends on</span><div class="pw-ed-grid">${pre.join("")}</div></div>` : ""}
+</div></details></div>`;
+  }
+  out += rows < PW_ROWS ? `<div class="pw-ed-add">${B(ic("plus", 14) + "Add step " + (rows + 1), "pwRowAdd", { f, n: rows + 1 }, "btn-s btn-sm")}<span class="cap">Up to ${PW_ROWS} steps.</span></div>` : `<p class="cap pw-ed-add">${PW_ROWS} steps is the maximum.</p>`;
+  return out + `</section>`;
+}
+// Rows are added and removed in place. render() builds the page before it reads the form back, so each handler
+// takes the snapshot first to keep everything typed so far.
+A.pwRowAdd = (d) => {
+  snapForms();
+  UI.form[d.f] = { ...(UI.form[d.f] || {}), _rows: Math.min(PW_ROWS, +d.n) };
+  (UI.pwOpen = UI.pwOpen || {})[d.f + (+d.n - 1)] = undefined;
+  render();
+  setTimeout(() => document.getElementById(d.f + "_s" + (+d.n - 1) + "t")?.focus(), 0);
+};
+A.pwRowRm = (d, el) => {
+  // clear the row in the page first: render() reads the form back from the page
+  el.closest(".pw-ed-step").querySelectorAll("input,select,textarea").forEach((x) => (x.type === "checkbox" ? (x.checked = false) : (x.value = x.tagName === "SELECT" && x.name.endsWith("ty") ? "Mandatory" : "")));
+  snapForms();
+  UI.form[d.f] = { ...(UI.form[d.f] || {}), _rows: Math.max(PW_MIN, +d.i) };
+  if (UI.err[d.f]) Object.keys(UI.err[d.f]).forEach((k) => k.startsWith("s" + d.i) && delete UI.err[d.f][k]);
+  render();
+};
+// Choosing Conditional opens the step's rules panel.
+A.pwTy = (d, el) => {
+  const m = /^s(\d+)ty$/.exec(el.name);
+  const f = el.form && el.form.dataset.f;
+  if (m && f && el.value === "Conditional") (UI.pwOpen = UI.pwOpen || {})[f + m[1]] = true;
+  snapForms();
+  render();
+};
+// The rules panel stays as the person left it across re-renders.
+document.addEventListener(
+  "toggle",
+  (e) => {
+    const k = e.target && e.target.dataset && e.target.dataset.open;
+    if (k) (UI.pwOpen = UI.pwOpen || {})[k] = e.target.open;
+  },
+  true,
+);
 // Validation rules for the step rows (merged into the form's other rules).
-function pwStepRules(d) {
+function pwStepRules(d, o = {}) {
   const n = [...Array(PW_ROWS).keys()].filter((i) => (d["s" + i + "t"] || "").trim()).length;
   const r = { s0t: [["fn", { f: () => n >= 3 && n <= 5, m: "Enter 3 to 5 steps." }]] };
   for (let i = 0; i < PW_ROWS; i++) {
     if (!(d["s" + i + "t"] || "").trim() || d["s" + i + "ty"] !== "Conditional") continue;
+    if (o.lean && !d["s" + i + "w"]) {
+      r["s" + i + "ty"] = [["fn", { f: () => false, m: "A Conditional step needs a rule for when it applies, which this form does not set. Choose Mandatory or Optional, or start from a template that already has the condition." }]];
+      continue;
+    }
     r["s" + i + "w"] = [["req", "Choose the rule that decides when this Conditional step applies."]];
     if (d["s" + i + "w"] === "ask") r["s" + i + "c"] = [["req", "Write the yes/no question."]];
     if (d["s" + i + "w"] === "after" && ![...Array(i).keys()].some((j) => ["yes", "done"].includes(d["s" + i + "p" + j])))
@@ -2487,7 +2583,7 @@ A.draftPathway = (d) => {
   modal(
     "Draft your own pathway",
     () =>
-      `<form data-f="pp" class="col pf-form" novalidate>${errSum("pp")}<input type="hidden" name="pid" value="${d.pid}"><input type="hidden" name="mode" value="3">${fi("pp", "name", "Pathway name", { req: true })}${pwStepFields("pp")}${banner("info", "", "Custom pathways are approved by an authorised Reviewer in this programme.")}<div class="actions"><span></span><button class="btn btn-p" type="submit">Submit for review</button></div></form>`,
+      `<form data-f="pp" class="col pf-form" novalidate>${errSum("pp")}<input type="hidden" name="pid" value="${d.pid}"><input type="hidden" name="mode" value="3">${fi("pp", "name", "Pathway name", { req: true })}${pwStepFields("pp")}${banner("info", "", "Custom pathways are approved by an authorised Reviewer in this programme.")}<div class="actions"><span></span><button class="btn btn-p" type="submit">Submit for review</button></div></form>`, true,
   );
 };
 // ---- A participant creates and submits a pathway; the Programme Administrator assigns a reviewer (Steward or
@@ -2588,15 +2684,67 @@ function pwToReviewCard() {
 // ---- the creator edits a pathway until it is approved or accepted, and only while no step has been completed
 const PW_EDITABLE = ["Awaiting reviewer", "In review", "Clarification requested", "Draft", "Proposed to participant"];
 const pwEditable = (p) => !!p && p.by === myId() && PW_EDITABLE.includes(p.state) && !p.steps.some((s) => s.done);
+// Why the creator-only edit rule does not allow editing this pathway now (shown instead of a missing action).
+const pwEditWhy = (p) =>
+  p.by !== myId()
+    ? "only " + P(p.by).name + ", who created it, edits it"
+    : p.steps.some((s) => s.done)
+      ? "a step is already completed"
+      : p.state === PW_REC
+        ? "it is with the participant, who can accept it or ask for changes"
+        : "not editable while " + String(p.state).toLowerCase();
+// Choose which of a participant's pathways an action applies to (Edit pathway or Conversation & activity).
+// The current pathway comes first; a pathway the action cannot be used on is listed disabled with the reason.
+A.pwPick = (d) => {
+  const edit = d.v === "edit";
+  const ls = S.pathways
+    .filter((x) => x.pid === d.pid && inCtx(x) && (edit || pwCanView(x)))
+    .sort((a, b) => (b.state === "Current") - (a.state === "Current") || String(b.proposedAt || "").localeCompare(String(a.proposedAt || "")));
+  const st = (x) => (x.state === "Draft" && x.changeReq ? "Change requested" : x.state);
+  const ok = (x) => (edit ? pwEditable(x) : pwCanView(x));
+  modal(
+    (edit ? "Edit pathway" : "Conversation & activity") + " · " + nm(d.pid),
+    () =>
+      `<div class="col pw-pick-w"><p class="cap">${edit ? "Choose the pathway to edit. Only pathways you created, before they are accepted or a step is completed, can be edited." : "Choose the pathway whose conversation and activity you want to open."}</p><ul class="pw-pick">${ls
+        .map((x) => {
+          const body = `<span class="pw-pick-t"><b>${h(x.name)}</b><span class="cap">${h(x.mode || "")} · created by ${nm(x.by)}${convoN(x) ? " · " + convoN(x) + " message" + (convoN(x) > 1 ? "s" : "") : ""}</span>${ok(x) ? "" : `<span class="cap pw-pick-why">${ic("lock", 13)}Not available: ${h(pwEditWhy(x))}</span>`}</span><span class="pw-pick-s">${pill(st(x))}</span>`;
+          return `<li>${ok(x) ? `<button type="button" class="pw-pick-i" data-a="${edit ? "pwEdit" : "pwActivity"}" data-id="${x.id}" data-from="${h(d.pid)}" data-fv="${h(d.v)}">${body}${ic("chevr", 16)}</button>` : `<div class="pw-pick-i is-off" aria-disabled="true">${body}</div>`}</li>`;
+        })
+        .join("")}</ul><div class="actions">${B("Cancel", "closeM")}<span></span></div></div>`,
+  );
+};
+// Clicking a pathway name: edit it when permitted, otherwise open its details and say why it is read-only.
+A.pwOpen = (d) => {
+  const x = byId("pathways", d.id);
+  if (pwEditable(x)) return A.pwEdit({ id: x.id, from: x.pid, fv: "edit" });
+  A.pwActivity({ id: x.id, from: x.pid, fv: "talk", why: pwEditWhy(x) });
+};
+// From Edit pathway to its Conversation & activity: unsaved edits are kept for the way back.
+A.pwEditTalk = (d) => {
+  snapForms();
+  A.pwActivity({ id: d.id, back: "edit", from: d.from || "", fv: d.fv || "" });
+};
 const pwEditBtn = (p) => (pwEditable(p) ? B(ic("edit", 14) + "Edit", "pwEdit", { id: p.id }) : "");
 A.pwEdit = (d) => {
   const p = byId("pathways", d.id);
-  clearF("pwe");
-  UI.form.pwe = { name: p.name, ...pwStepsToForm(p.steps), note: "" };
+  // Coming back from this pathway's conversation keeps the unsaved edits; any other opening starts from the saved pathway.
+  if (!(d.keep && UI.pweFor === p.id && UI.form.pwe)) {
+    clearF("pwe");
+    UI.form.pwe = { name: p.name, ...pwStepsToForm(p.steps), note: "" };
+  }
+  UI.pweFor = p.id;
+  const from = d.from || "";
+  const fv = d.fv || "";
   modal(
-    "Edit pathway",
+    "Edit pathway · " + h(p.name),
     () =>
-      `<form data-f="pwe" class="col pf-form" novalidate>${errSum("pwe")}<input type="hidden" name="id" value="${p.id}">${fi("pwe", "name", "Pathway name", { req: true, max: 120 })}${pwStepFields("pwe")}${fi("pwe", "note", "What you changed (optional)", { type: "textarea", rows: 2, max: 2000, help: "Added to the pathway conversation." })}${banner("info", "", "Editing keeps the pathway’s current state (" + h(p.state) + "). Everyone involved is told it changed.")}<div class="actions">${B("Cancel", "closeM")}<button class="btn btn-p" type="submit">Save changes</button></div></form>`,
+      // Same sections and sticky action bar as Create pathway (pwForm).
+      `<form data-f="pwe" class="col pf-form pw-form" novalidate>${errSum("pwe")}<input type="hidden" name="id" value="${p.id}">
+<div class="pw-ed-nav">${from ? B(ic("chevl", 14) + "All pathways for " + nm(from), "pwPick", { pid: from, v: fv || "edit" }, "btn-g btn-sm") : "<span></span>"}${pwCanView(p) ? B(ic("message", 14) + "Conversation & activity" + (convoN(p) ? ` <span class="cnt">${convoN(p)}</span>` : ""), "pwEditTalk", { id: p.id, from, fv }, "btn-s btn-sm") : ""}</div>
+<section class="pw-sec" aria-labelledby="pwe_about_h"><h3 class="h3" id="pwe_about_h">About this pathway</h3><div class="pw-top">${fi("pwe", "name", "Pathway name", { req: true, max: 120 })}</div>${banner("info", "", "For " + nm(p.pid) + ". Editing keeps the pathway’s current state (" + h(p.state) + "). Everyone involved is told it changed.")}</section>
+<section class="pw-sec">${pwStepFields("pwe")}</section>
+<section class="pw-sec">${fi("pwe", "note", "What you changed (optional)", { type: "textarea", rows: 2, max: 2000, help: "Added to the pathway conversation." })}</section>
+<div class="actions pw-acts">${B("Cancel", "closeM")}<button class="btn btn-p" type="submit">Save changes</button></div></form>`, true,
   );
 };
 F.pwe = (d) => {
@@ -2627,7 +2775,7 @@ function pwForm(p) {
   const src = fv("pwn", "src", p ? p.tpl || "custom" : "custom");
   const tpl = byId("templates", src);
   if (!UI.form.pwn) UI.form.pwn = { src, name: p ? p.name : "", ...pwStepsToForm(p ? p.steps : []) };
-  return `<form data-f="pwn" class="col pf-form" novalidate>${errSum("pwn")}<input type="hidden" name="id" value="${p ? p.id : ""}">${p && p.reviewNote ? banner("warn", "Clarification requested by " + nm(p.reviewer), h(p.reviewNote)) : ""}${p ? "" : fi("pwn", "src", "Start from", { type: "select", opts: [["custom", "My own steps"], ...tpls.map((t) => [t.id, "Template: " + t.name])], ch: "pwnSrc" })}${fi("pwn", "name", "Pathway name", { req: true, value: p ? p.name : tpl ? tpl.name : "" })}${pwStepFields("pwn")}${fi("pwn", "note", p ? "Your response and what you changed" : "Note for the reviewer (optional)", { type: "textarea", rows: 2, req: !!p, help: p ? "Added to the review conversation." : "" })}${
+  const info =
     !p && tpl
       ? banner(
           "info",
@@ -2636,13 +2784,17 @@ function pwForm(p) {
             (pwCur() ? " Your current pathway “" + h(pwCur().name) + "” is kept in your history as Superseded." : "") +
             " If you change any step, it goes to an authorised Reviewer first.",
         )
-      : banner("info", "", "An authorised Reviewer in this programme approves your pathway. It becomes current when they approve it.")
-  }<div class="actions"><span></span><button class="btn btn-p" type="submit">${p ? "Resubmit for review" : tpl ? "Start this pathway" : "Submit for review"}</button></div></form>`;
+      : banner("info", "", "An authorised Reviewer in this programme approves your pathway. It becomes current when they approve it.");
+  return `<form data-f="pwn" class="col pf-form pw-form" novalidate>${errSum("pwn")}<input type="hidden" name="id" value="${p ? p.id : ""}">${p && p.reviewNote ? banner("warn", "Clarification requested by " + nm(p.reviewer), h(p.reviewNote)) : ""}
+<section class="pw-sec" aria-labelledby="pwn_about_h"><h3 class="h3" id="pwn_about_h">About this pathway</h3><div class="${p ? "" : "f2 "}pw-top">${p ? "" : fi("pwn", "src", "Start from", { type: "select", opts: [["custom", "My own steps"], ...tpls.map((t) => [t.id, "Template: " + t.name])], ch: "pwnSrc" })}${fi("pwn", "name", "Pathway name", { req: true, max: 120, value: p ? p.name : tpl ? tpl.name : "", ph: "e.g. Community facilitation foundations" })}</div>${info}</section>
+<section class="pw-sec">${pwStepFields("pwn", { lean: true })}</section>
+<section class="pw-sec">${fi("pwn", "note", p ? "Your response and what you changed" : "Note for the reviewer (optional)", { type: "textarea", rows: 3, req: !!p, max: 2000, help: p ? "Added to the review conversation." : "Anything the reviewer should know, such as why you chose these steps." })}</section>
+<div class="actions pw-acts">${B("Cancel", "closeM")}<button class="btn btn-p" type="submit">${p ? "Resubmit for review" : tpl ? "Start this pathway" : "Submit for review"}</button></div></form>`;
 }
 const pwCur = (pid = myId()) => S.pathways.find((x) => x.pid === pid && x.ctx === ctxId() && x.state === "Current");
 A.pwNew = () => {
   clearF("pwn");
-  modal("Create a pathway", () => pwForm(null));
+  modal("Create a pathway", () => pwForm(null), true);
 };
 A.pwnSrc = (d, el) => {
   const form = el.closest("form");
@@ -2656,11 +2808,11 @@ A.pwnSrc = (d, el) => {
 A.pwUpd = (d) => {
   clearF("pwn");
   const p = byId("pathways", d.id);
-  modal("Update and resubmit", () => pwForm(p));
+  modal("Update and resubmit", () => pwForm(p), true);
 };
 F.pwn = (d) => {
   const p0 = d.id && byId("pathways", d.id);
-  if (!validate("pwn", d, { name: ["req"], ...pwStepRules(d), ...(p0 ? { note: ["req"] } : {}) })) return render();
+  if (!validate("pwn", d, { name: ["req"], ...pwStepRules(d, { lean: true }), ...(p0 ? { note: ["req"] } : {}) })) return render();
   const steps = pwStepsRead(d);
   if (p0) {
     Object.assign(p0, { name: d.name.trim(), steps, state: "In review", resubmitted: today(), note: d.note.trim() });
@@ -2992,7 +3144,7 @@ A.pwRevise = (d) => {
   modal(
     "Revise and re-propose",
     () =>
-      `<form data-f="pwv" class="col pf-form" novalidate>${errSum("pwv")}<input type="hidden" name="id" value="${p.id}">${p.changeReq ? banner("warn", "Change requested", h(p.changeReq)) : ""}${pwStepFields("pwv")}${fi("pwv", "note", "What you changed", { req: true })}${banner("info", "", pwCustom(p) ? "Custom pathways go back to a Reviewer before the participant sees them." : "If the revised steps stay within the template’s adaptation rules, it goes straight back to the participant to accept; otherwise a Reviewer approves it first.")}<div class="actions"><span></span><button class="btn btn-p" type="submit">Re-recommend</button></div></form>`,
+      `<form data-f="pwv" class="col pf-form" novalidate>${errSum("pwv")}<input type="hidden" name="id" value="${p.id}">${p.changeReq ? banner("warn", "Change requested", h(p.changeReq)) : ""}${pwStepFields("pwv")}${fi("pwv", "note", "What you changed", { req: true })}${banner("info", "", pwCustom(p) ? "Custom pathways go back to a Reviewer before the participant sees them." : "If the revised steps stay within the template’s adaptation rules, it goes straight back to the participant to accept; otherwise a Reviewer approves it first.")}<div class="actions"><span></span><button class="btn btn-p" type="submit">Re-recommend</button></div></form>`, true,
   );
 };
 // Steps read back from the editor keep the template wording of a step whose title was reworded (minor change).
@@ -3139,7 +3291,7 @@ A.pwNewVer = (d) => {
   clearF("pwnv");
   UI.form.pwnv = { ...pwStepsToForm(p.steps), why: "" };
   modal("Propose a changed version of " + h(p.name), () =>
-    `<form data-f="pwnv" class="col pf-form" novalidate>${errSum("pwnv")}<input type="hidden" name="id" value="${p.id}">${banner("info", "Material or minor change", "Rewording step titles only is a minor change: it applies straight away and " + nm(p.pid) + " is told. Any other change — steps added, removed or reordered, requirement type, rule, condition, dependency, date, permission, review or evidence settings — is material: version " + ((p.ver || 1) + 1) + " needs " + nm(p.pid) + "’s acceptance, and version " + (p.ver || 1) + " stays active until then. Closed steps carry over where the step is unchanged.")}${pwStepFields("pwnv")}${fi("pwnv", "why", "What changed and why", { type: "textarea", rows: 2, req: true, max: 300, help: "Shown to " + nm(p.pid) + "." })}<div class="actions">${B("Cancel", "closeM")}<button class="btn btn-p" type="submit">Send new version</button></div></form>`,
+    `<form data-f="pwnv" class="col pf-form" novalidate>${errSum("pwnv")}<input type="hidden" name="id" value="${p.id}">${banner("info", "Material or minor change", "Rewording step titles only is a minor change: it applies straight away and " + nm(p.pid) + " is told. Any other change — steps added, removed or reordered, requirement type, rule, condition, dependency, date, permission, review or evidence settings — is material: version " + ((p.ver || 1) + 1) + " needs " + nm(p.pid) + "’s acceptance, and version " + (p.ver || 1) + " stays active until then. Closed steps carry over where the step is unchanged.")}${pwStepFields("pwnv")}${fi("pwnv", "why", "What changed and why", { type: "textarea", rows: 2, req: true, max: 300, help: "Shown to " + nm(p.pid) + "." })}<div class="actions">${B("Cancel", "closeM")}<button class="btn btn-p" type="submit">Send new version</button></div></form>`, true,
   );
 };
 F.pwnv = (d) => {
@@ -3200,58 +3352,54 @@ A.pwActivity = (d) => {
   const p = byId("pathways", d.id);
   clearF("cv");
   // A function body, so a message posted from the dialog shows in place.
-  modal("Pathway · " + h(p.name), () =>
-    `<div class="col pw-act">${dl([
+  // Layout: status strip and details, then one block per step (no wide table), then the conversation with its form last.
+  modal("Pathway · " + h(p.name), () => {
+    const steps = p.steps.map((s, i) => {
+      const x = pwStepState(p, i);
+      const ev = s.priorEv && byId("evidence", s.priorEv);
+      const canRec = G.pwPrior({ id: p.id, i }) === true && !(s.rec && s.rec.status === "Awaiting participant");
+      const canRev = s.pend && pwStepReviewers(p).includes(myId()) && p.pid !== myId();
+      const fact = s.type === "Conditional" && pwFactDef(s) && pwFactDef(s).who === "S" && pwFactWho(p, s) && !s.done && p.state === "Current";
+      const done = s.done
+        ? `${s.doneBy ? nm(s.doneBy) : ""}${s.doneAt ? " · " + fmt(s.doneAt) : ""}${s.reviewedBy ? '<span class="pw-why">Checked by ' + nm(s.reviewedBy) + "</span>" : ""}`
+        : s.st === "Satisfied by prior evidence"
+          ? `Prior evidence ${ev ? L(h(ev.title), "evidence", { id: ev.id }) : ""} · selected by ${nm(s.priorBy || s.recBy)}${s.priorOk ? " · confirmed by " + nm(s.priorOk) : ""} · ${fmt(s.priorAt || s.recAccepted)}`
+          : "";
+      const note = s.done && (s.note || (s.files || []).length) ? `${s.note ? h(s.note) : ""}${pwFiles(s.files)}` : "";
+      const why = [
+        x.why && [PW_S.BLOCKED, PW_S.PENDING, PW_S.NA, PW_S.LOCKED].includes(x.st) ? `<span><b>Reason:</b> ${h(x.why)}</span>` : "",
+        x.next ? `<span><b>Next action:</b> ${h(x.next)}</span>` : "",
+        s.rec && s.rec.status === "Awaiting participant" ? `<span>Prior-evidence suggestion by ${nm(s.rec.by)} waiting for ${nm(p.pid)}</span>` : "",
+      ].filter(Boolean);
+      const acts =
+        (canRec ? B(pwStepReviewers(p).includes(myId()) ? "Apply prior evidence" : "Suggest evidence", "pwPrior", { id: p.id, i }, "btn-s btn-sm") : "") +
+        (canRev ? B("Return", "pwStepRev", { id: p.id, i, v: "return" }, "btn-s btn-sm") + B("Approve", "pwStepRev", { id: p.id, i, v: "ok" }, "btn-p btn-sm") : "") +
+        (fact ? B("No", "pwFact", { id: p.id, i, v: "no" }, "btn-s btn-sm") + B("Confirm Yes", "pwFact", { id: p.id, i, v: "yes" }, "btn-p btn-sm") : "");
+      const kv = (l, v) => `<div class="pw-sd-f"><span class="lbl">${l}</span><div>${v || '<span class="cap">—</span>'}</div></div>`;
+      return `<li class="pw-sd"><div class="pw-sd-h"><span class="pw-sd-n" aria-hidden="true">${i + 1}</span><div class="pw-sd-t"><b><span class="sr">Step ${i + 1}: </span>${h(s.t)}</b>${s.type === "Conditional" ? `<span class="pw-why">Applies when: ${h(pwWhenTxt(s))}</span>` : ""}</div><div class="pw-sd-tags">${pill(s.type || "Mandatory", PW_TY_C[s.type] || "p-navy")}${pill(x.st, PW_ST_C[x.st])}</div></div>${why.length ? `<div class="pw-sd-why${x.st === PW_S.BLOCKED ? " is-blocked" : ""}">${why.join("")}</div>` : ""}<div class="pw-sd-kv">${kv("Prerequisite", h(pwPreTxt(p, s)))}${kv("Completion rule", h(s.rule || PW_RULE_DEF) + (s.review ? '<span class="pw-why">A Reviewer checks completion</span>' : ""))}${kv("Completed", done)}${kv("Note and files", note)}</div>${acts ? `<div class="pw-sd-a">${acts}</div>` : ""}</li>`;
+    });
+    const nav =
+      d.back === "edit" && pwEditable(p)
+        ? B(ic("chevl", 14) + "Back to Edit pathway", "pwEdit", { id: p.id, keep: 1, from: d.from || "", fv: d.fv || "" }, "btn-g btn-sm")
+        : d.from
+          ? B(ic("chevl", 14) + "All pathways for " + nm(d.from), "pwPick", { pid: d.from, v: d.fv || "talk" }, "btn-g btn-sm")
+          : "";
+    return `<div class="col pw-act">${nav ? `<div class="pw-ed-nav">${nav}${pwEditable(p) && d.back !== "edit" ? B(ic("edit", 14) + "Edit pathway", "pwEdit", { id: p.id, from: d.from || "", fv: "edit" }, "btn-s btn-sm") : "<span></span>"}</div>` : ""}${d.why ? banner("info", "You can view this pathway but not edit it", "Not editable: " + h(d.why) + ".") : ""}<div class="pw-act-st">${pill(p.state === "Draft" && p.changeReq ? "Change requested" : p.state)}${pwAccPill(p)}${p.ver > 1 ? `<span class="cap">Version ${p.ver}</span>` : ""}<span class="cap">${pwProg(p).n} of ${p.steps.length} steps closed</span></div><section class="pw-act-sec" aria-labelledby="pwa_d"><h3 class="h3" id="pwa_d">Details</h3>${dl([
       ["Participant", nm(p.pid)],
       ["Mode", h(p.mode)],
       ["Created by", pwRoleLine(p)],
       p.reason && ["Why it was recommended", h(p.reason)],
       p.tpl && ["Template", h((byId("templates", p.tpl) || {}).name || "—") + " · version " + (p.tplVer || 1)],
       ["Reviewer", p.reviewer ? nm(p.reviewer) : p.state === "Awaiting reviewer" ? "In the review queue — any authorised Reviewer" : pwCustom(p) ? "—" : "Not needed (approved template or allowed adaptation)"],
-      [
-        "Pathway state",
-        pill(p.state === "Draft" && p.changeReq ? "Change requested" : p.state) + (p.ver > 1 ? " · version " + p.ver : ""),
-      ],
+      ["Pathway state", pill(p.state === "Draft" && p.changeReq ? "Change requested" : p.state) + (p.ver > 1 ? " · version " + p.ver : "")],
       ["Participant acceptance", pwAccPill(p) + (p.acceptedAt ? " · " + fmt(p.acceptedAt) : p.declinedAt ? " · " + fmt(p.declinedAt) : "")],
       p.prev && ["Replaces", h((byId("pathways", p.prev) || {}).name || p.prev) + " (earlier version)"],
       Object.keys(p.facts || {}).length && ["Condition answers", Object.entries(p.facts).map(([k, a]) => `${h((PW_FACTS[k] || {}).label || (/^ask\d+$/.test(k) && p.steps[+k.slice(3)] ? p.steps[+k.slice(3)].cond : k))}: <b>${a.v === "yes" ? "Yes" : "No"}</b> (${nm(a.by)}, ${fmt(a.at)})`).join("<br>")],
-      p.changeReq &&
-        p.state === "Draft" && ["Open change request", h(p.changeReq)],
+      p.changeReq && p.state === "Draft" && ["Open change request", h(p.changeReq)],
       ["Recommended and accepted", pwWho(p)],
       p.state === "Declined" && ["Declined by the participant", h(p.declineWhy || "") + (p.declinedAt ? " · " + fmt(p.declinedAt) : "")],
-    ])}<div><h3 class="h3 pw-h">Conversation and activity</h3><p class="cap" style="margin-bottom:10px">Messages between the pathway owner, the Programme Administrator and the Steward, with every review step. Oldest first. The same conversation is in Messages.</p>${convoHtml("pathway", p)}</div><div><h3 class="h3" style="margin-bottom:8px">Steps and rules</h3>${pwLegend()}${table(
-      ["Step", "Type", "State", "Prerequisite", "Completion rule", "Completed", "Note and files", ""],
-      p.steps.map((s, i) => {
-        const x = pwStepState(p, i);
-        const ev = s.priorEv && byId("evidence", s.priorEv);
-        const canRec = G.pwPrior({ id: p.id, i }) === true && !(s.rec && s.rec.status === "Awaiting participant");
-        const canRev = s.pend && pwStepReviewers(p).includes(myId()) && p.pid !== myId();
-        const fact = s.type === "Conditional" && pwFactDef(s) && pwFactDef(s).who === "S" && pwFactWho(p, s) && !s.done && p.state === "Current";
-        return [
-          `${i + 1}. ${h(s.t)}${s.type === "Conditional" ? `<span class="pw-why">Applies when: ${h(pwWhenTxt(s))}</span>` : ""}`,
-          pill(s.type || "Mandatory", PW_TY_C[s.type] || "p-navy"),
-          pill(x.st, PW_ST_C[x.st]) +
-            (x.why && [PW_S.BLOCKED, PW_S.PENDING, PW_S.NA, PW_S.LOCKED].includes(x.st) ? `<span class="pw-why"><b>Reason:</b> ${h(x.why)}</span>` : "") +
-            (x.next ? `<span class="pw-why"><b>Next action:</b> ${h(x.next)}</span>` : "") +
-            (s.rec && s.rec.status === "Awaiting participant" ? `<span class="pw-why">Prior-evidence suggestion by ${nm(s.rec.by)} waiting for ${nm(p.pid)}</span>` : ""),
-          h(pwPreTxt(p, s)),
-          h(s.rule || PW_RULE_DEF) + (s.review ? '<span class="pw-why">A Reviewer checks completion</span>' : ""),
-          s.done
-            ? `${s.doneBy ? nm(s.doneBy) : ""}${s.doneAt ? " · " + fmt(s.doneAt) : ""}${s.reviewedBy ? '<span class="pw-why">Checked by ' + nm(s.reviewedBy) + "</span>" : ""}`
-            : s.st === "Satisfied by prior evidence"
-              ? `Prior evidence ${ev ? L(h(ev.title), "evidence", { id: ev.id }) : ""} · selected by ${nm(s.priorBy || s.recBy)}${s.priorOk ? " · confirmed by " + nm(s.priorOk) : ""} · ${fmt(s.priorAt || s.recAccepted)}`
-              : "",
-          s.done && (s.note || (s.files || []).length)
-            ? `${s.note ? h(s.note) : ""}${pwFiles(s.files)}`
-            : "",
-          (canRec ? B(pwStepReviewers(p).includes(myId()) ? "Apply prior evidence" : "Suggest evidence", "pwPrior", { id: p.id, i }, "btn-s btn-sm") : "") +
-            (canRev ? B("Return", "pwStepRev", { id: p.id, i, v: "return" }, "btn-s btn-sm") + B("Approve", "pwStepRev", { id: p.id, i, v: "ok" }, "btn-p btn-sm") : "") +
-            (fact ? B("No", "pwFact", { id: p.id, i, v: "no" }, "btn-s btn-sm") + B("Confirm Yes", "pwFact", { id: p.id, i, v: "yes" }, "btn-p btn-sm") : ""),
-        ];
-      }),
-    )}</div></div>`,
-    true,
-  );
+    ])}</section><section class="pw-act-sec" aria-labelledby="pwa_s"><div class="pw-act-sh"><h3 class="h3" id="pwa_s">Steps and rules</h3>${pwLegend()}</div><ol class="pw-sds">${steps.join("")}</ol></section><section class="pw-act-sec" aria-labelledby="pwa_c"><h3 class="h3" id="pwa_c">Conversation and activity</h3><p class="cap">Messages between the pathway owner, the Programme Administrator and the Steward, with every review step. Oldest first. The same conversation is in Messages.</p>${convoHtml("pathway", p)}</section></div>`;
+  }, true);
 };
 // ---------- ASK PHOENIX (F09, class A) ----------
 // Ask PHOENIX is presented as a docked assistant (views/assist.js); the rules below are unchanged.

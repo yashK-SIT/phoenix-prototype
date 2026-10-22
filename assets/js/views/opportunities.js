@@ -73,10 +73,11 @@ route('opportunities', 'opportunities', () => {
     card(t.cur === 'mine' ? 'Your cards' : 'Cards you can discover', '', dataView('opps:' + t.cur, {
       label: 'cards',
       items: f,
-      search: c => c.title + ' ' + c.desc + ' ' + c.cat + ' ' + P(c.owner).name,
+      search: c => c.title + ' ' + c.desc + ' ' + c.cat + ' ' + (c.country || '') + ' ' + P(c.owner).name,
       searchLabel: 'Search cards',
       quick: { label: 'Type', options: ['Need', 'Offer', 'Asset', 'Opportunity'].map(k => [k, k]), test: (c, v) => c.kind === v },
       filters: [
+        ...(dvOpts(S.cards, c => c.country).length > 1 ? [{ key: 'country', label: 'Country', options: dvOpts(S.cards, c => c.country), test: (c, v) => c.country === v }] : []),
         { key: 'cat', label: 'Category', options: dvOpts(S.cards, c => c.cat), test: (c, v) => c.cat === v },
         { key: 'status', label: 'Status', options: ['Draft', 'Active', 'Paused', 'Fulfilled/Closed', 'Withdrawn', 'Expired'].map(s => [s, s]), test: (c, v) => c.status === v },
       ],
@@ -89,7 +90,7 @@ route('opportunities', 'opportunities', () => {
         lead: `<span class="tile opp-tile-${(OPP_KIND[c.kind] || [])[1] || 'opp'}" aria-hidden="true">${ic((OPP_KIND[c.kind] || [])[0] || 'megaphone', 18)}</span>`,
         title: h(c.title),
         sub: `<span class="opp-desc">${h(c.desc)}</span>`,
-        meta: [h(c.cat), nm(c.owner) + (c.ownerOrg ? ' · ' + h(S.orgs.find(o => o.id === c.ownerOrg).name) : ''), audienceText(c), c.from ? `From ${L(cName(c.from), 'circle', { id: c.from })}` : '', 'Expires ' + fmt(c.expires)],
+        meta: [h(c.cat), c.country ? h(c.country) : '', nm(c.owner) + (c.ownerOrg ? ' · ' + h(S.orgs.find(o => o.id === c.ownerOrg).name) : ''), audienceText(c), c.from ? `From ${L(cName(c.from), 'circle', { id: c.from })}` : '', 'Expires ' + fmt(c.expires)],
         badges: oppKind(c.kind) + pill(c.status),
         primary: L('Open', 'card', { id: c.id }, 'btn btn-s btn-sm'),
       }),
@@ -128,6 +129,8 @@ route('newcard', 'opportunities', () => {
   const myP = userProjects();
   if (!UI.form.card) UI.form.card = {};
   if (!UI.form.card.project && myP.length) UI.form.card.project = (src && src.project && myP.some(p => p.id === src.project) ? src.project : myP[0].id);
+  // a new card starts with its project’s country; it stays required and can be changed
+  if (!e && UI.form.card.country == null) UI.form.card.country = (byId('projects', UI.form.card.project) || {}).country || '';
   return (
     head(
       e ? 'Edit card' : 'New Opportunity Card',
@@ -139,8 +142,9 @@ route('newcard', 'opportunities', () => {
  <div class="np-sh"><span class="np-n" aria-hidden="true">1</span><h2 class="h3">What it is</h2></div>
  <div class="f2">${fi(f, 'kind', 'Card type', { type: 'select', req: true, ph: 'Select', opts: ['Need', 'Asset', 'Offer', 'Opportunity'] })}${fi(f, 'cat', 'Category', { type: 'select', req: true, ph: 'Select', opts: ['Volunteering', 'Expertise', 'Equipment', 'Skills', 'Livelihood', 'Funding', 'Learning', 'Community action'] })}</div>
  ${fi(f, 'title', 'Title', { req: true, max: 100 })}${fi(f, 'desc', 'Description — what is needed or offered, and availability conditions', { type: 'textarea', rows: 4, req: true })}
- <div class="np-sh"><span class="np-n" aria-hidden="true">2</span><h2 class="h3">Timing and project</h2></div>
- <div class="f2">${fi(f, 'expires', 'Expiry date', { type: 'date', req: true })}${myP.length ? fi(f, 'project', 'Link to a project', { type: 'select', req: true, opts: myP.map(p => [p.id, p.title]) }) : ''}</div>
+ <div class="np-sh"><span class="np-n" aria-hidden="true">2</span><h2 class="h3">Timing, place and project</h2></div>
+ <div class="f2">${fi(f, 'expires', 'Expiry date', { type: 'date', req: true })}${countryField(f, { help: 'Where it is needed or offered. Filled in from the linked project; change it if it differs.' })}</div>
+ ${myP.length ? fi(f, 'project', 'Link to a project', { type: 'select', req: true, opts: myP.map(p => [p.id, p.title]) }) : ''}
  ${myP.length ? '' : banner('warn', 'No project to link', 'A card is linked to one of your projects. You can create one once you own, steward or belong to a project.')}
  ${src ? banner('info', 'Created from ' + h(src.name), 'The Circle stays intact and the card links back to it. Match Briefs from this card are reviewed by the Circle’s facilitator, ' + nm(src.facilitator) + '.') : ''}
  <div class="actions">${L('Cancel', 'opportunities', {}, 'btn btn-g')}<div class="row"><button class="btn btn-s" type="submit" name="pub" value="no" ${myP.length ? '' : 'disabled'}>Save draft</button><button class="btn btn-p" type="submit" name="pub" value="yes" ${myP.length ? '' : 'disabled'}>Publish</button></div></div></form>`
@@ -154,6 +158,7 @@ F.card = d => {
       title: ['req'],
       desc: ['req', ['min', 20]],
       expires: ['req', 'date'],
+      country: countryRules(),
       project: [['req', 'Choose the project this card is for.'], ['fn', { f: v => userProjects().some(p => p.id === v), m: 'Choose one of your projects.' }]],
     })
   )
@@ -172,6 +177,7 @@ F.card = d => {
     // the audience is no longer chosen: a card from a Circle reaches that Circle's members, otherwise the programme
     vis: c.vis || (d.from || c.from ? 'Circle members' : 'Programme'),
     expires: d.expires,
+    country: d.country,
     project: d.project,
     from: d.from || c.from || null,
     named: c.named || [],
@@ -214,7 +220,7 @@ route('card', 'opportunities', () => {
   return (
     crumbsHtml([['Opportunities', 'opportunities'], [h(c.title)]]) +
     `<div class="shead-main opp-head"><span class="tile opp-tile-${(OPP_KIND[c.kind] || [])[1] || 'opp'}" aria-hidden="true">${ic((OPP_KIND[c.kind] || [])[0] || 'megaphone', 20)}</span><div class="shead-t"><div class="shead-kind">${h(c.kind)} · ${h(c.cat)}</div><div class="row wrap opp-ttl"><h1 class="h1">${h(c.title)}</h1>${pill(c.status)}</div><div class="shead-meta"><span>${nm(c.owner)}</span><span>Expires ${fmt(c.expires)}</span></div>${c.from ? `<div class="row wrap opp-src"><span class="srole opp-srole">${ic('users', 13)}From Circle: <b>${cName(c.from)}</b></span><span class="srole opp-srole">${ic('eye', 13)}${audienceText(c)}</span></div>` : ''}</div></div>` +
-    `<div class="g12">${card('Details', '', dl([['Description', h(c.desc)], ['Owner', nm(c.owner) + (c.ownerOrg ? ' · ' + h(S.orgs.find(o => o.id === c.ownerOrg).name) : '')], ['Audience', audienceText(c)], ['Expires', fmt(c.expires)], ['Linked project', c.project ? cName(c.project) : '—'], ['Created from', c.from ? (memberOf(byId('circles', c.from) || {}) || ['A', 'O', 'F'].includes(r) || byId('circles', c.from)?.visibility === 'Programme' ? L(cName(c.from), 'circle', { id: c.from }) : cName(c.from)) + ' <span class="cap">(Circle)</span>' : '—'], c.from && ['Steward for introductions', nm(cardSteward(c))], own && ['Expressions of interest', c.interest.map(nm).join(', ') || 'None yet']]), '', 'c8')}
+    `<div class="g12">${card('Details', '', dl([['Description', h(c.desc)], ['Owner', nm(c.owner) + (c.ownerOrg ? ' · ' + h(S.orgs.find(o => o.id === c.ownerOrg).name) : '')], ['Audience', audienceText(c)], ['Country', h(c.country || '—')], ['Expires', fmt(c.expires)], ['Linked project', c.project ? cName(c.project) : '—'], ['Created from', c.from ? (memberOf(byId('circles', c.from) || {}) || ['A', 'O', 'F'].includes(r) || byId('circles', c.from)?.visibility === 'Programme' ? L(cName(c.from), 'circle', { id: c.from }) : cName(c.from)) + ' <span class="cap">(Circle)</span>' : '—'], c.from && ['Steward for introductions', nm(cardSteward(c))], own && ['Expressions of interest', c.interest.map(nm).join(', ') || 'None yet']]), '', 'c8')}
  <aside class="c4 col opp-side">${own ? card('Manage', '', `<div class="col opp-stack">${B(ic('edit', 14) + 'Edit', 'go', { r: 'newcard', edit: c.id })}${st.map(s => (s === 'Withdrawn' ? CB('Withdraw', 'cardState', { id: c.id, v: s }, 'Withdraw this card? It leaves discovery and any pending Match Briefs close.') : B(s === 'Active' ? 'Publish / resume' : s, 'cardState', { id: c.id, v: s }))).join('')}</div>`) : ''}
  ${!own && c.status === 'Active' && r !== 'F' ? card('Interested?', '', c.interest.includes(myId()) ? banner('ok', 'You expressed interest', 'A steward reviews any introduction. Your contact details are not shared.') : B('Express interest', 'interest', { id: c.id }, 'btn-p btn-block') + `<p class="cap opp-note">This does not introduce you. A steward reviews a Match Brief and both sides consent first.</p>`) : ''}
  ${r === 'F' && c.status === 'Active' && (!c.from || cardSteward(c) === myId()) ? card('Steward', c.from ? 'You review introductions for this Circle’s cards.' : '', B('Nominate a match', 'nominate', { id: c.id }, 'btn-p btn-block')) : ''}

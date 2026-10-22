@@ -153,7 +153,8 @@ A.newRoom = (d) => {
       return `<form data-f="nr" class="col" style="gap:14px" novalidate><input type="hidden" name="oid" value="${h(d.oid || "")}"><input type="hidden" name="otype" value="${h(d.origin || "")}"><input type="hidden" name="via" value="${h(d.via || "")}">
  ${opts.length ? fi("nr", "project", "Primary origin", { type: "select", req: true, ph: "Choose what this " + WL() + " comes from", opts, ch: "nrProject", help: "One Primary Origin. Other Circles, Rope Teams, projects or cards can be linked afterwards, by reference." }) : banner("warn", "No origin available", "There is no object you can start an " + WL() + " from.")}
  ${v === NR_NONE ? fi("nr", "mandate", "Mandate and accountable owner", { req: true, ph: "e.g. 90-Day AI Resilience Pilot approved by the University Leadership Team, owner Prof. N. Shah", help: "Direct creation needs an existing mandate: a leadership or board decision, grant commitment or community-authorised programme. No Opportunity Card or Match Brief is needed." }) : ""}
- ${fi("nr", "name", "Name", { req: true })}${fi("nr", "purpose", "Purpose / charter", { type: "textarea", rows: 3, req: true })}${fi("nr", "outcome", "Expected outcome", { type: "textarea", rows: 3, req: true })}
+ ${projBrief(cp)}${fi("nr", "name", "Name", { req: true })}${fi("nr", "purpose", "Purpose / charter", { type: "textarea", rows: 3, req: true })}${fi("nr", "outcome", "Expected outcome", { type: "textarea", rows: 3, req: true })}
+ ${docCreateField("nr", "rooms")}
  ${msel("nr", "inv", "Invite people (optional)", nrInvitable(v), [], { help: "Linking adds no one. Members of the origin are not added automatically; each person you choose is invited and must accept." })}
  ${d.via ? banner("info", "Origin metadata only", "This " + WL() + " records the introduction as its origin: who was introduced, when, and from which opportunity. The Match Brief’s fit notes, gaps and source records are not copied, and the other person joins only if they accept the invitation.") : ""}
  ${cp && !canCreateRoom() ? banner("info", "", "You lead this " + WL() + " as project owner. Your project’s Steward joins as facilitator to validate milestones.") : ""}
@@ -170,7 +171,7 @@ A.nrProject = (d, el) => {
   UI.form.nr = f;
   render();
 };
-F.nr = (d) => {
+F.nr = (d, form) => {
   if (
     !validate("nr", d, {
       project: [
@@ -184,6 +185,8 @@ F.nr = (d) => {
     })
   )
     return render();
+  const files = docTake("nr", form);
+  if (!files) return render();
   const flags = [];
   const introVias = [];
   const src = d.project.startsWith(NR_OBJ) ? nrSource(d.project.slice(NR_OBJ.length)) : null;
@@ -243,6 +246,8 @@ F.nr = (d) => {
     pr.pendingCollab = [];
   }
   S.rooms.push(x);
+  x.docs = [];
+  docAttach(x.docs, files, d.docVis, pr ? pr.id : null);
   // an introduction or direct collaboration that led here records Create New Workspace now the room exists
   [d.via, ...introVias].filter(Boolean).forEach((v) => introCreated(v, x));
   if (src) {
@@ -253,8 +258,9 @@ F.nr = (d) => {
   if (pr && !pr.room) {
     pr.room = x.id;
     if (st === "Active") {
-      pr.stage = "Room";
       pr.history.push({ at: today(), t: WL() + " created and linked by " + me().name });
+      // the project starts here, or moves here when this room was created to receive it (journey.js)
+      projRoomCreated(pr, "rooms", x);
       pr.stewards
         .filter((s) => s !== myId())
         .forEach((s) => notify(s, me().name + " created the " + WL() + " for “" + pr.title + "”. You are its facilitator.", "room", { id: x.id }));
@@ -923,7 +929,7 @@ function msCard(x, isM, lead, ro) {
             ? CB("Validate as achieved", "msAchieve", { r: x.id, id: m.id }, "Record “" + m.t + "” as achieved? All " + its.length + " piece" + (its.length > 1 ? "s" : "") + " of evidence are approved.", "btn-p btn-sm", "Validate")
             : `<button type="button" class="btn btn-p btn-sm" disabled title="Every piece of evidence must be approved first">Validate as achieved</button>`
           : "";
-      return `<article class="ms"><header class="ms-h"><div class="col" style="min-width:0"><b>${h(m.t)}</b><span class="cap">Due ${fmt(m.due)}${dueTag(m.due, done)}</span></div><span class="row wrap" style="gap:6px">${pill(m.status)}${!ro && !done && isM ? B(ic("plus", 14) + "Add evidence", "msEvidence", { r: x.id, id: m.id }) : ""}${validate}</span></header><ol class="ms-steps">${steps.map(([ok_, t], n) => `<li class="${ok_ ? "ok" : ""}"><span class="n">${ok_ ? ic("check", 12) : n + 1}</span>${t}</li>`).join("")}</ol>${evs ? `<ul class="ms-evs">${evs}</ul>` : ""}<p class="cap">${msStep(m)}</p></article>`;
+      return `<article class="ms"><header class="ms-h"><div class="col" style="min-width:0"><b>${h(m.t)}</b><span class="cap">Due ${fmt(m.due)}${dueTag(m.due, done)}</span></div><span class="row wrap" style="gap:6px">${pill(m.status)}${!ro && !done && isM ? B(ic("plus", 14) + "Add evidence", "msEvidence", { r: x.id, id: m.id }) : ""}${validate}</span></header><ol class="ms-steps">${steps.map(([ok_, t], n) => `<li class="${ok_ ? "ok" : ""}"><span class="n">${ok_ ? ic("check", 12) : n + 1}</span>${t}</li>`).join("")}</ol>${evs ? `<ul class="ms-evs">${evs}</ul>` : ""}${docFilesLine(x, m.files, { s: "ms", it: m.id })}<p class="cap">${msStep(m)}</p></article>`;
     })
     .join("");
   return card(
@@ -1296,8 +1302,8 @@ A.roomState = (d) => {
   x.declineReason = null;
   const pr = S.projects.find((p) => p.room === x.id);
   if (d.v === "Active" && pr && pr.stage !== "Room") {
-    pr.stage = "Room";
     pr.history.push({ at: today(), t: WL() + " activated" });
+    projRoomCreated(pr, "rooms", x);
   }
   x.members.forEach((m) =>
     notify(m.pid, x.name + " is now " + d.v, "room", { id: x.id }),

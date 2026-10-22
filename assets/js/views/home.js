@@ -253,6 +253,18 @@ function inboxItems() {
           { id: x.ev },
         ]),
       );
+  // open-challenge disputes: the Programme Administrator assigns an independent Steward, who then decides (challenges.js)
+  (S.disputes || [])
+    .filter((d) => inCtx(d) && ((r === "A" && d.status === "Awaiting Steward assignment") || (r === "F" && d.steward === me_ && ["Awaiting Steward acceptance", "Under review"].includes(d.status))))
+    .forEach((d) =>
+      out.push([
+        "Dispute",
+        d.ref + " · " + dspSubject(d),
+        r === "A" ? "Assign an independent Steward" : d.status === "Under review" ? "Review the evidence and decide" : "Confirm your independence",
+        "dispute",
+        { id: d.id },
+      ]),
+    );
   return out;
 }
 function nextAction() {
@@ -282,6 +294,7 @@ function nextAction() {
         "project",
         { id: cl.id },
       ];
+    if (chTodo().length) return chTodo()[0];
     const rr = S.releases.find(
       (x) =>
         x.status === "Awaiting owner decision" &&
@@ -438,6 +451,7 @@ function nextAction() {
         "match",
         { id: mb.id },
       ];
+    if (chTodo().length) return chTodo()[0];
     const iv = S.rooms.find((x) => (memberRec(x) || {}).status === "Invited");
     if (iv)
       return [
@@ -466,7 +480,8 @@ function nextAction() {
       ];
   }
   if (r === "S") {
-    // Sponsor Alpha (BF-08): invoices, seats and funder-safe reporting only.
+    // Open challenges first (applications, commitment, milestones, payments), then invoices, seats and reports.
+    if (chTodo().length) return chTodo()[0];
     const inv = S.payments.find(
       (p) => p.pid === pid && p.state === "Invoice due",
     );
@@ -803,7 +818,9 @@ function roleJourney() {
     const inits = S.initiatives.some((i) => i.status === "Published") || (typeof sponsorInitProjects === "function" && sponsorInitProjects().length);
     const cleared = typeof sponsorCleared === "function" && sponsorCleared().length > 0;
     const due = !S.payments.some((p) => p.pid === pid && p.state === "Invoice due");
-    return journeyRail("Sponsor flow", "Your sponsorship flow", "Seats → initiatives → safe reports → invoices (Doc 1 §6.6 · BF-08)", [
+    const chs = S.challenges.filter((c) => inCtx(c) && c.sponsor === pid);
+    return journeyRail("Sponsor flow", "Your sponsorship flow", "Open challenges → seats → initiatives → safe reports → invoices (Doc 1 §6.6)", [
+      { k: "Challenges", done: chs.length > 0 && !chTodo().length, r: "challenges", meta: !chs.length ? "Post an open challenge" : chTodo().length ? chTodo().length + " waiting for you" : chs.length + " posted · nothing waiting" },
       { k: "Seats", done: seats, r: "funding", p: { tab: "seats" }, meta: seats ? "Active seat pool" : "Buy seats by invoice" },
       { k: "Initiatives", done: !!inits, r: "funding", p: { tab: "initiatives" }, meta: inits ? "Approved initiatives visible" : "Awaiting published initiatives" },
       { k: "Evidence", done: !!cleared, r: "evidence", meta: cleared ? "Cleared summaries available" : "No funder-cleared evidence yet" },
@@ -1375,6 +1392,8 @@ function homeS() {
     .filter((p) => p.pid === myId() && !p.dup)
     .sort((a, b) => String(b.at).localeCompare(String(a.at)));
   const due = pays.filter((p) => p.state === "Invoice due");
+  const chs = S.challenges.filter((c) => inCtx(c) && c.sponsor === myId());
+  const todo = chTodo();
   return (
     head(
       "My PHOENIX",
@@ -1388,6 +1407,16 @@ function homeS() {
  ${roleJourney()}
  ${hmCols(
    `${card(
+     "Open challenges",
+     "Posted under an alias. Payments happen offline; PHOENIX records what both sides confirm.",
+     (todo.length ? todo.slice(0, 4).map((t) => hrow("flag", t[0], t[1], B("Open", "go", { r: t[2], ...t[3] }, "btn-p btn-sm"), "t-ember")).join("") : "") +
+       (chs.length
+         ? chs.filter((c) => !todo.some((t) => t[3].id === c.id)).slice(0, 3).map((c) => hrow("megaphone", h(c.title), h(c.alias) + " · " + h(chStateLabel(c)), L("Open", "challenge", { id: c.id }), "t-ember")).join("")
+         : empty("megaphone", "No open challenges yet", "Post a challenge to find people for a project you want to fund.", B("Post an open challenge", "chNew", {}, "btn-p btn-sm"))),
+     L("All challenges", "challenges"),
+     "hm-list",
+   )}
+ ${card(
      "Seat utilisation",
      "Counts only: sponsors never see who holds a seat",
      seats
@@ -1439,7 +1468,7 @@ function homeS() {
    L("All invoices", "funding", { tab: "invoices" }),
    "hm-list",
  )}
- ${banner("info", "What sponsors never receive", "Private participant profiles, Purpose Compass responses, private discussions, mentor notes, AI conversations or unapproved evidence. Sponsors are never members of Circles, Rope Teams or Action Workspaces.")}`,
+ ${banner("info", "What sponsors never receive", "Private participant profiles, Purpose Compass responses, private discussions, mentor notes, AI conversations or unapproved evidence. Sponsors are never members of Circles, Rope Teams or Action Workspaces: for your own challenges you see applications, the chat room, milestones and payments only.")}`,
  )}</div>`
   );
 }

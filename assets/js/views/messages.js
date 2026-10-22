@@ -6,20 +6,22 @@ const CHAT_KINDS = {
   pathways: 'Pathway',
   ropes: 'Rope Team',
   dms: 'Direct message',
+  chrooms: 'Challenge chat room',
   get rooms() {
     return WL();
   },
 };
-const CHAT_ROUTE = { circles: 'circle', ropes: 'rope', rooms: 'room' };
-const CHAT_IC = { circles: 'users', ropes: 'route', rooms: 'room', dms: 'message', pathways: 'route' };
+const CHAT_ROUTE = { circles: 'circle', ropes: 'rope', rooms: 'room', chrooms: 'challenge' };
+const CHAT_IC = { circles: 'users', ropes: 'route', rooms: 'room', dms: 'message', pathways: 'route', chrooms: 'megaphone' };
 // Tile colour per conversation kind (list and thread header).
-const CHAT_TILE = { circles: 'c t-purple', rooms: 'a t-navy', dms: 'd t-soft', ropes: 'r t-teal', pathways: 'p t-ember' };
+const CHAT_TILE = { circles: 'c t-purple', rooms: 'a t-navy', dms: 'd t-soft', ropes: 'r t-teal', pathways: 'p t-ember', chrooms: 'x t-ember' };
 const IMG_RE = /\.(png|jpe?g|gif|webp|heic)$/i;
 const chatSpaces = (pid = myId()) => [
   ...S.circles.filter(c => inCtx(c) && memberOf(c, pid)).map(o => ({ kind: 'circles', o })),
   ...S.ropes.filter(r => inCtx(r) && memberOf(r, pid)).map(o => ({ kind: 'ropes', o })),
   ...S.rooms.filter(r => inCtx(r) && memberOf(r, pid) && r.state !== 'Draft').map(o => ({ kind: 'rooms', o })),
   ...(S.dms || []).filter(r => memberOf(r, pid)).map(o => ({ kind: 'dms', o })),
+  ...(S.chrooms || []).filter(r => inCtx(r) && memberOf(r, pid)).map(o => ({ kind: 'chrooms', o })),
   ...pwConvos(pid).map(o => ({ kind: 'pathways', o })),
 ];
 // ---- pathway review conversations: the pathway owner, the Programme Administrator and the Reviewer.
@@ -34,6 +36,11 @@ const pwChat = p =>
   [...(p.thread || []).map(m => ({ id: m.id, by: m.by, at: m.at, t: m.text, cv: m.kind, att: m.att })), ...(p.activity || []).map(a => ({ sys: true, at: a.at, t: (a.by && !a.t.includes(P(a.by).name) ? P(a.by).name + ': ' : '') + a.t }))].sort((a, b) =>
     String(a.at).localeCompare(String(b.at)),
   );
+// In a challenge chat room the sponsor appears under the post's alias to everyone but themselves (challenges.js).
+const cvAnon = (o, pid) => !!o.alias && pid === o.sponsor && pid !== myId();
+const cvNm = (o, pid) => (cvAnon(o, pid) ? h(o.alias) : nm(pid));
+const cvIni = (o, pid) => (cvAnon(o, pid) ? 'S' : ini(pid));
+const cvDisp = (o, pid) => (cvAnon(o, pid) ? o.alias : P(pid).display);
 const chatMsgs = o => (isPwConvo(o) ? pwChat(o) : o.chat || []);
 const hasChats = () => !!S && !!S.session && chatSpaces().length > 0;
 const readMark = (id, pid = myId()) => ((S.chatRead || {})[pid] || {})[id] || '';
@@ -65,6 +72,7 @@ function chatAccess(kind, o) {
   if (!mem) ro = 'View only. You are not a member of this ' + CHAT_KINDS[kind] + '.';
   else if (!sCan(kind, o, 'post')) ro = 'You are an Observer here. You can read the conversation but not post.';
   else if (o.state === 'Paused/Repair') ro = 'This Circle is paused for repair. Members can read but not post.';
+  else if (kind === 'chrooms' && o.state !== 'Active') ro = 'Selection is complete, so this chat room is closed. It stays readable for the people who took part.';
   else if (o.state !== 'Active') ro = 'This ' + CHAT_KINDS[kind] + ' is ' + o.state.toLowerCase() + '. The conversation is read-only.';
   return { mem, mod, ro };
 }
@@ -98,7 +106,7 @@ function chatPreview(o) {
   const m = chatMsgs(o).filter(x => !x.hidden).slice(-1)[0];
   if (!m) return 'No messages yet';
   if (m.sys) return h(m.t);
-  const who = m.by === myId() ? 'You' : h(P(m.by).display);
+  const who = m.by === myId() ? 'You' : h(cvDisp(o, m.by));
   const a = attOf(m);
   return `${who}: ${a && !m.t ? ic(IMG_RE.test(a.n) ? 'image' : 'clip', 12) + ' ' + h(a.n) : h(m.t)}`;
 }
@@ -114,7 +122,7 @@ function convList(sel) {
   const unAll = unreadTotal();
   const chip = (k, l) =>
     `<button type="button" class="fchip ${f === k ? 'on' : ''}" data-a="chatFilter" data-v="${k}" aria-pressed="${f === k}">${l}</button>`;
-  return `<div class="mlist-h"><div class="mlist-t"><h1 class="h2">Messages</h1>${unAll ? `<span class="mun">${unAll} unread</span>` : ''}</div><p class="cap">Circles, Rope Teams, ${WL()}s and pathway reviews you take part in</p><div class="msearch-w">${ic('search', 16)}<input class="input msearch" placeholder="Search conversations" value="${h(UI.chat.q || '')}" data-ch="chatSearch" aria-label="Search conversations"></div><div class="mfilters" role="group" aria-label="Show">${chip('all', 'All')}${chip('unread', 'Unread')}${chip('circles', 'Circles')}${chip('ropes', 'Rope Teams')}${chip('rooms', WL() + 's')}${(S.dms || []).some(x => memberOf(x)) ? chip('dms', 'Direct') : ''}${pwConvos().length ? chip('pathways', 'Pathways') : ''}</div></div><div class="mlist" role="list">${
+  return `<div class="mlist-h"><div class="mlist-t"><h1 class="h2">Messages</h1>${unAll ? `<span class="mun">${unAll} unread</span>` : ''}</div><p class="cap">Circles, Rope Teams, ${WL()}s and pathway reviews you take part in</p><div class="msearch-w">${ic('search', 16)}<input class="input msearch" placeholder="Search conversations" value="${h(UI.chat.q || '')}" data-ch="chatSearch" aria-label="Search conversations"></div><div class="mfilters" role="group" aria-label="Show">${chip('all', 'All')}${chip('unread', 'Unread')}${chip('circles', 'Circles')}${chip('ropes', 'Rope Teams')}${chip('rooms', WL() + 's')}${(S.dms || []).some(x => memberOf(x)) ? chip('dms', 'Direct') : ''}${(S.chrooms || []).some(x => inCtx(x) && memberOf(x)) ? chip('chrooms', 'Challenges') : ''}${pwConvos().length ? chip('pathways', 'Pathways') : ''}</div></div><div class="mlist" role="list">${
     list
       .map(({ kind, o, last, un }) => {
         const on = sel && sel.o.id === o.id;
@@ -204,7 +212,7 @@ function chatThread(kind, o, opts = {}) {
       const a = attOf(m);
       const rp = m.reply && byId_[m.reply];
       const seen = mine
-        ? members.filter(x => x.pid !== myId() && readMark(o.id, x.pid) >= m.at).map(x => P(x.pid).display)
+        ? members.filter(x => x.pid !== myId() && readMark(o.id, x.pid) >= m.at).map(x => cvDisp(o, x.pid))
         : [];
       const allSeen = mine && seen.length && seen.length >= members.filter(x => x.pid !== myId()).length;
       const tools = acc.mem && !acc.ro && !m.hidden;
@@ -216,14 +224,14 @@ function chatThread(kind, o, opts = {}) {
         : '';
       return (
         out +
-        `<div class="mrow ${mine ? 'mine' : ''} ${grouped ? 'grp' : ''}" id="msg-${m.id}">${!mine ? (grouped ? '<span class="mav-sp"></span>' : `<span class="av" title="${nm(m.by)}">${ini(m.by)}</span>`) : ''}<div class="mcol">${!mine && !grouped ? `<div class="mwho">${nm(m.by)}<span class="cap"> · ${h(roleIn(o, m.by))}</span></div>` : ''}<div class="mbub bubble ${mine ? 'me' : ''} ${m.hidden ? 'hid' : ''} ${m.q && !m.hidden ? 'q' : ''}">${rp ? `<a href="#msg-${rp.id}" class="mquote"><b>${rp.by ? nm(rp.by) : 'System'}</b><span>${h((rp.t || attOf(rp)?.n || '').slice(0, 90))}</span></a>` : ''}${m.q && !m.hidden ? `<div class="mqtag">${ic('question', 13)}${m.ans ? 'Question · answered' : 'Open question'}</div>` : ''}${m.hidden ? `<i>${h(m.t)}</i>` : m.t ? `<div class="mtext">${h(m.t).replace(/\n/g, '<br>')}</div>` : ''}${a && !m.hidden ? attCard(a, mine) : ''}<div class="mmeta">${tm(m.at)}${mine ? `<span class="mtick ${allSeen ? 'seen' : ''}" title="${seen.length ? 'Seen by ' + h(seen.join(', ')) : 'Sent'}">${ic(seen.length ? 'checks' : 'check', 14)}</span>` : ''}</div></div></div>${toolBtns ? `<div class="mtools">${toolBtns}</div>` : ''}</div>`
+        `<div class="mrow ${mine ? 'mine' : ''} ${grouped ? 'grp' : ''}" id="msg-${m.id}">${!mine ? (grouped ? '<span class="mav-sp"></span>' : `<span class="av" title="${cvNm(o, m.by)}">${cvIni(o, m.by)}</span>`) : ''}<div class="mcol">${!mine && !grouped ? `<div class="mwho">${cvNm(o, m.by)}<span class="cap"> · ${h(roleIn(o, m.by))}</span></div>` : ''}<div class="mbub bubble ${mine ? 'me' : ''} ${m.hidden ? 'hid' : ''} ${m.q && !m.hidden ? 'q' : ''}">${rp ? `<a href="#msg-${rp.id}" class="mquote"><b>${rp.by ? cvNm(o, rp.by) : 'System'}</b><span>${h((rp.t || attOf(rp)?.n || '').slice(0, 90))}</span></a>` : ''}${m.q && !m.hidden ? `<div class="mqtag">${ic('question', 13)}${m.ans ? 'Question · answered' : 'Open question'}</div>` : ''}${m.hidden ? `<i>${h(m.t)}</i>` : m.t ? `<div class="mtext">${h(m.t).replace(/\n/g, '<br>')}</div>` : ''}${a && !m.hidden ? attCard(a, mine) : ''}<div class="mmeta">${tm(m.at)}${mine ? `<span class="mtick ${allSeen ? 'seen' : ''}" title="${seen.length ? 'Seen by ' + h(seen.join(', ')) : 'Sent'}">${ic(seen.length ? 'checks' : 'check', 14)}</span>` : ''}</div></div></div>${toolBtns ? `<div class="mtools">${toolBtns}</div>` : ''}</div>`
       );
     })
     .join('');
   const newest = (o.chat || []).filter(m => !m.sys).slice(-1)[0];
   const lastMine = newest && newest.by === myId() ? newest : null;
   const lastSeen = lastMine
-    ? members.filter(x => x.pid !== myId() && readMark(o.id, x.pid) >= lastMine.at).map(x => P(x.pid).display)
+    ? members.filter(x => x.pid !== myId() && readMark(o.id, x.pid) >= lastMine.at).map(x => cvDisp(o, x.pid))
     : [];
   const reply = UI.chat.reply && UI.chat.reply.c === o.id ? byId_[UI.chat.reply.id] : null;
   const draft = (UI.chat.drafts || {})[o.id] || '';
@@ -231,21 +239,21 @@ function chatThread(kind, o, opts = {}) {
   const route_ = CHAT_ROUTE[kind];
   const avatars = members
     .slice(0, 4)
-    .map(m => `<span class="av" title="${nm(m.pid)}">${ini(m.pid)}</span>`)
+    .map(m => `<span class="av" title="${cvNm(o, m.pid)}">${cvIni(o, m.pid)}</span>`)
     .join('');
   return `<section class="mthread ${opts.embedded ? 'emb' : ''}" aria-label="Conversation: ${h(o.name)}">
-  <header class="mth-h">${!opts.embedded ? `<button type="button" class="iconbtn mback-btn" data-a="chatBack" aria-label="Back to conversations">${ic('chevl')}</button>` : ''}<span class="mav tile ${kind === 'circles' ? 'c t-purple' : kind === 'rooms' ? 'a t-navy' : kind === 'dms' ? 'd t-soft' : 'r t-teal'}" aria-hidden="true">${ic(CHAT_IC[kind], 18)}</span><div class="mth-t"><button type="button" class="mname mname-btn" data-a="chatMembers" data-c="${o.id}" data-k="${kind}" aria-haspopup="dialog" title="Show members">${h(o.name)}</button><span class="cap">${CHAT_KINDS[kind]} · ${members.length} members${o.state !== 'Active' ? ' · ' + h(o.state) : ''}</span></div><span class="mavs hide-sm">${avatars}</span>${openQ || qOnly ? `<button type="button" class="fchip ${qOnly ? 'on' : ''}" data-a="chatQOnly" data-id="${o.id}" title="Show open questions only">${ic('question', 14)}${openQ} open</button>` : ''}${acc.mem && openQ ? B(ic('sparkle', 14), 'chatQSum', { c: o.id, k: kind }, 'iconbtn mqs', 'aria-label="Summarise unresolved questions with AI" title="Summarise unresolved questions (AI, private)"') : ''}${!opts.embedded && route_ ? L(ic('arrow', 14) + '<span class="mth-bl">Open ' + CHAT_KINDS[kind] + '</span>', route_, { id: o.id }, 'btn btn-s btn-sm') : ''}${!opts.embedded && kind === 'dms' && o.project && byId('projects', o.project) && can('projects') && byId('projects', o.project).owner === myId() ? L(ic('arrow', 14) + '<span class="mth-bl">Open project</span>', 'project', { id: o.project }, 'btn btn-s btn-sm') : ''}</header>
+  <header class="mth-h">${!opts.embedded ? `<button type="button" class="iconbtn mback-btn" data-a="chatBack" aria-label="Back to conversations">${ic('chevl')}</button>` : ''}<span class="mav tile ${CHAT_TILE[kind] || 'r t-teal'}" aria-hidden="true">${ic(CHAT_IC[kind], 18)}</span><div class="mth-t"><button type="button" class="mname mname-btn" data-a="chatMembers" data-c="${o.id}" data-k="${kind}" aria-haspopup="dialog" title="Show members">${h(o.name)}</button><span class="cap">${CHAT_KINDS[kind]} · ${members.length} members${o.state !== 'Active' ? ' · ' + h(o.state) : ''}</span></div><span class="mavs hide-sm">${avatars}</span>${openQ || qOnly ? `<button type="button" class="fchip ${qOnly ? 'on' : ''}" data-a="chatQOnly" data-id="${o.id}" title="Show open questions only">${ic('question', 14)}${openQ} open</button>` : ''}${acc.mem && openQ ? B(ic('sparkle', 14), 'chatQSum', { c: o.id, k: kind }, 'iconbtn mqs', 'aria-label="Summarise unresolved questions with AI" title="Summarise unresolved questions (AI, private)"') : ''}${!opts.embedded && route_ ? L(ic('arrow', 14) + '<span class="mth-bl">Open ' + (kind === 'chrooms' ? 'challenge' : CHAT_KINDS[kind]) + '</span>', route_, kind === 'chrooms' ? { id: o.challenge, tab: 'chat' } : { id: o.id }, 'btn btn-s btn-sm') : ''}${!opts.embedded && kind === 'dms' && o.project && byId('projects', o.project) && can('projects') && byId('projects', o.project).owner === myId() ? L(ic('arrow', 14) + '<span class="mth-bl">Open project</span>', 'project', { id: o.project }, 'btn btn-s btn-sm') : ''}</header>
   <div class="msgs" data-scroll="${o.id}" role="log" aria-live="polite">${rows || `<div class="mempty">${empty('message', qOnly ? 'No open questions' : 'No messages yet', qOnly ? 'Every question here has been answered.' : 'Start the conversation. Messages are visible to members of this ' + CHAT_KINDS[kind] + ' only.')}</div>`}${lastMine && lastSeen.length ? `<div class="mseen">Seen by ${h(lastSeen.join(', '))}</div>` : ''}</div>
   ${
     acc.ro
       ? `<div class="mro">${ic('lock', 16)}<span>${h(acc.ro)}</span></div>`
-      : `<form data-f="chat" class="composer ${asQ ? 'asq' : ''}" novalidate><input type="hidden" name="c" value="${o.id}"><input type="hidden" name="kind" value="${kind}">${reply ? `<div class="mreplying">${ic('reply', 14)}<div class="mreplying-t"><b>Replying to ${reply.by ? nm(reply.by) : 'system'}</b><span class="cap mprev">${h((reply.t || attOf(reply)?.n || '').slice(0, 90))}</span></div>${B(ic('x', 14), 'msgReplyX', {}, 'mtool', 'aria-label="Cancel reply"')}</div>` : ''}<div class="mpend" hidden>${ic('clip', 14)}<span class="fname"></span>${B(ic('x', 14), 'clearFile', {}, 'mtool', 'aria-label="Remove attachment"')}</div>
+      : `<form data-f="chat" class="composer ${asQ ? 'asq' : ''}" novalidate><input type="hidden" name="c" value="${o.id}"><input type="hidden" name="kind" value="${kind}">${reply ? `<div class="mreplying">${ic('reply', 14)}<div class="mreplying-t"><b>Replying to ${reply.by ? cvNm(o, reply.by) : 'system'}</b><span class="cap mprev">${h((reply.t || attOf(reply)?.n || '').slice(0, 90))}</span></div>${B(ic('x', 14), 'msgReplyX', {}, 'mtool', 'aria-label="Cancel reply"')}</div>` : ''}<div class="mpend" hidden>${ic('clip', 14)}<span class="fname"></span>${B(ic('x', 14), 'clearFile', {}, 'mtool', 'aria-label="Remove attachment"')}</div>
   <div class="mcomp"><label class="iconbtn mattach" title="Attach a file (up to ${S.settings.maxFileMB} MB)">${ic('clip')}<input type="file" name="f" data-chatfile="1" aria-label="Attach a file" class="sr"></label><textarea name="t" rows="1" class="mta" placeholder="Write a message" aria-label="Message" data-draft="${o.id}">${h(draft)}</textarea><button type="button" class="iconbtn mqbtn ${asQ ? 'on' : ''}" data-a="chatAsQ" data-id="${o.id}" aria-pressed="${asQ}" title="Send as a question">${ic('question')}</button><button class="btn btn-p msend" type="submit" aria-label="Send message" title="Send (Enter)">${ic('send', 18)}</button></div>
   <div class="mhelp">${asQ ? '<b>Sending as a question.</b> ' : ''}Enter to send · Shift+Enter for a new line · files up to ${S.settings.maxFileMB} MB, video by link · members only</div></form>`
   }</section>`;
 }
 const roleIn = (o, pid) => {
-  if ((S.dms || []).includes(o)) return roleInRaw(o, pid);
+  if ((S.dms || []).includes(o) || (S.chrooms || []).includes(o)) return roleInRaw(o, pid);
   const kind = S.circles.includes(o) ? 'circles' : S.ropes.includes(o) ? 'ropes' : 'rooms';
   return roleLabel(spaceRole(kind, o, pid) || roleInRaw(o, pid), kind);
 };
@@ -269,7 +277,7 @@ A.chatMembers = d => {
   modal(
     h(o.name) + ' · members',
     `<p class="cap mmem-cap">${CHAT_KINDS[d.k]} · ${ms.filter(m => !m.status || m.status === 'Active').length} active member${ms.length === 1 ? '' : 's'}</p><div class="mmem-list">${ms
-      .map(m => `<div class="lrow"><span class="av">${ini(m.pid)}</span><div class="lt"><b>${nm(m.pid)}${m.pid === myId() ? ' <span class="cap">(you)</span>' : ''}</b><p class="cap">${h(roleIn(o, m.pid) || '—')}${m.label ? ' · ' + h(m.label) : ''}</p></div>${m.status && m.status !== 'Active' ? pill(m.status) : ''}</div>`)
+      .map(m => `<div class="lrow"><span class="av">${cvIni(o, m.pid)}</span><div class="lt"><b>${cvNm(o, m.pid)}${m.pid === myId() ? ' <span class="cap">(you)</span>' : ''}</b><p class="cap">${h(roleIn(o, m.pid) || '—')}${m.label ? ' · ' + h(m.label) : ''}</p></div>${m.status && m.status !== 'Active' ? pill(m.status) : ''}</div>`)
       .join('')}</div>`,
   );
 };
@@ -428,7 +436,7 @@ F.chat = (d, form) => {
         ex.t = `${ex.cnt} new messages in ${o.name}`;
         ex.at = today();
       } else {
-        notify(x.pid, `${me().display} in ${o.name}: ${(text || (m.att && m.att.n) || '').slice(0, 60)}`, 'messages', { c: o.id, k: d.kind });
+        notify(x.pid, `${o.alias && myId() === o.sponsor ? o.alias : me().display} in ${o.name}: ${(text || (m.att && m.att.n) || '').slice(0, 60)}`, 'messages', { c: o.id, k: d.kind });
         S.notifs[0].chat = o.id;
       }
     });

@@ -1592,3 +1592,29 @@ form.hv2 > .actions {
     text-align: left;
   }
 }
+
+/* ---------- project room: where the project is now, and moving it (journey.js) ---------- */
+.prj-room { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3) var(--s-4); flex-wrap: wrap; padding: var(--s-3) var(--s-4); margin: var(--s-4) 0; border: 1px solid var(--line); border-left: 3px solid var(--signal); border-radius: var(--r-md); background: var(--surface); }
+.gate-card .prj-room { margin: 0 0 var(--s-4); }
+.prj-room-w { display: flex; align-items: center; gap: var(--s-3); min-width: 0; }
+.prj-room-t { gap: 2px; min-width: 0; }
+.prj-room-a { display: flex; gap: var(--s-2); flex-wrap: wrap; }
+.pmv-opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: var(--s-3); }
+.pmv-opt { align-items: center; }
+.pmv-opt .tile { flex: none; }
+.pmv-t { gap: 2px; min-width: 0; }
+.pmv-opt.is-off { opacity: 0.6; cursor: not-allowed; }
+/* move confirmation: what closes, what becomes active, what is recorded */
+.pmv-conf { display: flex; flex-direction: column; gap: var(--s-2); margin: 0; padding: 0; list-style: none; }
+.pmv-conf li { display: flex; gap: var(--s-2); align-items: flex-start; padding: var(--s-2) var(--s-3); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
+.pmv-conf li > svg { flex: none; margin-top: 3px; color: var(--text-2); }
+/* closed rooms: switched-off actions and forms stay visible but clearly unavailable */
+.ro-off, .ro-off:hover { opacity: 0.5; cursor: not-allowed; }
+.ro-form :disabled { cursor: not-allowed; }
+.pmv-opt.is-off > input { cursor: not-allowed; }
+.prj-brief { padding: var(--s-3) var(--s-4); border-radius: var(--r-md); background: var(--sunk); }
+.doc-create { gap: var(--s-3); padding: var(--s-3) var(--s-4); border: 1px dashed var(--line-strong); border-radius: var(--r-md); }
+.doc-create .input[type='file'] { padding: 8px; height: auto; }
+@media (max-width: 639px) {
+  .prj-room-a, .prj-room-a .btn { width: 100%; }
+}

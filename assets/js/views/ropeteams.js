@@ -97,8 +97,9 @@ A.mentorReq = d => {
       rt.members.filter(x => ['Project owner', 'Member'].includes(x.role)).forEach(x => (rt.indicators[x.pid] = { pacing: 'On track', workload: '—', availability: '—', support: 'None reported', absence: 'None' }));
       S.ropes.push(rt);
       pr.rope = rt.id;
-      if (!pr.stage) pr.stage = 'Rope Team';
       addLink('ropes', rt.id, 'projects', pr.id, 'originated-from', true);
+      projRoomCreated(pr, 'ropes', rt);
+      if (!pr.stage) pr.stage = 'Rope Team';
       if (circle) addLink('ropes', rt.id, 'circles', circle.id, 'supports', false);
       pr.history.push({ at: today(), t: 'Rope Team formed and linked to the project' + (circle ? ' and its Circle' : '') });
       sysMsg(rt, 'Rope Team formed. ' + me().name + ' joined as mentor for: ' + m.need);
@@ -717,12 +718,14 @@ A.newRope = d => {
       from
         ? dl([['Primary origin', OBJ_LABEL(d.fromKind) + ' · ' + h(from.name || from.title)]]) + fi('nrt', 'ltype', 'Relationship', { type: 'select', req: true, opts: LINK_TYPES.filter(([v]) => v !== 'executes'), help: 'Stored as a link. The ' + OBJ_LABEL(d.fromKind) + ' does not control this Rope Team, and its members do not join it.' })
         : fi('nrt', 'basis', 'Basis for this Rope Team', { req: true, ph: 'e.g. Mentoring relationship agreed with the programme for employability skills', help: 'Direct entry needs a legitimate context: a mentoring relationship, invitation or programme mandate.' })
-    }${fi('nrt', 'name', 'Name', { req: true })}${fi('nrt', 'charter', 'What support is this for?', { type: 'textarea', rows: 3, req: true, ph: 'e.g. Confidence and workload support while we adopt the new assessment model' })}${fi('nrt', 'mentor', 'Mentor', { type: 'select', req: true, ph: 'Choose a mentor', opts: [...(role() === 'M' ? [[myId(), 'Me — ' + me().name]] : []), ...ropeMentors().map(pid => [pid, P(pid).name])], help: role() === 'M' ? '' : 'The mentor is invited and joins only if they accept.' })}${msel('nrt', 'm', 'Invite others (optional)', cands, [], { help: 'Each person is invited and must accept.' })}${banner('info', ROPE_ONLY, 'Chat, private mentor notes, support details, check-ins and reflections stay inside this Rope Team. Only a report a member writes on purpose crosses to a linked space.', 'lock')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Form Rope Team</button></div></form>`;
+    }${d.fromKind === 'projects' ? projBrief(from) : ''}${fi('nrt', 'name', 'Name', { req: true })}${fi('nrt', 'charter', 'What support is this for?', { type: 'textarea', rows: 3, req: true, ph: 'e.g. Confidence and workload support while we adopt the new assessment model' })}${fi('nrt', 'mentor', 'Mentor', { type: 'select', req: true, ph: 'Choose a mentor', opts: [...(role() === 'M' ? [[myId(), 'Me — ' + me().name]] : []), ...ropeMentors().map(pid => [pid, P(pid).name])], help: role() === 'M' ? '' : 'The mentor is invited and joins only if they accept.' })}${msel('nrt', 'm', 'Invite others (optional)', cands, [], { help: 'Each person is invited and must accept.' })}${docCreateField('nrt', 'ropes')}${banner('info', ROPE_ONLY, 'Chat, private mentor notes, support details, check-ins and reflections stay inside this Rope Team. Only a report a member writes on purpose crosses to a linked space.', 'lock')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Form Rope Team</button></div></form>`;
   });
 };
-F.nrt = d => {
+F.nrt = (d, form) => {
   const from = (d.fromKind && byId(d.fromKind, d.fromId)) || null;
   if (!validate('nrt', d, { name: ['req'], charter: ['req'], mentor: [['req', 'Choose a mentor.']], ...(from ? { ltype: ['req'] } : { basis: ['req'] }) })) return render();
+  const files = docTake('nrt', form);
+  if (!files) return render();
   const iAmMentor = d.mentor === myId();
   if (!iAmMentor && !ropeMentors().includes(d.mentor)) {
     UI.err.nrt = { mentor: 'Choose an active mentor in this programme.' };
@@ -759,6 +762,8 @@ F.nrt = d => {
   }
   [].concat(d.m || []).filter(pid => !x.members.some(m => m.pid === pid)).forEach(pid => x.members.push({ pid, role: defaultSpaceRole(ctxRole(pid, x.ctx)), status: 'Invited' }));
   S.ropes.push(x);
+  // Rope Team documents are ROPE_TEAM_ONLY: always Private
+  docAttach(x.docs, files, 'Private', pr ? pr.id : null);
   if (from) {
     addLink('ropes', x.id, d.fromKind, from.id, d.ltype, true);
     // the source space learns only that a Rope Team is linked — not who is in it or what it discusses
@@ -766,6 +771,7 @@ F.nrt = d => {
     if (pr) {
       if (!pr.rope) pr.rope = x.id;
       pr.history.push({ at: today(), t: 'Rope Team linked by ' + me().name });
+      projRoomCreated(pr, 'ropes', x);
     }
   }
   sysMsg(x, 'Rope Team formed by ' + me().name + (from ? ', linked to ' + (from.name || from.title) : ''));

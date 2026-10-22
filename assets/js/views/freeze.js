@@ -468,8 +468,9 @@ route('inbox', 'any', () => {
   );
 });
 
-// ---- Explore board (Bulletin Board Lite, BF-15): approved Opportunity Cards, programme announcements and
-// released Visible Wins. Every item keeps its source audience; nothing is ranked, liked or commented on.
+// ---- Explore board (Bulletin Board Lite, BF-15): approved Opportunity Cards, programme announcements, released
+// Visible Wins and sponsors' open challenges (posted under an alias, challenges.js). Every item keeps its source
+// audience; nothing is ranked, liked or commented on.
 UI.boardF = UI.boardF || 'all';
 function boardItems() {
   const out = [];
@@ -482,20 +483,24 @@ function boardItems() {
   S.rooms
     .filter(x => inCtx(x))
     .forEach(x => (x.wins || []).filter(w => w.status === 'Approved' && w.release === 'Programme').forEach(w => out.push({ k: 'win', at: w.at, t: w.t, s: h(x.name), src: 'Visible Win released to the programme audience', act: memberOf(x) ? L('Open ' + WL(), 'room', { id: x.id }) : '' })));
+  (S.challenges || [])
+    .filter(c => inCtx(c) && c.status !== 'Archived')
+    .forEach(c => out.push({ k: 'chal', at: c.at, t: c.title, s: chBoardSub(c), src: 'Posted by ' + h(c.alias) + ' · sponsor’s name not shown', act: L(chAccepting(c) && chCanApply(c) ? 'View and apply' : 'View challenge', 'challenge', { id: c.id }) }));
   return out.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
 }
 route('board', 'any', () => {
   const all = boardItems();
-  const KIND = { opp: ['Opportunity', 'megaphone', 't-purple'], ann: ['Announcement / event', 'bell', 't-navy'], win: ['Visible Win', 'flag', 't-teal'] };
+  const KIND = { opp: ['Opportunity', 'megaphone', 't-purple'], ann: ['Announcement / event', 'bell', 't-navy'], win: ['Visible Win', 'flag', 't-teal'], chal: ['Open challenge', 'flag', 't-ember'] };
   const list = UI.boardF === 'all' ? all : all.filter(x => x.k === UI.boardF);
   const f = (v, l) => `<button type="button" class="${UI.boardF === v ? 'on' : ''}" data-a="boardF" data-v="${v}" aria-pressed="${UI.boardF === v}">${l}<span class="cnt">${v === 'all' ? all.length : all.filter(x => x.k === v).length}</span></button>`;
   const howRows = [
     ['Opportunity', 'Publish an Opportunity Card with status Active and an audience you are allowed to see (usually Programme).', role() === 'P' || role() === 'C' || role() === 'A' ? L('Post a card', 'newcard', {}, 'btn btn-s btn-sm') : ''],
     ['Announcement', 'Programme Administrator → Notifications → Send an announcement (same context).', role() === 'A' ? L('Send announcement', 'admin', { tab: 'notify' }, 'btn btn-s btn-sm') : ''],
     ['Visible Win', 'In an Action Workspace → record a win → steward/lead Approves it (auto-releases to Programme).', myRooms().length ? L('Open a ' + WL(), 'rooms', {}, 'btn btn-s btn-sm') : ''],
+    ['Open challenge', 'A Sponsor posts a challenge under an alias. Participants and Partners ask to take part; discussion happens in its chat room.', ['P', 'C'].includes(role()) ? L('Open challenges', 'challenges', {}, 'btn btn-s btn-sm') : ''],
   ];
   return (
-    head('Explore board', `What is happening in ${h(ctxName(ctxId()))}: approved opportunities, programme announcements and released wins.`) +
+    head('Explore board', `What is happening in ${h(ctxName(ctxId()))}: approved opportunities, sponsors’ open challenges, programme announcements and released wins.`) +
     card(
       'How items get onto this board',
       'Bulletin Board Lite (BF-15) — no new feed. Items appear only when the source record is approved and released to an audience you can already see.',
@@ -504,14 +509,14 @@ route('board', 'any', () => {
       'board-how',
     ) +
     `<div class="section-gap"></div>` +
-    `<div class="seg board-f" role="group" aria-label="Show">${f('all', 'All')}${f('opp', 'Opportunities')}${f('ann', 'Announcements')}${f('win', 'Visible Wins')}</div>` +
+    `<div class="seg board-f" role="group" aria-label="Show">${f('all', 'All')}${f('opp', 'Opportunities')}${f('chal', 'Challenges')}${f('ann', 'Announcements')}${f('win', 'Visible Wins')}</div>` +
     `<div class="board-list">${
       list
         .map(x => {
           const [kl, ki, kt] = KIND[x.k];
           return `<article class="card board-i"><span class="tile ${kt}" aria-hidden="true">${ic(ki, 18)}</span><div class="col board-b"><span class="over">${kl}</span><b>${h(x.t)}</b><span class="cap">${x.s}</span><span class="cap board-src">${ic('lock', 12)}${x.src}</span></div>${x.act ? `<div class="board-a">${x.act}</div>` : ''}</article>`;
         })
-        .join('') || empty('grid', 'Nothing on the board yet', 'Approved cards, announcements and released wins appear here.')
+        .join('') || empty('grid', 'Nothing on the board yet', 'Approved cards, open challenges, announcements and released wins appear here.')
     }</div>` +
     `<p class="cap board-n">${ic('info', 13)} Composed only from records you are already allowed to see. No likes, followers, rankings, reputation or public comments. Private notes and unreleased evidence never appear.</p>`
   );

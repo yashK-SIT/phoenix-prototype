@@ -270,9 +270,9 @@ A.newCircle = d => {
       fromFixed
         ? dl([['Primary origin', OBJ_LABEL(d.fromKind) + ' · ' + h(from.name)]]) + fi('nc', 'ltype', 'Relationship to ' + h(from.name), { type: 'select', req: true, opts: LINK_TYPES.filter(([v]) => v !== 'originated-from'), help: 'Stored as a link. The ' + OBJ_LABEL(d.fromKind) + ' stays unchanged and keeps its own members and privacy.' })
         : fi('nc', 'project', 'Primary origin', { type: 'select', req: true, opts: [...projOpts, [NC_NONE, 'No project — programme cohort, institutional or community Circle']], ch: 'ncProject', help: 'A Circle does not need a project. Choose a project only if this Circle exists for it.' })
-    }${!fromFixed && !cur ? fi('nc', 'basis', 'Basis for this Circle', { req: true, ph: 'e.g. Food-resilience cohort 2026, approved by the programme', help: 'The legitimate context, mandate or programme this Circle runs under.' }) : ''}${fi('nc', 'name', 'Name', { req: true })}${fi('nc', 'purpose', 'Purpose', { type: 'textarea', rows: 2, req: true })}${fi('nc', 'outcome', 'Expected outcome', { type: 'textarea', rows: 3, req: true })}${fi('nc', 'agreement', 'Working agreement', { type: 'select', opts: ['Circle working agreement v1'], req: true })}
+    }${cur ? projBrief(cur) : ''}${!fromFixed && !cur ? fi('nc', 'basis', 'Basis for this Circle', { req: true, ph: 'e.g. Food-resilience cohort 2026, approved by the programme', help: 'The legitimate context, mandate or programme this Circle runs under.' }) : ''}${fi('nc', 'name', 'Name', { req: true })}${fi('nc', 'purpose', 'Purpose', { type: 'textarea', rows: 2, req: true })}${fi('nc', 'outcome', 'Expected outcome', { type: 'textarea', rows: 3, req: true })}${fi('nc', 'agreement', 'Working agreement', { type: 'select', opts: ['Circle working agreement v1'], req: true })}
  ${msel('nc', 'm', 'Invite people (optional)', cands, [], { help: 'Linking adds no one. Each person you choose is invited and must accept.' })}
- <div class="field"><label class="lbl" for="nc_docs">Documents <span class="req">*</span></label><input id="nc_docs" type="file" name="docs" class="input${fe('nc', 'docs') ? ' err' : ''}" style="padding:8px" multiple aria-invalid="${!!fe('nc', 'docs')}">${fe('nc', 'docs') ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe('nc', 'docs')}</span>` : ''}<span class="help">Upload at least one document the Circle needs, such as a brief, charter or terms of reference. Up to ${S.settings.maxFileMB} MB each.</span></div>
+ ${docCreateField('nc', 'circles')}
  <div class="actions"><span></span><button class="btn btn-p" type="submit">Create Circle</button></div></form>`;
   });
 };
@@ -296,13 +296,8 @@ F.nc = (d, form) => {
   const prId = fromFixed ? '' : d.fromKind === 'projects' ? d.fromId : d.project;
   const pr = prId && prId !== NC_NONE ? byId('projects', prId) : null;
   if (!validate('nc', d, { name: ['req'], purpose: ['req'], outcome: ['req'], ...(fromFixed ? { ltype: ['req'] } : { project: [['req', 'Choose the primary origin.']] }), ...(!fromFixed && !pr ? { basis: ['req'] } : {}) })) return render();
-  const files = [...(form?.querySelector('input[name="docs"]')?.files || [])];
-  const big = files.find(f => f.size > S.settings.maxFileMB * 1048576);
-  const bad = files.find(f => /\.(exe|bat|cmd|sh|msi|js)$/i.test(f.name));
-  if (!files.length || big || bad) {
-    UI.err.nc = { ...(UI.err.nc || {}), docs: !files.length ? 'Upload at least one document.' : big ? big.name + ' is over ' + S.settings.maxFileMB + ' MB.' : bad.name + ' is not a supported file type.' };
-    return render();
-  }
+  const files = docTake('nc', form);
+  if (!files) return render();
   const isP = role() === 'P';
   if (pr && isP && (pr.owner !== myId() || pr.status !== 'Accepted' || pr.circle))
     return deny('you can create a Circle only for your own accepted project that does not have one yet');
@@ -322,7 +317,7 @@ F.nc = (d, form) => {
     project: pr?.id || null,
     origin: from && fromFixed ? { type: OBJ_LABEL(d.fromKind), id: from.id } : pr ? { type: 'Project', id: pr.id } : { type: 'Direct — programme, institutional or community Circle', basis: d.basis, by: myId() },
     visibility: 'Members only',
-    docs: files.map(f => ({ id: uid('dc'), n: f.name, mb: +(f.size / 1048576).toFixed(2), by: myId(), at: now() })),
+    docs: [],
     state: authorised ? 'Active' : 'Pending Review',
     agreement: d.agreement,
     members: [{ pid: owner, role: pr || isP ? 'Project owner' : 'Facilitator', status: 'Active' }],
@@ -343,6 +338,7 @@ F.nc = (d, form) => {
     notify(pid, 'You were invited to the Circle “' + c.name + '”', 'circle', { id: c.id });
   });
   S.circles.push(c);
+  docAttach(c.docs, files, d.docVis, pr ? pr.id : null);
   sysMsg(c, 'Circle created by ' + me().name);
   if (fromFixed) {
     addLink('circles', c.id, d.fromKind, from.id, d.ltype, true);
@@ -351,8 +347,10 @@ F.nc = (d, form) => {
   if (pr) {
     addLink('circles', c.id, 'projects', pr.id, 'originated-from', true);
     if (!pr.circle) pr.circle = c.id;
-    if (!pr.stage) pr.stage = 'Circle';
     pr.history.push({ at: today(), t: 'Circle created by ' + me().name });
+    // the project starts here, or moves here when this Circle was created to receive it (journey.js)
+    projRoomCreated(pr, 'circles', c);
+    if (!pr.stage) pr.stage = 'Circle';
     if (pr.owner !== myId()) notify(pr.owner, 'Circle created for your project', 'circle', { id: c.id });
   }
   if (fac && fac !== myId()) notify(fac, (c.state === 'Active' ? 'You are facilitator of the new Circle “' : 'Circle awaiting your review: “') + c.name + '”', 'circle', { id: c.id });
@@ -775,8 +773,10 @@ A.escalateConcern = d => {
   toast('Escalated to the Incident/Safety Owner.');
   ok();
 };
-// A poll is a question with two or more options and a closing date and time. One eligible member = one vote.
-const pollOpts = () => (UI.pollOpts = UI.pollOpts || ['Approve', 'Do not approve']);
+// A poll is a question with three options and a closing date and time. One eligible member = one vote.
+// Options 1 and 2 are editable when the vote is opened (these are their defaults); N/A is always the third.
+const POLL_OPTIONS = ['Approve', 'Do Not Approve', 'N/A'];
+const POLL_NA = POLL_OPTIONS[2];
 const pollDefaultClose = () => new Date(Date.now() + (+voteSettings().windowDays || 7) * 864e5).toISOString().slice(0, 16);
 function pollRulesBanner(c) {
   const V = voteSettings();
@@ -788,56 +788,30 @@ function pollRulesBanner(c) {
   );
 }
 function pollForm(c, base) {
-  const opts = pollOpts();
   return `<form data-f="poll" class="col" style="gap:14px" novalidate><input type="hidden" name="c" value="${c.id}"><input type="hidden" name="prev" value="${base ? base.id : ''}">${base ? banner('warn', 'Re-vote of an earlier poll', '“' + h(base.q) + '” closed as ' + h(base.status.replace('Closed — ', '')) + '. Revise the question or options before opening the new round; the earlier result stays on record.') : ''}${fi('poll', 'q', 'Question', { req: true, ph: 'What should the Circle decide?' })}${fi('poll', 'desc', 'Description (optional)', { type: 'textarea', rows: 2, ph: 'Background, what each option means, links' })}
-  <fieldset class="col" style="gap:8px;border:0;padding:0;margin:0"><legend class="lbl" style="margin-bottom:8px">Options <span class="req">*</span></legend>${opts.map((o, i) => `<div class="row" style="gap:8px"><span class="poll-n">${i + 1}</span><input class="input" name="o${i}" value="${h(o)}" aria-label="Option ${i + 1}" placeholder="Option ${i + 1}">${opts.length > 2 ? `<button type="button" class="btn btn-g btn-sm" data-a="pollOptX" data-i="${i}" aria-label="Remove option ${i + 1}">${ic('x', 14)}</button>` : ''}</div>`).join('')}${fe('poll', 'opts') ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe('poll', 'opts')}</span>` : ''}${opts.length < 8 ? `<div>${B(ic('plus', 14) + 'Add option', 'pollOptAdd', {})}</div>` : ''}</fieldset>
+  <fieldset class="col" style="gap:8px;border:0;padding:0;margin:0"><legend class="lbl" style="margin-bottom:8px">Options <span class="req">*</span></legend>${[0, 1].map(i => `<div class="row" style="gap:8px"><span class="poll-n">${i + 1}</span><input class="input${fe('poll', 'opts') ? ' err' : ''}" name="o${i}" value="${h(fv('poll', 'o' + i, POLL_OPTIONS[i]))}" aria-label="Option ${i + 1}" placeholder="${h(POLL_OPTIONS[i])}"></div>`).join('')}<div class="row" style="gap:8px"><span class="poll-n">3</span><span>${h(POLL_NA)}</span></div>${fe('poll', 'opts') ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe('poll', 'opts')}</span>` : ''}<span class="cap">Options 1 and 2 can be renamed. ${h(POLL_NA)} is always included and cannot be changed.</span></fieldset>
   ${fi('poll', 'closes', 'Closes on (date and time)', { type: 'datetime-local', req: true, help: 'Defaults to the configured ' + voteSettings().windowDays + '-day voting window.' })}${pollRulesBanner(c)}<div class="actions"><span class="cap">Opened ${fmt(now().slice(0, 16))} by ${nm(myId())}</span><button class="btn btn-p" type="submit">${base ? 'Open the re-vote' : 'Open vote'}</button></div></form>`;
 }
-const pollSnap = () => {
-  const f = document.querySelector('form[data-f="poll"]');
-  if (!f) return;
-  const x = {};
-  new FormData(f).forEach((v, k) => (x[k] = v));
-  UI.form.poll = { ...(UI.form.poll || {}), q: x.q, desc: x.desc, closes: x.closes };
-  UI.pollOpts = pollOpts().map((o, i) => (x['o' + i] != null ? x['o' + i] : o));
-};
-A.pollOptAdd = () => {
-  pollSnap();
-  pollOpts().push('');
-  render();
-};
-A.pollOptX = d => {
-  pollSnap();
-  pollOpts().splice(+d.i, 1);
-  render();
-};
 A.newPoll = d => {
   clearF('poll');
-  UI.pollOpts = ['Approve', 'Do not approve'];
   UI.form.poll = { closes: pollDefaultClose() };
   const c = byId('circles', d.id);
   modal('Open a Circle vote', () => pollForm(c));
 };
 F.poll = d => {
-  const opts = Object.keys(d)
-    .filter(k => /^o\d+$/.test(k))
-    .sort((a, b) => +a.slice(1) - +b.slice(1))
-    .map(k => d[k].trim())
-    .filter(Boolean);
-  if (!validate('poll', d, { q: ['req'], closes: ['req'] }) || opts.length < 2 || new Set(opts.map(o => o.toLowerCase())).size !== opts.length || (d.closes && d.closes <= now().slice(0, 16))) {
+  const opts = [(d.o0 || '').trim(), (d.o1 || '').trim(), POLL_NA];
+  const optErr = !opts[0] || !opts[1] ? 'Enter both options.' : new Set(opts.map(o => o.toLowerCase())).size !== opts.length ? 'Each option must be different.' : '';
+  if (!validate('poll', d, { q: ['req'], closes: ['req'] }) || optErr || (d.closes && d.closes <= now().slice(0, 16))) {
     UI.err.poll = UI.err.poll || {};
-    if (opts.length < 2) UI.err.poll.opts = 'Enter at least two options.';
-    else if (new Set(opts.map(o => o.toLowerCase())).size !== opts.length) UI.err.poll.opts = 'Each option must be different.';
+    if (optErr) UI.err.poll.opts = optErr;
     if (d.closes && d.closes <= now().slice(0, 16)) UI.err.poll.closes = 'Choose a closing date and time in the future.';
     UI.form.poll = { ...(UI.form.poll || {}), ...d };
-    UI.pollOpts = opts.length ? opts : pollOpts();
     return render();
   }
   const c = byId('circles', d.c);
   const voters = eligibleNow(c);
   if (!voters.length) {
     UI.form.poll = { ...(UI.form.poll || {}), ...d };
-    UI.pollOpts = opts;
     toast('This Circle has no eligible voters yet. Add members before opening a vote.', 'warn');
     return render();
   }
@@ -868,7 +842,6 @@ F.poll = d => {
   sysMsg(c, me().name + (prev ? ' opened a re-vote (round ' + p.round + '): ' : ' opened a vote: ') + p.q + ' · ' + voters.length + ' eligible voters, one vote each');
   audit(prev ? 'Poll re-opened as new round' : 'Poll created', c.id, p.q + ' · ' + voters.length + ' eligible · threshold ' + p.rule.threshold + '% · quorum ' + p.rule.quorum + '% · window ' + p.rule.windowDays + ' days' + (prev ? ' · re-vote of ' + prev.id : ''));
   UI.modal = null;
-  UI.pollOpts = null;
   clearF('poll');
   ok();
 };
@@ -924,8 +897,10 @@ const closePollCore = (d, auto, silent) => {
   const win = p.options[tl.best];
   const line = voteLine(p, tl);
   const pass = tl.outcome === 'pass';
-  // a passing "Do not approve" option is a decision, recorded as not approved
-  p.status = pass && NEG_OPT.test(win) ? POLL_STATUS.fail : POLL_STATUS[tl.outcome];
+  // only option 1 approves on the three-option format (options 1–2 may be renamed); a passing option 2 or N/A is
+  // recorded as not approved. Older polls fall back to reading the wording.
+  const threeOpt = p.options.length === 3 && p.options[2] === POLL_NA;
+  p.status = pass && (threeOpt ? tl.best !== 0 : NEG_OPT.test(win)) ? POLL_STATUS.fail : POLL_STATUS[tl.outcome];
   p.closedAt = now();
   p.result =
     tl.outcome === 'pass'
@@ -956,8 +931,7 @@ A.repoll = d => {
   const c = byId('circles', d.c);
   const p = c.polls.find(x => x.id === d.p);
   clearF('poll');
-  UI.form.poll = { q: p.q.replace(/ \(revised\)$/, '') + ' (revised)', desc: p.desc || '', closes: pollDefaultClose() };
-  UI.pollOpts = [...p.options];
+  UI.form.poll = { q: p.q.replace(/ \(revised\)$/, '') + ' (revised)', desc: p.desc || '', closes: pollDefaultClose(), o0: p.options[0] !== POLL_NA ? p.options[0] : POLL_OPTIONS[0], o1: p.options[1] && p.options[1] !== POLL_NA ? p.options[1] : POLL_OPTIONS[1] };
   modal('Modify and re-poll', () => pollForm(c, p));
 };
 // Run before every render (see tick() in journey.js): closes a vote at its closing time and sends the one
@@ -987,7 +961,6 @@ A.aiCheck = d => {
     const sourced = x => /https?:|source|according to|\.pdf|\bsee\b|\[\d+\]|survey report|data from/i.test(x);
     const flags = sentences.filter(x => claim(x) && !sourced(x)).slice(0, 4);
     const contra = [];
-    if (p.options.length > 2) contra.push('Several options may overlap; check that members read each one the same way.');
     p.aiCheck = {
       by: myId(),
       at: now(),
