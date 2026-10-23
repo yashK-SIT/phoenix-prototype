@@ -1,7 +1,7 @@
 // ---------- OPEN CHALLENGES: sponsor-led projects, from the bulletin board to milestone payments ----------
 // A Sponsor posts an open challenge on the Explore board under an alias generated for that post. Participants and
-// Partners ask to take part, and every discussion about the challenge happens in its chat room. The Sponsor shortlists,
-// forms the team's Circle, starts the project in a Circle, Rope Team or Action Room, then closes or archives the post.
+// Partners ask to take part and the Sponsor shortlists. Proceeding to chat closes the post to new applications and
+// opens its chat room to the Sponsor and the shortlisted applicants only. The Sponsor then forms the team's Circle, starts the project in a Circle, Rope Team or Action Room, then closes or archives the post.
 // Funding is committed in full before execution and paid offline: PHOENIX has no payment gateway and never processes,
 // holds or transfers money. It records what each side states, and a payment is Confirmed only when both sides agree.
 // Milestones are agreed with the Circle owner and approved by the Sponsor on completion. A disagreement goes to an
@@ -19,6 +19,7 @@ const CH_WORDS = [
 ];
 Object.assign(SC, {
   'Requests closed': 'p-grey',
+  'Closed – Chat in Progress': 'p-teal',
   'Team formed': 'p-green',
   Shortlisted: 'p-teal',
   Selected: 'p-green',
@@ -61,7 +62,7 @@ const chOnTeam = ch => !!ch && chTeam(ch).includes(myId());
 const chSide = ch => (chMine(ch) ? 'sponsor' : chOwner(ch) ? 'owner' : null);
 const chParty = ch => !!chSide(ch);
 const chAccepting = ch => ch.status === 'Open' && !ch.project && (!ch.closes || ch.closes >= today());
-const chStateLabel = ch => (ch.status === 'Archived' ? 'Archived' : ch.project ? 'Team formed' : chAccepting(ch) ? 'Open' : 'Requests closed');
+const chStateLabel = ch => (ch.status === 'Archived' ? 'Archived' : ch.project ? 'Team formed' : ch.chatAt ? 'Closed – Chat in Progress' : chAccepting(ch) ? 'Open' : 'Requests closed');
 const chVisible = ch => !!ch && inCtx(ch) && (chMine(ch) || chOnTeam(ch) || !!chAppAny(ch) || (['P', 'C'].includes(role()) && ch.status !== 'Archived'));
 const chCanApply = ch => ['P', 'C'].includes(role()) && inCtx(ch) && chAccepting(ch) && ch.sponsor !== myId() && !chApp(ch);
 const chOrgName = pid => (S.orgs.find(o => o.id === P(pid).org) || {}).name || '';
@@ -290,19 +291,18 @@ F.chn = d => {
   let ch = d.id && chById(d.id);
   if (ch) {
     Object.assign(ch, f);
-    chRoom(ch).name = 'Challenge · ' + ch.title;
-    sysMsg(chRoom(ch), 'The sponsor updated the challenge description.');
+    if (chRoom(ch)) {
+      chRoom(ch).name = 'Challenge · ' + ch.title;
+      sysMsg(chRoom(ch), 'The sponsor updated the challenge description.');
+    }
     chLog(ch, 'Post edited');
     audit('Open challenge edited', ch.id, '');
     toast('Challenge updated.');
   } else {
     const alias = S.challenges.some(c => c.alias === UI.chAlias) ? chAlias('Sponsor') : UI.chAlias;
-    ch = { id: uid('ch'), ctx: ctxId(), sponsor: myId(), alias, ...f, status: 'Open', at: now(), apps: [], milestones: [], payments: [], commit: null, team: null, project: null, reveal: false, log: [] };
-    const rm = { id: uid('chr'), ctx: ch.ctx, challenge: ch.id, sponsor: myId(), alias, name: 'Challenge · ' + ch.title, state: 'Active', members: [{ pid: myId(), role: 'Sponsor', status: 'Active' }], chat: [] };
-    sysMsg(rm, 'Chat room for the open challenge “' + ch.title + '”. Everyone who asks to take part joins here. The sponsor appears as ' + alias + '.');
-    ch.room = rm.id;
+    // the chat room is created when the sponsor proceeds to chat with the shortlist (chProceedGo)
+    ch = { id: uid('ch'), ctx: ctxId(), sponsor: myId(), alias, ...f, status: 'Open', at: now(), room: null, chatAt: null, apps: [], milestones: [], payments: [], commit: null, team: null, project: null, reveal: false, log: [] };
     S.challenges.push(ch);
-    S.chrooms.push(rm);
     chLog(ch, 'Posted to the Explore board as ' + alias);
     audit('Open challenge posted', ch.id, alias);
     toast('Posted to the Explore board as ' + alias + '.');
@@ -359,7 +359,7 @@ route('challenge', 'any', () => {
     [
       ['overview', 'Challenge'],
       mine && ['apps', 'Applications', ch.project ? null : ch.apps.filter(a => a.status === 'Submitted').length || null],
-      (mine || inRoom) && ['chat', 'Chat room', rm && memberOf(rm) && unreadIn(rm) ? unreadIn(rm) : null],
+      ((mine && rm) || inRoom) && ['chat', 'Chat room', rm && memberOf(rm) && unreadIn(rm) ? unreadIn(rm) : null],
       (mine || (ch.project && team)) && ['team', 'Team & project'],
       ch.project && (mine || team) && ['agree', 'Funding & milestones', tn('agree')],
       ch.project && (mine || team) && ['pay', 'Payments', tn('pay')],
@@ -375,12 +375,12 @@ function chHead(ch) {
   if (chMine(ch) && ch.status !== 'Archived') {
     if (!ch.project) acts += B(ic('edit', 14) + 'Edit', 'chEdit', { id: ch.id });
     if (ch.status === 'Open') acts += CB('Stop new applications', 'chState', { id: ch.id, v: 'Requests closed' }, ch.project ? 'Stop new applications? The selection chat room closes and stays readable for the people who took part.' : 'Stop new applications? You can still review, shortlist and form the team, and you can reopen applications later.');
-    else if (!ch.project) acts += B('Reopen applications', 'chState', { id: ch.id, v: 'Open' });
+    else if (!ch.project && !ch.chatAt) acts += B('Reopen applications', 'chState', { id: ch.id, v: 'Open' });
     acts += CB(ic('archive', 14) + 'Archive post', 'chState', { id: ch.id, v: 'Archived' }, 'Archive this post? It leaves the Explore board, the selection chat room closes, and anyone not yet selected is told.' + (ch.project ? ' The project, milestones and payments are not affected.' : ''), 'btn-s btn-sm', 'Archive post');
   }
   const a = chApp(ch);
   if (!chMine(ch) && chCanApply(ch)) acts += B(ic('send', 14) + 'Ask to take part', 'chApply', { id: ch.id }, 'btn-p btn-sm');
-  if (a && !ch.project && ['Submitted', 'Shortlisted'].includes(a.status)) acts += CB('Withdraw', 'chWithdraw', { id: ch.id }, 'Withdraw your application? You leave the chat room. You can apply again while applications are open.');
+  if (a && !ch.project && ['Submitted', 'Shortlisted'].includes(a.status)) acts += CB('Withdraw', 'chWithdraw', { id: ch.id }, 'Withdraw your application?' + (ch.chatAt ? ' You leave the chat room.' : ' You can apply again while applications are open.'));
   return (
     crumbsHtml([['Open challenges', 'challenges'], [h(ch.title)]]) +
     `<div class="shead-main ch-head"><span class="tile t-ember" aria-hidden="true">${ic('megaphone', 20)}</span><div class="shead-t"><div class="shead-kind">Open challenge · posted by ${chMine(ch) ? 'you · others see ' : ''}<span class="ch-alias">${ic('shield', 12)}${chMine(ch) ? h(ch.alias) : chWho(ch)}</span></div><div class="row wrap prj-ttl"><h1 class="h1">${h(ch.title)}</h1>${pill(chStateLabel(ch))}${a && !chOnTeam(ch) ? pill(a.status === 'Submitted' ? 'Applied' : a.status, 'p-navy') : ''}${chOnTeam(ch) ? pill(chOwner(ch) ? 'You are the Circle owner' : 'You are on the team', 'p-green') : ''}</div><div class="shead-meta"><span>Posted ${fmtD(ch.at)}</span><span>${chAccepting(ch) ? 'Applications close ' + fmtD(ch.closes) : 'Not accepting applications'}</span>${ch.country ? `<span>Country · ${h(ch.country)}</span>` : ''}${ch.budget ? `<span>Indicative budget · ${money(ch.currency, ch.budget)}</span>` : ''}</div></div>${acts ? `<div class="shead-a">${acts}</div>` : ''}</div>`
@@ -454,7 +454,7 @@ function chTakePart(ch) {
         ['Availability', h(a.avail)],
         ['Profile summary', a.share ? 'Shared with the sponsor' : 'Not shared'],
       ]) +
-        `<p class="cap">${{ Submitted: 'The sponsor reviews applications and shortlists people. Ask questions in the chat room.', Shortlisted: 'You are shortlisted. The sponsor forms the team from the shortlist.', 'Not selected': 'You were not selected this time. The chat room stays readable for you.', Selected: 'You were selected.' }[a.status] || ''}</p>`,
+        `<p class="cap">${{ Submitted: 'The sponsor reviews applications and shortlists people. Shortlisted applicants are invited to the chat room.', Shortlisted: ch.chatAt ? 'You are shortlisted. Discuss collaboration details with the sponsor in the chat room. The sponsor forms the team from the shortlist.' : 'You are shortlisted. The sponsor opens a chat room with the shortlist, then forms the team.', 'Not selected': 'You were not selected this time.' + (chRoom(ch) && memberRec(chRoom(ch)) ? ' The chat room stays readable for you.' : ''), Selected: 'You were selected.' }[a.status] || ''}</p>`,
       chRoom(ch) && memberOf(chRoom(ch)) ? B(ic('message', 14) + 'Chat room', 'tab', { k: 'ch_' + ch.id, v: 'chat' }) : '',
       'ch-take',
     );
@@ -463,7 +463,7 @@ function chTakePart(ch) {
       'Take part',
       '',
       chCanApply(ch)
-        ? `<p class="muted">Tell the sponsor what you would bring. You then join the challenge’s chat room, where every question and discussion about it takes place.</p>`
+        ? `<p class="muted">Tell the sponsor what you would bring. If the sponsor shortlists you, you are invited to the challenge’s chat room to discuss collaboration details.</p>`
         : `<p class="muted">${a && a.status === 'Withdrawn' ? 'You withdrew your application.' : ''} This challenge is not accepting applications${['P', 'C'].includes(role()) ? '' : ' from your role'}.</p>`,
       chCanApply(ch) ? B(ic('send', 14) + 'Ask to take part', 'chApply', { id: ch.id }, 'btn-p btn-sm') : '',
       'ch-take',
@@ -481,17 +481,17 @@ A.chApply = d => {
       `<form data-f="cha" class="col fgap" novalidate>${errSum('cha')}<input type="hidden" name="id" value="${ch.id}">${dl([
         ['Challenge', h(ch.title)],
         ['Posted by', h(ch.alias)],
-      ])}${fi('cha', 'pitch', 'What you would bring to this challenge', { type: 'textarea', rows: 4, req: true, max: 2000, help: 'At least 40 characters. The sponsor reads this when shortlisting.' })}${fi('cha', 'exp', 'Relevant experience', { type: 'textarea', rows: 3, req: true, max: 2000, help: 'Projects, skills or evidence that show you can do this.' })}${fi('cha', 'avail', 'Availability', { type: 'select', req: true, ph: 'Select', opts: CH_AVAIL })}${fi('cha', 'share', 'Share my profile summary with this challenge’s sponsor: my bio, the profile claims I made discoverable, and how many approved evidence items and completed projects I have', { type: 'checkbox' })}<p class="cap">Optional. Nothing else from your profile, pathway, Purpose Compass or private spaces is shared.</p>${banner('info', 'What happens next', 'You join the challenge’s chat room, where all questions and discussion take place. The sponsor shortlists people and forms the project team. You can withdraw until the team is formed.')}<div class="actions">${B('Cancel', 'closeM')}<button class="btn btn-p" type="submit">Send application</button></div></form>`,
+      ])}${fi('cha', 'pitch', 'What you would bring to this challenge', { type: 'textarea', rows: 4, req: true, max: 2000, help: 'At least 40 characters. The sponsor reads this when shortlisting.' })}${fi('cha', 'exp', 'Relevant experience', { type: 'textarea', rows: 3, req: true, max: 2000, help: 'Projects, skills or evidence that show you can do this.' })}${fi('cha', 'avail', 'Availability', { type: 'select', req: true, ph: 'Select', opts: CH_AVAIL })}${fi('cha', 'share', 'Share my profile summary with this challenge’s sponsor: my bio, the profile claims I made discoverable, and how many approved evidence items and completed projects I have', { type: 'checkbox' })}<p class="cap">Optional. Nothing else from your profile, pathway, Purpose Compass or private spaces is shared.</p>${banner('info', 'What happens next', 'The sponsor reviews applications and shortlists people. Shortlisted applicants are invited to the challenge’s chat room, and the sponsor forms the project team from the shortlist. You can withdraw until the team is formed.')}<div class="actions">${B('Cancel', 'closeM')}<button class="btn btn-p" type="submit">Send application</button></div></form>`,
     true,
   );
 };
-// A person who asks to take part joins the chat room; it is the only channel for the challenge.
+// Only shortlisted applicants join the chat room, when the sponsor proceeds to chat or shortlists someone afterwards.
 function chRoomJoin(ch, pid) {
   const rm = chRoom(ch);
   const m = memberRec(rm, pid);
   if (m) Object.assign(m, { status: 'Active', role: 'Applicant' });
   else rm.members.push({ pid, role: 'Applicant', status: 'Active' });
-  sysMsg(rm, P(pid).name + ' asked to take part and joined the chat room');
+  sysMsg(rm, P(pid).name + ' was shortlisted and joined the chat room');
 }
 F.cha = d => {
   if (!validate('cha', d, { pitch: ['req', ['min', 40]], exp: ['req', ['min', 20]], avail: ['req'] })) return render();
@@ -502,13 +502,12 @@ F.cha = d => {
     Object.assign(prev, rec);
     prev.log.push({ at: now(), by: myId(), t: 'Applied again' });
   } else ch.apps.push({ id: uid('cap'), ...rec, log: [{ at: now(), by: myId(), t: 'Applied' }] });
-  chRoomJoin(ch, myId());
   notify(ch.sponsor, me().name + ' asked to take part in “' + ch.title + '”', 'challenge', { id: ch.id, tab: 'apps' });
   chLog(ch, me().name + ' applied');
   audit('Open challenge application sent', ch.id, d.share === 'yes' ? 'profile summary shared' : 'profile summary not shared');
   UI.modal = null;
   clearF('cha');
-  toast('Application sent. You have joined the challenge’s chat room.');
+  toast('Application sent. If the sponsor shortlists you, you are invited to the chat room.');
   ok();
 };
 A.chWithdraw = d => {
@@ -516,9 +515,11 @@ A.chWithdraw = d => {
   const a = chApp(ch);
   a.status = 'Withdrawn';
   a.log.push({ at: now(), by: myId(), t: 'Withdrew' });
-  const m = memberRec(chRoom(ch));
-  if (m) m.status = 'Left';
-  sysMsg(chRoom(ch), me().name + ' withdrew and left the chat room');
+  const m = chRoom(ch) && memberRec(chRoom(ch));
+  if (m && m.status === 'Active') {
+    m.status = 'Left';
+    sysMsg(chRoom(ch), me().name + ' withdrew and left the chat room');
+  }
   notify(ch.sponsor, me().name + ' withdrew from “' + ch.title + '”', 'challenge', { id: ch.id, tab: 'apps' });
   chLog(ch, me().name + ' withdrew');
   audit('Open challenge application withdrawn', ch.id, '');
@@ -530,6 +531,7 @@ function chApps(ch) {
   const kpi = (l, v) => `<div class="kpi"><span class="lt">${l}</span><span class="fig">${v}</span></div>`;
   const sts = ['Submitted', 'Shortlisted', 'Selected', 'Not selected', 'Withdrawn'].filter(s => n(s));
   return (
+    chProceedCard(ch, n('Shortlisted')) +
     `<div class="kpis ch-kpis">${kpi('New', n('Submitted'))}${kpi('Shortlisted', n('Shortlisted') + n('Selected'))}${kpi('Not selected', n('Not selected'))}${kpi('Withdrawn', n('Withdrawn'))}</div>` +
     card(
       'Applications',
@@ -554,13 +556,66 @@ function chApps(ch) {
         }),
         empty: ['users', 'No applications yet', 'Participants and Partners apply from the Explore board or the Open challenges page.', ''],
       }),
-    ) +
-    (!ch.project && n('Shortlisted') ? banner('ok', n('Shortlisted') + ' shortlisted', 'When you are ready, form the team from ' + L('Team & project', 'challenge', { id: ch.id, tab: 'team' }) + '.') : '')
+    )
   );
 }
+// Proceed to chat: shown above the shortlist once someone is shortlisted, until the sponsor proceeds or forms the team.
+function chProceedCard(ch, sl) {
+  if (ch.project || ch.status === 'Archived') return '';
+  if (ch.chatAt)
+    return banner('ok', 'Closed – Chat in Progress', 'This post is closed to new applications. Continue your collaboration discussions with your ' + sl + ' shortlisted applicant' + (sl === 1 ? '' : 's') + ' in the ' + L('chat room', 'challenge', { id: ch.id, tab: 'chat' }) + ', then form the team from ' + L('Team & project', 'challenge', { id: ch.id, tab: 'team' }) + '.') + '<div class="section-gap"></div>';
+  if (!sl) return '';
+  return card(
+    sl + ' shortlisted applicant' + (sl === 1 ? '' : 's') + ' ready for the next step',
+    'Your shortlisted applicants are ready for the next step. Proceed to the chat room to connect and discuss collaboration details with your selected applicants. Once you proceed, this post will be closed and marked as unavailable for new applications.',
+    '',
+    B(ic('message', 14) + 'Proceed to Chat', 'chProceed', { id: ch.id }, 'btn-p'),
+    'ch-proceed',
+  );
+}
+A.chProceed = d => {
+  modal(
+    'Proceed to Chat & Close Post?',
+    `<p class="muted">You’re about to move forward with your shortlisted applicants. This will enable chat with your selected applicants and close this post to new applications. You won’t receive any new applications for this post.</p><div class="actions">${B('Cancel', 'closeM')}${B('Confirm & Proceed', 'chProceedGo', { id: d.id }, 'btn-p')}</div>`,
+  );
+};
+A.chProceedGo = d => {
+  const ch = chById(d.id);
+  UI.modal = null;
+  if (!ch || ch.chatAt || ch.project) return ok();
+  const sl = ch.apps.filter(a => a.status === 'Shortlisted');
+  if (!sl.length) return ok();
+  ch.status = 'Requests closed';
+  ch.chatAt = now();
+  let rm = chRoom(ch);
+  if (!rm) {
+    rm = { id: uid('chr'), ctx: ch.ctx, challenge: ch.id, sponsor: ch.sponsor, alias: ch.alias, name: 'Challenge · ' + ch.title, state: 'Active', members: [{ pid: ch.sponsor, role: 'Sponsor', status: 'Active' }], chat: [] };
+    sysMsg(rm, 'Chat room for the open challenge “' + ch.title + '”. Only the sponsor and shortlisted applicants take part. The sponsor appears as ' + ch.alias + '.');
+    ch.room = rm.id;
+    S.chrooms.push(rm);
+  } else rm.state = 'Active';
+  sl.forEach(a => {
+    chRoomJoin(ch, a.pid);
+    a.log.push({ at: now(), by: myId(), t: 'Invited to the chat room' });
+    notify(a.pid, ch.alias + ' opened the chat room for “' + ch.title + '”. Discuss collaboration details with the sponsor there.', 'challenge', { id: ch.id, tab: 'chat' });
+  });
+  // applications nobody decided on end here: selection continues from the shortlist only
+  ch.apps
+    .filter(a => a.status === 'Submitted')
+    .forEach(a => {
+      a.status = 'Not selected';
+      a.log.push({ at: now(), by: myId(), t: 'Not selected: post closed' });
+      notify(a.pid, 'The open challenge “' + ch.title + '” is closed to new applications. You were not shortlisted this time.', 'challenge', { id: ch.id });
+    });
+  chLog(ch, 'Proceeded to chat with ' + sl.length + ' shortlisted applicant' + (sl.length === 1 ? '' : 's') + '; post closed to new applications');
+  audit('Open challenge closed for chat', ch.id, sl.map(a => a.pid).join(', '));
+  toast('Your post has been closed successfully, and chat is now available for your shortlisted applicants. You can continue your collaboration discussions in the chat room.');
+  save();
+  go('challenge', { id: ch.id, tab: 'chat' });
+};
 // What a person chose to share: their bio, discoverable profile claims, and counts of approved evidence and closed projects.
 function chProfile(a) {
-  if (!a.share) return banner('info', 'Profile summary not shared', 'This person chose not to share a profile summary. Judge the application on what they wrote, and ask questions in the chat room.');
+  if (!a.share) return banner('info', 'Profile summary not shared', 'This person chose not to share a profile summary. Judge the application on what they wrote. If you shortlist them, you can ask questions once you proceed to chat.');
   const pr = (S.profiles || {})[a.pid] || {};
   const cl = S.claims.filter(c => c.pid === a.pid && c.state === 'Current' && c.vis === 'Authorised discovery');
   const ev = S.evidence.filter(e => e.owner === a.pid && e.review === 'Approved').length;
@@ -618,7 +673,15 @@ F.chev = d => {
   if (['Shortlisted', 'Not selected'].includes(d.v) && d.v !== a.status) {
     a.status = d.v;
     a.log.push({ at: now(), by: myId(), t: d.v === 'Shortlisted' ? 'Shortlisted' : 'Marked not selected' });
-    notify(a.pid, d.v === 'Shortlisted' ? ch.alias + ' shortlisted you for “' + ch.title + '”. Discussion continues in the chat room.' : ch.alias + ' did not shortlist you for “' + ch.title + '”.', 'challenge', { id: ch.id });
+    // after the sponsor proceeds to chat, the room follows the shortlist; a removed member keeps read access
+    const rm = ch.chatAt && chRoom(ch);
+    const rec = rm && memberRec(rm, a.pid);
+    if (rm && d.v === 'Shortlisted') chRoomJoin(ch, a.pid);
+    else if (rec && rec.status === 'Active') {
+      rec.status = 'Ended';
+      sysMsg(rm, P(a.pid).name + ' is no longer on the shortlist and left the chat room');
+    }
+    notify(a.pid, d.v === 'Shortlisted' ? ch.alias + ' shortlisted you for “' + ch.title + '”.' + (rm ? ' Discuss collaboration details in the chat room.' : '') : ch.alias + ' did not shortlist you for “' + ch.title + '”.', 'challenge', rm && d.v === 'Shortlisted' ? { id: ch.id, tab: 'chat' } : { id: ch.id });
     chLog(ch, P(a.pid).name + ': ' + d.v.toLowerCase());
     audit('Open challenge application ' + d.v.toLowerCase(), ch.id, a.pid);
     toast(P(a.pid).name + (d.v === 'Shortlisted' ? ' shortlisted.' : ' marked not selected.'));
@@ -633,7 +696,7 @@ function chChat(ch) {
   const rm = chRoom(ch);
   return (
     (rm.state === 'Active'
-      ? banner('info', 'One place for every discussion', 'Questions, clarifications, negotiation and coordination about this challenge happen here, and are kept with it. The sponsor and everyone who applied see every message. The sponsor appears as ' + h(ch.alias) + '.')
+      ? banner('info', 'Chat with your shortlist', 'Collaboration details, clarifications and coordination about this challenge happen here, and are kept with it. Only the sponsor and shortlisted applicants take part and see every message. The sponsor appears as ' + h(ch.alias) + '.')
       : banner('info', 'Chat room closed', 'Selection is complete, so the room no longer takes new messages. It stays readable for the people who took part, under the programme’s data-retention rules. Project work continues in the team’s Circle.')) +
     '<div class="section-gap"></div>' +
     chatThread('chrooms', rm, { embedded: true })
@@ -792,7 +855,7 @@ F.chf = d => {
     }
   });
   notify(owner, 'You are the Circle owner for “' + p.title + '”. The sponsor records the funding commitment next; you confirm it and agree milestones.', 'challenge', { id: ch.id, tab: 'agree' });
-  sysMsg(chRoom(ch), 'The team has been formed. Project work continues in the team’s own Circle.');
+  if (chRoom(ch)) sysMsg(chRoom(ch), 'The team has been formed. Project work continues in the team’s own Circle.');
   if (d.close === 'yes') chSetState(ch, 'Requests closed');
   chLog(ch, 'Team formed: ' + ms.map(x => P(x).name).join(', ') + '; Circle owner ' + P(owner).name + '; started in ' + projRoomLabel(to));
   audit('Open challenge team formed', ch.id, p.id + ' · ' + d.entry + (ch.reveal ? ' · sponsor identity shared with the team' : ' · sponsor alias kept'));
@@ -1765,9 +1828,9 @@ function chMigrate() {
   allLinks();
   const t = (d, h_ = '09:00') => d + 'T' + h_;
   const L_ = (st, sid, tt, tid, type) => S.links.push({ id: 'olc' + sid, source_type: st, source_id: sid, target_type: tt, target_id: tid, link_type: type, context_id: 'c1', created_by: 'p6', byLabel: 'Sponsor · Saffron Kestrel 64', created_at: t('2026-09-12', '10:00'), primary: true });
-  // 1 · open, with applications and an active chat room
+  // 1 · open, with applications and a shortlist; the sponsor has not proceeded to chat yet
   S.challenges.push({
-    id: 'chl1', ctx: 'c1', sponsor: 'p6', alias: 'Sponsor · Cobalt Heron 27', room: 'chr1', status: 'Open', at: t('2026-10-06'),
+    id: 'chl1', ctx: 'c1', sponsor: 'p6', alias: 'Sponsor · Cobalt Heron 27', room: null, chatAt: null, status: 'Open', at: t('2026-10-06'),
     title: 'Rainwater harvesting for community gardens',
     problem: 'Six community gardens in Wards 3 and 7 rely on mains water through the summer, which most volunteers pay for themselves. We want a low-cost rainwater harvesting kit that volunteers can install and maintain without specialist tools.',
     objectives: 'Design and test a rainwater kit on two gardens, then document it so the other four can install it themselves.',
@@ -1782,27 +1845,13 @@ function chMigrate() {
     milestones: [], payments: [], commit: null, team: null, project: null, reveal: false,
     log: [{ at: t('2026-10-06'), by: 'p6', t: 'Posted to the Explore board as Sponsor · Cobalt Heron 27' }, { at: t('2026-10-12', '09:10'), by: 'p6', t: 'Leah Park: shortlisted' }],
   });
-  S.chrooms.push({
-    id: 'chr1', ctx: 'c1', challenge: 'chl1', sponsor: 'p6', alias: 'Sponsor · Cobalt Heron 27', name: 'Challenge · Rainwater harvesting for community gardens', state: 'Active',
-    members: [{ pid: 'p6', role: 'Sponsor', status: 'Active' }, { pid: 'p9', role: 'Applicant', status: 'Active' }, { pid: 'p4', role: 'Applicant', status: 'Active' }, { pid: 'p10', role: 'Applicant', status: 'Active' }],
-    chat: [
-      { id: 'mc101', sys: true, at: t('2026-10-06'), t: 'Chat room for the open challenge “Rainwater harvesting for community gardens”. Everyone who asks to take part joins here. The sponsor appears as Sponsor · Cobalt Heron 27.' },
-      { id: 'mc102', sys: true, at: t('2026-10-08', '10:15'), t: 'Daniel Kim asked to take part and joined the chat room' },
-      { id: 'mc103', by: 'p6', at: t('2026-10-08', '11:00'), t: 'Welcome, and thank you for your interest. Please ask anything about the gardens or the budget here so everyone sees the answers.' },
-      { id: 'mc104', sys: true, at: t('2026-10-09', '14:40'), t: 'Leah Park asked to take part and joined the chat room' },
-      { id: 'mc105', by: 'p4', at: t('2026-10-09', '15:02'), t: 'Do the gardens have roofs or sheds we can collect from, or would the kit need its own catchment?', q: true, ans: true },
-      { id: 'mc106', by: 'p6', at: t('2026-10-09', '16:30'), t: 'Four of the six have a shed roof of at least 10 m². The other two would need a small freestanding catchment.', reply: 'mc105' },
-      { id: 'mc107', sys: true, at: t('2026-10-11', '18:05'), t: 'Ana Lopez asked to take part and joined the chat room' },
-      { id: 'mc108', by: 'p9', at: t('2026-10-12', '08:20'), t: 'Is the indicative budget for both pilot gardens together, including measurement?', q: true },
-    ],
-  });
   // 2 · team formed: project, Circle, commitment, four milestones, two payments and two disputes
   S.projects.push({ id: 'prc2', owner: 'p1', ctx: 'c1', status: 'Accepted', stage: 'Circle', stewards: ['p2'], clar: [], thread: [], type: 'Opportunity', title: 'Low-cost shade for Ward 4 market stalls', desc: 'Stallholders at the Ward 4 market have no shade in the afternoon. Heat drives customers away and spoils produce. The project designs, tests and rolls out low-cost shades that stallholders can put up and take down themselves.', tags: ['Urban heat', 'Livelihoods'], country: 'United States', area: 'Ward 4 market', challenge: 'chl2', supportPath: 'Start in a Circle', submitted: '2026-09-12', circle: 'cic2', moves: [{ at: t('2026-09-12', '10:00'), by: 'p6', byLabel: 'Sponsor · Saffron Kestrel 64', from: null, to: 'Circle', space: 'cic2', why: 'Starting room chosen by the sponsor' }], history: [{ at: t('2026-09-12', '10:00'), t: 'Formed from the open challenge “Low-cost shade for market stalls” by its sponsor, Sponsor · Saffron Kestrel 64. Faculty/Steward: Dr Asha Rao.' }, { at: t('2026-09-12', '10:00'), t: 'Started in Circle “Low-cost shade for Ward 4 market stalls Circle”' }] });
   S.circles.push({ id: 'cic2', ctx: 'c1', name: 'Low-cost shade for Ward 4 market stalls Circle', purpose: 'Agree scope and plan for “Low-cost shade for Ward 4 market stalls”, formed from an open challenge.', outcome: 'Shades tested with stallholders and a rollout plan they agree.', owner: 'p1', facilitator: 'p2', project: 'prc2', origin: { type: 'Project', id: 'prc2' }, visibility: 'Members only', docs: [], state: 'Active', agreement: 'Circle working agreement v1', members: [{ pid: 'p1', role: 'Project owner', status: 'Active' }, { pid: 'p2', role: 'Facilitator', status: 'Active' }, { pid: 'p9', role: 'Member', status: 'Active' }, { pid: 'p10', role: 'Member', status: 'Active' }], chat: [{ id: 'mc201', sys: true, at: t('2026-09-12', '10:00'), t: 'Circle formed from the open challenge “Low-cost shade for market stalls”. Sponsor: Sponsor · Saffron Kestrel 64.' }, { id: 'mc202', by: 'p1', at: t('2026-09-13', '09:30'), t: 'Welcome all. First job: the stall survey. Daniel, can you take the north row?' }, { id: 'mc203', by: 'p9', at: t('2026-09-13', '09:41'), t: 'Yes, Saturday morning works.' }], sessions: [], reflections: [], commitments: [], concerns: [], decisions: [{ t: 'Prototype with canvas and aluminium poles', at: '2026-09-26', by: 'Circle vote — 3 of 3 eligible voted “Approve” (100%) · threshold 60% · quorum 50% met' }], polls: [], pause: null, createdBy: 'p1' });
   L_('circles', 'cic2', 'projects', 'prc2', 'originated-from');
   const M = (id, n, t_, deliv, outcome, criteria, due, amount, status, extra) => ({ id, n, t: t_, deliv, outcome, criteria, due, amount, status, by: 'p6', ok: { sponsor: t('2026-09-15'), owner: t('2026-09-16') }, agreedAt: t('2026-09-16'), notes: [], subs: [], versions: [], ...extra });
   S.challenges.push({
-    id: 'chl2', ctx: 'c1', sponsor: 'p6', alias: 'Sponsor · Saffron Kestrel 64', room: 'chr2', status: 'Requests closed', at: t('2026-08-25'),
+    id: 'chl2', ctx: 'c1', sponsor: 'p6', alias: 'Sponsor · Saffron Kestrel 64', room: 'chr2', chatAt: t('2026-09-05', '09:00'), status: 'Requests closed', at: t('2026-08-25'),
     title: 'Low-cost shade for market stalls',
     problem: 'Stallholders at the Ward 4 market have no shade in the afternoon. Heat drives customers away and spoils produce. Existing gazebos are too expensive and too heavy for one person.',
     objectives: 'Design a shade one stallholder can put up in five minutes, test it on five stalls, then roll it out with a maintenance guide.',
@@ -1833,9 +1882,9 @@ function chMigrate() {
     id: 'chr2', ctx: 'c1', challenge: 'chl2', sponsor: 'p6', alias: 'Sponsor · Saffron Kestrel 64', name: 'Challenge · Low-cost shade for market stalls', state: 'Closed', closedAt: t('2026-09-12', '10:05'),
     members: [{ pid: 'p6', role: 'Sponsor', status: 'Active' }, { pid: 'p1', role: 'Applicant', status: 'Active' }, { pid: 'p9', role: 'Applicant', status: 'Active' }, { pid: 'p10', role: 'Applicant', status: 'Active' }],
     chat: [
-      { id: 'mc301', sys: true, at: t('2026-08-25'), t: 'Chat room for the open challenge “Low-cost shade for market stalls”. Everyone who asks to take part joins here. The sponsor appears as Sponsor · Saffron Kestrel 64.' },
-      { id: 'mc302', by: 'p1', at: t('2026-08-27', '11:00'), t: 'Would you fund an advance for materials, or is everything paid per milestone?', q: true, ans: true },
-      { id: 'mc303', by: 'p6', at: t('2026-08-27', '15:20'), t: 'An advance of USD 2,000 for materials is fine, the rest per approved milestone.', reply: 'mc302' },
+      { id: 'mc301', sys: true, at: t('2026-09-05', '09:00'), t: 'Chat room for the open challenge “Low-cost shade for market stalls”. Only the sponsor and shortlisted applicants take part. The sponsor appears as Sponsor · Saffron Kestrel 64.' },
+      { id: 'mc302', by: 'p1', at: t('2026-09-05', '11:00'), t: 'Would you fund an advance for materials, or is everything paid per milestone?', q: true, ans: true },
+      { id: 'mc303', by: 'p6', at: t('2026-09-05', '15:20'), t: 'An advance of USD 2,000 for materials is fine, the rest per approved milestone.', reply: 'mc302' },
       { id: 'mc304', sys: true, at: t('2026-09-12', '10:00'), t: 'The team has been formed. Project work continues in the team’s own Circle.' },
       { id: 'mc305', sys: true, at: t('2026-09-12', '10:05'), t: 'Selection is complete. This chat room is closed for further discussion. It stays readable for the people who took part, under the programme’s data-retention rules.' },
     ],

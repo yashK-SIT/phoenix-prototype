@@ -318,6 +318,8 @@ const tabs = (k, items, def) => {
         : def && ids.includes(def)
           ? def
           : ids[0];
+  // Routes the sidebar links into section by section (NAV_TABK) show no tab bar: the menu is their one section nav.
+  if (Object.values(NAV_TABK).includes(k)) return { cur, html: '' };
   return {
     cur,
     html: `<div class="tabs" role="tablist" aria-label="Sections">${items
@@ -531,9 +533,11 @@ function navItems() {
       ['tenants', 'Contexts & tenants', 'building'],
       ['roles', 'Roles & bundles', 'shield'],
       ['platform:integrations', 'Integrations', 'link'],
+      ['platform:scopes', 'Capability scopes', 'layers'],
       ['platform:security', 'Security & access', 'lock'],
       ['platform:storage', 'Backups & restore', 'archive'],
       ['platform:health', 'Deployment status', 'chart'],
+      ['platform:lms', 'LMS deep links', 'globe'],
       ['audit', 'Audit & logs', 'file'],
     );
     return always();
@@ -629,7 +633,10 @@ function navItems() {
       ['admin:packs', 'Pack configuration', 'settings'],
       ['admin:library', 'Template library', 'route'],
       ['compassqs', 'Purpose Compass settings', 'target'],
+      ['admin:purposes', 'Optional purposes', 'checks'],
       ['admin:notify', 'Notifications', 'bell'],
+      ['admin:initiatives', 'Sponsor initiatives', 'coin'],
+      ['admin:support', 'Support & requests', 'question'],
       ['metrics', 'Reports & exports', 'chart'],
       ['admin:versions', 'Configuration versions', 'archive'],
       ['audit', 'Audit log', 'file'],
@@ -704,8 +711,11 @@ function navGroup(rt) {
   if (rt === 'disputes' && r === 'F') return 'Work';
   return GROUP[rt] || '';
 }
-function navCount(r) {
+function navCount(r, tb) {
   const pid = myId();
+  if (r === 'admin') return admCount(tb);
+  if (r === 'org' && tb === 'requests') return (S.orgReqs || []).filter(x => x.by === pid && x.status === 'Open').length;
+  if (r === 'funding' && tb === 'invoices') return dueInvoices().length;
   if (r === 'messages') return unreadTotal();
   if (r === 'projects' && role() === 'F')
     return S.projects.filter(p => inCtx(p) && p.status === 'Submitted' && stewardOf(p)).length;
@@ -749,7 +759,7 @@ function sidebar() {
       let sec = '';
       if (g !== last && g) sec = `<div class="navsec"><span>${g}</span></div>`;
       last = g;
-      const n = navCount(rt);
+      const n = navCount(rt, tb);
       return `${sec}<a href="#" class="nav${on}" data-a="go" data-r="${rt}"${tb ? ` data-tab="${tb}"` : ''} data-tip="${h(l)}"${on ? ' aria-current="page"' : ''}>${ic(i)}<span class="t">${h(l)}</span><span class="ts" aria-hidden="true">${h(SHORT[rt] || l.split(' ')[0])}</span>${n ? `<span class="ncount" aria-label="${n} new">${n}</span>` : ''}</a>`;
     })
     .join('');

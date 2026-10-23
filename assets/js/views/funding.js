@@ -79,7 +79,7 @@ route('funding', 'funding', () => {
       ['seats', 'Seat utilisation'],
       ['initiatives', 'Approved initiatives'],
       ['reports', 'Funder-safe reports'],
-      ['invoices', 'Invoices & receipts', dueInvoices().length || null],
+      ['invoices', 'Invoices & receipts'],
     ],
     UI.p.tab,
   );

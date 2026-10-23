@@ -545,7 +545,7 @@ route('org', 'admin', () => {
       ['roles', 'Role assignments'],
       ['spaces', 'Spaces in my context'],
       ['reports', 'Reports'],
-      ['requests', 'Requests to Programme Admin', (S.orgReqs || []).filter(r => r.by === myId() && r.status === 'Open').length || null],
+      ['requests', 'Requests to Programme Admin'],
     ],
     UI.p.tab,
   );
@@ -738,30 +738,40 @@ A.doExport = d => {
   ok();
 };
 // ---------- PROGRAMME ADMIN (6.7, E12, F12) ----------
+// Open items per admin section, counted on the sidebar item that links to it.
+function admCount(tab) {
+  const pend = S.assign.filter(a => a.status === 'Pending role approval').length;
+  if (tab === 'users') return pend;
+  if (tab === 'requests')
+    return (
+      S.projects.filter(p => inCtx(p) && p.status === 'Submitted' && !p.stewards.length).length +
+      S.pathways.filter(p => inCtx(p) && pwNeedsSteward(p)).length +
+      pend +
+      (S.orgReqs || []).filter(r => r.ctx === ctxId() && r.status === 'Open').length
+    );
+  if (tab === 'support')
+    return S.supportQueries.filter(q => q.ctx === ctxId() && SQ_OPEN.includes(q.status)).length + (S.requests || []).filter(r => r.status === 'Open').length;
+  return 0;
+}
 route('admin', 'admin', () => {
   if (role() !== 'A') return deniedView('admin');
   const pend = S.assign.filter(a => a.status === 'Pending role approval');
   const rqProj = S.projects.filter(p => inCtx(p) && p.status === 'Submitted' && !p.stewards.length);
   const rqPw = S.pathways.filter(p => inCtx(p) && pwNeedsSteward(p));
   const inProj = S.projects.filter(p => inCtx(p) && ['Submitted', 'Clarification requested'].includes(p.status) && p.stewards.length);
+  // Sections are chosen from the sidebar; Reports & exports lives on the metrics route.
   const t = tabs(
     'adm',
     [
-      ['requests', 'Approval inbox', rqProj.length + rqPw.length + pend.length + (S.orgReqs || []).filter(r => r.ctx === ctxId() && r.status === 'Open').length || null],
-      ['users', 'Users & roles', pend.length || null],
+      ['requests', 'Approval inbox'],
+      ['users', 'Users & roles'],
       ['invites', 'Invitations'],
       ['packs', 'Pack configuration'],
       ['library', 'Template library'],
       ['versions', 'Configuration versions'],
       ['notify', 'Notifications'],
       ['initiatives', 'Sponsor initiatives'],
-      [
-        'support',
-        'Support & requests',
-        S.supportQueries.filter(q => q.ctx === ctxId() && SQ_OPEN.includes(q.status)).length +
-          (S.requests || []).filter(r => r.status === 'Open').length,
-      ],
-      ['reports', 'Reports & exports'],
+      ['support', 'Support & requests'],
       ['purposes', 'Optional purposes'],
     ],
     UI.p.tab,
@@ -926,7 +936,6 @@ route('admin', 'admin', () => {
       B(ic('plus', 14) + 'Publish initiative', 'initNew', {}, 'btn-p btn-sm'),
       'adm-lrows',
     );
-  if (t.cur === 'reports') body = reportsView(false);
   return head('Programme administration', h(ctx().name) + ' · operational administration. Specialist decisions go to their bundle holders.') + t.html + body;
 });
 A.roleDecide = d => {
