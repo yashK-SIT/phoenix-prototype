@@ -157,10 +157,11 @@ function blSyncSkills(pid, v) {
   if (!v) return;
   if (c) {
     if (c.value !== v) {
+      (c.prev = c.prev || []).push({ value: c.value, prov: c.prov, at: now(), why: 'Baseline updated' });
       c.value = v;
       c.ver = (c.ver || 1) + 1;
     }
-  } else S.claims.push({ id: uid('cl'), pid, field: 'Skills', value: v, prov: 'Self-declared', vis: 'Only me', state: 'Current', ver: 1, src: 'baseline' });
+  } else S.claims.push({ id: uid('cl'), pid, field: 'Skills', value: v, prov: 'Self-declared', vis: 'Only me', state: 'Current', ver: 1, at: now(), src: 'baseline' });
 }
 const claimVals = (pid, field) =>
   S.claims
@@ -173,7 +174,7 @@ function blRoles(pid) {
   return list
     .map(a => {
       const exp = a.until ? (a.status === 'Expired' ? pill('Expired ' + fmt(a.until), 'p-red') : pill('Expires ' + fmt(a.until), a.until <= addDays(today(), 30) ? 'p-amber' : 'p-grey')) : '<span class="cap">No expiry set</span>';
-      return `<div class="row wrap onb-role"><b>${h(ROLE[a.role] || a.role)}</b><span class="row wrap onb-pills">${a.status !== 'Active' && a.status !== 'Expired' ? pill(a.status) : ''}${exp}</span></div>`;
+      return `<div class="row wrap onb-role"><b>${h(roleName(a.role, a.ctx) || a.role)}</b><span class="row wrap onb-pills">${a.status !== 'Active' && a.status !== 'Expired' ? pill(a.status) : ''}${exp}</span></div>`;
     })
     .join('');
 }
@@ -464,6 +465,7 @@ F.prof = d => {
       vis: 'Only me',
       state: 'Current',
       ver: 1,
+      at: now(),
     });
   if (d.sponsorInt)
     S.interests[p.id] = d.sponsorInt

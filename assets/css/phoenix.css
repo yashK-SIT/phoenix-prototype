@@ -2726,6 +2726,17 @@ select.input {
 .snav-list > .snav-sub .snav-i.on::before {
   left: -6px;
 }
+/* an item's own icon (top-level items such as Overview): lines up with the group headings' icons */
+.snav-i > svg {
+  flex: none;
+  color: var(--text-3);
+}
+.snav-i.on > svg {
+  color: currentColor;
+}
+.snav-list > .snav-sub .snav-i:has(> svg) {
+  padding-left: var(--s-2);
+}
 .snav-others {
   padding-top: var(--s-3);
   border-top: 1px solid var(--line-soft);

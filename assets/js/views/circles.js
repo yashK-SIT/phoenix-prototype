@@ -122,7 +122,7 @@ function aiCheckBlock(c, p, isMem, ro) {
 // Circles a project owner can create: their own accepted projects that do not have a Circle yet.
 const ownCircleProjects = () =>
   S.projects.filter(p => inCtx(p) && p.owner === myId() && p.status === 'Accepted' && !p.circle);
-const canCreateCircle = () => ['F', 'O'].includes(role()) || (role() === 'P' && can('circles', 'C'));
+const canCreateCircle = () => ['F', 'A'].includes(role()) || (role() === 'P' && can('circles', 'C'));
 // Request state for a person who is not (or no longer) an active member.
 const joinState = c => {
   const m = memberRec(c);
@@ -142,7 +142,7 @@ const joinBtn = (c, kind = 'circles') => {
 route('circles', 'circles', () => {
   const r = role();
   const all = S.circles.filter(inCtx);
-  const sees = c => memberOf(c) || ['A', 'O'].includes(r) || c.facilitator === myId() || ['Requested', 'Invited'].includes((memberRec(c) || {}).status);
+  const sees = c => memberOf(c) || r === 'A' || c.facilitator === myId() || ['Requested', 'Invited'].includes((memberRec(c) || {}).status);
   const mine = all.filter(sees);
   const others = all.filter(c => !sees(c) && !['Archived/Closed'].includes(c.state));
   const ownP = r === 'P' ? ownCircleProjects() : [];
@@ -186,7 +186,7 @@ route('circles', 'circles', () => {
         empty: ['users', 'You are not in a Circle yet.', 'Ask to join one below, or wait for an invitation.', ''],
       }),
     ) +
-    (others.length && !['A', 'O'].includes(r)
+    (others.length && !r === 'A'
       ? '<div class="section-gap"></div>' +
         card(
           'Other Circles in this programme',
@@ -246,7 +246,7 @@ A.joinWithdraw = d => {
 // or from another object it is linked to (e.g. an Action Room that needs a participatory sensemaking space).
 // Linking records provenance only: nobody from the source object becomes a member; the creator invites people.
 const NC_NONE = '_none';
-const ncProjects = () => (role() === 'P' ? ownCircleProjects() : S.projects.filter(p => inCtx(p) && p.status === 'Accepted' && !p.circle && (role() === 'O' || stewardOf(p))));
+const ncProjects = () => (role() === 'P' ? ownCircleProjects() : S.projects.filter(p => inCtx(p) && p.status === 'Accepted' && !p.circle && (role() === 'A' || stewardOf(p))));
 const ncFrom = d => (d.fromKind && byId(d.fromKind, d.fromId)) || null;
 A.newCircle = d => {
   clearF('nc');
@@ -265,7 +265,7 @@ A.newCircle = d => {
     const cur = byId('projects', fv('nc', 'project'));
     const projOpts = ncProjects().map(p => [p.id, 'Project · ' + p.title]);
     const fromFixed = from && d.fromKind !== 'projects';
-    const cands = eligiblePeople([myId()], ['P', 'F', 'M', 'C', 'O']);
+    const cands = eligiblePeople([myId()], ['P', 'F', 'M', 'C', 'A']);
     return `<form data-f="nc" class="col" style="gap:14px" novalidate><input type="hidden" name="fromKind" value="${h(d.fromKind || '')}"><input type="hidden" name="fromId" value="${h(d.fromId || '')}">${
       fromFixed
         ? dl([['Primary origin', OBJ_LABEL(d.fromKind) + ' · ' + h(from.name)]]) + fi('nc', 'ltype', 'Relationship to ' + h(from.name), { type: 'select', req: true, opts: LINK_TYPES.filter(([v]) => v !== 'originated-from'), help: 'Stored as a link. The ' + OBJ_LABEL(d.fromKind) + ' stays unchanged and keeps its own members and privacy.' })
@@ -422,6 +422,7 @@ route('circle', 'circles', () => {
     UI.p.tab,
     {
       label: 'Circle sections',
+      icons: { overview: 'grid' },
       groups: [
         ['', '', ['overview']],
         ['Conversation', 'message', ['chat', 'sessions']],
@@ -458,7 +459,7 @@ route('circle', 'circles', () => {
         act = B('Request changes', 'commitReview', { c: c.id, id: x.id, v: 'changes' }) + B('Accept work', 'commitReview', { c: c.id, id: x.id, v: 'ok' }, 'btn-p btn-sm');
       return pill(x.status) + act;
     };
-    body = `<div class="g12">${card('Responsibilities and commitments', 'Facilitators assign responsibilities; members make commitments. Assigned work is reviewed before it counts as done.', c.commitments.map(x => lrow(x.assignedBy ? 'flag' : 'calendar', h(x.t), nm(x.by) + (x.assignedBy ? ' · assigned by ' + nm(x.assignedBy) : '') + ' · due ' + fmt(x.due) + dueTag(x.due, x.status === 'Done') + (x.note ? `<span class="cap" style="display:block">Changes requested: ${h(x.note)}</span>` : ''), commitRight(x))).join('') || '<p class="cap">None yet.</p>', noRec ? '' : B(ic('plus', 14) + (mgr ? 'Assign or add' : 'Add commitment'), 'addRec', { id: c.id, k: 'commitments' }), 'c6')}${role() === 'O' && !isMem ? card('Reflections', '', `<p class="cap">${c.reflections.length} reflection${c.reflections.length === 1 ? '' : 's'} recorded. Private reflections are visible to Circle members only, never to organisation representatives.</p>`, '', 'c6') : card('Reflections', '', c.reflections.map(x => lrow('message', h(x.t), nm(x.by) + ' · ' + fmt(x.at))).join('') || '<p class="cap">None yet.</p>', noRec ? '' : B(ic('plus', 14) + 'Add', 'addRec', { id: c.id, k: 'reflections' }), 'c6')}${card('Concerns', 'Routed to the facilitator, and to the Incident/Safety Owner when escalated.', c.concerns.map(x => lrow(x.ret ? 'refresh' : 'alert', h(x.t), (x.anon ? 'Anonymous' : nm(x.by)) + ' · ' + fmt(x.at), pill(x.status) + (mgr && x.status === 'Open' ? B('Resolve', 'resolveConcern', { c: c.id, id: x.id }) + (x.ret ? '' : B('Escalate', 'escalateConcern', { c: c.id, id: x.id })) : ''))).join('') || '<p class="cap">None raised.</p>', isMem && !ro && canRec ? B(ic('plus', 14) + 'Raise concern', 'addRec', { id: c.id, k: 'concerns' }) : '', 'c6')}${card('Decisions', 'Decision history. An approved decision is what moves the project forward.', c.decisions.map(x => lrow('check', h(x.t), fmt(x.at) + ' · ' + h(x.by))).join('') || '<p class="cap">None yet. Decide by a Circle vote (one eligible member = one vote), or record a facilitator decision.</p>', mgr && !ro ? B(ic('plus', 14) + 'Record decision', 'addRec', { id: c.id, k: 'decisions' }) : '', 'c6')}</div>`;
+    body = `<div class="g12">${card('Responsibilities and commitments', 'Facilitators assign responsibilities; members make commitments. Assigned work is reviewed before it counts as done.', c.commitments.map(x => lrow(x.assignedBy ? 'flag' : 'calendar', h(x.t), nm(x.by) + (x.assignedBy ? ' · assigned by ' + nm(x.assignedBy) : '') + ' · due ' + fmt(x.due) + dueTag(x.due, x.status === 'Done') + (x.note ? `<span class="cap" style="display:block">Changes requested: ${h(x.note)}</span>` : ''), commitRight(x))).join('') || '<p class="cap">None yet.</p>', noRec ? '' : B(ic('plus', 14) + (mgr ? 'Assign or add' : 'Add commitment'), 'addRec', { id: c.id, k: 'commitments' }), 'c6')}${role() === 'A' && !isMem ? card('Reflections', '', `<p class="cap">${c.reflections.length} reflection${c.reflections.length === 1 ? '' : 's'} recorded. Private reflections are visible to Circle members only, never to administrators.</p>`, '', 'c6') : card('Reflections', '', c.reflections.map(x => lrow('message', h(x.t), nm(x.by) + ' · ' + fmt(x.at))).join('') || '<p class="cap">None yet.</p>', noRec ? '' : B(ic('plus', 14) + 'Add', 'addRec', { id: c.id, k: 'reflections' }), 'c6')}${card('Concerns', 'Routed to the facilitator, and to the Incident/Safety Owner when escalated.', c.concerns.map(x => lrow(x.ret ? 'refresh' : 'alert', h(x.t), (x.anon ? 'Anonymous' : nm(x.by)) + ' · ' + fmt(x.at), pill(x.status) + (mgr && x.status === 'Open' ? B('Resolve', 'resolveConcern', { c: c.id, id: x.id }) + (x.ret ? '' : B('Escalate', 'escalateConcern', { c: c.id, id: x.id })) : ''))).join('') || '<p class="cap">None raised.</p>', isMem && !ro && canRec ? B(ic('plus', 14) + 'Raise concern', 'addRec', { id: c.id, k: 'concerns' }) : '', 'c6')}${card('Decisions', 'Decision history. An approved decision is what moves the project forward.', c.decisions.map(x => lrow('check', h(x.t), fmt(x.at) + ' · ' + h(x.by))).join('') || '<p class="cap">None yet. Decide by a Circle vote (one eligible member = one vote), or record a facilitator decision.</p>', mgr && !ro ? B(ic('plus', 14) + 'Record decision', 'addRec', { id: c.id, k: 'decisions' }) : '', 'c6')}</div>`;
   }
   if (t.cur === 'polls')
     body = card(
@@ -503,7 +504,7 @@ route('circle', 'circles', () => {
               ['Person', 'Platform role', 'Requested', ''],
               reqs.map(([m, i]) => [
                 `<a href="#" class="lnk" data-a="viewProfile" data-pid="${m.pid}">${nm(m.pid)}</a>`,
-                h(ROLE[ctxRole(m.pid, c.ctx)] || '—'),
+                h(roleName(ctxRole(m.pid, c.ctx), c.ctx) || '—'),
                 fmt(m.at || ''),
                 memMgr && !ro ? B('Decline', 'memSet', { c: c.id, i, v: 'Declined' }) + B('Approve', 'memSet', { c: c.id, i, v: 'Active' }, 'btn-p btn-sm') : pill('Pending'),
               ]),
@@ -525,7 +526,7 @@ route('circle', 'circles', () => {
               const fixed = m.pid === c.facilitator || m.pid === c.owner;
               const sr = m.pid === c.facilitator ? 'Facilitator' : m.pid === c.owner ? 'Project owner' : normRole(m.role);
               return [
-                `<a href="#" class="lnk" data-a="viewProfile" data-pid="${m.pid}">${nm(m.pid)}</a> <span class="cap">${h(ROLE[ctxRole(m.pid, c.ctx)] || '')}</span>`,
+                `<a href="#" class="lnk" data-a="viewProfile" data-pid="${m.pid}">${nm(m.pid)}</a> <span class="cap">${h(roleName(ctxRole(m.pid, c.ctx), c.ctx) || '')}</span>`,
                 memMgr && !ro && !fixed && m.status !== 'Removed' ? roleSelect('memRole', { c: c.id, i, kind: 'circles' }, sr, 'Role of ' + P(m.pid).name) : h(roleLabel(sr, 'circles')),
                 voteStatusOf(c, m) ? pill(voteStatusOf(c, m), voteStatusOf(c, m) === 'Eligible' ? 'p-teal' : 'p-grey') : '<span class="cap">—</span>',
                 pill(m.status),
@@ -1014,7 +1015,7 @@ A.memRole = (d, el) => {
 A.inviteMem = d => {
   const c = byId(d.kind, d.c);
   mselReset('invm', 'm');
-  const cands = eligiblePeople(c.members.filter(m => ['Active', 'Invited'].includes(m.status)).map(m => m.pid), d.kind === 'ropes' ? ['P', 'F', 'M'] : ['P', 'F', 'M', 'C', 'O']);
+  const cands = eligiblePeople(c.members.filter(m => ['Active', 'Invited'].includes(m.status)).map(m => m.pid), d.kind === 'ropes' ? ['P', 'F', 'M'] : ['P', 'F', 'M', 'C', 'A']);
   modal('Invite to ' + h(c.name), () =>
     `<form data-f="invm" class="col" style="gap:14px" novalidate><input type="hidden" name="c" value="${c.id}"><input type="hidden" name="kind" value="${d.kind}">${msel('invm', 'm', 'People', cands, [], { req: true, none: 'Everyone eligible is already a member or invited.' })}${fi('invm', 'role', 'Role in this ' + SPACE_KIND_LABEL(d.kind), { type: 'select', opts: [['', 'Based on each person’s platform role'], ...INVITE_ROLES.map(x => [x, roleLabel(x, d.kind)])], help: 'You can change individual roles later in Members.' })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send invitations</button></div></form>`,
   );

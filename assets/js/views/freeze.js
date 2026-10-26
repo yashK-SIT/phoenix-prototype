@@ -4,7 +4,7 @@
 // Everything here composes existing, already-authorised records: no new feed, ranking, score or graph.
 
 // ---- Help & support: a human route, separate from Ask PHOENIX, mentor support and incident reporting.
-// A request is seen by the person who sent it and by Programme Administrators in the context it was sent in.
+// A request is seen by the person who sent it and by Organization Admins in the context it was sent in.
 // Lifecycle New → In Progress → Resolved → Closed; every status change, response and note is kept in q.log.
 const SQ_STATES = ['New', 'In Progress', 'Resolved', 'Closed'];
 const SQ_OPEN = ['New', 'In Progress'];
@@ -18,7 +18,13 @@ const sqExt = n => (String(n).split('.').pop() || '').toLowerCase();
 const sqMB = b => +(b / 1048576).toFixed(2);
 const sqSize = mb => (mb < 1 ? Math.max(1, Math.round(mb * 1024)) + ' KB' : mb.toFixed(1) + ' MB');
 const sqIcon = k => ({ image: 'image', video: 'file', audio: 'file', pdf: 'file', text: 'file' })[k] || 'file';
-const sqAdmin = q => !!q && role() === 'A' && q.ctx === ctxId();
+// The Organization Admin handles requests sent in the context they work in. When they cannot solve one they may
+// forward it (q.fwd); the Platform Administrator sees and handles only forwarded requests, from any organization.
+// Neither sends support requests of their own from these screens.
+const sqAdmin = q => !!q && ((role() === 'A' && q.ctx === ctxId()) || (role() === 'T' && !!q.fwd));
+const sqForwarded = () => S.supportQueries.filter(q => q.fwd);
+// Where the support list lives for the current role: the Platform Administrator's own page, or Programme admin.
+const sqHome = (p = {}) => (role() === 'T' ? ['support', p] : ['admin', { tab: 'support', ...p }]);
 const sqMine = q => !!q && q.by === myId();
 const sqSees = q => sqMine(q) || sqAdmin(q);
 const sqLast = q => (q.log || []).reduce((m, x) => (x.at > m ? x.at : m), q.at || '');
@@ -120,6 +126,7 @@ const SQ_LOG = {
   reply: ['reply', 'Response from support'],
   user: ['message', 'Reply from requester'],
   note: ['lock', 'Internal note'],
+  fwd: ['send', 'Passed to the platform support team'],
 };
 const sqTimeline = (q, admin) =>
   `<ol class="timeline sq-tl">${(q.log || [])
@@ -174,7 +181,14 @@ function sqUserDetail(q) {
   );
 }
 
+// Platform Administrator: one list of support requests from every organization (they do not send requests).
+route('support', 'any', () => {
+  if (role() !== 'T') return deniedView('support');
+  if (UI.p.sq) return sqAdminDetail(UI.p.sq);
+  return head('Support requests', 'Forwarded by Organization Admins when they cannot solve a request. You can respond and change the status.') + sqAdminTable();
+});
 route('help', 'any', () => {
+  if (role() === 'T') return ROUTES.support.view();
   const sel = UI.p.id && byId('supportQueries', UI.p.id);
   if (UI.p.id) {
     if (sel && sqMine(sel)) return sqUserDetail(sel);
@@ -334,13 +348,14 @@ A.sqDl = d =>
     save();
   });
 
-// ---- Programme Administrator: table of requests in the current context
+// ---- Organization Admin: table of requests in the current context
 function sqAdminTable() {
-  const qs = S.supportQueries.filter(q => q.ctx === ctxId());
+  const all = role() === 'T';
+  const qs = all ? sqForwarded() : S.supportQueries.filter(q => q.ctx === ctxId());
   const topics = [...new Set(qs.map(q => q.cat || 'General'))].sort();
   return card(
     `Support requests <span class="adm-n">${qs.length}</span>`,
-    `Requests sent in ${h(ctxName(ctxId()))}. Open a request to review it, respond and change its status.`,
+    all ? 'Requests an Organization Admin forwarded because they could not solve them. Open a request to review it, respond and change its status.' : `Requests sent in ${h(ctxName(ctxId()))}. Open a request to review it, respond and change its status.`,
     dataView('adm:support', {
       label: 'support requests',
       items: qs,
@@ -366,30 +381,56 @@ function sqAdminTable() {
       columns: [
         { label: 'Request ID', sort: 'ref', cell: q => `<span class="mono">${h(q.ref)}</span>` },
         { label: 'Submitted by', sort: 'from', cell: q => `<span class="row sq-nw" style="gap:8px"><span class="av">${ini(q.by)}</span>${nm(q.by)}</span>` },
+        all && { label: 'Organization', cell: q => h(ctxName(q.ctx)) },
+        all && { label: 'Forwarded by', cell: q => `${nm(q.fwd.by)}<div class="cap">${fmt(q.fwd.at)}</div>` },
         { label: 'Subject', cell: q => `<b>${h(q.cat || 'General')}</b><div class="cap sq-sum">${h(q.t)}</div>` },
         { label: 'Submitted', sort: 'at', cell: q => `<span class="sq-nw">${fmt(q.at)}</span>`, hideSm: true },
         { label: 'Status', sort: 'st', cell: q => pill(q.status) },
         { label: 'Files', num: true, cell: q => ((q.files || []).length ? `<span class="sq-nw">${ic('clip', 13)} ${q.files.length}</span>` : '<span class="cap">—</span>'), hideSm: true },
-        { label: '', cell: q => B('Details', 'go', { r: 'admin', tab: 'support', sq: q.id }, 'btn-s btn-sm') },
-      ],
+        { label: '', cell: q => B('Details', 'go', { r: sqHome()[0], ...sqHome({ sq: q.id })[1] }, 'btn-s btn-sm') },
+      ].filter(Boolean),
       bulk: [{ label: 'Mark in progress', icon: 'refresh', run: ids => ids.forEach(id => byId('supportQueries', id)?.status === 'New' && A.sqProg({ id })) }],
-      empty: ['question', 'No support requests', 'Requests people send from Help & support in this context appear here.', ''],
+      empty: ['question', 'No forwarded requests', all ? 'Organization Admins forward a request here when they cannot solve it themselves.' : 'Requests people send from Help & support in this context appear here.', ''],
     }),
     '',
     'adm-panel',
   );
 }
-// ---- Programme Administrator: one request
+// Forwarding is optional and one-way: the Organization Admin keeps the request and can still respond. The requester
+// sees that it was passed on, not the reason, which is written for the Platform Administrator.
+function sqFwdCard(q) {
+  if (q.fwd)
+    return card('Forwarded to the Platform Administrator', `${role() === 'T' ? 'By ' + nm(q.fwd.by) + ' · ' : ''}${fmt(q.fwd.at)}`, q.fwd.why ? `<p class="sq-msg">${h(q.fwd.why)}</p>` : '<p class="cap">No reason given.</p>');
+  if (role() !== 'A' || q.status === 'Closed') return '';
+  const f = 'sqfwd';
+  return card(
+    'Cannot solve this?',
+    'Forward it to the Platform Administrator. You keep it too, and can still respond.',
+    `${errSum(f)}<form data-f="sqfwd" class="col fgap" novalidate><input type="hidden" name="id" value="${q.id}">${fi(f, 'why', 'What you tried and what is needed', { type: 'textarea', rows: 3, req: true, max: 1000, vis: 'Platform Administrator only' })}<div class="actions"><span></span><button class="btn btn-s btn-sm" type="submit">${ic('send', 14)}Forward to Platform Administrator</button></div></form>`,
+  );
+}
+F.sqfwd = d => {
+  if (!validate('sqfwd', d, { why: ['req'] })) return render();
+  const q = byId('supportQueries', d.id);
+  q.fwd = { at: now(), by: myId(), why: d.why.trim() };
+  q.log.push({ at: q.fwd.at, by: myId(), k: 'fwd' });
+  S.assign.filter(a => roleBase(a.role) === 'T' && a.status === 'Active').forEach(a => notify(a.pid, `Support request ${q.ref} forwarded from ${ctxName(q.ctx)} by ${me().name}`, 'support', { sq: q.id }, a.id));
+  audit('Support request forwarded to Platform Administrator', q.id, q.ref);
+  clearF('sqfwd');
+  toast('Forwarded to the Platform Administrator.');
+  ok();
+};
+// ---- Organization Admin: one request
 function sqAdminDetail(id) {
   const q = byId('supportQueries', id);
   if (!sqAdmin(q)) {
     audit('Access denied', id, 'support request outside this administrator’s context', 'denied');
-    return crumbsHtml([['Support requests', 'admin', { tab: 'support' }], ['Request']]) + banner('err', 'This request is not in your scope', 'Programme Administrators can open support requests sent in the context they are working in. Switch context if you administer the context it was sent in.');
+    return crumbsHtml([['Support requests', ...sqHome()], ['Request']]) + banner('err', 'This request is not in your scope', 'Organization Admins can open support requests sent in the context they are working in. Switch context if you administer the context it was sent in.');
   }
   const f = 'squ';
   const others = SQ_STATES.filter(s => s !== q.status);
   return (
-    sqHead(q, [['Support requests', 'admin', { tab: 'support' }], [h(q.ref)]]) +
+    sqHead(q, [['Support requests', ...sqHome()], [h(q.ref)]]) +
     `<div class="g12 inc-body"><div class="c8 col inc-main">${card('Request', '', `<p class="sq-msg">${h(q.t)}</p>`)}${card('Attachments', 'Opening or downloading a file is recorded in the audit log.', sqFileList(q, 'The requester did not attach any files.'))}${card('History', 'Status changes, responses and internal notes, newest first.', sqTimeline(q, true))}</div>
  <div class="c4 col inc-side">${card(
    'Update request',
@@ -397,7 +438,7 @@ function sqAdminDetail(id) {
    `${errSum(f)}<form data-f="squ" class="col fgap" novalidate><input type="hidden" name="id" value="${q.id}">${fi(f, 'status', 'Status', { type: 'select', opts: [[q.status, q.status + ' (current)'], ...others.map(s => [s, s])], value: q.status })}${fi(f, 'resp', 'Response to requester', { type: 'textarea', rows: 4, max: 2000, ph: 'What you found, what you did or what you need from them.', help: 'Required when you mark the request Resolved.' })}${fi(f, 'note', 'Internal note (optional)', { type: 'textarea', rows: 2, max: 1000, vis: 'Administrators only' })}<div class="actions"><span></span><button class="btn btn-p btn-sm" type="submit">${ic('check', 14)}Save update</button></div></form>`,
    '',
    'accent',
- )}${card('Details', '', sqSummary(q, true))}</div></div>`
+ )}${sqFwdCard(q)}${card('Details', '', sqSummary(q, true))}</div></div>`
   );
 }
 F.squ = d => {
@@ -479,7 +520,7 @@ function boardItems() {
     .forEach(c => out.push({ k: 'opp', at: c.created || c.expires, t: c.title, s: `${h(c.kind)} · ${h(c.cat || '')} · open until ${fmt(c.expires)}`, src: 'Opportunity Card · ' + h(c.vis || 'Programme'), act: L('View card', 'card', { id: c.id }) }));
   (S.announcements || [])
     .filter(a => a.ctx === ctxId())
-    .forEach(a => out.push({ k: 'ann', at: a.at, t: a.t, s: a.kind || 'Programme announcement', src: 'Programme Administrator · ' + h(ctxShort(a.ctx)) + ' programme audience', act: '' }));
+    .forEach(a => out.push({ k: 'ann', at: a.at, t: a.t, s: a.kind || 'Programme announcement', src: 'Organization Admin · ' + h(ctxShort(a.ctx)) + ' programme audience', act: '' }));
   S.rooms
     .filter(x => inCtx(x))
     .forEach(x => (x.wins || []).filter(w => w.status === 'Approved' && w.release === 'Programme').forEach(w => out.push({ k: 'win', at: w.at, t: w.t, s: h(x.name), src: 'Visible Win released to the programme audience', act: memberOf(x) ? L('Open ' + WL(), 'room', { id: x.id }) : '' })));
@@ -495,7 +536,7 @@ route('board', 'any', () => {
   const f = (v, l) => `<button type="button" class="${UI.boardF === v ? 'on' : ''}" data-a="boardF" data-v="${v}" aria-pressed="${UI.boardF === v}">${l}<span class="cnt">${v === 'all' ? all.length : all.filter(x => x.k === v).length}</span></button>`;
   const howRows = [
     ['Opportunity', 'Publish an Opportunity Card with status Active and an audience you are allowed to see (usually Programme).', role() === 'P' || role() === 'C' || role() === 'A' ? L('Post a card', 'newcard', {}, 'btn btn-s btn-sm') : ''],
-    ['Announcement', 'Programme Administrator → Notifications → Send an announcement (same context).', role() === 'A' ? L('Send announcement', 'admin', { tab: 'notify' }, 'btn btn-s btn-sm') : ''],
+    ['Announcement', 'Organization Admin → Notifications → Send an announcement (same context).', role() === 'A' ? L('Send announcement', 'admin', { tab: 'notify' }, 'btn btn-s btn-sm') : ''],
     ['Visible Win', 'In an Action Workspace → record a win → steward/lead Approves it (auto-releases to Programme).', myRooms().length ? L('Open a ' + WL(), 'rooms', {}, 'btn btn-s btn-sm') : ''],
     ['Open challenge', 'A Sponsor posts a challenge under an alias. Participants and Partners ask to take part; discussion happens in its chat room.', ['P', 'C'].includes(role()) ? L('Open challenges', 'challenges', {}, 'btn btn-s btn-sm') : ''],
   ];
@@ -527,27 +568,47 @@ A.boardF = d => {
 };
 
 // ---- My collaborations (Relationship List Lite, BF-16): confirmed, authorised relationships only.
+// Active rows follow the live permission. A space that closed, or a membership that ended, stays in your own history
+// as Past: it records work you took part in. It grants nothing new: the other person's profile always shows only
+// the claims they share with you today, for any date.
+const REL_CLOSED = ['Completed', 'Closed', 'Archived'];
+const REL_ENDED = ['Left', 'Exited'];
+const relIn = m => !m.status || m.status === 'Active' || REL_ENDED.includes(m.status);
+// Dates: recorded on the space when present, otherwise read from its own dated activity (est: true).
+function relSpan(o) {
+  const ds = [...(o.chat || []), ...(o.decisions || []), ...(o.checkins || []), ...(o.sessions || []), ...(o.tasks || []).flatMap(t => t.log || [])]
+    .map(x => String(x.at || '').slice(0, 10))
+    .filter(Boolean)
+    .sort();
+  const closed = REL_CLOSED.includes(o.state);
+  return { from: o.started || ds[0] || '', to: o.ended || (closed ? ds[ds.length - 1] || '' : ''), est: !o.started || (closed && !o.ended) };
+}
 function relationRows(pid = myId()) {
   const rows = [];
-  const add = (other, type, where, r, p, theirRole, status) => {
+  const add = (other, type, where, r, p, theirRole, status, x) => {
     if (other === pid) return;
-    rows.push({ other, type, where, r, p, theirRole, status });
+    rows.push({ other, type, where, r, p, theirRole, status, past: false, from: '', to: '', ...x });
   };
   S.matches
     .filter(m => m.status === 'Introduced' && (m.a === pid || m.b === pid) && inCtx(m))
-    .forEach(m => add(m.a === pid ? m.b : m.a, 'Confirmed introduction', 'Match Brief', 'match', { id: m.id }, '—', m.introState ? INTRO_LABEL[m.introState] : 'Introduced — outcome not recorded yet'));
+    .forEach(m => add(m.a === pid ? m.b : m.a, 'Confirmed introduction', 'Match Brief', 'match', { id: m.id }, '—', m.introState ? INTRO_LABEL[m.introState] : 'Introduced — outcome not recorded yet', { past: m.introState === INTRO.CLOSED, from: String(m.introducedAt || '').slice(0, 10), to: m.introState === INTRO.CLOSED ? String(m.introAt || '').slice(0, 10) : '' }));
   [
-    ['circles', 'Circle member', 'circle'],
-    ['ropes', 'Rope Team', 'rope'],
-    ['rooms', 'Collaborator', 'room'],
-  ].forEach(([k, type, r]) =>
+    ['circles', 'Circle member', 'circle', 'Circle'],
+    ['ropes', 'Rope Team', 'rope', 'Rope Team'],
+    ['rooms', 'Collaborator', 'room', WL()],
+  ].forEach(([k, type, r, kind]) =>
     S[k]
-      .filter(o => inCtx(o) && memberOf(o, pid))
-      .forEach(o =>
-        o.members
-          .filter(m => m.status === 'Active' || !m.status)
-          .forEach(m => add(m.pid, type, h(o.name), r, { id: o.id }, h(spaceRole(k, o, m.pid) || normRole(m.role) || 'Member'), o.state === 'Active' ? 'Active' : o.state)),
-      ),
+      .filter(o => inCtx(o) && (o.members || []).some(m => m.pid === pid && relIn(m)))
+      .forEach(o => {
+        const span = relSpan(o);
+        const iLeft = REL_ENDED.includes((memberRec(o, pid) || {}).status);
+        o.members.filter(relIn).forEach(m => {
+          const ended = iLeft || REL_ENDED.includes(m.status);
+          const past = REL_CLOSED.includes(o.state) || ended;
+          const status = REL_CLOSED.includes(o.state) ? o.state : ended ? 'Membership ended' : o.state;
+          add(m.pid, type, h(o.name), memberOf(o, pid) ? r : null, { id: o.id }, h(spaceRole(k, o, m.pid) || normRole(m.role) || 'Member'), status, { past, k, o, kind, ...span });
+        });
+      }),
   );
   const org = P(pid).org;
   if (org)
@@ -556,23 +617,286 @@ function relationRows(pid = myId()) {
       .forEach(p => add(p.id, 'Same organisation', h((S.orgs.find(o => o.id === org) || {}).name || ''), null, null, h(ROLE[(S.assign.find(a => a.pid === p.id && a.ctx === ctxId()) || {}).role] || ''), 'Active'));
   return rows;
 }
+// One entry per person: Active if any relationship is live, Past if any has ended (a person can be both).
+function relPeople(pid = myId()) {
+  const by = {};
+  relationRows(pid).forEach(x => (by[x.other] = by[x.other] || []).push(x));
+  return Object.entries(by).map(([id, rows]) => ({
+    id,
+    rows,
+    active: rows.some(x => !x.past),
+    past: rows.some(x => x.past),
+    last: rows.filter(x => x.past).map(x => x.to).filter(Boolean).sort().pop() || '',
+  }));
+}
+const relRoleHere = pid => ROLE[(S.assign.find(a => a.pid === pid && a.ctx === ctxId() && a.status === 'Active') || {}).role] || '';
+const relOrg = pid => (P(pid).org && (S.orgs.find(o => o.id === P(pid).org) || {}).name) || '';
+const relDates = x => (x.from || x.to ? (x.from ? fmt(x.from) : 'Start not recorded') + ' – ' + (x.past ? (x.to ? fmt(x.to) : 'end not recorded') : 'now') : '');
+const REL_KIND = { circles: ['users', 't-purple'], ropes: ['route', 't-teal'], rooms: ['room', 't-navy'] };
 route('relations', 'any', () => {
-  const rows = relationRows();
-  const people = new Set(rows.map(x => x.other)).size;
+  const all = relationRows();
+  const n = rows => new Set(rows.map(x => x.other)).size;
+  const t = tabs('rel', [['all', 'All Collaborations', n(all)], ['active', 'Active', n(all.filter(x => !x.past))], ['past', 'Past', n(all.filter(x => x.past))]], 'all');
+  const rows = t.cur === 'all' ? all : all.filter(x => x.past === (t.cur === 'past'));
+  const people = n(rows);
   return (
-    head('My collaborations', `People you are connected with in ${h(ctxName(ctxId()))} through confirmed introductions, shared spaces or your organisation.`) +
+    head('My collaborations', `People you work with, or have worked with, in ${h(ctxName(ctxId()))} through confirmed introductions, shared spaces or your organisation.`) +
+    t.html +
     card(
       'Confirmed relationships',
       `${people} ${people === 1 ? 'person' : 'people'} · ${rows.length} relationship${rows.length === 1 ? '' : 's'}`,
       table(
-        ['Person', 'Relationship', 'Where', 'Their role there', 'Status'],
-        rows.map(x => [`<span class="row" style="gap:8px"><span class="av">${ini(x.other)}</span>${nm(x.other)}</span>`, h(x.type), x.r ? L(x.where, x.r, x.p) : x.where, x.theirRole, pill(x.status)]),
-        'No confirmed relationships yet. They appear after an introduction or when you share a space.',
+        ['Person', 'Relationship', 'Where', 'Their role there', 'Status', ''],
+        rows.map(x => [
+          `<span class="row" style="gap:8px"><span class="av">${ini(x.other)}</span>${nm(x.other)}</span>`,
+          h(x.type),
+          x.r ? L(x.where, x.r, x.p) : x.where,
+          x.theirRole,
+          pill(x.status),
+          B(ic('user', 14) + 'View profile', 'relOpen', { pid: x.other }, 'btn-s btn-sm', `aria-label="View full profile of ${nm(x.other)}"`),
+        ]),
+        { all: 'No confirmed relationships yet. They appear after an introduction or when you share a space.', active: 'No active collaborations. People you are working with now appear here.', past: 'No past collaborations yet. People appear here when a shared space is completed or archived, or a membership ends.' }[t.cur],
       ),
     ) +
-    `<p class="cap board-n">${ic('info', 13)} Each row follows the original permission. It changes or disappears when the relationship or your access ends. No inferred friendship, relationship strength, influence or trust score.</p>`
+    `<p class="cap board-n">${ic('info', 13)} Active rows follow the original permission and change when it does. Past rows keep a record of work you took part in; they never widen what you can see of the other person. No inferred friendship, relationship strength, influence or trust score.</p>`
   );
 });
+A.relOpen = d => {
+  audit('Profile viewed', d.pid, 'From My collaborations · claims shared with the viewer only');
+  save();
+  go('collab', { pid: d.pid });
+};
+A.relSnap = (d, el) => {
+  UI.p.snap = el.value;
+  render();
+};
+
+// ---- Collaborator profile: what they share with you now, your shared history, and then-versus-now.
+// Claims carry `at` (added), and `prev` holds earlier values with the time each was replaced, so a claim's value
+// on a past date is read from records. A claim without `at` cannot be placed in time and is never assumed to be old.
+const REL_FIELDS = ['Skills', 'Skill proficiency', 'Capability', 'Knowledge', 'Experience', 'Contributions', 'Languages', 'Interests', 'Goals', 'Availability', 'Preferences', 'Relationships / resources', 'Constraints'];
+const relFieldOrder = (a, b) => (REL_FIELDS.indexOf(a.field) + 1 || 99) - (REL_FIELDS.indexOf(b.field) + 1 || 99);
+const claimDay = s => String(s || '').slice(0, 10);
+function claimAt(c, day) {
+  if (!c.at) return { undated: true, value: c.value };
+  if (claimDay(c.at) > day) return null;
+  const p = (c.prev || []).find(x => claimDay(x.at) > day);
+  return { value: p ? p.value : c.value };
+}
+// Dated changes to the claims this viewer may see: additions and value updates. Reasons are not shown.
+const claimEvents = cl =>
+  cl
+    .flatMap(c => [
+      ...(c.at ? [{ at: claimDay(c.at), t: 'Added ' + c.field.toLowerCase() + ': ' + c.value, c }] : []),
+      ...(c.prev || []).map((p, i, a) => ({ at: claimDay(p.at), t: c.field + ' updated: “' + p.value + '” → “' + (a[i + 1] ? a[i + 1].value : c.value) + '”', c })),
+    ])
+    .sort((a, b) => b.at.localeCompare(a.at));
+// Released, already-public work: Visible Wins released to the programme and Public Projects.
+function relWork(pid) {
+  return [
+    ...S.rooms
+      .filter(x => inCtx(x) && (x.members || []).some(m => m.pid === pid && relIn(m)))
+      .flatMap(x => (x.wins || []).filter(w => w.status === 'Approved' && w.release === 'Programme').map(w => ({ at: claimDay(w.at), t: w.t, s: 'Visible Win · ' + x.name }))),
+    ...S.projects.filter(p => inCtx(p) && p.owner === pid && p.pub && p.pub.state === 'Published').map(p => ({ at: claimDay(p.pub.publishedAt), t: p.title, s: 'Public project · owner' })),
+  ].sort((a, b) => String(b.at).localeCompare(String(a.at)));
+}
+// What each of you did in a shared space, from records both of you could already see there.
+function relDid(r, pid) {
+  const o = r.o;
+  if (!o) return '';
+  if (r.k === 'ropes') return `<p class="cap">${h(o.charter || '')}</p><p class="cap">Rope Team notes, check-ins and support requests stay private to the Rope Team and are not summarised here.</p>`;
+  const lines = [];
+  const tasks = who => (o.tasks || []).filter(t => t.owner === who).map(t => h(t.t) + ' <span class="cap">(' + h(t.status) + ')</span>');
+  const contribs = who => (o.contribs || []).filter(c => c.by === who).map(c => h(c.t) + ' <span class="cap">(' + h(c.status) + ')</span>');
+  const commits = who => (o.commitments || []).filter(c => (c.by || c.pid) === who).map(c => h(c.t || c.text || ''));
+  [
+    [pid, h(P(pid).display || P(pid).name), r.theirRole],
+    [myId(), 'You', h(spaceRole(r.k, o) || normRole((memberRec(o) || {}).role) || 'Member')],
+  ].forEach(([who, lbl, rl]) => {
+    const did = [...tasks(who), ...contribs(who), ...commits(who)];
+    lines.push(['<b>' + lbl + '</b> · ' + rl, did.length ? '<ul class="rel-ul">' + did.map(x => '<li>' + x + '</li>').join('') + '</ul>' : '<span class="cap">No assigned tasks, contributions or commitments recorded.</span>']);
+  });
+  const ms = o.milestones || [];
+  const wins = (o.wins || []).filter(w => w.status === 'Approved');
+  const outcome = [
+    o.outcome && 'Planned: ' + h(o.outcome),
+    ms.length && ms.filter(m => m.status === 'Achieved').length + ' of ' + ms.length + ' milestones achieved',
+    ...wins.map(w => 'Win: ' + h(w.t)),
+    (o.decisions || []).length && r.k === 'circles' && o.decisions.length + ' decision' + (o.decisions.length === 1 ? '' : 's') + ' recorded',
+  ].filter(Boolean);
+  return dl([...lines, ['Outcome', outcome.length ? outcome.join('<br>') : '<span class="cap">Not recorded</span>']]);
+}
+route('collab', 'any', () => {
+  const pid = UI.p.pid;
+  const rel = relPeople().find(x => x.id === pid);
+  const crumbs = [['My collaborations', 'relations', {}], [rel ? nm(pid) : 'Profile']];
+  if (!rel)
+    return crumbsHtml(crumbs) + card('', '', empty('lock', 'Profile not available', `You can open the full profile of people you work with, or have worked with, in ${h(ctxName(ctxId()))}.`, L('Back to My collaborations', 'relations', {}, 'btn btn-s btn-sm')));
+  const cl = sharedClaims(pid).sort(relFieldOrder);
+  const pr = S.profiles[pid] || {};
+  const shared = rel.rows.filter(r => r.r !== null || r.k).sort((a, b) => String(b.from || b.to).localeCompare(String(a.from || a.to)));
+  const t = tabs('collab', [['profile', 'Profile'], ['history', 'Our history', shared.length], ['compare', 'Then & now']], 'profile');
+  const ev = claimEvents(cl);
+  const work = relWork(pid);
+  let body = '';
+  if (t.cur === 'profile') {
+    const groups = REL_FIELDS.concat([...new Set(cl.map(c => c.field))].filter(f => !REL_FIELDS.includes(f)))
+      .map(f => [f, cl.filter(c => c.field === f)])
+      .filter(([, xs]) => xs.length);
+    body =
+      `<div class="pf-cols"><div class="pf-main">` +
+      card(
+        'About',
+        '',
+        dl([
+          ['Display name', h(P(pid).display || '—')],
+          ['Role here', h(relRoleHere(pid) || '—') + ' · ' + h(ctxName(ctxId()))],
+          relOrg(pid) && ['Organisation', h(relOrg(pid))],
+          ['Biography', h(pr.bio || 'Not shared')],
+          ['Email', '<span class="cap">Private — released only for an approved introduction</span>'],
+          ['Latest shared update', ev.length ? fmt(ev[0].at) : '<span class="cap">No dated updates</span>'],
+        ]),
+        '',
+        'pf-basic',
+      ) +
+      card(
+        'Skills, expertise and experience',
+        'Current claims they share with you, with how each is supported.',
+        groups.length
+          ? `<div class="rel-groups">${groups
+              .map(([f, xs]) => `<div class="rel-g"><span class="over">${h(f)}</span><ul class="rel-cl">${xs.map(c => `<li><span>${h(c.value)}</span><span class="row wrap rel-cm">${pill(c.prov, 'p-grey')}<span class="cap">${c.at ? 'since ' + fmt(claimDay(c.at)) : 'date not recorded'}</span></span></li>`).join('')}</ul></div>`)
+              .join('')}</div>`
+          : empty('user', 'No shared claims', 'This person has not shared any profile claims with your collaboration contexts.'),
+      ) +
+      `</div><div class="pf-rail">` +
+      card('Recent updates', 'Dated changes to the claims shared with you.', ev.length ? `<ol class="pf-hist">${ev.slice(0, 6).map(e => `<li><div class="lt"><b>${h(e.t)}</b><p class="cap">${fmt(e.at)} · ${h(e.c.prov)}</p></div></li>`).join('')}</ol>` : '<p class="cap">No dated updates shared.</p>') +
+      card('Work and achievements', 'Released Visible Wins and Public Projects only.', work.length ? `<ol class="pf-hist">${work.map(w => `<li><div class="lt"><b>${h(w.t)}</b><p class="cap">${w.at ? fmt(w.at) : 'Date not recorded'} · ${h(w.s)}</p></div></li>`).join('')}</ol>` : '<p class="cap">Nothing released yet.</p>') +
+      card('Working together', '', dl([['Status', (rel.active ? pill('Active', 'p-teal') + ' ' : '') + (rel.past ? pill('Past', 'p-grey') : '')], ['Shared spaces and introductions', String(shared.length)], ['First worked together', fmt(shared.map(r => r.from).filter(Boolean).sort()[0])]]), B('Our history', 'tab', { k: 'collab', v: 'history' })) +
+      `</div></div>`;
+  }
+  if (t.cur === 'history') {
+    body = card(
+      'Collaboration timeline',
+      'Newest first. Each entry keeps when you worked together, your roles and what was recorded there. Same-organisation links have no shared work and are not listed.',
+      shared.length
+        ? `<ol class="rel-tl">${shared
+            .map(r => {
+              const [ri, rt] = REL_KIND[r.k] || ['link', 't-purple'];
+              return `<li class="rel-ti${r.past ? ' is-past' : ''}"><span class="tile ${rt}" aria-hidden="true">${ic(ri, 16)}</span><div class="col rel-tb"><div class="row wrap rel-th"><b>${r.r ? L(r.where, r.r, r.p) : r.where}</b>${pill(r.status)}${r.past ? pill('Past', 'p-grey') : ''}</div><span class="cap">${h(r.kind || r.type)} · ${relDates(r) || 'Dates not recorded'}${r.est && (r.from || r.to) ? ' · dates from recorded activity' : ''}</span>${relDid(r, pid)}</div></li>`;
+            })
+            .join('')}</ol>`
+        : empty('users', 'No shared work recorded', 'You are connected through your organisation only.'),
+    );
+  }
+  if (t.cur === 'compare') {
+    // Comparison points: the end of each past collaboration, else the start of a current one.
+    const pts = shared.map(r => ({ day: r.past ? r.to : r.from, r })).filter(x => x.day);
+    const pastPts = pts.filter(x => x.r.past);
+    const sel = pts.find(x => x.r.p && x.r.p.id + '|' + x.day === UI.p.snap) || pastPts[0] || pts[pts.length - 1];
+    if (!sel) body = card('Then & now', '', empty('clock', 'No dated collaboration to compare against', 'A comparison needs a recorded start or end date for at least one shared space.'));
+    else {
+      const day = sel.day;
+      const cmp = cl.map(c => {
+        const then = claimAt(c, day);
+        const st = !then ? 'New since' : then.undated ? 'Date not recorded' : then.value !== c.value ? 'Updated' : 'Unchanged';
+        return { c, then, st };
+      });
+      const ST = { 'New since': 'p-teal', Updated: 'p-amber', Unchanged: 'p-grey', 'Date not recorded': 'p-grey' };
+      const n = s => cmp.filter(x => x.st === s).length;
+      const since = [...ev.filter(e => e.at > day), ...work.filter(w => w.at > day).map(w => ({ at: w.at, t: w.t + ' — ' + w.s }))].sort((a, b) => b.at.localeCompare(a.at));
+      body =
+        card(
+          'Compare their profile over time',
+          `Shows the claims ${nm(pid)} shares with you today, as they stood on the date you choose.`,
+          `<label class="rel-pick"><span class="lbl">Compare against</span><select class="input" data-ch="relSnap" aria-label="Compare against">${pts.map(x => `<option value="${h(x.r.p.id + '|' + x.day)}" ${x === sel ? 'selected' : ''}>${x.r.past ? 'End of' : 'Start of'} ${h(String(x.r.where).replace(/<[^>]+>/g, ''))} · ${fmt(x.day)}</option>`).join('')}</select></label>` +
+            `<div class="vote-rule">${['New since', 'Updated', 'Unchanged', 'Date not recorded'].map(s => `<div><span class="cap">${s}</span><b>${n(s)}</b></div>`).join('')}</div>` +
+            table(
+              ['Field', 'On ' + fmt(day), 'Now', 'Change'],
+              cmp.map(x => [h(x.c.field), !x.then ? '<span class="cap">Not on record yet</span>' : x.then.undated ? '<span class="cap">Unknown — no date on record</span>' : h(x.then.value), h(x.c.value) + ' ' + pill(x.c.prov, 'p-grey'), pill(x.st, ST[x.st])]),
+              'No shared claims to compare.',
+            ),
+        ) +
+        '<div class="section-gap"></div>' +
+        card(
+          'Since ' + fmt(day),
+          'Shared claim changes and released work after this date.',
+          since.length ? `<ol class="pf-hist">${since.map(e => `<li><div class="lt"><b>${h(e.t)}</b><p class="cap">${fmt(e.at)}</p></div></li>`).join('')}</ol>` : '<p class="cap">Nothing recorded since then.</p>',
+        ) +
+        `<p class="cap board-n">${ic('info', 13)} Built from dated claim records and recorded corrections, not from memory or inference. Claims they have since removed or no longer share with you are not shown for any date. A claim with no date is listed as unknown rather than assumed to be old.</p>`;
+    }
+  }
+  return (
+    crumbsHtml(crumbs) +
+    `<header class="shead-main pf-head"><span class="av lg pf-av" aria-hidden="true">${ini(pid)}</span><div class="shead-t"><p class="shead-kind">Collaborator profile</p><div class="row wrap pf-title"><h1 class="h1">${nm(pid)}</h1>${rel.active ? pill('Active', 'p-teal') : ''}${rel.past ? pill('Past', 'p-grey') : ''}</div><div class="shead-meta">${[relRoleHere(pid), relOrg(pid), ctxName(ctxId())].filter(Boolean).map(x => `<span>${h(x)}</span>`).join('')}<span>${cl.length} shared claim${cl.length === 1 ? '' : 's'}</span></div><p class="pf-sub">What ${nm(pid)} shares with you now. Only me and matching-only claims, Purpose Compass answers, private notes and unreleased evidence are never shown.</p></div></header>` +
+    t.html +
+    body
+  );
+});
+
+// ---- data: dated profile claims and an archived 2024 workspace, so past collaborations and then-versus-now have
+// records to read (runs from migrate(); only adds what is missing).
+function relMigrate() {
+  const d = (id, pid, field, value, prov, vis, at, prev) => ({ id, pid, field, value, prov, vis, state: 'Current', ver: 1 + (prev ? prev.length : 0), ...(at ? { at } : {}), ...(prev ? { prev } : {}) });
+  [
+    d('clr1', 'p10', 'Skills', 'Volunteer coordination', 'Self-declared', 'My collaboration contexts', '2025-11-02'),
+    d('clr2', 'p10', 'Skills', 'Tree canopy assessment (i-Tree)', 'Evidence-supported', 'My collaboration contexts', '2026-07-25', [{ value: 'Tree canopy assessment (basic)', prov: 'Self-declared', at: '2026-09-30T10:00' }]),
+    d('clr3', 'p10', 'Capability', 'Survey data cleaning', 'Evidence-supported', 'My collaboration contexts', '2026-09-28'),
+    d('clr4', 'p10', 'Languages', 'English, Polish', 'Self-declared', 'My collaboration contexts', '2024-01-10'),
+    d('clr5', 'p10', 'Interests', 'Water, tree canopy', 'Self-declared', 'My collaboration contexts'),
+    d('clr6', 'p10', 'Availability', 'Weekends', 'Self-declared', 'Matching/pathway roles only', '2026-07-01'),
+    d('clr7', 'p10', 'Constraints', 'Exams in December', 'Self-declared', 'Only me', '2026-09-01'),
+    d('clr11', 'p4', 'Skills', 'GIS mapping (QGIS)', 'Self-declared', 'My collaboration contexts', '2022-06-01', [{ value: 'GIS mapping (ArcGIS Online)', prov: 'Self-declared', at: '2025-04-10T09:00' }]),
+    d('clr12', 'p4', 'Experience', 'Flood-risk layer for the Riverside flood-risk map pilot', 'Activity-derived', 'My collaboration contexts', '2024-11-29'),
+    d('clr13', 'p4', 'Capability', 'Low-cost sensor network deployment', 'Evidence-supported', 'Authorised discovery', '2025-09-12'),
+    d('clr14', 'p4', 'Skills', 'Python geospatial analysis (GeoPandas)', 'Self-declared', 'My collaboration contexts', '2026-02-14'),
+    d('clr15', 'p4', 'Languages', 'English, Korean', 'Self-declared', 'My collaboration contexts', '2022-06-01'),
+    d('clr16', 'p4', 'Interests', 'Urban heat, flood resilience', 'Self-declared', 'My collaboration contexts'),
+    d('clr17', 'p4', 'Availability', 'Two days a month for community projects', 'Self-declared', 'Matching/pathway roles only', '2026-01-05'),
+    d('clr21', 'p2', 'Skills', 'Participatory facilitation', 'Reviewer-verified', 'My collaboration contexts', '2019-09-01'),
+    d('clr22', 'p2', 'Experience', 'Facilitated 14 community Circles', 'Activity-derived', 'My collaboration contexts', '2023-01-15', [{ value: 'Facilitated 6 community Circles', prov: 'Activity-derived', at: '2025-01-20T09:00' }, { value: 'Facilitated 9 community Circles', prov: 'Activity-derived', at: '2026-09-01T09:00' }]),
+    d('clr23', 'p2', 'Knowledge', 'Urban climate adaptation', 'Self-declared', 'My collaboration contexts', '2021-03-01'),
+    d('clr24', 'p2', 'Capability', 'Evidence review (E0–E4)', 'Reviewer-verified', 'My collaboration contexts', '2025-10-01'),
+  ].forEach(c => !byId('claims', c.id) && S.claims.push(c));
+  const ci2 = byId('circles', 'ci2');
+  if (ci2 && !ci2.started) Object.assign(ci2, { started: '2026-07-03', ended: '2026-08-20' });
+  if (byId('rooms', 'ar0')) return;
+  const tk = (id, key, t, owner, at) => ({ id, key, t, owner, due: at, status: 'Done', prio: 'Medium', desc: '', by: 'p10', log: [{ at: at + 'T17:00', by: owner, t: 'Moved to Done' }] });
+  S.rooms.push({
+    id: 'ar0',
+    ctx: 'c1',
+    name: 'Riverside flood-risk map pilot',
+    purpose: 'Map flood-prone streets along the Riverside corridor with residents.',
+    charter: 'Walk 30 streets with residents, build a flood-risk layer and share a simple map with the residents’ association.',
+    outcome: 'A flood-risk map residents can use when asking the council for drainage work.',
+    lead: 'p10',
+    origin: { type: 'Institutional project' },
+    related: [],
+    state: 'Archived',
+    started: '2024-03-04',
+    ended: '2024-11-29',
+    flags: [],
+    members: [
+      { pid: 'p10', role: 'Project owner', status: 'Active' },
+      { pid: 'p4', role: 'Partner', status: 'Active', label: 'GreenGrid' },
+      { pid: 'p5', role: 'Member', status: 'Active' },
+      { pid: 'p2', role: 'Facilitator', status: 'Active' },
+    ],
+    joinReqs: [],
+    tasks: [tk('tk01', 1, 'Build the flood-risk GIS layer', 'p4', '2024-09-30'), tk('tk02', 2, 'Run resident walk-alongs on 30 streets', 'p10', '2024-07-12'), tk('tk03', 3, 'Brief and schedule volunteers', 'p5', '2024-04-20'), tk('tk04', 4, 'Draft the residents’ summary', 'p2', '2024-11-15')],
+    milestones: [
+      { id: 'ms01', t: 'Street walk-alongs complete', due: '2024-07-15', status: 'Achieved', evs: [] },
+      { id: 'ms02', t: 'Flood-risk map shared with residents', due: '2024-11-20', status: 'Achieved', evs: [] },
+    ],
+    decisions: [],
+    risks: [],
+    deps: [],
+    resources: [],
+    wins: [{ t: 'Flood-risk map adopted by the Riverside residents’ association', status: 'Approved', release: 'Programme', at: '2024-11-20' }],
+    changes: [],
+    contribs: [],
+    chat: [],
+  });
+}
 
 // ---- Partner: organisation and mandate (doc 1 §6.4)
 route('mandate', 'any', () => {

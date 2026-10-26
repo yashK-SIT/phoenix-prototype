@@ -70,7 +70,7 @@ function userMenu() {
   const a = asg(),
     c = ctx();
   return `<div class="umenu" id="user-menu" role="menu" aria-label="Account">
-  <div class="umenu-h"><span class="av">${ini(myId())}</span><div class="umenu-id"><b>${h(me().name)}</b><span class="cap umenu-mail">${h(me().email)}</span><span class="cap">${h(ROLE[a.role] || a.role)}${c ? ' · ' + h(c.name) : ''}</span></div></div>
+  <div class="umenu-h"><span class="av">${ini(myId())}</span><div class="umenu-id"><b>${h(me().name)}</b><span class="cap umenu-mail">${h(me().email)}</span><span class="cap">${h(roleName(a.role, a.ctx) || a.role)}${c ? ' · ' + h(c.name) : ''}</span></div></div>
   <div class="umenu-theme"><span class="cap">Theme</span><div class="seg" role="group" aria-label="Theme">${['light', 'dark', 'system'].map(t => `<button type="button" data-a="setTheme" data-v="${t}" aria-pressed="${(UI.theme || 'light') === t}">${t[0].toUpperCase() + t.slice(1)}</button>`).join('')}</div></div>
   <div class="umenu-list"><button type="button" role="menuitem" class="umenu-i${UI.route === 'profile' ? ' on' : ''}" data-a="userGo" data-r="profile">${ic('user', 18)}<span>View profile</span></button>${role() !== 'T' ? `<button type="button" role="menuitem" class="umenu-i${UI.route === 'privacy' ? ' on' : ''}" data-a="userGo" data-r="privacy">${ic('shield', 18)}<span>My records & consent</span></button>` : ''}<button type="button" role="menuitem" class="umenu-i out" data-a="logout">${ic('logout', 18)}<span>Log out</span></button></div></div>`;
 }

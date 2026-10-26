@@ -3,7 +3,7 @@
 const isLead = (x) =>
   sCan("rooms", x, "lead") || (hasB("Project Lead") && memberOf(x));
 const canCreateRoom = () =>
-  ["F", "C", "O", "A"].includes(role()) || hasB("Project Lead");
+  ["F", "C", "A"].includes(role()) || hasB("Project Lead");
 // A project owner creates the Action Room for their own accepted project directly (no proposal step).
 const ownRoomProjects = () =>
   S.projects.filter((p) => inCtx(p) && p.owner === myId() && p.status === "Accepted" && !p.room && !["Final review", "Closed"].includes(p.stage));
@@ -14,7 +14,7 @@ route("rooms", "rooms", () => {
     (x) =>
       inCtx(x) &&
       ((memberRec(x) && memberRec(x).status !== "Removed") ||
-        ["A", "O"].includes(r)),
+        r === "A"),
   );
   return (
     head(
@@ -124,7 +124,7 @@ const nrProjectFor = (v) => {
 };
 const nrInvitable = (v) => {
   const src = v && v.startsWith(NR_OBJ) ? nrSource(v.slice(NR_OBJ.length)) : null;
-  return eligiblePeople([myId()], ["P", "F", "M", "C", "O"]).map((p) => ({ ...p, sub: p.sub + (src && SPACE_KINDS.includes(src[0]) && memberOf(src[1], p.pid) && src[0] !== "ropes" ? " · in " + (src[1].name || "") : "") }));
+  return eligiblePeople([myId()], ["P", "F", "M", "C", "A"]).map((p) => ({ ...p, sub: p.sub + (src && SPACE_KINDS.includes(src[0]) && memberOf(src[1], p.pid) && src[0] !== "ropes" ? " · in " + (src[1].name || "") : "") }));
 };
 A.newRoom = (d) => {
   clearF("nr");
@@ -158,7 +158,7 @@ A.newRoom = (d) => {
  ${msel("nr", "inv", "Invite people (optional)", nrInvitable(v), [], { help: "Linking adds no one. Members of the origin are not added automatically; each person you choose is invited and must accept." })}
  ${d.via ? banner("info", "Origin metadata only", "This " + WL() + " records the introduction as its origin: who was introduced, when, and from which opportunity. The Match Brief’s fit notes, gaps and source records are not copied, and the other person joins only if they accept the invitation.") : ""}
  ${cp && !canCreateRoom() ? banner("info", "", "You lead this " + WL() + " as project owner. Your project’s Steward joins as facilitator to validate milestones.") : ""}
- ${!creator ? banner("info", "Proposal", "An authorised Faculty/Steward, Project Lead, Partner, Organization Representative or Programme Administrator activates it.") : ""}
+ ${!creator ? banner("info", "Proposal", "An authorised Faculty/Steward, Project Lead, Partner or Organization Admin activates it.") : ""}
  <div class="actions"><span></span><button class="btn btn-p" type="submit" ${opts.length ? "" : "disabled"}>${creator ? "Create" : "Propose"}</button></div></form>`;
     },
   );
@@ -289,7 +289,7 @@ route("room", "rooms", () => {
   const myM = memberRec(x);
   // an authorised creator reviews a proposed Action Room before it has members of their own
   const reviewing = ["Proposed", "Pending approval"].includes(x.state) && canCreateRoom() && inCtx(x);
-  if (!isM && !(myM && myM.status === "Invited") && !["A", "O"].includes(r) && !msIsSteward(x) && !reviewing)
+  if (!isM && !(myM && myM.status === "Invited") && !r === "A" && !msIsSteward(x) && !reviewing)
     return deniedView("rooms");
   if (myM && myM.status === "Invited")
     return (
@@ -342,6 +342,7 @@ route("room", "rooms", () => {
     UI.p.tab,
     {
       label: WL() + " sections",
+      icons: { overview: "grid" },
       groups: [
         ["", "", ["overview"]],
         ["Work", "grid", ["plan", "contribs"]],
@@ -487,7 +488,7 @@ route("room", "rooms", () => {
   if (t.cur === "change")
     body = card(
       "Changes",
-      "Ordinary changes (tasks, schedule, resources) are decided by the project lead. Protected changes (charter, outcome, membership, milestones, evidence rules) need a Faculty/Steward or Programme Administrator. Proposed → Reviewed → Approved → In Implementation → Completed → Closed.",
+      "Ordinary changes (tasks, schedule, resources) are decided by the project lead. Protected changes (charter, outcome, membership, milestones, evidence rules) need a Faculty/Steward or Organization Admin. Proposed → Reviewed → Approved → In Implementation → Completed → Closed.",
       x.changes
         .map(
           (c) =>
@@ -579,7 +580,7 @@ route("room", "rooms", () => {
           const sr = m.pid === x.lead ? "Project owner" : normRole(m.role);
           return [
             nm(m.pid) +
-              ` <span class="cap">${h(ROLE[ctxRole(m.pid, x.ctx)] || "")}${m.label ? " · " + h(m.label) : ""}</span>`,
+              ` <span class="cap">${h(roleName(ctxRole(m.pid, x.ctx), x.ctx) || "")}${m.label ? " · " + h(m.label) : ""}</span>`,
             lead && m.pid !== x.lead && !ro && m.status === "Active"
               ? roleSelect(
                   "memRole",
@@ -641,7 +642,7 @@ route("room", "rooms", () => {
     );
   if (t.cur === "about")
     body = `<div class="g12">${card("Charter", "", dl([["Purpose / charter", h(x.charter)], ["Expected outcome", h(x.outcome || "—")], ["Lead", nm(x.lead)], ["State", pill(x.state)], x.flags.length && ["Approval flags", x.flags.map(h).join(", ")], ["Primary origin", primaryLink(x.id) ? OBJ_LABEL(primaryLink(x.id).target_type) + " · " + relLink(primaryLink(x.id).target_id) : originLink(x)], x.mandate && ["Mandate", h(x.mandate)], ["Related objects (linked by reference)", linksOf(x.id).filter((l) => !l.primary || l.source_id !== x.id).map((l) => relLink(linkOther(l, x.id)) + ' <span class="cap">' + h(l.source_id === x.id ? linkTypeLabel(l.link_type) : LINK_INVERSE[l.link_type]) + "</span>").join("<br>") || "—"], ["Sponsors", "Never members because of funding"], ["Linked learning activities and records", x.links.map((l) => pill(l.type, "p-grey") + " " + h(l.label)).join("<br>") || "—"]]), !ro && isM ? B(ic("link", 14) + "Link by reference", "roomLink", { r: x.id }) : "", "c7")}
- ${card("Lifecycle", "Draft · Proposed · Pending approval · Active · Closed", `<div class="col" style="gap:8px">${x.state === "Proposed" && canCreateRoom() ? B("Activate", "roomState", { r: x.id, v: x.flags.length ? "Pending approval" : "Active" }, "btn-p btn-sm") + B("Decline (back to Draft)", "roomDecline", { r: x.id }) : ""}${x.state === "Proposed" && !canCreateRoom() ? '<p class="cap">Proposed. An authorised Faculty/Steward, Project Lead, Partner, Organization Representative or Programme Administrator activates it.</p>' : ""}${x.state === "Pending approval" && (r === "F" || r === "A") ? B("Approve activation", "roomState", { r: x.id, v: "Active" }, "btn-p btn-sm") + B("Decline (back to Draft)", "roomDecline", { r: x.id }) : ""}${x.state === "Draft" && isM ? B("Re-propose", "roomState", { r: x.id, v: "Proposed" }) : ""}${x.declineReason ? banner("warn", "Approval declined", h(x.declineReason)) : ""}${!ro && isM ? B(ic("sparkle", 14) + "Start a Learning Harvest", "newHarvest", { scope: x.id }) : ""}${x.state === "Active" && lead ? B(ic("refresh", 14) + "Continue to a new cycle", "roomContinue", { r: x.id }) : ""}${x.state === "Active" && lead && !pr ? B("Close " + WL(), "roomClose", { r: x.id }) : ""}<p class="cap">Closing or continuing starts a Learning Harvest for this cycle. A person completes it; nothing is harvested automatically.</p>${pr ? `<p class="cap">Final deliverables are submitted from the Overview tab or the ${L("project", "project", { id: pr.id })}. Backward movement is on the Overview tab.</p>` : ""}</div>`, "", "c5")}
+ ${card("Lifecycle", "Draft · Proposed · Pending approval · Active · Closed", `<div class="col" style="gap:8px">${x.state === "Proposed" && canCreateRoom() ? B("Activate", "roomState", { r: x.id, v: x.flags.length ? "Pending approval" : "Active" }, "btn-p btn-sm") + B("Decline (back to Draft)", "roomDecline", { r: x.id }) : ""}${x.state === "Proposed" && !canCreateRoom() ? '<p class="cap">Proposed. An authorised Faculty/Steward, Project Lead, Partner or Organization Admin activates it.</p>' : ""}${x.state === "Pending approval" && (r === "F" || r === "A") ? B("Approve activation", "roomState", { r: x.id, v: "Active" }, "btn-p btn-sm") + B("Decline (back to Draft)", "roomDecline", { r: x.id }) : ""}${x.state === "Draft" && isM ? B("Re-propose", "roomState", { r: x.id, v: "Proposed" }) : ""}${x.declineReason ? banner("warn", "Approval declined", h(x.declineReason)) : ""}${!ro && isM ? B(ic("sparkle", 14) + "Start a Learning Harvest", "newHarvest", { scope: x.id }) : ""}${x.state === "Active" && lead ? B(ic("refresh", 14) + "Continue to a new cycle", "roomContinue", { r: x.id }) : ""}${x.state === "Active" && lead && !pr ? B("Close " + WL(), "roomClose", { r: x.id }) : ""}<p class="cap">Closing or continuing starts a Learning Harvest for this cycle. A person completes it; nothing is harvested automatically.</p>${pr ? `<p class="cap">Final deliverables are submitted from the Overview tab or the ${L("project", "project", { id: pr.id })}. Backward movement is on the Overview tab.</p>` : ""}</div>`, "", "c5")}
  ${returnsCard(x) ? `<div class="c12">${returnsCard(x)}</div>` : ""}</div>`;
   const acts =
     spaceEditBtn("rooms", x) +
@@ -686,7 +687,7 @@ route("room", "rooms", () => {
                 ) +
                 B("Decline (back to Draft)", "roomDecline", { r: x.id }) +
                 "</span>"
-              : "Approval is with a Faculty/Steward or Programme Administrator in this context; it is in their Review inbox."),
+              : "Approval is with a Faculty/Steward or Organization Admin in this context; it is in their Review inbox."),
         )
       : "") +
     (x.state === "Proposed"
@@ -696,7 +697,7 @@ route("room", "rooms", () => {
           canCreateRoom()
             ? "Activate it to start work" +
                 (x.flags.length
-                  ? " (it then needs Faculty/Steward or Programme Administrator approval)"
+                  ? " (it then needs Faculty/Steward or Organization Admin approval)"
                   : "") +
                 ', or decline it back to Draft.<span class="row wrap ws-banact">' +
                 B(
@@ -710,7 +711,7 @@ route("room", "rooms", () => {
                 ) +
                 B("Decline (back to Draft)", "roomDecline", { r: x.id }) +
                 "</span>"
-            : "An authorised Faculty/Steward, Project Lead, Partner, Organization Representative or Programme Administrator activates it.",
+            : "An authorised Faculty/Steward, Project Lead, Partner or Organization Admin activates it.",
         )
       : "") +
     withSubnav(t, body)
@@ -936,7 +937,7 @@ function msCard(x, isM, lead, ro) {
     "Milestones",
     "1. A member adds evidence → 2. the Steward reviews and approves every piece → 3. the Steward validates the milestone as achieved." + (stewards.length ? " Steward: " + stewards.map(nm).join(", ") + "." : ""),
     (stw && pend ? banner("warn", pend + " piece" + (pend > 1 ? "s" : "") + " of evidence waiting for your review", "Review each one below. A milestone can be validated once all of its evidence is approved.") : "") +
-      (!stewards.length ? banner("warn", "No Steward for this " + WL(), "Ask the Programme Administrator to assign a Steward to the project. Evidence cannot be reviewed or milestones validated without one.") : "") +
+      (!stewards.length ? banner("warn", "No Steward for this " + WL(), "Ask the Organization Admin to assign a Steward to the project. Evidence cannot be reviewed or milestones validated without one.") : "") +
       (rows ? `<div class="col" style="gap:12px">${rows}</div>` : empty("flag", "No milestones yet", lead ? "Add a milestone, then add the evidence that shows it is done." : "The project lead adds milestones.")),
     !ro && lead ? B(ic("plus", 14) + "Add milestone", "roomItem", { r: x.id, k: "milestones" }, "btn-p btn-sm") : "",
   );
@@ -1111,7 +1112,7 @@ A.coNew = (d) => {
   modal(
     "Propose a change",
     () =>
-      `<form data-f="co" class="col" style="gap:12px" novalidate><input type="hidden" name="r" value="${d.r}">${fi("co", "kind", "Kind of change", { type: "select", req: true, ph: "Choose", opts: [["Ordinary", "Ordinary — tasks, schedule, resources (the project lead decides)"], ["Protected", "Protected — charter, outcome, membership, milestones or evidence rules (needs Faculty/Steward or Programme Administrator approval)"]] })}${fi("co", "title", "Title", { req: true })}${fi("co", "context", "Context", { type: "textarea", rows: 2, req: true })}${fi("co", "intended", "Intended change", { type: "textarea", rows: 2, req: true })}<div class="f2">${fi("co", "stakeholders", "Stakeholders", { req: true })}${fi("co", "parties", "Responsible parties", { req: true })}</div>${fi("co", "outcomes", "Intended outcomes", { req: true })}${fi("co", "success", "Success conditions", { req: true })}<div class="f2">${fi("co", "assumptions", "Assumptions")}${fi("co", "risks", "Risks and dependencies")}</div><div class="f2">${fi("co", "metrics", "Metrics")}${fi("co", "evref", "Evidence references")}</div><div class="actions"><span></span><button class="btn btn-p" type="submit">Propose</button></div></form>`,
+      `<form data-f="co" class="col" style="gap:12px" novalidate><input type="hidden" name="r" value="${d.r}">${fi("co", "kind", "Kind of change", { type: "select", req: true, ph: "Choose", opts: [["Ordinary", "Ordinary — tasks, schedule, resources (the project lead decides)"], ["Protected", "Protected — charter, outcome, membership, milestones or evidence rules (needs Faculty/Steward or Organization Admin approval)"]] })}${fi("co", "title", "Title", { req: true })}${fi("co", "context", "Context", { type: "textarea", rows: 2, req: true })}${fi("co", "intended", "Intended change", { type: "textarea", rows: 2, req: true })}<div class="f2">${fi("co", "stakeholders", "Stakeholders", { req: true })}${fi("co", "parties", "Responsible parties", { req: true })}</div>${fi("co", "outcomes", "Intended outcomes", { req: true })}${fi("co", "success", "Success conditions", { req: true })}<div class="f2">${fi("co", "assumptions", "Assumptions")}${fi("co", "risks", "Risks and dependencies")}</div><div class="f2">${fi("co", "metrics", "Metrics")}${fi("co", "evref", "Evidence references")}</div><div class="actions"><span></span><button class="btn btn-p" type="submit">Propose</button></div></form>`,
     true,
   );
 };
@@ -1208,7 +1209,7 @@ A.roomInviteNew = (d) => {
   modal(
     "Invite or add to " + h(x.name),
     () =>
-      `<form data-f="rin" class="col" style="gap:14px" novalidate><input type="hidden" name="r" value="${x.id}">${fi("rin", "pid", "Person", { type: "select", req: true, ph: "Select", opts: S.assign.filter((a) => a.ctx === x.ctx && a.status === "Active" && !memberOf(x, a.pid)).map((a) => [a.pid, P(a.pid).name + " — " + ROLE[a.role]]) })}${fi("rin", "role", "Role in this " + WL(), { type: "select", req: true, opts: INVITE_ROLES.map((r) => [r, roleLabel(r)]), help: "You can change the role later in Members. Sponsors cannot be added." })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Continue</button></div></form>`,
+      `<form data-f="rin" class="col" style="gap:14px" novalidate><input type="hidden" name="r" value="${x.id}">${fi("rin", "pid", "Person", { type: "select", req: true, ph: "Select", opts: S.assign.filter((a) => a.ctx === x.ctx && a.status === "Active" && !memberOf(x, a.pid)).map((a) => [a.pid, P(a.pid).name + " — " + roleName(a.role, a.ctx)]) })}${fi("rin", "role", "Role in this " + WL(), { type: "select", req: true, opts: INVITE_ROLES.map((r) => [r, roleLabel(r)]), help: "You can change the role later in Members. Sponsors cannot be added." })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Continue</button></div></form>`,
     true,
   );
 };

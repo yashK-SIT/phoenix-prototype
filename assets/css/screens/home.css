@@ -1404,6 +1404,35 @@ button.pw-pick-i:hover {
 .auth-form {
   gap: var(--s-4);
 }
+/* Request access: choose the organization first; on a pack's own link it is fixed */
+.apl-packs {
+  gap: var(--s-2);
+}
+.apl-pack {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.apl-pack:hover {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+.apl-pack-t {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
 .auth-keep {
   justify-content: space-between;
   flex-wrap: wrap;

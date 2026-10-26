@@ -189,6 +189,22 @@ iframe.sq-pv { height: 70vh; }
 @media (max-width: 600px) {
   .board-i { flex-wrap: wrap; }
 }
+.rel-groups { display: grid; gap: var(--s-4); }
+.rel-cl { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; }
+.rel-cl li { display: flex; flex-wrap: wrap; gap: 4px var(--s-3); justify-content: space-between; align-items: center; padding: var(--s-2) var(--s-3); border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--surface-2); }
+.rel-cm { gap: 6px; }
+.rel-tl { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-4); }
+.rel-ti { display: flex; gap: var(--s-3); align-items: flex-start; position: relative; }
+.rel-ti:not(:last-child)::before { content: ''; position: absolute; left: 19px; top: 46px; bottom: calc(-1 * var(--s-4)); border-left: 1px dashed var(--line-strong); }
+.rel-ti .tile { flex: none; }
+.rel-ti.is-past .tile { opacity: .75; }
+.rel-tb { flex: 1; gap: 6px; min-width: 0; }
+.rel-th { gap: 6px; }
+.rel-ul { margin: 0; padding-left: 18px; }
+.rel-pick { display: flex; flex-direction: column; gap: 4px; max-width: 420px; }
+@media (max-width: 600px) {
+  .rel-ti:not(:last-child)::before { display: none; }
+}
 
 /* ---- evidence: five independent dimensions (BF-04) */
 .ev-dims { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); overflow: hidden; }

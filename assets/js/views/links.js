@@ -98,7 +98,7 @@ const objOpenable = (k, o) => {
   if (k === 'ropes') return memberOf(o);
   if (k === 'circles' || k === 'rooms') return canOpenSpace(k, o);
   if (k === 'projects') return o.owner === myId() || role() !== 'P';
-  // a Match Brief opens only for its two parties, its steward and the Programme Administrator
+  // a Match Brief opens only for its two parties, its steward and the Organization Admin
   if (k === 'matches') return [o.a, o.b, o.steward].includes(myId()) || role() === 'A';
   return true;
 };

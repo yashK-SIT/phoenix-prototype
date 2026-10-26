@@ -24,7 +24,7 @@ const chatSpaces = (pid = myId()) => [
   ...(S.chrooms || []).filter(r => inCtx(r) && memberOf(r, pid)).map(o => ({ kind: 'chrooms', o })),
   ...pwConvos(pid).map(o => ({ kind: 'pathways', o })),
 ];
-// ---- pathway review conversations: the pathway owner, the Programme Administrator and the Reviewer.
+// ---- pathway review conversations: the pathway owner, the Organization Admin and the Reviewer.
 // Messages shows the same thread (p.thread) and activity log as the pathway's "Conversation & activity" dialog.
 const PW_REVIEW = ['Awaiting reviewer', 'In review', 'Clarification requested'];
 const pwInConvo = (p, pid = myId()) => [p.by, p.pid, p.reviewer].includes(pid) || ctxAdmins(p.ctx).includes(pid);
@@ -172,11 +172,11 @@ function pwThread(p) {
   <div class="mpw-who cap">${[['Pathway owner', p.by], p.pid !== p.by && ['Participant', p.pid], ['Reviewer', p.reviewer]]
     .filter(Boolean)
     .map(([l, x]) => `<span><b>${l}</b> ${x ? nm(x) : 'Not assigned yet'}</span>`)
-    .join('')}<span><b>Programme Administrator</b> ${ctxAdmins(p.ctx).map(nm).join(', ') || '—'}</span></div>
-  <div class="msgs" data-scroll="${p.id}" role="log" aria-live="polite">${rows || `<div class="mempty">${empty('message', 'No messages yet', 'Start the conversation. The pathway owner, the Programme Administrator and the Reviewer see every message.')}</div>`}</div>
+    .join('')}<span><b>Organization Admin</b> ${ctxAdmins(p.ctx).map(nm).join(', ') || '—'}</span></div>
+  <div class="msgs" data-scroll="${p.id}" role="log" aria-live="polite">${rows || `<div class="mempty">${empty('message', 'No messages yet', 'Start the conversation. The pathway owner, the Organization Admin and the Reviewer see every message.')}</div>`}</div>
   ${
     !pm
-      ? `<div class="mro">${ic('lock', 16)}<span>View only. Only the pathway owner, the Programme Administrator and the Reviewer post here.</span></div>`
+      ? `<div class="mro">${ic('lock', 16)}<span>View only. Only the pathway owner, the Organization Admin and the Reviewer post here.</span></div>`
       : `<form data-f="pwchat" class="composer" novalidate><input type="hidden" name="id" value="${p.id}"><div class="mpend" hidden>${ic('clip', 14)}<span class="fname"></span>${B(ic('x', 14), 'clearFile', {}, 'mtool', 'aria-label="Remove attachment"')}</div>
   <div class="mcomp"><label class="iconbtn mattach" title="Attach a file (up to ${S.settings.maxFileMB} MB)">${ic('clip')}<input type="file" name="f" data-chatfile="1" aria-label="Attach a file" class="sr"></label><textarea name="t" rows="1" class="mta" placeholder="${h(pm.label)}" aria-label="${h(pm.label)}" data-draft="${p.id}">${h(draft)}</textarea><button class="btn btn-p msend" type="submit" aria-label="Send message" title="Send (Enter)">${ic('send', 18)}</button></div>
   <div class="mhelp">${pm.kind === 'reply' ? '<b>Replying to the clarification request.</b> ' : ''}Enter to send · Shift+Enter for a new line · kept with the pathway's full history and shown in Pathway details</div></form>`
@@ -257,7 +257,7 @@ const roleIn = (o, pid) => {
   const kind = S.circles.includes(o) ? 'circles' : S.ropes.includes(o) ? 'ropes' : 'rooms';
   return roleLabel(spaceRole(kind, o, pid) || roleInRaw(o, pid), kind);
 };
-const roleInRaw = (o, pid) => (o.members.find(m => m.pid === pid) || {}).role || ROLE[(S.assign.find(a => a.pid === pid && a.ctx === o.ctx) || {}).role] || '';
+const roleInRaw = (o, pid) => (o.members.find(m => m.pid === pid) || {}).role || (a => (a ? roleName(a.role, o.ctx) : ''))(S.assign.find(a => a.pid === pid && a.ctx === o.ctx));
 // ---- the Messages hub
 route('messages', 'any', () => {
   const sp = chatSpaces();

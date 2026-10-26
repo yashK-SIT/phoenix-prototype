@@ -79,7 +79,7 @@ route("profile", "any", () => {
       (role() === "P"
         ? `<section class="card pf-ns" aria-labelledby="pf-ns-t"><div class="row pf-ns-h"><span class="over" id="pf-ns-t">My purpose / current direction</span><span class="vis">${ic("lock", 14)}Only you</span></div><p class="pf-ns-q${cp.PC2 ? "" : " is-unset"}">${cp.PC2 ? "“" + h(cp.PC2) + "”" : "Set your goal in the Purpose Compass."}</p>${cp.PC5 ? `<p class="cap">First milestone: ${h(cp.PC5)}</p>` : ""}<div class="pf-ns-a">${L("Purpose Compass" + ic("chevr", 14), "profile", { tab: "compass" }, "lnk pf-lnk")}</div></section>`
         : "") +
-      (["C", "O"].includes(role()) && me().org
+      (["C", "A"].includes(role()) && me().org
         ? card(
             "Organization profile",
             h(S.orgs.find((o) => o.id === me().org).type),
@@ -415,6 +415,7 @@ A.claimVis = (d, el) => {
 A.revokeClaim = (d) => {
   const c = byId("claims", d.id);
   c.state = "Revoked";
+  c.revokedAt = now();
   bumpVer(`Revoked ${c.field}: ${c.value}`, "User revoked", "Self-declared");
   ok();
 };
@@ -438,6 +439,7 @@ F.claim = (d) => {
     vis: d.vis,
     state: "Current",
     ver: 1,
+    at: now(),
   });
   bumpVer("Added " + d.field + ": " + d.value, "User added", "Self-declared");
   clearF("claim");
@@ -543,6 +545,7 @@ A.cand = (d) => {
       vis: c.aud || "Only me",
       state: "Current",
       ver: 1,
+      at: now(),
       from: c.id,
       src: c.src || null,
       source: c.source,
@@ -818,7 +821,7 @@ function evoApply(s) {
       c.ver = (c.ver || 1) + 1;
       c.prov = prov;
     } else
-      S.claims.push({ id: uid("cl"), pid: s.pid, field: s.field, value: s.value, prov, vis, state: "Current", ver: 1, src: "evolution", from: s.id });
+      S.claims.push({ id: uid("cl"), pid: s.pid, field: s.field, value: s.value, prov, vis, state: "Current", ver: 1, at: now(), src: "evolution", from: s.id });
     return bumpVer(`Profile evolution: ${s.value} · audience: ${vis}`, src, prov, x);
   }
   const items = s.add.filter((v) => !evoHas(curItems(s.pid, s.field), v));
@@ -832,21 +835,25 @@ function evoApply(s) {
     vis,
     state: "Current",
     ver: 1,
+    at: now(),
     src: "evolution",
     from: s.id,
   });
   bumpVer(`Profile evolution: added ${s.field} — ${items.join(evoSep(s.field))} · audience: ${vis}`, src, prov, x);
 }
-// viewing someone else's profile (F/M: V if shared/required)
-function viewProfile(pid) {
-  const viewer = role();
-  const cl = S.claims.filter(
+// Claims another person may see: current, not "Only me", and matching/pathway-only claims for F/M viewers only.
+const sharedClaims = (pid, viewer = role()) =>
+  S.claims.filter(
     (c) =>
       c.pid === pid &&
       c.state === "Current" &&
       c.vis !== "Only me" &&
       (c.vis !== "Matching/pathway roles only" || ["F", "M"].includes(viewer)),
   );
+// viewing someone else's profile (F/M: V if shared/required)
+function viewProfile(pid) {
+  const viewer = role();
+  const cl = sharedClaims(pid, viewer);
   const cp = S.compass[pid] || {};
   modal(
     nm(pid),
@@ -1301,10 +1308,10 @@ route("pathway", "pathways", () => {
             pwAccPill(p) +
               pwRecInfo(p) +
               (p.prev ? banner("warn", "A changed version of your current pathway", "Version " + p.ver + " replaces “" + h((byId("pathways", p.prev) || {}).name || "") + "” only if you accept. Steps you already closed carry over where the step is unchanged. Until then your current version stays active.") : "") +
-              banner("info", "Your acceptance is needed", "Nothing becomes active until you accept. You can ask for changes or decline it — declining does not affect your Circles, Rope Teams, tasks or evidence.") +
+              banner("info", "Your decision is needed", "Accept it to make it your pathway, or reject it. Nothing becomes active until you accept. You can also ask for changes. Rejecting does not affect your Circles, Rope Teams, tasks or evidence.") +
               pwLegend() +
               pwStepsList(p, false) +
-              `<div class="row wrap pf-after">${B(ic("message", 14) + "Conversation & activity", "pwActivity", { id: p.id })}${B("Decline", "pwDecline", { id: p.id })}${B("Ask for changes", "pwChange", { id: p.id })}${B("Accept pathway", "pwAccept", { id: p.id }, "btn-p btn-sm")}</div>`,
+              `<div class="row wrap pf-after">${B(ic("message", 14) + "Conversation & activity", "pwActivity", { id: p.id })}${B("Ask for changes", "pwChange", { id: p.id })}${B(ic("x", 14) + "Reject", "pwDecline", { id: p.id }, "btn-d btn-sm")}${B(ic("check", 14) + "Accept pathway", "pwAccept", { id: p.id }, "btn-p btn-sm")}</div>`,
           ),
         )
         .join('<div class="pf-gap"></div>') +
@@ -1331,7 +1338,7 @@ route("pathway", "pathways", () => {
             "route",
             "No current pathway",
             prop.length
-              ? "Accept a recommended pathway above, ask for changes, or decline it."
+              ? "Accept or reject a recommended pathway above, or ask for changes."
               : "Choose an approved template, request a recommendation from a Facilitator, Circle Steward or your mentor, or draft your own (a Reviewer approves it). Nothing is assigned to you without your acceptance.",
           )) +
       `<div class="pf-gap"></div>` +
@@ -1353,7 +1360,7 @@ route("pathway", "pathways", () => {
             lead: `<span class="tile ${p.state === "Current" ? "t-teal" : "t-soft"}" aria-hidden="true">${ic("route", 16)}</span>`,
             title: h(p.name),
             sub: h(p.mode) + " · " + pwWho(p),
-            meta: [p.changeReq && p.state === "Draft" ? `You asked for: ${h(p.changeReq)}` : "", p.state === "Declined" && p.declineWhy ? `You declined it: ${h(p.declineWhy)}` : ""],
+            meta: [p.changeReq && p.state === "Draft" ? `You asked for: ${h(p.changeReq)}` : "", p.state === "Declined" && p.declineWhy ? `You rejected it: ${h(p.declineWhy)}` : ""],
             badges: pill(p.state === "Draft" && p.changeReq ? "Change requested" : p.state),
             primary: pwEditBtn(p) + B("Conversation & activity", "pwActivity", { id: p.id }),
           }),
@@ -1478,6 +1485,7 @@ A.proposePathway = (d) => {
   clearF("pp");
   const rq = d.req && byId("pwReqs", d.req);
   UI.form.pp = { pid: d.pid, mode: "1", req: d.req || "" };
+  const dir = role() === "F";
   modal("Recommend a pathway to " + nm(d.pid), () => {
     const m = fv("pp", "mode", "1");
     const tpl = byId("templates", fv("pp", "tpl"));
@@ -1488,11 +1496,17 @@ A.proposePathway = (d) => {
       rq ? banner("info", nm(d.pid) + " asked for a recommendation", "“" + h(rq.goal) + "”") : ""
     }${fi("pp", "mode", "What you recommend", {
       type: "select",
-      opts: [
-        ["1", "1 · Approved template, unchanged (no review)"],
-        ["2", "2 · Adapted from a template (review only if outside its rules)"],
-        ["3", "3 · Custom pathway (an authorised Reviewer approves it first)"],
-      ],
+      opts: dir
+        ? [
+            ["1", "1 · Approved template, unchanged"],
+            ["2", "2 · Adapted from a template"],
+            ["3", "3 · Custom pathway"],
+          ]
+        : [
+            ["1", "1 · Approved template, unchanged (no review)"],
+            ["2", "2 · Adapted from a template (review only if outside its rules)"],
+            ["3", "3 · Custom pathway (an authorised Reviewer approves it first)"],
+          ],
       help: "The form below changes to match.",
       ch: "ppRefresh",
     })}${m !== "3" ? fi("pp", "tpl", "Approved template", { type: "select", req: true, ch: "ppRefresh", ph: "Select an approved template", opts: S.templates.filter((t) => t.status === "Approved").map((t) => [t.id, t.name + " · v" + tplVer(t)]) }) : fi("pp", "name", "Pathway name", { req: true })}${
@@ -1502,14 +1516,14 @@ A.proposePathway = (d) => {
         ? env
           ? env.ok
             ? banner("ok", "Within the template’s adaptation rules", "It goes straight to " + nm(d.pid) + " to accept. Press “Check adaptation rules” again after changing steps.")
-            : banner("warn", "Outside the template’s adaptation rules", h(env.why.join("; ")) + ". An authorised Reviewer approves it before " + nm(d.pid) + " sees it.")
-          : banner("info", "Adaptation rules (assumed rule)", "Keep every Mandatory step of the template as it is. Optional and Conditional steps may be added, removed or reworded. Anything else needs a Reviewer. Press “Check adaptation rules” after editing the steps.")
+            : banner("warn", "Outside the template’s adaptation rules", h(env.why.join("; ")) + (dir ? ". It still goes straight to " + nm(d.pid) + ", recorded as adapted outside the template’s rules." : ". An authorised Reviewer approves it before " + nm(d.pid) + " sees it."))
+          : banner("info", "Adaptation rules (assumed rule)", "Keep every Mandatory step of the template as it is. Optional and Conditional steps may be added, removed or reworded." + (dir ? "" : " Anything else needs a Reviewer.") + " Press “Check adaptation rules” after editing the steps.")
         : ""
     }${fi("pp", "reason", "Why you recommend it", { type: "textarea", rows: 2, req: true, max: 300, help: "Shown to " + nm(d.pid) + " with your name and role." })}${
       circles.length
         ? fi("pp", "circle", "Connect to a Circle you steward (optional)", { type: "select", opts: [["", "No Circle"], ...circles.map((c) => [c.id, c.name])], help: "Links the pathway to that Circle’s learning and action. You recommend as its Circle Steward." })
         : ""
-    }${banner("info", "", nm(d.pid) + " must accept before it becomes their pathway. They can ask for changes or decline without losing access to anything else.")}<div class="actions">${m === "2" ? B("Check adaptation rules", "ppRefresh") : "<span></span>"}<button class="btn btn-p" type="submit">Send recommendation</button></div></form>`;
+    }${banner("info", "", (dir ? "Sent straight to " + nm(d.pid) + " — no further approval. " : "") + nm(d.pid) + " must accept before it becomes their pathway. They can reject it or ask for changes without losing access to anything else.")}<div class="actions">${m === "2" ? B("Check adaptation rules", "ppRefresh") : "<span></span>"}<button class="btn btn-p" type="submit">Send recommendation</button></div></form>`;
   }, true);
 };
 A.ppRefresh = () => {
@@ -1660,8 +1674,8 @@ const pwPreTxt = (p, s) =>
   ((s.pre || []).length ? "Needs " + s.pre.map((j) => "step " + (j + 1) + ((s.preDone || []).includes(j) ? " (completed)" : "")).join(" and ") + " first" : "No prerequisite") + (s.from ? " · available from " + fmt(s.from) : "");
 // Pathway-level participant acceptance, separate from the pathway's workflow state.
 const pwAcceptance = (p) =>
-  p.state === PW_REC ? "Proposed" : p.state === "Draft" && p.partChange ? "Proposed — changes requested" : pwActive(p) ? "Accepted" : p.state === "Declined" ? "Declined" : p.state === "Superseded" ? "Superseded" : "Not yet proposed";
-const PW_ACC_C = { Proposed: "p-amber", "Proposed — changes requested": "p-amber", Accepted: "p-green", Declined: "p-red", Superseded: "p-grey", "Not yet proposed": "p-grey" };
+  p.state === PW_REC ? "Proposed" : p.state === "Draft" && p.partChange ? "Proposed — changes requested" : pwActive(p) ? "Accepted" : p.state === "Declined" ? "Rejected" : p.state === "Superseded" ? "Superseded" : "Not yet proposed";
+const PW_ACC_C = { Proposed: "p-amber", "Proposed — changes requested": "p-amber", Accepted: "p-green", Rejected: "p-red", Superseded: "p-grey", "Not yet proposed": "p-grey" };
 const pwAccPill = (p) => pill("Acceptance: " + pwAcceptance(p), PW_ACC_C[pwAcceptance(p)]);
 const pwProposedAt = (p) => p.proposedAt || (p.activity && p.activity[0] && p.activity[0].at) || "";
 // Who proposed the pathway and when the participant accepted it.
@@ -2283,6 +2297,17 @@ function profileMigrate() {
     if (r) p.steps.forEach((st, i) => fill(st, r.steps[i]));
   });
   sd.evidence.filter((e) => e.id === "ev6").forEach((e) => !byId("evidence", e.id) && byId("people", e.owner) && S.evidence.push(cp(e)));
+  // Facilitator / Circle Steward recommendations no longer wait for a Reviewer: any still queued go to the participant.
+  S.pathways.forEach((p) => {
+    if (!pwDirect(p) || !["Awaiting reviewer", "In review", "Clarification requested"].includes(p.state)) return;
+    Object.assign(p, { state: PW_REC, reviewer: null, reviewNote: "" });
+    (p.activity = p.activity || []).push({ at: now(), by: null, t: "Sent directly to the participant (the Reviewer step for Facilitator recommendations was removed)" });
+  });
+  // requests answered before their status followed the participant's decision
+  (S.pwReqs || []).forEach((q) => {
+    const p = q.status === "Answered" && byId("pathways", q.pathway);
+    if (p) q.status = p.state === "Declined" ? "Rejected" : p.acceptedAt ? "Accepted" : p.state === PW_REC ? "Recommended" : p.partChange ? "Changes requested" : "With reviewer";
+  });
   S.pathways.forEach((p) => {
     if (p.state === "Proposed to participant") p.state = PW_REC;
     const ref = sd.pathways.find((x) => x.id === p.id);
@@ -2350,7 +2375,7 @@ CONVO.pathway = {
         : pid === p.pid
           ? "Participant"
           : ctxAdmins(p.ctx).includes(pid)
-            ? "Programme Administrator"
+            ? "Organization Admin"
             : S.assign.some((a) => a.pid === pid && a.bundles.includes("Reviewer"))
               ? "Reviewer"
               : "",
@@ -2420,8 +2445,18 @@ const pwUnchanged = (tpl, steps) => !!tpl && pwStepsSig(steps) === pwStepsSig(pw
 // → template | adapted | outside | custom. Only template and adapted skip the Reviewer.
 const pwRoute = (tpl, steps, custom) => (custom || !tpl ? "custom" : pwUnchanged(tpl, steps) ? "template" : pwEnvelope(tpl, steps).ok ? "adapted" : "outside");
 const pwSkipsReview = (route) => route === "template" || route === "adapted";
+// A Facilitator or Circle Steward's recommendation goes straight to the participant on every route: no Reviewer and no
+// Organization Admin step. Mentor recommendations and a participant's own pathways still go to a Reviewer.
+const pwDirect = (p) => !!p && p.by !== p.pid && p.byRole !== "Mentor";
+const pwSends = (p, route) => pwSkipsReview(route) || pwDirect(p);
+// The request a recommendation answered follows it: Recommended → Accepted / Rejected / Changes requested.
+const PW_REQ_C = { Open: "p-amber", Recommended: "p-blue", "With reviewer": "p-grey", "Changes requested": "p-amber", Accepted: "p-green", Rejected: "p-red", Withdrawn: "p-grey", Answered: "p-green" };
+function pwReqSet(p, status) {
+  const q = p.req && byId("pwReqs", p.req);
+  if (q && q.status !== "Withdrawn") Object.assign(q, { status, decidedAt: now() });
+}
 // Authorised reviewers: active Reviewer-bundle holders in the pathway's context, never its author or participant.
-// Pathways go to this shared queue; the Programme Administrator steps in only when nobody can review.
+// Pathways go to this shared queue; the Organization Admin steps in only when nobody can review.
 const pwReviewers = (p) =>
   [...new Set(S.assign.filter((a) => a.ctx === p.ctx && a.status === "Active" && (a.bundles || []).includes("Reviewer") && a.pid !== p.by && a.pid !== p.pid).map((a) => a.pid))];
 const pwCanReview = (p) => !!p && (p.reviewer ? p.reviewer === myId() : p.state === "Awaiting reviewer" && hasB("Reviewer") && pwReviewers(p).includes(myId()));
@@ -2484,18 +2519,19 @@ F.pp = (d) => {
       : route === "adapted"
         ? `Adapted the approved template “${tpl.name}” v${p.tplVer} within its rules and recommended it`
         : route === "outside"
-          ? `Adapted the approved template “${tpl.name}” v${p.tplVer} outside its rules (${pwEnvelope(tpl, steps).why.join("; ")}) — sent for Reviewer approval`
-          : "Drafted a custom pathway (mode 3) — sent for Reviewer approval",
+          ? `Adapted the approved template “${tpl.name}” v${p.tplVer} outside its rules (${pwEnvelope(tpl, steps).why.join("; ")}) — ${pwDirect(p) ? "sent directly to the participant" : "sent for Reviewer approval"}`
+          : "Drafted a custom pathway (mode 3) — " + (pwDirect(p) ? "sent directly to the participant" : "sent for Reviewer approval"),
   );
   S.pathways.push(p);
-  if (pwSkipsReview(route)) notify(d.pid, `${me().name} (${p.byRole}) recommends a pathway: ${p.name}. Accept, ask for changes or decline.`, "pathway");
+  const sent = pwSends(p, route);
+  if (sent) notify(d.pid, `${me().name} (${p.byRole}) recommends a pathway: ${p.name}. Review it, then accept or reject it.`, "pathway");
   else pwToQueue(p);
   const rq = d.req && byId("pwReqs", d.req);
-  if (rq && rq.status === "Open") Object.assign(rq, { status: "Answered", by: myId(), pathway: p.id, answeredAt: now() });
+  if (rq && rq.status === "Open") Object.assign(rq, { status: sent ? "Recommended" : "With reviewer", by: myId(), pathway: p.id, answeredAt: now() });
   audit("Pathway recommended", p.id, p.mode + " · " + p.byRole);
   clearF("pp");
   UI.modal = null;
-  toast(pwSkipsReview(route) ? "Recommended. " + nm(d.pid) + " decides whether to accept it." : "Sent to an authorised Reviewer. " + nm(d.pid) + " sees it after approval.");
+  toast(sent ? "Recommended. " + nm(d.pid) + " can now accept or reject it." : "Sent to an authorised Reviewer. " + nm(d.pid) + " sees it after approval.");
   ok();
 };
 // ---- A participant asks for a recommendation: any Facilitator / Circle Steward in the programme, or a named one,
@@ -2550,7 +2586,7 @@ function pwMyReqsCard() {
           return [
             `“${h(q.goal)}”<span class="pw-why">${fmt(q.at)}</span>`,
             h(pwReqTo(q)),
-            pill(q.status, { Open: "p-amber", Answered: "p-green", Withdrawn: "p-grey" }[q.status]) + (pw ? `<span class="pw-why">${h(pw.name)} · ${pwRoleLine(pw)}</span>` : ""),
+            pill(q.status, PW_REQ_C[q.status]) + (pw ? `<span class="pw-why">${h(pw.name)} · ${pwRoleLine(pw)}</span>` : ""),
             q.status === "Open" ? B("Withdraw", "pwAskWithdraw", { id: q.id }, "btn-g btn-sm") : "",
           ];
         }),
@@ -2586,7 +2622,7 @@ A.draftPathway = (d) => {
       `<form data-f="pp" class="col pf-form" novalidate>${errSum("pp")}<input type="hidden" name="pid" value="${d.pid}"><input type="hidden" name="mode" value="3">${fi("pp", "name", "Pathway name", { req: true })}${pwStepFields("pp")}${banner("info", "", "Custom pathways are approved by an authorised Reviewer in this programme.")}<div class="actions"><span></span><button class="btn btn-p" type="submit">Submit for review</button></div></form>`, true,
   );
 };
-// ---- A participant creates and submits a pathway; the Programme Administrator assigns a reviewer (Steward or
+// ---- A participant creates and submits a pathway; the Organization Admin assigns a reviewer (Steward or
 // Faculty), who approves it, rejects it or asks for changes; the participant updates and resubmits.
 const PW_SUBMITTED = ["Awaiting reviewer", "In review", "Clarification requested", "Rejected"];
 const stepsRule = [
@@ -2609,7 +2645,7 @@ function pwMineCard(list) {
     p.state === "Awaiting reviewer"
       ? pwReviewers(p).length
         ? "In the review queue — an authorised Reviewer in this programme picks it up"
-        : "Waiting for a Reviewer — the Programme Administrator has been told none is available"
+        : "Waiting for a Reviewer — the Organization Admin has been told none is available"
       : p.state === "In review"
         ? "With " + nm(p.reviewer) + " for review"
         : p.state === "Clarification requested"
@@ -2653,7 +2689,7 @@ function pwToReviewCard() {
   return (
     card(
       "Pathways waiting for your review <span class=\"adm-n\">" + mine.length + "</span>",
-      "Custom pathways, and adaptations outside a template’s rules, come here without Programme Administrator assignment. Approving a pathway someone recommended sends it to the participant to accept; a participant’s own pathway becomes current. Pathways waiting on the creator stay here until they are resubmitted.",
+      "Custom pathways, and adaptations outside a template’s rules, from participants and Mentors come here without Organization Admin assignment. Facilitator and Circle Steward recommendations go straight to the participant and never come here. Approving a pathway someone recommended sends it to the participant to accept; a participant’s own pathway becomes current. Pathways waiting on the creator stay here until they are resubmitted.",
       dataView("pathway:toreview", {
         label: "pathways",
         items: mine,
@@ -2858,20 +2894,20 @@ F.pwn = (d) => {
       pwLog(p, "Created and submitted for review" + (tpl ? " (changed from the template “" + tpl.name + "”)" : ""));
       pwToQueue(p);
       audit("Pathway submitted", p.id, p.mode);
-      toast(pwReviewers(p).length ? "Submitted to the review queue. An authorised Reviewer will pick it up." : "Submitted. No Reviewer is available yet; the Programme Administrator has been told.");
+      toast(pwReviewers(p).length ? "Submitted to the review queue. An authorised Reviewer will pick it up." : "Submitted. No Reviewer is available yet; the Organization Admin has been told.");
     }
   }
   UI.modal = null;
   clearF("pwn");
   ok();
 };
-// ---- Optional: the Programme Administrator assigns (or changes) a named reviewer. Not needed for the normal flow —
+// ---- Optional: the Organization Admin assigns (or changes) a named reviewer. Not needed for the normal flow —
 // pathways go to the shared Reviewer queue. Candidates: Reviewer-bundle holders and Facilitators / Stewards.
 const pwStewards = (p) =>
   S.assign
     .filter((a) => a.ctx === p.ctx && a.status === "Active" && a.pid !== p.by && a.pid !== p.pid && (roleBase(a.role) === "F" || (a.bundles || []).includes("Reviewer")))
     .filter((a, i, all) => all.findIndex((b) => b.pid === a.pid) === i);
-// Needs the Programme Administrator only when nobody can pick it up.
+// Needs the Organization Admin only when nobody can pick it up.
 const pwNeedsSteward = (p) => (p.state === "Awaiting reviewer" && !pwReviewers(p).length) || (p.state === "In review" && !p.reviewer);
 A.pwAssign = (d) => {
   clearF("pwas");
@@ -2882,7 +2918,7 @@ A.pwAssign = (d) => {
     () =>
       `<form data-f="pwas" class="col pf-form" novalidate><input type="hidden" name="id" value="${p.id}">${dl([["Pathway", h(p.name)], ["Created by", nm(p.by)], ["For", nm(p.pid)], ["Steps", p.steps.map((s) => h(s.t)).join(" → ")], p.reviewer && ["Current Steward", nm(p.reviewer)]])}${
         rv.length
-          ? fi("pwas", "rv", "Reviewer", { type: "select", req: true, ph: "Choose a reviewer", value: p.reviewer || "", opts: rv.map((a) => [a.pid, P(a.pid).name + " · " + ROLE[a.role] + ((a.bundles || []).includes("Reviewer") ? " + Reviewer bundle" : "")]), help: "Reviewer-bundle holders and Facilitators / Stewards in this programme. The creator and the participant cannot approve it." })
+          ? fi("pwas", "rv", "Reviewer", { type: "select", req: true, ph: "Choose a reviewer", value: p.reviewer || "", opts: rv.map((a) => [a.pid, P(a.pid).name + " · " + roleName(a.role, a.ctx) + ((a.bundles || []).includes("Reviewer") ? " + Reviewer bundle" : "")]), help: "Reviewer-bundle holders and Facilitators / Stewards in this programme. The creator and the participant cannot approve it." })
           : banner("warn", "No reviewer available in this programme", "Grant the Reviewer bundle or invite a Facilitator / Steward from " + L("Programme admin → Invitations", "admin", { tab: "invites" }) + ", then assign them here.")
       }${banner("info", "", "Optional. Pathways normally go to the shared Reviewer queue without assignment. Assigning a named reviewer takes it out of the queue.")}<div class="actions"><span></span><button class="btn btn-p" type="submit" ${rv.length ? "" : "disabled"}>${p.reviewer ? "Change reviewer" : "Assign reviewer"}</button></div></form>`,
   );
@@ -2911,7 +2947,7 @@ F.pwas = (d) => {
   toast(was ? "Reviewer changed." : "Reviewer assigned. They can now approve the pathway or ask for clarification.");
   ok();
 };
-// Programme Administrator view: pathways waiting for a Steward, and pathways a Steward is reviewing.
+// Organization Admin view: pathways waiting for a Steward, and pathways a Steward is reviewing.
 function pwAdminCards() {
   const wait = S.pathways.filter((p) => inCtx(p) && p.state === "Awaiting reviewer");
   const inRev = S.pathways.filter((p) => inCtx(p) && p.reviewer && ["In review", "Clarification requested"].includes(p.state));
@@ -2920,7 +2956,7 @@ function pwAdminCards() {
   return (
     card(
       "Pathway review queue <span class=\"adm-n\">" + wait.length + "</span>",
-      "Custom pathways and adaptations outside a template’s rules go straight to this programme’s authorised Reviewers. You only need to act when no Reviewer is available; assigning a named reviewer is optional.",
+      "Custom pathways and adaptations outside a template’s rules from participants and Mentors go straight to this programme’s authorised Reviewers. Facilitator and Circle Steward recommendations need no approval. You only need to act when no Reviewer is available; assigning a named reviewer is optional.",
       dataView("pathway:waiting", {
         label: "pathways",
         items: wait,
@@ -2982,8 +3018,9 @@ A.pwDec = (d) => {
   if (d.v === "Current" && p.by !== p.pid) {
     p.state = PW_REC;
     p.reviewNote = "";
+    pwReqSet(p, "Recommended");
     pwLog(p, "Approved by " + me().name + " (Reviewer) and recommended to the participant");
-    notify(p.pid, `${P(p.by).name} (${p.byRole || "Facilitator"}) recommends a pathway: ${p.name}. Accept, ask for changes or decline.`, "pathway");
+    notify(p.pid, `${P(p.by).name} (${p.byRole || "Facilitator"}) recommends a pathway: ${p.name}. Review it, then accept or reject it.`, "pathway");
     notify(p.by, "Your pathway “" + p.name + "” was approved by " + me().name + " and sent to " + P(p.pid).name, "pathway");
     audit("Pathway approved", p.id, "Recommended to participant");
     toast("Approved. The participant decides whether to accept it.");
@@ -3081,19 +3118,21 @@ A.pwAccept = (d) => {
   p.acceptedAt = now();
   p.acceptedBy = myId();
   pwSync(p);
+  pwReqSet(p, "Accepted");
   pwLog(p, "Accepted the recommended pathway" + (p.tpl ? " (template version " + (p.tplVer || 1) + ")" : "") + " — it became current");
   notify(p.by, `${me().name} accepted the pathway “${p.name}”`, "pathway");
   audit("Pathway accepted", p.id, "");
   toast("Accepted. It is now your current pathway.");
   ok();
 };
-// The participant may decline a proposed pathway outright; it stays in their history with the reason.
+// The participant may reject a recommended pathway outright; it stays in their history with the reason.
+// The stored state stays "Declined" so earlier records keep working; it is shown as Rejected.
 A.pwDecline = (d) => {
   clearF("pwdc");
   modal(
-    "Decline this pathway",
+    "Reject this pathway",
     () =>
-      `<form data-f="pwdc" class="col pf-form" novalidate><input type="hidden" name="id" value="${d.id}">${fi("pwdc", "why", "Why you are declining (shared with the proposer)", { type: "textarea", rows: 3, req: true, max: 1000 })}${banner("info", "", "Declining does not affect your Circles, Rope Teams, tasks or evidence. The proposer can propose something else.")}<div class="actions">${B("Cancel", "closeM")}<button class="btn btn-d" type="submit">Decline pathway</button></div></form>`,
+      `<form data-f="pwdc" class="col pf-form" novalidate><input type="hidden" name="id" value="${d.id}">${fi("pwdc", "why", "Why you are rejecting it (shared with the person who recommended it)", { type: "textarea", rows: 3, req: true, max: 1000 })}${banner("info", "", "Rejecting does not affect your Circles, Rope Teams, tasks or evidence. They can recommend something else.")}<div class="actions">${B("Cancel", "closeM")}<button class="btn btn-d" type="submit">Reject pathway</button></div></form>`,
   );
 };
 F.pwdc = (d) => {
@@ -3102,13 +3141,14 @@ F.pwdc = (d) => {
   p.state = "Declined";
   p.declineWhy = d.why.trim();
   p.declinedAt = now();
-  convoAdd(p, "comment", "Declined by the participant: " + p.declineWhy);
-  pwLog(p, "Declined by the participant — it will not become current");
-  notify(p.by, `${me().name} declined the pathway “${p.name}”: ${p.declineWhy}`, "pathway");
-  audit("Pathway declined by participant", p.id, p.declineWhy);
+  pwReqSet(p, "Rejected");
+  convoAdd(p, "comment", "Rejected by the participant: " + p.declineWhy);
+  pwLog(p, "Rejected by the participant — it will not become current");
+  notify(p.by, `${me().name} rejected the pathway “${p.name}”: ${p.declineWhy}`, "pathway");
+  audit("Pathway rejected by participant", p.id, p.declineWhy);
   UI.modal = null;
   clearF("pwdc");
-  toast("Declined. The proposer has been told why.");
+  toast("Rejected. The person who recommended it has been told why.");
   ok();
 };
 A.pwChange = (d) => {
@@ -3125,6 +3165,7 @@ F.pwc = (d) => {
   p.state = "Draft";
   p.changeReq = d.why;
   p.partChange = true;
+  pwReqSet(p, "Changes requested");
   convoAdd(p, "clarify", d.why.trim());
   notify(
     p.by,
@@ -3144,7 +3185,7 @@ A.pwRevise = (d) => {
   modal(
     "Revise and re-propose",
     () =>
-      `<form data-f="pwv" class="col pf-form" novalidate>${errSum("pwv")}<input type="hidden" name="id" value="${p.id}">${p.changeReq ? banner("warn", "Change requested", h(p.changeReq)) : ""}${pwStepFields("pwv")}${fi("pwv", "note", "What you changed", { req: true })}${banner("info", "", pwCustom(p) ? "Custom pathways go back to a Reviewer before the participant sees them." : "If the revised steps stay within the template’s adaptation rules, it goes straight back to the participant to accept; otherwise a Reviewer approves it first.")}<div class="actions"><span></span><button class="btn btn-p" type="submit">Re-recommend</button></div></form>`, true,
+      `<form data-f="pwv" class="col pf-form" novalidate>${errSum("pwv")}<input type="hidden" name="id" value="${p.id}">${p.changeReq ? banner("warn", "Change requested", h(p.changeReq)) : ""}${pwStepFields("pwv")}${fi("pwv", "note", "What you changed", { req: true })}${banner("info", "", pwDirect(p) ? "It goes straight back to " + nm(p.pid) + " to accept or reject." : pwCustom(p) ? "Custom pathways go back to a Reviewer before the participant sees them." : "If the revised steps stay within the template’s adaptation rules, it goes straight back to the participant to accept; otherwise a Reviewer approves it first.")}<div class="actions"><span></span><button class="btn btn-p" type="submit">Re-recommend</button></div></form>`, true,
   );
 };
 // Steps read back from the editor keep the template wording of a step whose title was reworded (minor change).
@@ -3160,10 +3201,11 @@ F.pwv = (d) => {
   if (!pwCustom(p)) p.mode = PW_MODE[route];
   p.changeReq = "";
   convoAdd(p, "resubmit", d.note.trim());
-  if (pwSkipsReview(route)) {
+  if (pwSends(p, route)) {
     p.state = PW_REC;
+    pwReqSet(p, "Recommended");
     pwLog(p, "Revised and re-recommended to the participant (" + p.mode + ")");
-    notify(p.pid, `${me().name} revised and re-recommended “${p.name}”. Accept, ask for changes or decline.`, "pathway");
+    notify(p.pid, `${me().name} revised and re-recommended “${p.name}”. Review it, then accept or reject it.`, "pathway");
   } else {
     pwLog(p, "Revised and sent for Reviewer approval (" + p.mode + ")");
     pwToQueue(p);
@@ -3339,7 +3381,7 @@ F.pwnv = (d) => {
   pwLog(p, `Proposed version ${p.ver} of “${old.name}”: ${p.reason}`);
   pwLog(old, `${me().name} proposed version ${p.ver}; this version stays active until ${P(old.pid).name} accepts it`);
   S.pathways.push(p);
-  if (pwSkipsReview(route)) notify(p.pid, `${me().name} proposes a changed version of “${p.name}”: ${p.reason}. Accept, ask for changes or decline.`, "pathway");
+  if (pwSends(p, route)) notify(p.pid, `${me().name} proposes a changed version of “${p.name}”: ${p.reason}. Accept or reject it, or ask for changes.`, "pathway");
   else pwToQueue(p);
   audit("Pathway new version proposed", p.id, "v" + p.ver + " of " + old.id);
   UI.modal = null;
@@ -3390,15 +3432,15 @@ A.pwActivity = (d) => {
       ["Created by", pwRoleLine(p)],
       p.reason && ["Why it was recommended", h(p.reason)],
       p.tpl && ["Template", h((byId("templates", p.tpl) || {}).name || "—") + " · version " + (p.tplVer || 1)],
-      ["Reviewer", p.reviewer ? nm(p.reviewer) : p.state === "Awaiting reviewer" ? "In the review queue — any authorised Reviewer" : pwCustom(p) ? "—" : "Not needed (approved template or allowed adaptation)"],
+      ["Reviewer", p.reviewer ? nm(p.reviewer) : p.state === "Awaiting reviewer" ? "In the review queue — any authorised Reviewer" : pwDirect(p) ? "Not needed — sent by a Facilitator / Circle Steward straight to the participant" : pwCustom(p) ? "—" : "Not needed (approved template or allowed adaptation)"],
       ["Pathway state", pill(p.state === "Draft" && p.changeReq ? "Change requested" : p.state) + (p.ver > 1 ? " · version " + p.ver : "")],
       ["Participant acceptance", pwAccPill(p) + (p.acceptedAt ? " · " + fmt(p.acceptedAt) : p.declinedAt ? " · " + fmt(p.declinedAt) : "")],
       p.prev && ["Replaces", h((byId("pathways", p.prev) || {}).name || p.prev) + " (earlier version)"],
       Object.keys(p.facts || {}).length && ["Condition answers", Object.entries(p.facts).map(([k, a]) => `${h((PW_FACTS[k] || {}).label || (/^ask\d+$/.test(k) && p.steps[+k.slice(3)] ? p.steps[+k.slice(3)].cond : k))}: <b>${a.v === "yes" ? "Yes" : "No"}</b> (${nm(a.by)}, ${fmt(a.at)})`).join("<br>")],
       p.changeReq && p.state === "Draft" && ["Open change request", h(p.changeReq)],
       ["Recommended and accepted", pwWho(p)],
-      p.state === "Declined" && ["Declined by the participant", h(p.declineWhy || "") + (p.declinedAt ? " · " + fmt(p.declinedAt) : "")],
-    ])}</section><section class="pw-act-sec" aria-labelledby="pwa_s"><div class="pw-act-sh"><h3 class="h3" id="pwa_s">Steps and rules</h3>${pwLegend()}</div><ol class="pw-sds">${steps.join("")}</ol></section><section class="pw-act-sec" aria-labelledby="pwa_c"><h3 class="h3" id="pwa_c">Conversation and activity</h3><p class="cap">Messages between the pathway owner, the Programme Administrator and the Steward, with every review step. Oldest first. The same conversation is in Messages.</p>${convoHtml("pathway", p)}</section></div>`;
+      p.state === "Declined" && ["Rejected by the participant", h(p.declineWhy || "") + (p.declinedAt ? " · " + fmt(p.declinedAt) : "")],
+    ])}</section><section class="pw-act-sec" aria-labelledby="pwa_s"><div class="pw-act-sh"><h3 class="h3" id="pwa_s">Steps and rules</h3>${pwLegend()}</div><ol class="pw-sds">${steps.join("")}</ol></section><section class="pw-act-sec" aria-labelledby="pwa_c"><h3 class="h3" id="pwa_c">Conversation and activity</h3><p class="cap">Messages between the pathway owner, the Organization Admin and the Steward, with every review step. Oldest first. The same conversation is in Messages.</p>${convoHtml("pathway", p)}</section></div>`;
   }, true);
 };
 // ---------- ASK PHOENIX (F09, class A) ----------

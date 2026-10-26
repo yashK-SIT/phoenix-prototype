@@ -1,169 +1,340 @@
 // ---------- CORE ----------
-const KEY = 'phoenix-alpha-proto-v5';
+const KEY = "phoenix-alpha-proto-v5";
 let S = null;
 function save() {
   try {
     localStorage.setItem(KEY, JSON.stringify(S));
   } catch (e) {}
 }
-const UI = { route: 'login', p: {}, tab: {}, form: {}, err: {}, modal: null, toast: null, q: {}, pre: null };
-const h = s =>
-  String(s ?? '').replace(
+const UI = {
+  route: "login",
+  p: {},
+  tab: {},
+  form: {},
+  err: {},
+  modal: null,
+  toast: null,
+  q: {},
+  pre: null,
+};
+const h = (s) =>
+  String(s ?? "").replace(
     /[&<>"']/g,
-    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
+    (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        c
+      ],
   );
-const uid = p => p + ++S.seq;
+const uid = (p) => p + ++S.seq;
 const now = () => new Date().toISOString();
 const today = () => new Date().toISOString().slice(0, 10);
-const fmt = s => {
-  if (!s) return '—';
-  const d = new Date(s.length <= 10 ? s + 'T00:00:00' : s);
+const fmt = (s) => {
+  if (!s) return "—";
+  const d = new Date(s.length <= 10 ? s + "T00:00:00" : s);
   if (isNaN(d)) return h(s);
   return (
-    d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) +
-    (s.length > 10 ? ' ' + d.toTimeString().slice(0, 5) : '')
+    d.toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    }) + (s.length > 10 ? " " + d.toTimeString().slice(0, 5) : "")
   );
 };
-const byId = (arr, id) => (S[arr] || []).find(x => x.id === id);
-const P = id => S.people.find(p => p.id === id) || { name: 'Unknown', display: '?' };
-const nm = id => h(P(id).name);
-const ini = id => h((P(id).display || P(id).name || '?')[0]);
+// An organization and its context are one thing with one name: the context always shows the organization's name,
+// so renaming the organization renames it everywhere. Run at start-up and whenever an organization is saved.
+const syncCtxNames = () =>
+  S.contexts.forEach((c) => {
+    const o = c.org && S.orgs.find((x) => x.id === c.org);
+    if (o) c.name = o.name;
+  });
+const byId = (arr, id) => (S[arr] || []).find((x) => x.id === id);
+const P = (id) =>
+  S.people.find((p) => p.id === id) || { name: "Unknown", display: "?" };
+const nm = (id) => h(P(id).name);
+const ini = (id) => h((P(id).display || P(id).name || "?")[0]);
 const ROLE = {
-  P: 'Participant',
-  F: 'Facilitator / Steward',
-  M: 'Mentor / Advisor',
-  C: 'Partner / Collaborator',
-  O: 'Organization Representative',
-  S: 'Sponsor / Funder',
-  A: 'Programme Administrator',
-  T: 'Platform Administrator',
+  P: "Participant",
+  F: "Facilitator / Steward",
+  M: "Mentor",
+  C: "Collaborator",
+  S: "Sponsor",
+  A: "Organization Admin",
+  T: "Platform Administrator",
 };
 // Seeded defaults only. At run time roles live in S.roles (managed in Role management) and ROLE mirrors their names.
-// Onboarding route C (Build-Freeze review): only institution and administration roles wait for approval.
+// Onboarding route C (Build-Freeze review): only the Organization Admin role waits for approval. An organization has
+// one administrative role: the Organization Representative was merged into it.
 // Participant, Mentor, Facilitator and Partner activate normally; specialist bundles are approved separately.
-const SENSITIVE_ROLES = ['O', 'A'];
+const SENSITIVE_ROLES = ["A"];
 // Default role × module matrix (Section 10, Table 30), used to seed S.roles and to reset a seeded role.
 const MX = {
-  home: { P: 'O', F: 'O', M: 'O', C: 'O', O: 'O', S: 'O', A: 'O', T: 'O' },
-  identity: { P: 'O', F: 'C', M: '-', C: 'C', O: 'M', S: 'O', A: 'M', T: 'M' },
-  agreements: { P: 'O', F: 'O', M: 'O', C: 'O', O: 'O', S: 'O', A: 'M', T: 'T' },
-  profile: { P: 'O', F: 'V', M: 'V', C: 'O', O: 'A', S: '-', A: 'M', T: '-' },
-  pathways: { P: 'OC', F: 'CR', M: 'C', C: 'C', O: 'R', S: '-', A: 'M', T: '-' },
-  aireq: { P: 'C', F: 'V', M: '-', C: '-', O: '-', S: '-', A: '-', T: '-' },
-  projects: { P: 'C', F: 'R', M: '-', C: '-', O: 'V', S: '-', A: 'M', T: '-' },
-  circles: { P: 'C', F: 'M', M: 'C', C: 'C', O: 'M', S: '-', A: 'VM', T: '-' },
-  voting: { P: 'C', F: 'C', M: 'C', C: 'C', O: '-', S: '-', A: '-', T: '-' },
-  ropeteams: { P: 'C', F: 'C', M: 'C', C: '-', O: 'M', S: '-', A: 'VM', T: '-' },
-  rooms: { P: 'C', F: 'M', M: 'C', C: 'M', O: 'M', S: '-', A: 'M', T: '-' },
-  opportunities: { P: 'C', F: 'R', M: 'V', C: 'C', O: 'C', S: '-', A: 'M', T: '-' },
-  matching: { P: 'C', F: 'R', M: 'V', C: 'C', O: '-', S: '-', A: 'V', T: '-' },
-  repository: { P: 'C', F: 'C', M: 'C', C: 'C', O: 'V', S: '-', A: 'M', T: 'T' },
-  evidence: { P: 'C', F: 'R', M: 'V', C: 'C', O: 'A', S: 'A', A: 'M', T: 'T' },
-  harvest: { P: 'C', F: 'R', M: 'C', C: 'C', O: 'A', S: 'A', A: 'C', T: '-' },
-  ai: { P: 'C', F: 'C', M: 'C', C: 'C', O: 'C', S: 'C', A: 'M', T: 'T' },
-  payments: { P: 'O', F: '-', M: '-', C: '-', O: 'C', S: 'C', A: 'M', T: 'T' },
-  funding: { P: '-', F: '-', M: '-', C: '-', O: '-', S: 'V', A: 'V', T: '-' },
-  metrics: { P: 'O', F: 'V', M: 'V', C: 'V', O: 'A', S: 'A', A: 'M', T: 'T' },
-  governance: { P: 'C', F: 'R', M: 'C', C: 'C', O: 'C', S: 'C', A: 'M', T: 'C' },
-  admin: { P: '-', F: '-', M: '-', C: '-', O: 'M', S: '-', A: 'M', T: 'M' },
-  platform: { P: '-', F: '-', M: '-', C: '-', O: '-', S: '-', A: '-', T: 'M' },
+  home: { P: "O", F: "O", M: "O", C: "O", S: "O", A: "O", T: "O" },
+  identity: { P: "O", F: "C", M: "-", C: "C", S: "O", A: "M", T: "M" },
+  agreements: {
+    P: "O",
+    F: "O",
+    M: "O",
+    C: "O",
+   
+    S: "O",
+    A: "M",
+    T: "T",
+  },
+  profile: { P: "O", F: "V", M: "V", C: "O", S: "-", A: "M", T: "-" },
+  pathways: {
+    P: "OC",
+    F: "CR",
+    M: "C",
+    C: "C",
+   
+    S: "-",
+    A: "M",
+    T: "-",
+  },
+  aireq: { P: "C", F: "V", M: "-", C: "-", S: "-", A: "-", T: "-" },
+  projects: { P: "C", F: "R", M: "-", C: "-", S: "-", A: "M", T: "-" },
+  circles: { P: "C", F: "M", M: "C", C: "C", S: "-", A: "VM", T: "-" },
+  voting: { P: "C", F: "C", M: "C", C: "C", S: "-", A: "-", T: "-" },
+  ropeteams: {
+    P: "C",
+    F: "C",
+    M: "C",
+    C: "-",
+   
+    S: "-",
+    A: "VM",
+    T: "-",
+  },
+  rooms: { P: "C", F: "M", M: "C", C: "M", S: "-", A: "M", T: "-" },
+  opportunities: {
+    P: "C",
+    F: "R",
+    M: "V",
+    C: "C",
+   
+    S: "-",
+    A: "M",
+    T: "-",
+  },
+  matching: { P: "C", F: "R", M: "V", C: "C", S: "-", A: "V", T: "-" },
+  repository: {
+    P: "C",
+    F: "C",
+    M: "C",
+    C: "C",
+   
+    S: "-",
+    A: "M",
+    T: "T",
+  },
+  evidence: { P: "C", F: "R", M: "V", C: "C", S: "A", A: "M", T: "T" },
+  harvest: { P: "C", F: "R", M: "C", C: "C", S: "A", A: "C", T: "-" },
+  ai: { P: "C", F: "C", M: "C", C: "C", S: "C", A: "M", T: "T" },
+  payments: { P: "O", F: "-", M: "-", C: "-", S: "C", A: "M", T: "T" },
+  funding: { P: "-", F: "-", M: "-", C: "-", S: "V", A: "V", T: "-" },
+  metrics: { P: "O", F: "V", M: "V", C: "V", S: "A", A: "M", T: "T" },
+  governance: {
+    P: "C",
+    F: "R",
+    M: "C",
+    C: "C",
+   
+    S: "C",
+    A: "M",
+    T: "C",
+  },
+  admin: { P: "-", F: "-", M: "-", C: "-", S: "-", A: "M", T: "M" },
+  platform: { P: "-", F: "-", M: "-", C: "-", S: "-", A: "-", T: "M" },
 };
 const LV = {
-  O: 'own records only',
-  C: 'create / contribute',
-  R: 'review / approve',
-  V: 'view within scope',
-  A: 'approved aggregate only',
-  M: 'manage / configure',
-  T: 'technical administration only (no content)',
-  '-': 'no access',
+  O: "own records only",
+  C: "create / contribute",
+  R: "review / approve",
+  V: "view within scope",
+  A: "approved aggregate only",
+  M: "manage / configure",
+  T: "technical administration only (no content)",
+  "-": "no access",
 };
-const me = () => S.people.find(p => p.id === S.session?.pid);
-const asg = () => S.assign.find(a => a.id === S.session?.aid);
+const me = () => S.people.find((p) => p.id === S.session?.pid);
+const asg = () => S.assign.find((a) => a.id === S.session?.aid);
 // Each role record has a base: the predefined role whose workflow rules it follows.
 // role() returns that base, so every workflow rule works for seeded and custom roles alike;
 // roleId() is the role actually assigned, and its own module permissions decide what can be opened.
-const roleRec = id => (S && S.roles ? S.roles.find(r => r.id === id) : null);
-const roleBase = id => (roleRec(id) || {}).base || id;
+const roleRec = (id) =>
+  S && S.roles ? S.roles.find((r) => r.id === id) : null;
+const roleBase = (id) => (roleRec(id) || {}).base || id;
 const roleId = () => asg()?.role;
 const role = () => roleBase(roleId());
-const roleNeedsApproval = id => (roleRec(id) ? !!roleRec(id).approval : SENSITIVE_ROLES.includes(id));
+const roleNeedsApproval = (id) =>
+  roleRec(id) ? !!roleRec(id).approval : SENSITIVE_ROLES.includes(id);
+// Display name of a role in a context. The context's pack may rename a role (Mentor → Guru); the role key,
+// its permissions and its workflow rules stay the same. Without a pack (platform, signed out) the role's own name.
+const roleName = (id, c = ctxId()) => {
+  const pk =
+    S &&
+    S.packs &&
+    S.packs.find(
+      (p) => p.id === ((S.contexts || []).find((x) => x.id === c) || {}).pack,
+    );
+  return (
+    (pk && pk.roleNames && pk.roleNames[id]) ||
+    (roleRec(id) || {}).name ||
+    ROLE[id] ||
+    id
+  );
+};
+// ROLE mirrors the names shown in the active context; render() re-syncs it, so a context switch renames roles.
 function syncRoles() {
-  (S.roles || []).forEach(r => (ROLE[r.id] = r.name));
+  (S.roles || []).forEach((r) => (ROLE[r.id] = roleName(r.id)));
 }
 const ctxId = () => asg()?.ctx;
-const ctx = () => S.contexts.find(c => c.id === ctxId());
-const pack = () => S.packs.find(p => p.id === ctx()?.pack) || S.packs[0];
+const ctx = () => S.contexts.find((c) => c.id === ctxId());
+const pack = () => S.packs.find((p) => p.id === ctx()?.pack) || S.packs[0];
 // "Action Workspace" is the canonical concept; a pack may display its own label (Action Room, Project Room …).
-const WL = () => (S && S.packs && pack() && pack().labels && pack().labels.workspace) || 'Action Workspace';
-const lvl = m => {
+const WL = () =>
+  (S && S.packs && pack() && pack().labels && pack().labels.workspace) ||
+  "Action Workspace";
+const lvl = (m) => {
   const r = roleRec(roleId());
-  return (r && r.perms ? r.perms[m] : (MX[m] || {})[roleId()]) || '-';
+  return (r && r.perms ? r.perms[m] : (MX[m] || {})[roleId()]) || "-";
 };
 const can = (m, need) => {
   const l = lvl(m);
-  if (l === '-' || l === 'T') return false;
+  if (l === "-" || l === "T") return false;
   if (!need) return true;
-  return need.split('').some(n => l.includes(n));
+  return need.split("").some((n) => l.includes(n));
 };
-const tech = m => lvl(m).includes('T') || (lvl(m).includes('M') && role() === 'T');
-const hasB = b => (asg()?.bundles || []).includes(b);
-const mine = pid => pid === S.session?.pid;
+const tech = (m) =>
+  lvl(m).includes("T") || (lvl(m).includes("M") && role() === "T");
+const hasB = (b) => (asg()?.bundles || []).includes(b);
+const mine = (pid) => pid === S.session?.pid;
 const myId = () => S.session?.pid;
 // BF-02: the required agreement is separate from five optional purposes. Each purpose is Granted, Declined or
 // Withdrawn on its own; declining or withdrawing never blocks the manual core (pathway, Circles, tasks, evidence).
 // Exception (WSS clarification 5): a pathway step configured to need a purpose shows Blocked with the reason.
 // "matching" is not one of the five purposes: it is the person's matching-visibility choice used by Match Briefs.
 const OPT_PURPOSES = [
-  ['ai', 'AI processing', 'Ask PHOENIX and AI drafts that use your own records. Every AI output stays a draft until a person accepts it.'],
-  ['research', 'Research and evaluation', 'De-identified activity and reflections used to evaluate and improve the programme.'],
-  ['xorg', 'Cross-organisation sharing', 'Named items shared with people in other organisations you collaborate with.'],
-  ['public', 'Public or funder release', 'Approved stories or evidence released to funders or the public. Each release still needs your approval.'],
-  ['ext', 'External-system exchange', 'Exchange with connected external systems, such as a learning platform.'],
+  [
+    "ai",
+    "AI processing",
+    "Ask PHOENIX and AI drafts that use your own records. Every AI output stays a draft until a person accepts it.",
+  ],
+  [
+    "research",
+    "Research and evaluation",
+    "De-identified activity and reflections used to evaluate and improve the programme.",
+  ],
+  [
+    "xorg",
+    "Cross-organisation sharing",
+    "Named items shared with people in other organisations you collaborate with.",
+  ],
+  [
+    "public",
+    "Public or funder release",
+    "Approved stories or evidence released to funders or the public. Each release still needs your approval.",
+  ],
+  [
+    "ext",
+    "External-system exchange",
+    "Exchange with connected external systems, such as a learning platform.",
+  ],
 ];
-const consent = (pid = myId(), k = 'ai') => {
+const consent = (pid = myId(), k = "ai") => {
   const c = (S.consents || {})[pid] || {};
-  return c[k] || 'Not asked';
+  return c[k] || "Not asked";
 };
-const ent = pid => S.ents.filter(e => e.pid === pid && e.ctx === ctxId() && ['Active', 'Grace'].includes(e.state));
-const inCtx = o => !o.ctx || o.ctx === ctxId();
-const ctxName = id => (S.contexts.find(c => c.id === id) || {}).name || '—';
+const ent = (pid) =>
+  S.ents.filter(
+    (e) =>
+      e.pid === pid &&
+      e.ctx === ctxId() &&
+      ["Active", "Grace"].includes(e.state),
+  );
+const inCtx = (o) => !o.ctx || o.ctx === ctxId();
+const ctxName = (id) => (S.contexts.find((c) => c.id === id) || {}).name || "—";
 // Short label for a context in chips and notices ("Excelsior", "Riverside").
-const ctxShort = id => ctxName(id).split(/\s+/)[0];
-const asgLabel = a => (a ? `${ROLE[a.role] || a.role} · ${ctxName(a.ctx)}` : '');
+const ctxShort = (id) => ctxName(id).split(/\s+/)[0];
+const asgLabel = (a) =>
+  a ? `${roleName(a.role, a.ctx)} · ${ctxName(a.ctx)}` : "";
 // Agreement versions take effect on their effective date. A version published for a future date is shown as
 // upcoming and does not gate anything early (Build-Freeze review: "future version gated early").
 const agrFor = (ctxid, base) =>
   S.agreements
-    .filter(g => g.ctx === ctxid && g.roles.includes(base) && (g.status === 'Active' || (g.status === 'Scheduled' && g.effective <= today())))
+    .filter(
+      (g) =>
+        g.ctx === ctxid &&
+        g.roles.includes(base) &&
+        (g.status === "Active" ||
+          (g.status === "Scheduled" && g.effective <= today())),
+    )
     .sort((a, b) => b.ver - a.ver)[0];
 const agrUpcoming = (ctxid, base) =>
-  S.agreements.filter(g => g.ctx === ctxid && g.roles.includes(base) && g.status === 'Scheduled' && g.effective > today()).sort((a, b) => b.ver - a.ver)[0];
+  S.agreements
+    .filter(
+      (g) =>
+        g.ctx === ctxid &&
+        g.roles.includes(base) &&
+        g.status === "Scheduled" &&
+        g.effective > today(),
+    )
+    .sort((a, b) => b.ver - a.ver)[0];
 const reaccept = () => {
   const a = asg();
   if (!a) return null;
   const g = agrFor(a.ctx, roleBase(a.role));
   if (!g) return null;
-  return S.accepts.some(x => x.pid === a.pid && x.ag === g.id) ? null : g;
+  return S.accepts.some((x) => x.pid === a.pid && x.ag === g.id) ? null : g;
 };
 // While a material agreement change waits for re-acceptance, only participation is paused. Own records, consent,
 // correction, appeal, export, help and concern routes stay open (onboarding route E).
-const RIGHTS_ROUTES = ['privacy', 'profile', 'resources', 'incidents', 'help', 'messages'];
-function audit(a, o, d, r = 'ok') {
-  S.audit.unshift({ at: now(), by: myId() || 'anonymous', ctx: ctxId(), a, o, d, r });
+const RIGHTS_ROUTES = [
+  "privacy",
+  "profile",
+  "resources",
+  "incidents",
+  "help",
+  "messages",
+];
+function audit(a, o, d, r = "ok") {
+  S.audit.unshift({
+    at: now(),
+    by: myId() || "anonymous",
+    ctx: ctxId(),
+    a,
+    o,
+    d,
+    r,
+  });
 }
 // Every notice names the role assignment (role + context) it belongs to. By default that is the recipient's active
 // assignment in the context where the action happened; opening a notice for another assignment needs a safe switch.
 function notify(pid, t, r, p, aid) {
   const c = ctxId();
-  const mine = S.assign.filter(a => a.pid === pid);
-  const a = (aid && mine.find(x => x.id === aid)) || mine.find(x => x.ctx === c && x.status === 'Active') || mine.find(x => x.ctx === c) || mine.find(x => x.status === 'Active') || mine[0];
-  S.notifs.unshift({ id: uid('n'), pid, t, r, p: p || {}, read: false, at: today(), aid: a ? a.id : null, ctx: a ? a.ctx : c });
+  const mine = S.assign.filter((a) => a.pid === pid);
+  const a =
+    (aid && mine.find((x) => x.id === aid)) ||
+    mine.find((x) => x.ctx === c && x.status === "Active") ||
+    mine.find((x) => x.ctx === c) ||
+    mine.find((x) => x.status === "Active") ||
+    mine[0];
+  S.notifs.unshift({
+    id: uid("n"),
+    pid,
+    t,
+    r,
+    p: p || {},
+    read: false,
+    at: today(),
+    aid: a ? a.id : null,
+    ctx: a ? a.ctx : c,
+  });
 }
 // The assignment a notice belongs to (older notices without one count as the current assignment).
-const notifAsg = n => (n.aid && S.assign.find(a => a.id === n.aid)) || null;
-const notifHere = n => !n.aid || n.aid === S.session?.aid;
-function toast(t, k = 'ok') {
+const notifAsg = (n) => (n.aid && S.assign.find((a) => a.id === n.aid)) || null;
+const notifHere = (n) => !n.aid || n.aid === S.session?.aid;
+function toast(t, k = "ok") {
   UI.toast = { t, k };
   clearTimeout(UI._tt);
   // Keep what the person has typed in an open form: this re-render is passive, so snapshot the fields first.
@@ -174,20 +345,20 @@ function toast(t, k = 'ok') {
   }, 4200);
 }
 function deny(why, obj) {
-  audit('Access denied', obj || UI.route, why, 'denied');
-  toast('Not permitted: ' + why, 'err');
+  audit("Access denied", obj || UI.route, why, "denied");
+  toast("Not permitted: " + why, "err");
   render();
   return false;
 }
 function go(r, p = {}) {
   // Notifications and Ask PHOENIX are panels over the current screen, not pages.
-  if (r === 'notifications' || r === 'ask') {
+  if (r === "notifications" || r === "ask") {
     UI.modal = null;
-    UI.panel = r === 'ask' ? 'ask' : 'notif';
+    UI.panel = r === "ask" ? "ask" : "notif";
     render();
     return;
   }
-  if (UI.panel === 'notif' || UI.panel === 'user') UI.panel = null;
+  if (UI.panel === "notif" || UI.panel === "user") UI.panel = null;
   if (UI.drawer) UI.drawer = false;
   UI.route = r;
   UI.p = p;
@@ -204,112 +375,113 @@ const ic = (n, s = 18) =>
   `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] || ICONS.info}</svg>`;
 // ---- small components
 const SC = {
-  Active: 'p-teal',
-  Current: 'p-teal',
-  Approved: 'p-green',
-  Accepted: 'p-green',
-  Granted: 'p-teal',
-  Released: 'p-navy',
-  'Summary accepted': 'p-green',
-  Achieved: 'p-green',
-  Done: 'p-green',
-  Completed: 'p-green',
-  Introduced: 'p-green',
-  Healthy: 'p-green',
-  Successful: 'p-green',
-  Resolved: 'p-green',
-  Mitigated: 'p-teal',
-  Confirmed: 'p-teal',
-  Committed: 'p-navy',
-  Draft: 'p-grey',
-  Declined: 'p-grey',
-  Closed: 'p-grey',
-  Archived: 'p-grey',
-  Superseded: 'p-grey',
-  Expired: 'p-grey',
-  Withdrawn: 'p-red',
-  Revoked: 'p-red',
-  Rejected: 'p-red',
-  Quarantined: 'p-red',
-  Escalated: 'p-red',
-  Suspended: 'p-red',
-  Failed: 'p-red',
-  Refunded: 'p-grey',
-  Cancelled: 'p-grey',
-  Insufficient: 'p-red',
-  Restricted: 'p-red',
-  Submitted: 'p-navy',
-  'In review': 'p-amber',
-  'In steward review': 'p-amber',
-  'Under review': 'p-amber',
-  'Clarification requested': 'p-amber',
-  'Needs Revision': 'p-amber',
-  'Awaiting consent': 'p-amber',
-  Pending: 'p-amber',
-  'Pending role approval': 'p-amber',
-  'Re-acceptance required': 'p-amber',
-  Grace: 'p-amber',
-  'On hold': 'p-red',
-  'Summary submitted': 'p-amber',
-  'Proposed to participant': 'p-amber',
-  Recommended: 'p-amber',
-  'Change requested': 'p-amber',
-  Proposed: 'p-amber',
-  Open: 'p-amber',
-  New: 'p-navy',
-  'In Progress': 'p-amber',
-  Assigned: 'p-navy',
-  Resent: 'p-navy',
-  'In progress': 'p-amber',
-  'To do': 'p-grey',
-  'Not started': 'p-grey',
-  Paused: 'p-red',
-  'Paused/Repair': 'p-red',
-  'Pending approval': 'p-amber',
-  Reported: 'p-amber',
-  Triaged: 'p-amber',
-  'Decision recorded': 'p-navy',
-  Appealed: 'p-amber',
-  Reopened: 'p-amber',
-  Reviewed: 'p-navy',
-  'In Implementation': 'p-navy',
-  'Pending Review': 'p-amber',
-  'Final review': 'p-amber',
-  'Changes requested': 'p-amber',
-  Room: 'p-navy',
-  Circle: 'p-purple',
-  'Rope Team': 'p-teal',
-  Invited: 'p-amber',
-  Configured: 'p-teal',
-  Degraded: 'p-red',
-  Unavailable: 'p-red',
-  'Not approved': 'p-grey',
-  'Closed — Tie: returned to Shared': 'p-amber',
-  'Closed — No quorum': 'p-amber',
+  Active: "p-teal",
+  Current: "p-teal",
+  Approved: "p-green",
+  Accepted: "p-green",
+  Granted: "p-teal",
+  Released: "p-navy",
+  "Summary accepted": "p-green",
+  Achieved: "p-green",
+  Done: "p-green",
+  Completed: "p-green",
+  Introduced: "p-green",
+  Healthy: "p-green",
+  Successful: "p-green",
+  Resolved: "p-green",
+  Mitigated: "p-teal",
+  Confirmed: "p-teal",
+  Committed: "p-navy",
+  Draft: "p-grey",
+  Declined: "p-grey",
+  Closed: "p-grey",
+  Archived: "p-grey",
+  Superseded: "p-grey",
+  Expired: "p-grey",
+  Withdrawn: "p-red",
+  Revoked: "p-red",
+  Rejected: "p-red",
+  Quarantined: "p-red",
+  Escalated: "p-red",
+  Suspended: "p-red",
+  Failed: "p-red",
+  Refunded: "p-grey",
+  Cancelled: "p-grey",
+  Insufficient: "p-red",
+  Restricted: "p-red",
+  Submitted: "p-navy",
+  "In review": "p-amber",
+  "In steward review": "p-amber",
+  "Under review": "p-amber",
+  "Clarification requested": "p-amber",
+  "Needs Revision": "p-amber",
+  "Awaiting consent": "p-amber",
+  Pending: "p-amber",
+  "Pending role approval": "p-amber",
+  "Re-acceptance required": "p-amber",
+  Grace: "p-amber",
+  "On hold": "p-red",
+  "Summary submitted": "p-amber",
+  "Proposed to participant": "p-amber",
+  Recommended: "p-amber",
+  "Change requested": "p-amber",
+  Proposed: "p-amber",
+  Open: "p-amber",
+  New: "p-navy",
+  "In Progress": "p-amber",
+  Assigned: "p-navy",
+  Resent: "p-navy",
+  "In progress": "p-amber",
+  "To do": "p-grey",
+  "Not started": "p-grey",
+  Paused: "p-red",
+  "Paused/Repair": "p-red",
+  "Pending approval": "p-amber",
+  Reported: "p-amber",
+  Triaged: "p-amber",
+  "Decision recorded": "p-navy",
+  Appealed: "p-amber",
+  Reopened: "p-amber",
+  Reviewed: "p-navy",
+  "In Implementation": "p-navy",
+  "Pending Review": "p-amber",
+  "Final review": "p-amber",
+  "Changes requested": "p-amber",
+  Room: "p-navy",
+  Circle: "p-purple",
+  "Rope Team": "p-teal",
+  Invited: "p-amber",
+  Configured: "p-teal",
+  Degraded: "p-red",
+  Unavailable: "p-red",
+  "Not approved": "p-grey",
+  "Closed — Tie: returned to Shared": "p-amber",
+  "Closed — No quorum": "p-amber",
 };
 const pill = (t, c) =>
-  `<span class="pill ${c || SC[t] || (String(t).startsWith('Closed — Approved') ? 'p-green' : String(t).startsWith('Closed') ? 'p-grey' : 'p-grey')}">${h(t)}</span>`;
-const attr = o =>
+  `<span class="pill ${c || SC[t] || (String(t).startsWith("Closed — Approved") ? "p-green" : String(t).startsWith("Closed") ? "p-grey" : "p-grey")}">${h(t)}</span>`;
+const attr = (o) =>
   Object.entries(o || {})
     .map(([k, v]) => ` data-${k}="${h(v)}"`)
-    .join('');
-const B = (label, a, data, cls = 'btn-s btn-sm', extra = '') =>
+    .join("");
+const B = (label, a, data, cls = "btn-s btn-sm", extra = "") =>
   `<button type="button" class="btn ${cls}" data-a="${a}"${attr(data)} ${extra}>${label}</button>`;
-const L = (label, r, p, cls = 'lnk') => `<a href="#" class="${cls}" data-a="go" data-r="${r}"${attr(p)}>${label}</a>`;
-const card = (title, sub, body, right = '', cls = '') =>
-  `<section class="card ${cls}">${title || sub || right ? `<div class="card-h"><div>${title ? `<h2 class="h2">${title}</h2>` : ''}${sub ? `<p class="cap">${sub}</p>` : ''}</div><div class="row wrap">${right}</div></div>` : ''}${body}</section>`;
+const L = (label, r, p, cls = "lnk") =>
+  `<a href="#" class="${cls}" data-a="go" data-r="${r}"${attr(p)}>${label}</a>`;
+const card = (title, sub, body, right = "", cls = "") =>
+  `<section class="card ${cls}">${title || sub || right ? `<div class="card-h"><div>${title ? `<h2 class="h2">${title}</h2>` : ""}${sub ? `<p class="cap">${sub}</p>` : ""}</div><div class="row wrap">${right}</div></div>` : ""}${body}</section>`;
 // Empty state: says what is missing and what to do next, aligned with the content it replaces.
-const empty = (icon, title, text, act = '') =>
-  `<div class="empty"><span class="empty-ic" aria-hidden="true">${ic(icon, 18)}</span><div><b>${title}</b>${text ? `<p>${text}</p>` : ''}${act ? `<div class="row wrap" style="gap:8px">${act}</div>` : ''}</div></div>`;
+const empty = (icon, title, text, act = "") =>
+  `<div class="empty"><span class="empty-ic" aria-hidden="true">${ic(icon, 18)}</span><div><b>${title}</b>${text ? `<p>${text}</p>` : ""}${act ? `<div class="row wrap" style="gap:8px">${act}</div>` : ""}</div></div>`;
 const banner = (k, title, text, icon) =>
-  `<div class="banner b-${k}" ${k === 'err' ? 'role="alert"' : 'role="status"'}>${ic(icon || { err: 'alert', warn: 'alert', ok: 'check', info: 'info', ai: 'sparkle' }[k])}<div>${title ? `<div class="bt">${title}</div>` : ''}${text ? `<p>${text}</p>` : ''}</div></div>`;
-const table = (cols, rows, emptyMsg = 'Nothing to show.') =>
+  `<div class="banner b-${k}" ${k === "err" ? 'role="alert"' : 'role="status"'}>${ic(icon || { err: "alert", warn: "alert", ok: "check", info: "info", ai: "sparkle" }[k])}<div>${title ? `<div class="bt">${title}</div>` : ""}${text ? `<p>${text}</p>` : ""}</div></div>`;
+const table = (cols, rows, emptyMsg = "Nothing to show.") =>
   rows.length
-    ? `<div class="tblwrap"><table class="tbl"><thead><tr>${cols.map(c => `<th scope="col"${c === '' ? ' class="act"' : ''}>${c || '<span class="sr">Actions</span>'}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map((c, i) => `<td data-label="${h(String(cols[i]).replace(/<[^>]+>/g, ''))}"${cols[i] === '' ? (c === '' || c == null ? ' class="act act-empty"' : ' class="act"') : ''}>${c === '' || c == null ? '<span class="cap">—</span>' : c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
-    : `<div class="tbl-empty">${ic('inbox', 20)}<span>${emptyMsg}</span></div>`;
+    ? `<div class="tblwrap"><table class="tbl"><thead><tr>${cols.map((c) => `<th scope="col"${c === "" ? ' class="act"' : ""}>${c || '<span class="sr">Actions</span>'}</th>`).join("")}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c, i) => `<td data-label="${h(String(cols[i]).replace(/<[^>]+>/g, ""))}"${cols[i] === "" ? (c === "" || c == null ? ' class="act act-empty"' : ' class="act"') : ""}>${c === "" || c == null ? '<span class="cap">—</span>' : c}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`
+    : `<div class="tbl-empty">${ic("inbox", 20)}<span>${emptyMsg}</span></div>`;
 const tabs = (k, items, def) => {
   items = items.filter(Boolean);
-  const ids = items.map(i => i[0]);
+  const ids = items.map((i) => i[0]);
   let cur =
     UI.p.tab && ids.includes(UI.p.tab)
       ? UI.p.tab
@@ -319,129 +491,141 @@ const tabs = (k, items, def) => {
           ? def
           : ids[0];
   // Routes the sidebar links into section by section (NAV_TABK) show no tab bar: the menu is their one section nav.
-  if (Object.values(NAV_TABK).includes(k)) return { cur, html: '' };
+  if (Object.values(NAV_TABK).includes(k)) return { cur, html: "" };
   return {
     cur,
     html: `<div class="tabs" role="tablist" aria-label="Sections">${items
       .filter(Boolean)
       .map(
         ([id, l, c]) =>
-          `<button type="button" role="tab" aria-selected="${cur === id}" class="tab ${cur === id ? 'on' : ''}" data-a="tab" data-k="${k}" data-v="${id}">${l}${c != null ? `<span class="cnt">${c}</span>` : ''}</button>`,
+          `<button type="button" role="tab" aria-selected="${cur === id}" class="tab ${cur === id ? "on" : ""}" data-a="tab" data-k="${k}" data-v="${id}">${l}${c != null ? `<span class="cnt">${c}</span>` : ""}</button>`,
       )
-      .join('')}</div>`,
+      .join("")}</div>`,
   };
 };
-const head = (t, sub, right = '', crumbs) => {
+const head = (t, sub, right = "", crumbs) => {
   const badges = [];
-  right = (right || '').replace(/<span class="(?:pill|ai-tag)[^"]*">[\s\S]*?<\/span>/g, m => {
-    badges.push(m);
-    return '';
-  });
-  return `${crumbs ? crumbsHtml(crumbs) : ''}<div class="phead"><div class="phead-t"><div class="row wrap" style="gap:10px"><h1 class="h1">${t}</h1>${badges.join('')}</div>${sub ? `<p class="sub">${sub}</p>` : ''}</div>${right.trim() ? `<div class="phead-a">${right}</div>` : ''}</div>`;
+  right = (right || "").replace(
+    /<span class="(?:pill|ai-tag)[^"]*">[\s\S]*?<\/span>/g,
+    (m) => {
+      badges.push(m);
+      return "";
+    },
+  );
+  return `${crumbs ? crumbsHtml(crumbs) : ""}<div class="phead"><div class="phead-t"><div class="row wrap" style="gap:10px"><h1 class="h1">${t}</h1>${badges.join("")}</div>${sub ? `<p class="sub">${sub}</p>` : ""}</div>${right.trim() ? `<div class="phead-a">${right}</div>` : ""}</div>`;
 };
-const aiTag = t => `<span class="ai-tag">${ic('sparkle', 12)}${t || 'AI draft'}</span>`;
+const aiTag = (t) =>
+  `<span class="ai-tag">${ic("sparkle", 12)}${t || "AI draft"}</span>`;
 const money = (c, n) =>
-  `<span style="white-space:nowrap">${h(c || 'USD')} ${Number(n || 0).toLocaleString('en-US')}</span>`;
-const dueTag = (due, done) => (!done && due && due < today() ? ' ' + pill('Overdue', 'p-red') : '');
-const dl = pairs =>
+  `<span style="white-space:nowrap">${h(c || "USD")} ${Number(n || 0).toLocaleString("en-US")}</span>`;
+const dueTag = (due, done) =>
+  !done && due && due < today() ? " " + pill("Overdue", "p-red") : "";
+const dl = (pairs) =>
   `<dl class="kv2">${pairs
     .filter(Boolean)
     .map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`)
-    .join('')}</dl>`;
+    .join("")}</dl>`;
 // ---- review conversation: messages between whoever submitted something and the people reviewing it, shown
 // with the activity log, oldest first. Each object kind registers in CONVO:
 //   get(id) → object · acts(o) → [{at, by, t}] · role(o, pid) → label · post(o) → null or {kind, label}
 //   notify(o, kind) → tells the other parties.
 const CONVO = {};
 const CV_KIND = {
-  clarify: ['Clarification requested', 'p-amber'],
-  reply: ['Reply', 'p-navy'],
-  resubmit: ['Resubmitted', 'p-navy'],
-  reject: ['Rejected', 'p-red'],
-  approve: ['Approved', 'p-green'],
+  clarify: ["Clarification requested", "p-amber"],
+  reply: ["Reply", "p-navy"],
+  resubmit: ["Resubmitted", "p-navy"],
+  reject: ["Rejected", "p-red"],
+  approve: ["Approved", "p-green"],
 };
 const convoAdd = (o, kind, text) =>
-  (o.thread = o.thread || []).push({ id: uid('m'), at: now(), by: myId(), kind, text });
-const convoN = o => (o.thread || []).length;
+  (o.thread = o.thread || []).push({
+    id: uid("m"),
+    at: now(),
+    by: myId(),
+    kind,
+    text,
+  });
+const convoN = (o) => (o.thread || []).length;
 function convoHtml(kind, o) {
   const c = CONVO[kind];
-  const items = [...(o.thread || []).map(m => ({ ...m, msg: true })), ...c.acts(o)].sort((a, b) =>
-    String(a.at).localeCompare(String(b.at)),
-  );
+  const items = [
+    ...(o.thread || []).map((m) => ({ ...m, msg: true })),
+    ...c.acts(o),
+  ].sort((a, b) => String(a.at).localeCompare(String(b.at)));
   const pm = c.post(o);
   const list = items.length
     ? `<ol class="cv">${items
-        .map(x => {
+        .map((x) => {
           if (!x.msg)
-            return `<li class="cv-a">${ic('clock', 14)}<span class="cv-at">${h(x.t)}</span><span class="cap">${x.by ? nm(x.by) + ' · ' : ''}<time datetime="${h(x.at)}">${fmt(x.at)}</time></span></li>`;
+            return `<li class="cv-a">${ic("clock", 14)}<span class="cv-at">${h(x.t)}</span><span class="cap">${x.by ? nm(x.by) + " · " : ""}<time datetime="${h(x.at)}">${fmt(x.at)}</time></span></li>`;
           const mine = x.by === myId();
           const lab = c.role(o, x.by);
           const k = CV_KIND[x.kind];
-          return `<li class="cv-m${mine ? ' mine' : ''}"><span class="av">${ini(x.by)}</span><div class="cv-b"><div class="cv-h"><b>${mine ? 'You' : nm(x.by)}</b>${lab ? `<span class="cap">${h(lab)}</span>` : ''}${k ? pill(k[0], k[1]) : ''}<time class="cap" datetime="${h(x.at)}">${fmt(x.at)}</time></div>${x.text ? `<p>${h(x.text)}</p>` : ''}${x.att ? attCard(x.att, mine) : ''}</div></li>`;
+          return `<li class="cv-m${mine ? " mine" : ""}"><span class="av">${ini(x.by)}</span><div class="cv-b"><div class="cv-h"><b>${mine ? "You" : nm(x.by)}</b>${lab ? `<span class="cap">${h(lab)}</span>` : ""}${k ? pill(k[0], k[1]) : ""}<time class="cap" datetime="${h(x.at)}">${fmt(x.at)}</time></div>${x.text ? `<p>${h(x.text)}</p>` : ""}${x.att ? attCard(x.att, mine) : ""}</div></li>`;
         })
-        .join('')}</ol>`
+        .join("")}</ol>`
     : '<p class="cap">No messages or activity yet.</p>';
   const form = pm
-    ? `<form data-f="cv" class="cv-f" novalidate><input type="hidden" name="k" value="${kind}"><input type="hidden" name="id" value="${h(o.id)}">${fi('cv', 'text', pm.label, { type: 'textarea', rows: 3, req: true, max: 2000, ph: 'Write a message. Everyone in this review sees it.' })}<div class="actions"><span class="help">Messages are kept with the full history and cannot be edited.</span><button class="btn btn-p btn-sm" type="submit">${ic('send', 14)}Post</button></div></form>`
-    : '';
+    ? `<form data-f="cv" class="cv-f" novalidate><input type="hidden" name="k" value="${kind}"><input type="hidden" name="id" value="${h(o.id)}">${fi("cv", "text", pm.label, { type: "textarea", rows: 3, req: true, max: 2000, ph: "Write a message. Everyone in this review sees it." })}<div class="actions"><span class="help">Messages are kept with the full history and cannot be edited.</span><button class="btn btn-p btn-sm" type="submit">${ic("send", 14)}Post</button></div></form>`
+    : "";
   return `<div class="col" style="gap:14px">${list}${form}</div>`;
 }
 // ---- forms
 function fv(f, n, def) {
-  return UI.form[f] && UI.form[f][n] != null ? UI.form[f][n] : (def ?? '');
+  return UI.form[f] && UI.form[f][n] != null ? UI.form[f][n] : (def ?? "");
 }
 function fe(f, n) {
   return UI.err[f] && UI.err[f][n];
 }
 function fi(f, n, label, o = {}) {
-  const id = f + '_' + n,
+  const id = f + "_" + n,
     e = fe(f, n),
     v = fv(f, n, o.value);
-  const req = o.req ? ' <span class="req">*</span>' : '';
-  const ec = e ? ' err' : '';
+  const req = o.req ? ' <span class="req">*</span>' : "";
+  const ec = e ? " err" : "";
   let ctl;
-  if (o.type === 'textarea')
-    ctl = `<textarea id="${id}" name="${n}" class="input${ec}" ${o.rows ? `style="min-height:${o.rows * 24}px"` : ''} placeholder="${h(o.ph || '')}" ${o.max ? `maxlength="${o.max}"` : ''} ${o.ro ? 'readonly' : ''} aria-invalid="${!!e}">${h(v)}</textarea>`;
-  else if (o.type === 'select')
-    ctl = `<select id="${id}" name="${n}" class="input${ec}" aria-invalid="${!!e}" ${o.ro ? 'disabled' : ''} ${o.ch ? `data-ch="${o.ch}"` : ''}>${o.ph ? `<option value="">${h(o.ph)}</option>` : ''}${o.opts
-      .map(x => {
+  if (o.type === "textarea")
+    ctl = `<textarea id="${id}" name="${n}" class="input${ec}" ${o.rows ? `style="min-height:${o.rows * 24}px"` : ""} placeholder="${h(o.ph || "")}" ${o.max ? `maxlength="${o.max}"` : ""} ${o.ro ? "readonly" : ""} aria-invalid="${!!e}">${h(v)}</textarea>`;
+  else if (o.type === "select")
+    ctl = `<select id="${id}" name="${n}" class="input${ec}" aria-invalid="${!!e}" ${o.ro ? "disabled" : ""} ${o.ch ? `data-ch="${o.ch}"` : ""}>${o.ph ? `<option value="">${h(o.ph)}</option>` : ""}${o.opts
+      .map((x) => {
         const [val, l] = Array.isArray(x) ? x : [x, x];
-        return `<option value="${h(val)}" ${String(v) === String(val) ? 'selected' : ''}>${h(l)}</option>`;
+        return `<option value="${h(val)}" ${String(v) === String(val) ? "selected" : ""}>${h(l)}</option>`;
       })
-      .join('')}</select>`;
-  else if (o.type === 'checkbox')
-    return `<label class="row" style="align-items:flex-start;gap:10px"><input class="chk" type="checkbox" name="${n}" value="yes" ${v === 'yes' || v === true ? 'checked' : ''} aria-invalid="${!!e}"><span>${label}${req}</span></label>${e ? `<span class="emsg" role="alert">${ic('alert', 14)}${e}</span>` : ''}`;
+      .join("")}</select>`;
+  else if (o.type === "checkbox")
+    return `<label class="row" style="align-items:flex-start;gap:10px"><input class="chk" type="checkbox" name="${n}" value="yes" ${v === "yes" || v === true ? "checked" : ""} aria-invalid="${!!e}"><span>${label}${req}</span></label>${e ? `<span class="emsg" role="alert">${ic("alert", 14)}${e}</span>` : ""}`;
   else
-    ctl = `<input id="${id}" name="${n}" class="input${ec}" type="${o.type || 'text'}" value="${h(v)}" placeholder="${h(o.ph || '')}" ${o.ro ? 'readonly' : ''} ${o.min != null ? `min="${o.min}"` : ''} ${o.maxv != null ? `max="${o.maxv}"` : ''} ${o.step ? `step="${o.step}"` : ''} aria-invalid="${!!e}" ${o.auto ? `autocomplete="${o.auto}"` : ''}>`;
-  return `<div class="field ${o.cls || ''}"><label class="lbl" for="${id}">${label}${req}</label>${ctl}${e ? `<span class="emsg" role="alert">${ic('alert', 14)}${e}</span>` : ''}${o.help ? `<span class="help">${o.help}</span>` : ''}${o.vis ? `<span class="vis">${ic('lock', 14)}${o.vis}</span>` : ''}</div>`;
+    ctl = `<input id="${id}" name="${n}" class="input${ec}" type="${o.type || "text"}" value="${h(v)}" placeholder="${h(o.ph || "")}" ${o.ro ? "readonly" : ""} ${o.min != null ? `min="${o.min}"` : ""} ${o.maxv != null ? `max="${o.maxv}"` : ""} ${o.step ? `step="${o.step}"` : ""} aria-invalid="${!!e}" ${o.auto ? `autocomplete="${o.auto}"` : ""}>`;
+  return `<div class="field ${o.cls || ""}"><label class="lbl" for="${id}">${label}${req}</label>${ctl}${e ? `<span class="emsg" role="alert">${ic("alert", 14)}${e}</span>` : ""}${o.help ? `<span class="help">${o.help}</span>` : ""}${o.vis ? `<span class="vis">${ic("lock", 14)}${o.vis}</span>` : ""}</div>`;
 }
 function validate(f, d, rules) {
   const e = {};
   for (const [n, rs] of Object.entries(rules)) {
-    const v = (d[n] ?? '').toString().trim();
+    const v = (d[n] ?? "").toString().trim();
     for (const r of rs) {
       const [k, a] = Array.isArray(r) ? r : [r];
-      if (k === 'req' && !v) {
-        e[n] = a || 'This field is required.';
+      if (k === "req" && !v) {
+        e[n] = a || "This field is required.";
         break;
       }
-      if (k === 'email' && v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) {
-        e[n] = 'Enter a valid email address, like name@example.org.';
+      if (k === "email" && v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) {
+        e[n] = "Enter a valid email address, like name@example.org.";
         break;
       }
-      if (k === 'min' && v && v.length < a) {
+      if (k === "min" && v && v.length < a) {
         e[n] = `Enter at least ${a} characters.`;
         break;
       }
-      if (k === 'num' && v && !(Number(v) > 0)) {
-        e[n] = 'Enter a number greater than 0.';
+      if (k === "num" && v && !(Number(v) > 0)) {
+        e[n] = "Enter a number greater than 0.";
         break;
       }
-      if (k === 'date' && v && v < today()) {
-        e[n] = 'Choose a date that is today or later.';
+      if (k === "date" && v && v < today()) {
+        e[n] = "Choose a date that is today or later.";
         break;
       }
-      if (k === 'fn' && !a.f(v, d)) {
+      if (k === "fn" && !a.f(v, d)) {
         e[n] = a.m;
         break;
       }
@@ -457,36 +641,274 @@ function clearF(f) {
   (UI._cleared = UI._cleared || new Set()).add(f);
 }
 // ---- date of birth: a real past date, not more than 120 years ago. No minimum age is enforced (policy not set).
-const dobOk = v => {
+const dobOk = (v) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
   // Parsed as UTC so the round-trip check holds in every time zone.
-  const d = new Date(v + 'T00:00:00Z');
-  return !isNaN(d) && d.toISOString().slice(0, 10) === v && v < today() && +v.slice(0, 4) >= new Date().getFullYear() - 120;
+  const d = new Date(v + "T00:00:00Z");
+  return (
+    !isNaN(d) &&
+    d.toISOString().slice(0, 10) === v &&
+    v < today() &&
+    +v.slice(0, 4) >= new Date().getFullYear() - 120
+  );
 };
 // BF-12: minimise age data. Date of birth is never required; age confirmation is recorded instead.
 const dobRules = () => [
-  ['fn', { f: v => !v || dobOk(v), m: 'Enter a valid date of birth in the past.' }],
+  [
+    "fn",
+    { f: (v) => !v || dobOk(v), m: "Enter a valid date of birth in the past." },
+  ],
 ];
 const dobField = (f, value, o = {}) =>
-  fi(f, 'dob', 'Date of birth (optional)', { type: 'date', value, maxv: today(), auto: 'bday', vis: 'You and authorised administration', help: 'Only if your programme policy asks for it.', ...o, req: false });
+  fi(f, "dob", "Date of birth (optional)", {
+    type: "date",
+    value,
+    maxv: today(),
+    auto: "bday",
+    vis: "You and authorised administration",
+    help: "Only if your programme policy asks for it.",
+    ...o,
+    req: false,
+  });
 // ---- country: one list for every form that records where something happens (projects, Opportunity Cards)
-const COUNTRIES = ['Afghanistan', 'Albania', 'Algeria', 'Andorra', 'Angola', 'Antigua and Barbuda', 'Argentina', 'Armenia', 'Australia', 'Austria', 'Azerbaijan', 'Bahamas', 'Bahrain', 'Bangladesh', 'Barbados', 'Belarus', 'Belgium', 'Belize', 'Benin', 'Bhutan', 'Bolivia', 'Bosnia and Herzegovina', 'Botswana', 'Brazil', 'Brunei', 'Bulgaria', 'Burkina Faso', 'Burundi', 'Cabo Verde', 'Cambodia', 'Cameroon', 'Canada', 'Central African Republic', 'Chad', 'Chile', 'China', 'Colombia', 'Comoros', 'Congo', 'Costa Rica', 'Côte d’Ivoire', 'Croatia', 'Cuba', 'Cyprus', 'Czechia', 'Democratic Republic of the Congo', 'Denmark', 'Djibouti', 'Dominica', 'Dominican Republic', 'Ecuador', 'Egypt', 'El Salvador', 'Equatorial Guinea', 'Eritrea', 'Estonia', 'Eswatini', 'Ethiopia', 'Fiji', 'Finland', 'France', 'Gabon', 'Gambia', 'Georgia', 'Germany', 'Ghana', 'Greece', 'Grenada', 'Guatemala', 'Guinea', 'Guinea-Bissau', 'Guyana', 'Haiti', 'Honduras', 'Hungary', 'Iceland', 'India', 'Indonesia', 'Iran', 'Iraq', 'Ireland', 'Israel', 'Italy', 'Jamaica', 'Japan', 'Jordan', 'Kazakhstan', 'Kenya', 'Kiribati', 'Kosovo', 'Kuwait', 'Kyrgyzstan', 'Laos', 'Latvia', 'Lebanon', 'Lesotho', 'Liberia', 'Libya', 'Liechtenstein', 'Lithuania', 'Luxembourg', 'Madagascar', 'Malawi', 'Malaysia', 'Maldives', 'Mali', 'Malta', 'Marshall Islands', 'Mauritania', 'Mauritius', 'Mexico', 'Micronesia', 'Moldova', 'Monaco', 'Mongolia', 'Montenegro', 'Morocco', 'Mozambique', 'Myanmar', 'Namibia', 'Nauru', 'Nepal', 'Netherlands', 'New Zealand', 'Nicaragua', 'Niger', 'Nigeria', 'North Korea', 'North Macedonia', 'Norway', 'Oman', 'Pakistan', 'Palau', 'Palestine', 'Panama', 'Papua New Guinea', 'Paraguay', 'Peru', 'Philippines', 'Poland', 'Portugal', 'Qatar', 'Romania', 'Russia', 'Rwanda', 'Saint Kitts and Nevis', 'Saint Lucia', 'Saint Vincent and the Grenadines', 'Samoa', 'San Marino', 'São Tomé and Príncipe', 'Saudi Arabia', 'Senegal', 'Serbia', 'Seychelles', 'Sierra Leone', 'Singapore', 'Slovakia', 'Slovenia', 'Solomon Islands', 'Somalia', 'South Africa', 'South Korea', 'South Sudan', 'Spain', 'Sri Lanka', 'Sudan', 'Suriname', 'Sweden', 'Switzerland', 'Syria', 'Taiwan', 'Tajikistan', 'Tanzania', 'Thailand', 'Timor-Leste', 'Togo', 'Tonga', 'Trinidad and Tobago', 'Tunisia', 'Türkiye', 'Turkmenistan', 'Tuvalu', 'Uganda', 'Ukraine', 'United Arab Emirates', 'United Kingdom', 'United States', 'Uruguay', 'Uzbekistan', 'Vanuatu', 'Vatican City', 'Venezuela', 'Vietnam', 'Yemen', 'Zambia', 'Zimbabwe'];
-const countryRules = () => [
-  ['req', 'Choose the country.'],
-  ['fn', { f: v => COUNTRIES.includes(v), m: 'Choose a country from the list.' }],
+const COUNTRIES = [
+  "Afghanistan",
+  "Albania",
+  "Algeria",
+  "Andorra",
+  "Angola",
+  "Antigua and Barbuda",
+  "Argentina",
+  "Armenia",
+  "Australia",
+  "Austria",
+  "Azerbaijan",
+  "Bahamas",
+  "Bahrain",
+  "Bangladesh",
+  "Barbados",
+  "Belarus",
+  "Belgium",
+  "Belize",
+  "Benin",
+  "Bhutan",
+  "Bolivia",
+  "Bosnia and Herzegovina",
+  "Botswana",
+  "Brazil",
+  "Brunei",
+  "Bulgaria",
+  "Burkina Faso",
+  "Burundi",
+  "Cabo Verde",
+  "Cambodia",
+  "Cameroon",
+  "Canada",
+  "Central African Republic",
+  "Chad",
+  "Chile",
+  "China",
+  "Colombia",
+  "Comoros",
+  "Congo",
+  "Costa Rica",
+  "Côte d’Ivoire",
+  "Croatia",
+  "Cuba",
+  "Cyprus",
+  "Czechia",
+  "Democratic Republic of the Congo",
+  "Denmark",
+  "Djibouti",
+  "Dominica",
+  "Dominican Republic",
+  "Ecuador",
+  "Egypt",
+  "El Salvador",
+  "Equatorial Guinea",
+  "Eritrea",
+  "Estonia",
+  "Eswatini",
+  "Ethiopia",
+  "Fiji",
+  "Finland",
+  "France",
+  "Gabon",
+  "Gambia",
+  "Georgia",
+  "Germany",
+  "Ghana",
+  "Greece",
+  "Grenada",
+  "Guatemala",
+  "Guinea",
+  "Guinea-Bissau",
+  "Guyana",
+  "Haiti",
+  "Honduras",
+  "Hungary",
+  "Iceland",
+  "India",
+  "Indonesia",
+  "Iran",
+  "Iraq",
+  "Ireland",
+  "Israel",
+  "Italy",
+  "Jamaica",
+  "Japan",
+  "Jordan",
+  "Kazakhstan",
+  "Kenya",
+  "Kiribati",
+  "Kosovo",
+  "Kuwait",
+  "Kyrgyzstan",
+  "Laos",
+  "Latvia",
+  "Lebanon",
+  "Lesotho",
+  "Liberia",
+  "Libya",
+  "Liechtenstein",
+  "Lithuania",
+  "Luxembourg",
+  "Madagascar",
+  "Malawi",
+  "Malaysia",
+  "Maldives",
+  "Mali",
+  "Malta",
+  "Marshall Islands",
+  "Mauritania",
+  "Mauritius",
+  "Mexico",
+  "Micronesia",
+  "Moldova",
+  "Monaco",
+  "Mongolia",
+  "Montenegro",
+  "Morocco",
+  "Mozambique",
+  "Myanmar",
+  "Namibia",
+  "Nauru",
+  "Nepal",
+  "Netherlands",
+  "New Zealand",
+  "Nicaragua",
+  "Niger",
+  "Nigeria",
+  "North Korea",
+  "North Macedonia",
+  "Norway",
+  "Oman",
+  "Pakistan",
+  "Palau",
+  "Palestine",
+  "Panama",
+  "Papua New Guinea",
+  "Paraguay",
+  "Peru",
+  "Philippines",
+  "Poland",
+  "Portugal",
+  "Qatar",
+  "Romania",
+  "Russia",
+  "Rwanda",
+  "Saint Kitts and Nevis",
+  "Saint Lucia",
+  "Saint Vincent and the Grenadines",
+  "Samoa",
+  "San Marino",
+  "São Tomé and Príncipe",
+  "Saudi Arabia",
+  "Senegal",
+  "Serbia",
+  "Seychelles",
+  "Sierra Leone",
+  "Singapore",
+  "Slovakia",
+  "Slovenia",
+  "Solomon Islands",
+  "Somalia",
+  "South Africa",
+  "South Korea",
+  "South Sudan",
+  "Spain",
+  "Sri Lanka",
+  "Sudan",
+  "Suriname",
+  "Sweden",
+  "Switzerland",
+  "Syria",
+  "Taiwan",
+  "Tajikistan",
+  "Tanzania",
+  "Thailand",
+  "Timor-Leste",
+  "Togo",
+  "Tonga",
+  "Trinidad and Tobago",
+  "Tunisia",
+  "Türkiye",
+  "Turkmenistan",
+  "Tuvalu",
+  "Uganda",
+  "Ukraine",
+  "United Arab Emirates",
+  "United Kingdom",
+  "United States",
+  "Uruguay",
+  "Uzbekistan",
+  "Vanuatu",
+  "Vatican City",
+  "Venezuela",
+  "Vietnam",
+  "Yemen",
+  "Zambia",
+  "Zimbabwe",
 ];
-const countryField = (f, o = {}) => fi(f, 'country', 'Country name', { type: 'select', req: true, ph: 'Select a country', opts: COUNTRIES, ...o });
+const countryRules = () => [
+  ["req", "Choose the country."],
+  [
+    "fn",
+    { f: (v) => COUNTRIES.includes(v), m: "Choose a country from the list." },
+  ],
+];
+const countryField = (f, o = {}) =>
+  fi(f, "country", "Country name", {
+    type: "select",
+    req: true,
+    ph: "Select a country",
+    opts: COUNTRIES,
+    ...o,
+  });
 // The country of a programme's organization, used to fill in records created before the field existed.
-const ctxCountry = id => ((S.orgs || []).find(o => o.id === (S.contexts.find(c => c.id === id) || {}).org) || {}).country || '';
+const ctxCountry = (id) =>
+  (
+    (S.orgs || []).find(
+      (o) => o.id === (S.contexts.find((c) => c.id === id) || {}).org,
+    ) || {}
+  ).country || "";
 // Accounts are soft-deleted; a deleted account no longer matches an email address.
-const personByEmail = e => S.people.find(p => p.status !== 'Deleted' && (p.email || '').toLowerCase() === String(e || '').trim().toLowerCase());
-const errSum = f => {
+const personByEmail = (e) =>
+  S.people.find(
+    (p) =>
+      p.status !== "Deleted" &&
+      (p.email || "").toLowerCase() ===
+        String(e || "")
+          .trim()
+          .toLowerCase(),
+  );
+const errSum = (f) => {
   const e = UI.err[f];
-  if (!e || !Object.keys(e).length) return '';
+  if (!e || !Object.keys(e).length) return "";
   return banner(
-    'err',
-    `Check ${Object.keys(e).length} field${Object.keys(e).length > 1 ? 's' : ''}`,
-    Object.values(e).join(' '),
+    "err",
+    `Check ${Object.keys(e).length} field${Object.keys(e).length > 1 ? "s" : ""}`,
+    Object.values(e).join(" "),
   );
 };
 // ---- modal
@@ -510,333 +932,387 @@ function navItems() {
   const add = (m, route, label, icon, cond = true) => {
     if (cond && (!m || can(m))) items.push([route, label, icon]);
   };
-  const inMy = k => S[k].some(o => inCtx(o) && memberOf(o));
+  const inMy = (k) => S[k].some((o) => inCtx(o) && memberOf(o));
   const always = () => {
-    if (hasB('Reviewer') && r !== 'F') items.push(['inbox', 'Review inbox', 'inbox']);
-    if (hasB('Trust/Data Steward')) items.push(['policies', 'Trust/Data: policies', 'shield']);
-    if (hasB('Finance Owner')) items.push(['billing', 'Finance: products & payments', 'card']);
-    if (hasB('AI Owner')) items.push(['aiadmin', 'AI Owner: sources', 'sparkle']);
-    if (hasB('Incident/Safety Owner')) items.push(['incidents', 'Incident queue', 'alert']);
-    items.push(['publicprojects', 'Public projects', 'globe']);
-    if (r !== 'T') {
-      items.push(['profile', 'Profile', 'user']);
-      items.push(['privacy', 'My records & consent', 'lock']);
-      items.push(['resources', 'Resources & guidance', 'file']);
-    }
-    items.push(['help', 'Help & support', 'info']);
-    if (!hasB('Incident/Safety Owner')) items.push(['incidents', 'Report a concern', 'alert']);
+    if (hasB("Reviewer") && r !== "F")
+      items.push(["inbox", "Review inbox", "inbox"]);
+    if (hasB("Trust/Data Steward"))
+      items.push(["policies", "Trust/Data: policies", "shield"]);
+    if (hasB("Finance Owner"))
+      items.push(["billing", "Finance: products & payments", "card"]);
+    if (hasB("AI Owner"))
+      items.push(["aiadmin", "AI Owner: sources", "sparkle"]);
+    if (hasB("Incident/Safety Owner"))
+      items.push(["incidents", "Incident queue", "alert"]);
+    // The Platform Administrator stops here: it receives support requests (Support requests above) rather than sending
+    // them, and needs neither the public project showcase nor personal records.
+    if (r === "T") return items;
+    items.push(["publicprojects", "Public projects", "globe"]);
+    items.push(["profile", "Profile", "user"]);
+    items.push(["privacy", "My records & consent", "lock"]);
+    items.push(["resources", "Resources & guidance", "file"]);
+    items.push(["help", "Help & support", "info"]);
+    if (!hasB("Incident/Safety Owner"))
+      items.push(["incidents", "Report a concern", "alert"]);
     return items;
   };
-  if (r === 'T') {
+  if (r === "T") {
     items.push(
-      ['home', 'System health', 'grid'],
-      ['tenants', 'Contexts & tenants', 'building'],
-      ['roles', 'Roles & bundles', 'shield'],
-      ['platform:integrations', 'Integrations', 'link'],
-      ['platform:scopes', 'Capability scopes', 'layers'],
-      ['platform:security', 'Security & access', 'lock'],
-      ['platform:storage', 'Backups & restore', 'archive'],
-      ['platform:health', 'Deployment status', 'chart'],
-      ['platform:lms', 'LMS deep links', 'globe'],
-      ['audit', 'Audit & logs', 'file'],
+      ["home", "Dashboard", "grid"],
+      ["tenants", "Contexts & tenants", "building"],
+      ["roles", "Roles & bundles", "shield"],
+      ["packs", "Packs & role names", "settings"],
+      // Integrations, Capability scopes, Security & access, Backups & restore and Deployment status are run by the
+      // technical team, not from this console; their pages stay in the code but are hidden from the menu for now.
+      ["platform:lms", "LMS deep links", "globe"],
+      ["audit", "Audit & logs", "file"],
+      ["support", "Support requests", "inbox"],
     );
     return always();
   }
-  items.push(['home', 'My PHOENIX', 'home']);
-  if (hasChats()) items.push(['messages', 'Messages', 'message']);
+  items.push(["home", "My PHOENIX", "home"]);
+  if (hasChats()) items.push(["messages", "Messages", "message"]);
 
-  if (r === 'P') {
+  if (r === "P") {
     // Doc 1 §6.1 / Table 15 — full Authorize → Evolve menu
-    add('pathways', 'pathway', 'Pathway', 'route');
-    add('projects', 'projects', 'Projects', 'folder');
-    add('circles', 'circles', 'Circles', 'users');
-    add('ropeteams', 'ropeteams', 'Rope Teams', 'route');
-    add('rooms', 'rooms', W + 's', 'room');
-    add('opportunities', 'opportunities', 'Opportunities', 'megaphone');
-    add('matching', 'matches', 'Match Briefs', 'link');
-    add(null, 'board', 'Explore board', 'grid');
-    add(null, 'challenges', 'Open challenges', 'flag');
-    add(null, 'relations', 'My collaborations', 'users');
-    add('evidence', 'evidence', 'Evidence', 'award');
-    add(null, 'documents', 'Documents', 'folder');
-    add('repository', 'repository', 'Repository', 'archive');
-    add('harvest', 'harvests', 'Learning Harvests', 'sparkle');
-  } else if (r === 'M') {
+    add("pathways", "pathway", "Pathway", "route");
+    add("projects", "projects", "Projects", "folder");
+    add("circles", "circles", "Circles", "users");
+    add("ropeteams", "ropeteams", "Rope Teams", "route");
+    add("rooms", "rooms", W + "s", "room");
+    add("opportunities", "opportunities", "Opportunities", "megaphone");
+    add("matching", "matches", "Match Briefs", "link");
+    add(null, "board", "Explore board", "grid");
+    add(null, "challenges", "Open challenges", "flag");
+    add(null, "relations", "My collaborations", "users");
+    add("evidence", "evidence", "Evidence", "award");
+    add(null, "documents", "Documents", "folder");
+    add("repository", "repository", "Repository", "archive");
+    add("harvest", "harvests", "Learning Harvests", "sparkle");
+  } else if (r === "M") {
     // Doc 1 §6.2 — assigned people & support only
-    add('ropeteams', 'ropeteams', 'My people & requests', 'route');
-    add('pathways', 'pathway', 'Shared pathways', 'route');
-    add('circles', 'circles', 'Circles', 'users', inMy('circles'));
-    add('rooms', 'rooms', 'Assigned ' + W + 's', 'room', inMy('rooms'));
-    add(null, 'relations', 'My collaborations', 'users');
-    add('evidence', 'evidence', 'Evidence comments', 'award');
-    add(null, 'documents', 'Documents', 'folder', docProjects().length > 0);
-    add('repository', 'repository', 'Repository', 'archive');
-  } else if (r === 'F') {
+    add("ropeteams", "ropeteams", "My people & requests", "route");
+    add("pathways", "pathway", "Shared pathways", "route");
+    add("circles", "circles", "Circles", "users", inMy("circles"));
+    add("rooms", "rooms", "Assigned " + W + "s", "room", inMy("rooms"));
+    add(null, "relations", "My collaborations", "users");
+    add("evidence", "evidence", "Evidence comments", "award");
+    add(null, "documents", "Documents", "folder", docProjects().length > 0);
+    add("repository", "repository", "Repository", "archive");
+  } else if (r === "F") {
     // Doc 1 §6.3 / Table 28 — Circles, reviews, linked work (Match Briefs are steward work, not discovery)
-    add('circles', 'circles', 'Circles', 'users');
-    add(null, 'inbox', 'Review inbox', 'inbox');
+    add("circles", "circles", "Circles", "users");
+    add(null, "inbox", "Review inbox", "inbox");
     // independent Steward on an open-challenge dispute (challenges.js)
-    add(null, 'disputes', 'Dispute reviews', 'shield', (S.disputes || []).some(d => d.steward === myId() && inCtx(d)));
-    add('projects', 'projects', 'Project reviews', 'folder');
-    add('pathways', 'pathway', 'Pathways', 'route');
-    add('matching', 'matches', 'Match Briefs', 'link', S.matches.some(m => m.steward === myId()));
-    add('rooms', 'rooms', 'Linked ' + W + 's', 'room');
-    add('ropeteams', 'ropeteams', 'Rope Teams', 'route', inMy('ropes'));
-    add('harvest', 'harvests', 'Learning Harvests', 'sparkle');
-    add(null, 'documents', 'Documents', 'folder');
-    if (hasB('Reviewer')) {
-      add('evidence', 'evidence', 'Evidence review', 'award');
-      add('repository', 'repository', 'Repository', 'archive');
-    }
-  } else if (r === 'C') {
-    // Doc 1 §6.4 — mandate + workspaces first, then discovery, then records
-    add(null, 'mandate', 'Organisation & mandate', 'building');
-    add('rooms', 'rooms', W + 's', 'room');
-    add('projects', 'projects', 'Projects', 'folder', S.projects.some(p => inCtx(p) && (p.owner === myId() || (p.partners || []).includes(myId()))));
-    add('opportunities', 'opportunities', 'Opportunities', 'megaphone');
-    add('matching', 'matches', 'Match Briefs', 'link');
-    add(null, 'board', 'Explore board', 'grid');
-    add(null, 'challenges', 'Open challenges', 'flag');
-    add(null, 'relations', 'My collaborations', 'users');
-    add('evidence', 'evidence', 'Evidence', 'award');
-    add(null, 'documents', 'Documents', 'folder');
-    add('repository', 'repository', 'Repository', 'archive');
-    add('harvest', 'harvests', 'Learning Harvests', 'sparkle');
-  } else if (r === 'O') {
-    // Doc 1 §6.5 / Table 28 — org envelope only
-    items.push(
-      ['org:users', 'People & cohorts', 'users'],
-      ['org:invites', 'Invitations', 'mail'],
-      ['org:roles', 'Role assignments', 'shield'],
-      ['org:spaces', 'Spaces in my context', 'folder'],
-      ['org:reports', 'Reports', 'file'],
-      ['org:requests', 'Requests to Programme Admin', 'send'],
-      ['metrics', 'Programme progress', 'chart'],
+    add(
+      null,
+      "disputes",
+      "Dispute reviews",
+      "shield",
+      (S.disputes || []).some((d) => d.steward === myId() && inCtx(d)),
     );
-  } else if (r === 'S') {
+    add("projects", "projects", "Project reviews", "folder");
+    add("pathways", "pathway", "Pathways", "route");
+    add(
+      "matching",
+      "matches",
+      "Match Briefs",
+      "link",
+      S.matches.some((m) => m.steward === myId()),
+    );
+    add("rooms", "rooms", "Linked " + W + "s", "room");
+    add("ropeteams", "ropeteams", "Rope Teams", "route", inMy("ropes"));
+    add("harvest", "harvests", "Learning Harvests", "sparkle");
+    add(null, "documents", "Documents", "folder");
+    if (hasB("Reviewer")) {
+      add("evidence", "evidence", "Evidence review", "award");
+      add("repository", "repository", "Repository", "archive");
+    }
+  } else if (r === "C") {
+    // Doc 1 §6.4 — mandate + workspaces first, then discovery, then records
+    add(null, "mandate", "Organisation & mandate", "building");
+    add("rooms", "rooms", W + "s", "room");
+    add(
+      "projects",
+      "projects",
+      "Projects",
+      "folder",
+      S.projects.some(
+        (p) =>
+          inCtx(p) &&
+          (p.owner === myId() || (p.partners || []).includes(myId())),
+      ),
+    );
+    add("opportunities", "opportunities", "Opportunities", "megaphone");
+    add("matching", "matches", "Match Briefs", "link");
+    add(null, "board", "Explore board", "grid");
+    add(null, "challenges", "Open challenges", "flag");
+    add(null, "relations", "My collaborations", "users");
+    add("evidence", "evidence", "Evidence", "award");
+    add(null, "documents", "Documents", "folder");
+    add("repository", "repository", "Repository", "archive");
+    add("harvest", "harvests", "Learning Harvests", "sparkle");
+  } else if (r === "S") {
     // Doc 1 §6.6 — open challenges, seats & funder-safe reporting (no pitches/tranches)
     items.push(
-      ['challenges', 'Open challenges', 'megaphone'],
-      ['funding:seats', 'Seat utilisation', 'card'],
-      ['funding:initiatives', 'Approved initiatives', 'folder'],
-      ['funding:reports', 'Funder-safe reports', 'chart'],
-      ['funding:invoices', 'Invoices & receipts', 'coin'],
+      ["challenges", "Open challenges", "megaphone"],
+      ["funding:seats", "Seat utilisation", "card"],
+      ["funding:initiatives", "Approved initiatives", "folder"],
+      ["funding:reports", "Funder-safe reports", "chart"],
+      ["funding:invoices", "Invoices & receipts", "coin"],
     );
-    add('evidence', 'evidence', 'Approved evidence', 'award');
-  } else if (r === 'A') {
+    add("evidence", "evidence", "Approved evidence", "award");
+  } else if (r === "A") {
     // Doc 1 §6.7 — operational queues & config (not specialist authority)
     items.push(
-      ['admin:requests', 'Approval inbox', 'inbox'],
-      ['disputes', 'Challenge disputes', 'shield'],
-      ['admin:invites', 'Invitations', 'mail'],
-      ['admin:users', 'Users & roles', 'users'],
-      ['admin:packs', 'Pack configuration', 'settings'],
-      ['admin:library', 'Template library', 'route'],
-      ['compassqs', 'Purpose Compass settings', 'target'],
-      ['admin:purposes', 'Optional purposes', 'checks'],
-      ['admin:notify', 'Notifications', 'bell'],
-      ['admin:initiatives', 'Sponsor initiatives', 'coin'],
-      ['admin:support', 'Support & requests', 'question'],
-      ['metrics', 'Reports & exports', 'chart'],
-      ['admin:versions', 'Configuration versions', 'archive'],
-      ['audit', 'Audit log', 'file'],
-      ['documents', 'Project documents', 'folder'],
+      ["admin:requests", "Approval inbox", "inbox"],
+      ["disputes", "Challenge disputes", "shield"],
+      ["admin:invites", "Invitations", "mail"],
+      ["admin:users", "Users & roles", "users"],
+      ["admin:packs", "Pack configuration", "settings"],
+      ["admin:library", "Template library", "route"],
+      ["compassqs", "Purpose Compass settings", "target"],
+      ["admin:purposes", "Optional purposes", "checks"],
+      ["admin:notify", "Notifications", "bell"],
+      ["admin:initiatives", "Sponsor initiatives", "coin"],
+      ["admin:support", "Support & requests", "question"],
+      ["metrics", "Reports & exports", "chart"],
+      ["documents", "Project documents", "folder"],
     );
   }
   return always();
 }
 const PARENT = {
-  project: 'projects',
-  newproject: 'projects',
-  circle: 'circles',
-  rope: 'ropeteams',
-  room: 'rooms',
-  card: 'opportunities',
-  newcard: 'opportunities',
-  match: 'matches',
-  newevidence: 'evidence',
-  harvest: 'harvests',
-  challenge: 'challenges',
-  dispute: 'disputes',
+  project: "projects",
+  newproject: "projects",
+  circle: "circles",
+  rope: "ropeteams",
+  room: "rooms",
+  card: "opportunities",
+  newcard: "opportunities",
+  match: "matches",
+  newevidence: "evidence",
+  harvest: "harvests",
+  challenge: "challenges",
+  dispute: "disputes",
+  collab: "relations",
 };
 const GROUP = {
-  home: '',
-  messages: '',
-  pathway: 'Orient',
-  profile: 'Always available',
-  projects: 'Work',
-  circles: 'Work',
-  ropeteams: 'Work',
-  rooms: 'Work',
-  inbox: 'Work',
-  mandate: 'Work',
-  opportunities: 'Discover',
-  matches: 'Discover',
-  board: 'Discover',
-  challenges: 'Discover',
-  relations: 'Discover',
-  evidence: 'Records',
-  documents: 'Records',
-  repository: 'Records',
-  harvests: 'Records',
-  funding: 'Sponsorship',
-  org: 'Organisation',
-  admin: 'Administration',
-  disputes: 'Administration',
-  compassqs: 'Administration',
-  metrics: 'Administration',
-  audit: 'Administration',
-  policies: 'Specialist',
-  billing: 'Specialist',
-  aiadmin: 'Specialist',
-  publicprojects: 'Always available',
-  privacy: 'Always available',
-  resources: 'Always available',
-  help: 'Always available',
-  incidents: 'Always available',
-  platform: 'Platform',
-  tenants: 'Platform',
-  roles: 'Platform',
+  home: "",
+  messages: "",
+  pathway: "Orient",
+  profile: "Always available",
+  projects: "Work",
+  circles: "Work",
+  ropeteams: "Work",
+  rooms: "Work",
+  inbox: "Work",
+  mandate: "Work",
+  opportunities: "Discover",
+  matches: "Discover",
+  board: "Discover",
+  challenges: "Discover",
+  relations: "Discover",
+  evidence: "Records",
+  documents: "Records",
+  repository: "Records",
+  harvests: "Records",
+  funding: "Sponsorship",
+  org: "Organisation",
+  admin: "Administration",
+  disputes: "Administration",
+  compassqs: "Administration",
+  metrics: "Administration",
+  audit: "Administration",
+  policies: "Specialist",
+  billing: "Specialist",
+  aiadmin: "Specialist",
+  publicprojects: "Always available",
+  privacy: "Always available",
+  resources: "Always available",
+  help: "Always available",
+  incidents: "Always available",
+  platform: "Platform",
+  tenants: "Platform",
+  roles: "Platform",
 };
 // Section label for a nav route: Participant keeps Orient for pathway; other roles fold it into Work.
 function navGroup(rt) {
   const r = role();
-  if (r === 'T') return '';
-  if (rt === 'pathway' && r !== 'P') return 'Work';
-  if (rt === 'matches' && r === 'F') return 'Work';
-  if (rt === 'inbox' && r !== 'F') return 'Specialist';
-  if (rt === 'metrics' && r === 'O') return 'Organisation';
-  if (rt === 'evidence' && r === 'S') return 'Sponsorship';
-  if (rt === 'challenges' && r === 'S') return 'Sponsorship';
-  if (rt === 'disputes' && r === 'F') return 'Work';
-  return GROUP[rt] || '';
+  if (r === "T") return "";
+  if (rt === "pathway" && r !== "P") return "Work";
+  if (rt === "matches" && r === "F") return "Work";
+  if (rt === "inbox" && r !== "F") return "Specialist";
+  if (rt === "evidence" && r === "S") return "Sponsorship";
+  if (rt === "challenges" && r === "S") return "Sponsorship";
+  if (rt === "disputes" && r === "F") return "Work";
+  return GROUP[rt] || "";
 }
 function navCount(r, tb) {
   const pid = myId();
-  if (r === 'admin') return admCount(tb);
-  if (r === 'org' && tb === 'requests') return (S.orgReqs || []).filter(x => x.by === pid && x.status === 'Open').length;
-  if (r === 'funding' && tb === 'invoices') return dueInvoices().length;
-  if (r === 'messages') return unreadTotal();
-  if (r === 'projects' && role() === 'F')
-    return S.projects.filter(p => inCtx(p) && p.status === 'Submitted' && stewardOf(p)).length;
-  if (r === 'matches') {
-    if (role() === 'F')
-      return S.matches.filter(m => m.steward === pid && ['In steward review', 'Clarification requested'].includes(m.status)).length;
+  if (r === "admin") return admCount(tb);
+  if (r === "support") return sqForwarded().filter((q) => SQ_OPEN.includes(q.status)).length;
+  if (r === "funding" && tb === "invoices") return dueInvoices().length;
+  if (r === "messages") return unreadTotal();
+  if (r === "projects" && role() === "F")
+    return S.projects.filter(
+      (p) => inCtx(p) && p.status === "Submitted" && stewardOf(p),
+    ).length;
+  if (r === "matches") {
+    if (role() === "F")
+      return S.matches.filter(
+        (m) =>
+          m.steward === pid &&
+          ["In steward review", "Clarification requested"].includes(m.status),
+      ).length;
     return S.matches.filter(
-      m => m.status === 'Awaiting consent' && ((m.a === pid && !m.consentA) || (m.b === pid && !m.consentB)),
+      (m) =>
+        m.status === "Awaiting consent" &&
+        ((m.a === pid && !m.consentA) || (m.b === pid && !m.consentB)),
     ).length;
   }
-  if (r === 'inbox') return typeof inboxItems === 'function' ? inboxItems().length : 0;
-  if (r === 'challenges') return chTodo().length;
-  if (r === 'disputes')
-    return (S.disputes || []).filter(d => inCtx(d) && (role() === 'A' ? d.status === 'Awaiting Steward assignment' : d.steward === pid && ['Awaiting Steward acceptance', 'Under review'].includes(d.status))).length;
-  if (r === 'ropeteams' && role() === 'M')
-    return S.mentorReqs.filter(m => m.to === pid && m.status === 'Pending' && mentorReqVisible(m)).length;
+  if (r === "inbox")
+    return typeof inboxItems === "function" ? inboxItems().length : 0;
+  if (r === "challenges") return chTodo().length;
+  if (r === "disputes")
+    return (S.disputes || []).filter(
+      (d) =>
+        inCtx(d) &&
+        (role() === "A"
+          ? d.status === "Awaiting Steward assignment"
+          : d.steward === pid &&
+            ["Awaiting Steward acceptance", "Under review"].includes(d.status)),
+    ).length;
+  if (r === "ropeteams" && role() === "M")
+    return S.mentorReqs.filter(
+      (m) => m.to === pid && m.status === "Pending" && mentorReqVisible(m),
+    ).length;
   return 0;
 }
 // In-page tab keys of routes that the menu links into section by section (route:tab).
-const NAV_TABK = { admin: 'adm', org: 'org', platform: 'plat', funding: 'fund' };
+const NAV_TABK = {
+  admin: "adm",
+  platform: "plat",
+  funding: "fund",
+};
 function sidebar() {
   const a = asg();
   const others = roleChoices().length;
   const act = PARENT[UI.route] || UI.route;
   let last = null;
   const all = navItems();
-  const curTab = rt => UI.p.tab || UI.tab[NAV_TABK[rt]] || null;
+  const curTab = (rt) => UI.p.tab || UI.tab[NAV_TABK[rt]] || null;
   // A route linked by several items highlights the item for the open section, else its first item.
   const pick = {};
   all.forEach(([r]) => {
-    const [rt, tb] = r.split(':');
+    const [rt, tb] = r.split(":");
     if (rt !== act) return;
     if (tb && tb === curTab(rt)) pick[rt] = r;
     else if (!pick[rt]) pick[rt] = r;
   });
   const items = all
     .map(([r, l, i]) => {
-      const [rt, tb] = r.split(':');
-      const on = pick[rt] === r ? ' on' : '';
+      const [rt, tb] = r.split(":");
+      const on = pick[rt] === r ? " on" : "";
       const g = navGroup(rt);
-      let sec = '';
+      let sec = "";
       if (g !== last && g) sec = `<div class="navsec"><span>${g}</span></div>`;
       last = g;
       const n = navCount(rt, tb);
-      return `${sec}<a href="#" class="nav${on}" data-a="go" data-r="${rt}"${tb ? ` data-tab="${tb}"` : ''} data-tip="${h(l)}"${on ? ' aria-current="page"' : ''}>${ic(i)}<span class="t">${h(l)}</span><span class="ts" aria-hidden="true">${h(SHORT[rt] || l.split(' ')[0])}</span>${n ? `<span class="ncount" aria-label="${n} new">${n}</span>` : ''}</a>`;
+      return `${sec}<a href="#" class="nav${on}" data-a="go" data-r="${rt}"${tb ? ` data-tab="${tb}"` : ""} data-tip="${h(l)}"${on ? ' aria-current="page"' : ""}>${ic(i)}<span class="t">${h(l)}</span><span class="ts" aria-hidden="true">${h(SHORT[rt] || l.split(" ")[0])}</span>${n ? `<span class="ncount" aria-label="${n} new">${n}</span>` : ""}</a>`;
     })
-    .join('');
-  const sub = `${h(ROLE[a.role])} · ${h(ctxShort(a.ctx))}${a.bundles.length ? ' · +' + a.bundles.length + ' bundle' + (a.bundles.length > 1 ? 's' : '') : ''}`;
-  return `<aside class="side" id="side-nav" aria-label="Main navigation"${UI.drawer ? ' role="dialog" aria-modal="true"' : ''}><div class="side-plate"><a href="#" class="brand" data-a="go" data-r="home" aria-label="PHOENIX home"><span class="mark">${MARK()}</span><span class="wm"><b>PHOENIX</b><span>Foundation</span></span></a><button class="side-user" type="button" data-a="switcher" aria-label="${h(me().name)}, ${h(asgLabel(a))}${others > 1 ? '. Switch role or context' : ''}" title="${h(me().name)} · ${h(asgLabel(a))}"><span class="av side-av" aria-hidden="true">${ini(myId())}</span><span class="side-user-t"><b title="${h(me().name)}">${h(me().name)}</b><small title="${h(asgLabel(a))}">${sub}</small></span><span class="side-user-chev">${ic('chev', 16)}</span></button></div><nav class="side-nav" aria-label="Sections">${items}</nav><div class="side-foot"><button type="button" class="nav side-close" data-a="drawerClose">${ic('x')}<span class="t">Close menu</span></button></div></aside>`;
+    .join("");
+  const sub = `${h(roleName(a.role, a.ctx))} · ${h(ctxShort(a.ctx))}${a.bundles.length ? " · +" + a.bundles.length + " bundle" + (a.bundles.length > 1 ? "s" : "") : ""}`;
+  return `<aside class="side" id="side-nav" aria-label="Main navigation"${UI.drawer ? ' role="dialog" aria-modal="true"' : ""}><div class="side-plate"><a href="#" class="brand" data-a="go" data-r="home" aria-label="PHOENIX home"><span class="mark">${MARK()}</span><span class="wm"><b>PHOENIX</b><span>Foundation</span></span></a><button class="side-user" type="button" data-a="switcher" aria-label="${h(me().name)}, ${h(asgLabel(a))}${others > 1 ? ". Switch role or context" : ""}" title="${h(me().name)} · ${h(asgLabel(a))}"><span class="av side-av" aria-hidden="true">${ini(myId())}</span><span class="side-user-t"><b title="${h(me().name)}">${h(me().name)}</b><small title="${h(asgLabel(a))}">${sub}</small></span><span class="side-user-chev">${ic("chev", 16)}</span></button></div><nav class="side-nav" aria-label="Sections">${items}</nav><div class="side-foot"><button type="button" class="nav side-close" data-a="drawerClose">${ic("x")}<span class="t">Close menu</span></button></div></aside>`;
 }
 // The PHOENIX mark: an ember plume rising from a baseline.
 const MARK = (s = 20) =>
   `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12.6 2.8c2.9 3 4.6 6 4.6 8.8a5.2 5.2 0 0 1-10.4.2c0-2 .9-3.8 2.3-5.2.1 1.9 1 3.2 2.4 3.7-.7-2.6-.3-5.1 1.1-7.5z" fill="currentColor"/><path d="M5 20.5h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".55"/></svg>`;
 // Breadcrumb trail: [[label, route, params], …]; the last item is the current page and is not a link.
-const crumbsHtml = list =>
-  `<ol class="crumbs" aria-label="Breadcrumb">${list.map(([l, r, p], i) => (i < list.length - 1 && r ? `<li>${L(l, r, p, '')}</li>` : `<li><span aria-current="page">${l}</span></li>`)).join('')}</ol>`;
+const crumbsHtml = (list) =>
+  `<ol class="crumbs" aria-label="Breadcrumb">${list.map(([l, r, p], i) => (i < list.length - 1 && r ? `<li>${L(l, r, p, "")}</li>` : `<li><span aria-current="page">${l}</span></li>`)).join("")}</ol>`;
 function topbar() {
-  const unread = S.notifs.filter(n => n.pid === myId() && !n.read && notifHere(n)).length;
-  return `<header class="top"><button class="iconbtn menubtn" type="button" data-a="drawerToggle" aria-label="Open navigation" aria-controls="side-nav" aria-expanded="${!!UI.drawer}">${ic('menu', 20)}</button><a href="#" class="mbrand" data-a="go" data-r="home" aria-label="PHOENIX home"><span class="mark">${MARK(16)}</span></a>
+  const unread = S.notifs.filter(
+    (n) => n.pid === myId() && !n.read && notifHere(n),
+  ).length;
+  return `<header class="top"><button class="iconbtn menubtn" type="button" data-a="drawerToggle" aria-label="Open navigation" aria-controls="side-nav" aria-expanded="${!!UI.drawer}">${ic("menu", 20)}</button><a href="#" class="mbrand" data-a="go" data-r="home" aria-label="PHOENIX home"><span class="mark">${MARK(16)}</span></a>
  <div class="grow"></div>
- <button type="button" class="ctxbtn" data-a="switcher" aria-haspopup="dialog" title="Active role and context. Select to switch." aria-label="Working as ${h(asgLabel(asg()))}. Switch role or context"><span class="ctxbtn-k">Working as</span><b>${h(ROLE[asg().role])}</b><span class="ctxbtn-c">${ic('building', 13)}${h(ctxName(asg().ctx))}</span><span class="ctxbtn-ch">${ic('chev', 13)}</span></button>
- ${can('ai') ? `<button type="button" class="btn btn-s btn-sm askbtn ${UI.panel === 'ask' ? 'on' : ''}" data-a="askToggle" aria-label="Ask PHOENIX" aria-expanded="${UI.panel === 'ask'}" aria-controls="assist" title="Ask PHOENIX">${ic('sparkle', 16)}<span class="hide-md">Ask PHOENIX</span></button>` : ''}
- <div class="nwrap"><button class="iconbtn ${UI.panel === 'notif' ? 'on' : ''}" type="button" data-a="notifToggle" aria-haspopup="dialog" aria-expanded="${UI.panel === 'notif'}" aria-label="Notifications, ${unread} unread">${ic('bell')}${unread ? `<span class="badge">${unread}</span>` : ''}</button>${UI.panel === 'notif' ? notifMenu() : ''}</div>
- <div class="uwrap"><button class="who ${UI.panel === 'user' ? 'on' : ''}" type="button" data-a="userToggle" aria-haspopup="menu" aria-expanded="${UI.panel === 'user'}" aria-controls="user-menu" aria-label="Account menu for ${h(me().name)}"><span class="av">${ini(myId())}</span><span class="hide-sm">${h(me().display)}</span><span class="who-chev">${ic('chev', 14)}</span></button>${UI.panel === 'user' ? userMenu() : ''}</div></header>`;
+ <button type="button" class="ctxbtn" data-a="switcher" aria-haspopup="dialog" title="Active role and context. Select to switch." aria-label="Working as ${h(asgLabel(asg()))}. Switch role or context"><span class="ctxbtn-k">Working as</span><b>${h(ROLE[asg().role])}</b><span class="ctxbtn-c">${ic("building", 13)}${h(ctxName(asg().ctx))}</span><span class="ctxbtn-ch">${ic("chev", 13)}</span></button>
+ ${can("ai") ? `<button type="button" class="btn btn-s btn-sm askbtn ${UI.panel === "ask" ? "on" : ""}" data-a="askToggle" aria-label="Ask PHOENIX" aria-expanded="${UI.panel === "ask"}" aria-controls="assist" title="Ask PHOENIX">${ic("sparkle", 16)}<span class="hide-md">Ask PHOENIX</span></button>` : ""}
+ <div class="nwrap"><button class="iconbtn ${UI.panel === "notif" ? "on" : ""}" type="button" data-a="notifToggle" aria-haspopup="dialog" aria-expanded="${UI.panel === "notif"}" aria-label="Notifications, ${unread} unread">${ic("bell")}${unread ? `<span class="badge">${unread}</span>` : ""}</button>${UI.panel === "notif" ? notifMenu() : ""}</div>
+ <div class="uwrap"><button class="who ${UI.panel === "user" ? "on" : ""}" type="button" data-a="userToggle" aria-haspopup="menu" aria-expanded="${UI.panel === "user"}" aria-controls="user-menu" aria-label="Account menu for ${h(me().name)}"><span class="av">${ini(myId())}</span><span class="hide-sm">${h(me().display)}</span><span class="who-chev">${ic("chev", 14)}</span></button>${UI.panel === "user" ? userMenu() : ""}</div></header>`;
 }
 const SHORT = {
-  home: 'Home',
-  messages: 'Chats',
-  pathway: 'Pathway',
-  profile: 'Profile',
-  projects: 'Projects',
-  circles: 'Circles',
-  ropeteams: 'Rope',
-  rooms: 'Rooms',
-  opportunities: 'Offers',
-  matches: 'Matches',
-  board: 'Board',
-  challenges: 'Challenges',
-  disputes: 'Disputes',
-  relations: 'Links',
-  evidence: 'Evidence',
-  documents: 'Docs',
-  publicprojects: 'Public',
-  repository: 'Repo',
-  harvests: 'Harvest',
-  funding: 'Funding',
-  billing: 'Billing',
-  platform: 'Platform',
-  tenants: 'Orgs',
-  roles: 'Roles',
-  audit: 'Audit',
-  org: 'Org',
-  admin: 'Admin',
-  inbox: 'Inbox',
-  resources: 'Guides',
-  help: 'Help',
-  privacy: 'Privacy',
-  mandate: 'Mandate',
-  compassqs: 'Compass',
-  policies: 'Trust',
-  aiadmin: 'AI',
-  incidents: 'Safety',
-  metrics: 'Reports',
+  home: "Home",
+  messages: "Chats",
+  pathway: "Pathway",
+  profile: "Profile",
+  projects: "Projects",
+  circles: "Circles",
+  ropeteams: "Rope",
+  rooms: "Rooms",
+  opportunities: "Offers",
+  matches: "Matches",
+  board: "Board",
+  challenges: "Challenges",
+  disputes: "Disputes",
+  relations: "Links",
+  evidence: "Evidence",
+  documents: "Docs",
+  publicprojects: "Public",
+  repository: "Repo",
+  harvests: "Harvest",
+  funding: "Funding",
+  billing: "Billing",
+  platform: "Platform",
+  tenants: "Orgs",
+  roles: "Roles",
+  audit: "Audit",
+  org: "Org",
+  admin: "Admin",
+  inbox: "Inbox",
+  resources: "Guides",
+  help: "Help",
+  privacy: "Privacy",
+  mandate: "Mandate",
+  compassqs: "Compass",
+  policies: "Trust",
+  aiadmin: "AI",
+  incidents: "Safety",
+  metrics: "Reports",
 };
 function bottomnav() {
   const act = PARENT[UI.route] || UI.route;
   const it = navItems()
-    .filter((x, i, a) => a.findIndex(y => y[0].split(':')[0] === x[0].split(':')[0]) === i)
+    .filter(
+      (x, i, a) =>
+        a.findIndex((y) => y[0].split(":")[0] === x[0].split(":")[0]) === i,
+    )
     .slice(0, 4);
   return `<nav class="bnav" aria-label="Primary">${it
     .map(([r, l, i]) => {
-      const rt = r.split(':')[0];
-      return `<a href="#" class="bn${act === rt ? ' on' : ''}" data-a="go" data-r="${rt}"><span class="bi">${ic(i, 20)}</span>${SHORT[rt] || h(l.split(' ')[0])}</a>`;
+      const rt = r.split(":")[0];
+      return `<a href="#" class="bn${act === rt ? " on" : ""}" data-a="go" data-r="${rt}"><span class="bi">${ic(i, 20)}</span>${SHORT[rt] || h(l.split(" ")[0])}</a>`;
     })
-    .join('')}<a href="#" class="bn" data-a="moreNav"><span class="bi">${ic('more', 20)}</span>More</a></nav>`;
+    .join(
+      "",
+    )}<a href="#" class="bn" data-a="moreNav"><span class="bi">${ic("more", 20)}</span>More</a></nav>`;
 }
 function deniedView(m) {
-  return `<div class="denied card"><span class="tile t-soft" style="width:56px;height:56px;margin:0 auto">${ic('lock', 24)}</span><h1 class="h2" style="margin-top:12px">You do not have access to this area</h1><p class="muted" style="margin-top:8px">Your effective permission for <b>${h(m)}</b> as ${ROLE[role()]} in ${h(ctx()?.name)} is: <b>${LV[lvl(m)] || 'no access'}</b>.</p><p class="cap" style="margin-top:8px">Effective permission = identity + scoped role + context + mandate + object permission + consent + lifecycle state + entitlement. This attempt has been recorded.</p><div style="margin-top:16px">${B('Back to My PHOENIX', 'go', { r: 'home' }, 'btn-p')}</div></div>`;
+  return `<div class="denied card"><span class="tile t-soft" style="width:56px;height:56px;margin:0 auto">${ic("lock", 24)}</span><h1 class="h2" style="margin-top:12px">You do not have access to this area</h1><p class="muted" style="margin-top:8px">Your effective permission for <b>${h(m)}</b> as ${ROLE[role()]} in ${h(ctx()?.name)} is: <b>${LV[lvl(m)] || "no access"}</b>.</p><p class="cap" style="margin-top:8px">Effective permission = identity + scoped role + context + mandate + object permission + consent + lifecycle state + entitlement. This attempt has been recorded.</p><div style="margin-top:16px">${B("Back to My PHOENIX", "go", { r: "home" }, "btn-p")}</div></div>`;
 }
 // ---- deep links and notices are re-checked against the active context (BF-01)
-const CTX_OBJ = { circle: 'circles', rope: 'ropes', room: 'rooms', project: 'projects', card: 'cards', match: 'matches', harvest: 'harvests', challenge: 'challenges', dispute: 'disputes' };
+const CTX_OBJ = {
+  circle: "circles",
+  rope: "ropes",
+  room: "rooms",
+  project: "projects",
+  card: "cards",
+  match: "matches",
+  harvest: "harvests",
+  challenge: "challenges",
+  dispute: "disputes",
+};
 // The object a detail route opens, when it belongs to a different context than the active one.
 function ctxObj() {
   const k = CTX_OBJ[UI.route];
@@ -844,13 +1320,24 @@ function ctxObj() {
   return o && o.ctx && o.ctx !== ctxId() ? o : null;
 }
 function ctxGateView(o) {
-  const mine = roleChoices().filter(x => x.ctx === o.ctx);
+  const mine = roleChoices().filter((x) => x.ctx === o.ctx);
   const ok_ = mine.filter(asgUsable);
-  return `<div class="denied card"><span class="tile t-soft" style="width:56px;height:56px;margin:0 auto">${ic('building', 24)}</span><h1 class="h2" style="margin-top:12px">This item belongs to ${h(ctxName(o.ctx))}</h1><p class="muted" style="margin-top:8px">You are working as <b>${h(asgLabel(asg()))}</b>. Items from another context open only after you switch to an active role there. Nothing from this item was loaded.</p>${
+  return `<div class="denied card"><span class="tile t-soft" style="width:56px;height:56px;margin:0 auto">${ic("building", 24)}</span><h1 class="h2" style="margin-top:12px">This item belongs to ${h(ctxName(o.ctx))}</h1><p class="muted" style="margin-top:8px">You are working as <b>${h(asgLabel(asg()))}</b>. Items from another context open only after you switch to an active role there. Nothing from this item was loaded.</p>${
     ok_.length
-      ? `<div class="col" style="gap:8px;margin-top:16px">${ok_.map(x => B(`Switch to ${h(ctxShort(x.ctx))} as ${h(ROLE[x.role])} and open`, 'doSwitch', { id: x.id, then: JSON.stringify({ r: UI.route, p: UI.p }) }, 'btn-p')).join('')}</div>`
-      : `<p class="cap" style="margin-top:12px">${mine.length ? 'Your role there is ' + h(mine.map(x => x.status).join(', ').toLowerCase()) + ', so it cannot be used for work yet.' : 'You have no role in that context.'}</p>`
-  }<div style="margin-top:12px">${B('Back to My PHOENIX', 'go', { r: 'home' })}</div><p class="cap" style="margin-top:12px">This attempt has been recorded.</p></div>`;
+      ? `<div class="col" style="gap:8px;margin-top:16px">${ok_.map((x) => B(`Switch to ${h(ctxShort(x.ctx))} as ${h(roleName(x.role, x.ctx))} and open`, "doSwitch", { id: x.id, then: JSON.stringify({ r: UI.route, p: UI.p }) }, "btn-p")).join("")}</div>`
+      : `<p class="cap" style="margin-top:12px">${
+          mine.length
+            ? "Your role there is " +
+              h(
+                mine
+                  .map((x) => x.status)
+                  .join(", ")
+                  .toLowerCase(),
+              ) +
+              ", so it cannot be used for work yet."
+            : "You have no role in that context."
+        }</p>`
+  }<div style="margin-top:12px">${B("Back to My PHOENIX", "go", { r: "home" })}</div><p class="cap" style="margin-top:12px">This attempt has been recorded.</p></div>`;
 }
 // ---- routes
 const ROUTES = {}; // name:{mod, view}
@@ -858,26 +1345,36 @@ function route(name, mod, view) {
   ROUTES[name] = { mod, view };
 }
 function render() {
-  const el = document.getElementById('app');
+  const el = document.getElementById("app");
   let html;
+  syncRoles();
   // Entrance motion only when the screen or the modal actually changes, never on in-place re-renders.
-  const rk = UI.route + '|' + (UI.p.id || '');
+  const rk = UI.route + "|" + (UI.p.id || "");
   const enter = UI._rk !== rk;
   UI._rk = rk;
-  const menter = UI.modal && UI._sig !== UI.route + '|' + UI.modal.title;
-  const pub = ['login', 'register', 'invite', 'verify', 'pending', 'forgot', 'lms', 'mfa'];
+  const menter = UI.modal && UI._sig !== UI.route + "|" + UI.modal.title;
+  const pub = [
+    "login",
+    "register",
+    "invite",
+    "verify",
+    "pending",
+    "forgot",
+    "lms",
+    "mfa",
+  ];
   if (!S.session) {
     html = (PUB[UI.route] || PUB.login)();
   } else {
     const a = asg();
     tick();
-    if (a.status !== 'Active') {
+    if (a.status !== "Active") {
       html = PUB.pending();
     } else if (
       !a.onb.agreement ||
       !a.onb.consents ||
       !a.onb.profile ||
-      (!a.onb.compass && roleBase(a.role) === 'P')
+      (!a.onb.compass && roleBase(a.role) === "P")
     ) {
       html = ONB();
     } else {
@@ -886,50 +1383,71 @@ function render() {
       const xo = ctxObj();
       const pg = reaccept();
       if (xo) {
-        audit('Access denied', UI.route + ' ' + xo.id, 'Object belongs to ' + ctxName(xo.ctx) + '; active context is ' + ctxName(ctxId()), 'denied');
+        audit(
+          "Access denied",
+          UI.route + " " + xo.id,
+          "Object belongs to " +
+            ctxName(xo.ctx) +
+            "; active context is " +
+            ctxName(ctxId()),
+          "denied",
+        );
         inner = ctxGateView(xo);
       } else if (pg && !RIGHTS_ROUTES.includes(UI.route)) {
         inner = policyGate(pg);
-      } else if (R.mod && R.mod !== 'any' && !(can(R.mod) || (R.tech && lvl(R.mod).match(/[TM]/)))) {
-        audit('Access denied', UI.route, 'Route guard: ' + LV[lvl(R.mod)], 'denied');
+      } else if (
+        R.mod &&
+        R.mod !== "any" &&
+        !(can(R.mod) || (R.tech && lvl(R.mod).match(/[TM]/)))
+      ) {
+        audit(
+          "Access denied",
+          UI.route,
+          "Route guard: " + LV[lvl(R.mod)],
+          "denied",
+        );
         inner = deniedView(R.mod);
       } else {
         try {
           inner = R.view();
         } catch (e) {
           console.error(e);
-          inner = banner('err', 'Something went wrong on this screen', h(e.message));
+          inner = banner(
+            "err",
+            "Something went wrong on this screen",
+            h(e.message),
+          );
         }
       }
-      html = `<div class="ph"><a href="#main" class="skip" data-a="skipMain">Skip to content</a><div class="app${UI.compact ? ' is-compact' : ''}${UI.drawer ? ' is-drawer' : ''}" data-route="${h(UI.route)}">${sidebar()}${UI.drawer ? '<div class="scrim" data-a="drawerClose" aria-hidden="true"></div>' : ''}<div class="main">${topbar()}<main class="content${enter ? ' enter' : ''}" id="main" tabindex="-1">${inner}</main>${bottomnav()}</div></div></div>`;
+      html = `<div class="ph"><a href="#main" class="skip" data-a="skipMain">Skip to content</a><div class="app${UI.compact ? " is-compact" : ""}${UI.drawer ? " is-drawer" : ""}" data-route="${h(UI.route)}">${sidebar()}${UI.drawer ? '<div class="scrim" data-a="drawerClose" aria-hidden="true"></div>' : ""}<div class="main">${topbar()}<main class="content${enter ? " enter" : ""}" id="main" tabindex="-1">${inner}</main>${bottomnav()}</div></div></div>`;
     }
   }
   if (UI.modal)
-    html += `<div class="mback${menter ? ' enter' : ''}" data-a="mback"><div class="modal ${UI.modal.wide ? 'wide' : ''}" role="dialog" aria-modal="true" aria-labelledby="mt"><div class="row" style="justify-content:space-between"><h2 class="h2" id="mt">${UI.modal.title}</h2><button class="iconbtn" type="button" data-a="closeM" aria-label="Close">${ic('x')}</button></div>${typeof UI.modal.body === 'function' ? UI.modal.body() : UI.modal.body}</div></div>`;
+    html += `<div class="mback${menter ? " enter" : ""}" data-a="mback"><div class="modal ${UI.modal.wide ? "wide" : ""}" role="dialog" aria-modal="true" aria-labelledby="mt"><div class="row" style="justify-content:space-between"><h2 class="h2" id="mt">${UI.modal.title}</h2><button class="iconbtn" type="button" data-a="closeM" aria-label="Close">${ic("x")}</button></div>${typeof UI.modal.body === "function" ? UI.modal.body() : UI.modal.body}</div></div>`;
   if (UI.toast)
-    html += `<div class="toast" role="${UI.toast.k === 'err' ? 'alert' : 'status'}"><div class="banner b-${UI.toast.k === 'err' ? 'err' : UI.toast.k === 'warn' ? 'warn' : 'ok'}">${ic(UI.toast.k === 'ok' ? 'check' : 'alert')}<div style="flex:1"><p>${h(UI.toast.t)}</p></div><button class="iconbtn" style="width:28px;height:28px;margin:-4px -6px 0 0" type="button" data-a="toastX" aria-label="Dismiss">${ic('x', 16)}</button></div></div>`;
+    html += `<div class="toast" role="${UI.toast.k === "err" ? "alert" : "status"}"><div class="banner b-${UI.toast.k === "err" ? "err" : UI.toast.k === "warn" ? "warn" : "ok"}">${ic(UI.toast.k === "ok" ? "check" : "alert")}<div style="flex:1"><p>${h(UI.toast.t)}</p></div><button class="iconbtn" style="width:28px;height:28px;margin:-4px -6px 0 0" type="button" data-a="toastX" aria-label="Dismiss">${ic("x", 16)}</button></div></div>`;
   if (UI.busy)
     html += `<div class="busy" role="status" aria-live="polite"><div class="busy-box"><span class="spin"></span><b>${h(UI.busy)}</b></div></div>`;
   snapForms();
-  const sig = UI.route + '|' + (UI.modal ? UI.modal.title : '');
+  const sig = UI.route + "|" + (UI.modal ? UI.modal.title : "");
   const fm = UI.modal && UI._sig !== sig;
   UI._sig = sig;
   UI._cleared = new Set();
   el.innerHTML = `<div class="ph" style="min-height:100vh">${html}</div>`;
-  document.body.style.overflow = UI.modal ? 'hidden' : '';
-  el.querySelectorAll('.tabs').forEach(t => {
-    const on = t.querySelector('.tab.on');
+  document.body.style.overflow = UI.modal ? "hidden" : "";
+  el.querySelectorAll(".tabs").forEach((t) => {
+    const on = t.querySelector(".tab.on");
     if (on && on.offsetLeft - t.offsetLeft + on.offsetWidth > t.clientWidth)
       t.scrollLeft = on.offsetLeft - t.offsetLeft - 16;
   });
   if (fm) {
     const f =
       el.querySelector(
-        '.modal form input:not([type=hidden]):not([readonly]):not([type=checkbox]),.modal form select,.modal form textarea',
-      ) || el.querySelector('.modal .btn');
+        ".modal form input:not([type=hidden]):not([readonly]):not([type=checkbox]),.modal form select,.modal form textarea",
+      ) || el.querySelector(".modal .btn");
     if (f) f.focus();
   }
-  AFTER.forEach(fn => {
+  AFTER.forEach((fn) => {
     try {
       fn(el);
     } catch (e) {
@@ -940,19 +1458,26 @@ function render() {
 // Post-render hooks (scroll positions, focus) registered by view modules.
 const AFTER = [];
 function snapForms() {
-  const el = document.getElementById('app');
+  const el = document.getElementById("app");
   if (!el) return;
-  const sig = UI.route + '|' + (UI.modal ? UI.modal.title : '');
+  const sig = UI.route + "|" + (UI.modal ? UI.modal.title : "");
   if (UI._sig !== sig) return;
-  el.querySelectorAll('form[data-f]').forEach(f => {
+  el.querySelectorAll("form[data-f]").forEach((f) => {
     const n = f.dataset.f;
     if (UI._cleared && UI._cleared.has(n)) return;
     const d = { ...(UI.form[n] || {}) };
-    f.querySelectorAll('input,select,textarea').forEach(i => {
-      if (!i.name || i.type === 'password' || i.type === 'file' || i.type === 'hidden') return;
-      if (i.type === 'checkbox') {
-        if (f.querySelectorAll(`[name="${i.name}"]`).length === 1) d[i.name] = i.checked ? 'yes' : '';
-      } else if (i.type === 'radio') {
+    f.querySelectorAll("input,select,textarea").forEach((i) => {
+      if (
+        !i.name ||
+        i.type === "password" ||
+        i.type === "file" ||
+        i.type === "hidden"
+      )
+        return;
+      if (i.type === "checkbox") {
+        if (f.querySelectorAll(`[name="${i.name}"]`).length === 1)
+          d[i.name] = i.checked ? "yes" : "";
+      } else if (i.type === "radio") {
         if (i.checked) d[i.name] = i.value;
       } else d[i.name] = i.value;
     });
@@ -970,15 +1495,15 @@ function busy(t, fn, ms = 700) {
 // ---- events
 const A = {},
   F = {};
-document.addEventListener('click', e => {
-  const el = e.target.closest('[data-a]');
+document.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-a]");
   if (!el) return;
   const a = el.dataset.a;
-  if (a === 'mback' && e.target !== el) return;
-  if (el.tagName === 'A' || el.tagName === 'BUTTON') e.preventDefault();
+  if (a === "mback" && e.target !== el) return;
+  if (el.tagName === "A" || el.tagName === "BUTTON") e.preventDefault();
   if (A[a]) A[a](el.dataset, el, e);
 });
-document.addEventListener('submit', e => {
+document.addEventListener("submit", (e) => {
   const f = e.target;
   if (!f.dataset.f) return;
   e.preventDefault();
@@ -992,17 +1517,24 @@ document.addEventListener('submit', e => {
   if (sb && sb.name) d[sb.name] = sb.value;
   if (F[f.dataset.f]) F[f.dataset.f](d, f);
 });
-document.addEventListener('change', e => {
-  const el = e.target.closest('[data-ch]');
+document.addEventListener("change", (e) => {
+  const el = e.target.closest("[data-ch]");
   if (!el) return;
   if (A[el.dataset.ch]) A[el.dataset.ch](el.dataset, el);
 });
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && UI.modal && !(e.target.classList && e.target.classList.contains('msel-q'))) closeM();
-  else if (e.key === 'Escape' && !UI.modal && UI.drawer) A.drawerClose();
-  else if (e.key === 'Escape' && !UI.modal && UI.panel) closePanel();
-  else if (e.key === 'Tab' && UI.drawer && !UI.modal) {
-    const f = [...document.querySelectorAll('#side-nav a, #side-nav button')].filter(x => x.offsetParent !== null);
+document.addEventListener("keydown", (e) => {
+  if (
+    e.key === "Escape" &&
+    UI.modal &&
+    !(e.target.classList && e.target.classList.contains("msel-q"))
+  )
+    closeM();
+  else if (e.key === "Escape" && !UI.modal && UI.drawer) A.drawerClose();
+  else if (e.key === "Escape" && !UI.modal && UI.panel) closePanel();
+  else if (e.key === "Tab" && UI.drawer && !UI.modal) {
+    const f = [
+      ...document.querySelectorAll("#side-nav a, #side-nav button"),
+    ].filter((x) => x.offsetParent !== null);
     if (!f.length) return;
     const i = f.indexOf(document.activeElement);
     if (e.shiftKey && i <= 0) {
@@ -1019,48 +1551,55 @@ A.drawerToggle = () => (UI.drawer ? A.drawerClose() : A.drawerOpen());
 A.drawerOpen = () => {
   UI.drawer = true;
   render();
-  setTimeout(() => (document.querySelector('#side-nav .nav.on') || document.querySelector('#side-nav .nav'))?.focus(), 0);
+  setTimeout(
+    () =>
+      (
+        document.querySelector("#side-nav .nav.on") ||
+        document.querySelector("#side-nav .nav")
+      )?.focus(),
+    0,
+  );
 };
 A.drawerClose = () => {
   UI.drawer = false;
   render();
-  setTimeout(() => document.querySelector('.menubtn')?.focus(), 0);
+  setTimeout(() => document.querySelector(".menubtn")?.focus(), 0);
 };
 A.sideCompact = () => {
   UI.compact = !UI.compact;
   try {
-    localStorage.setItem('phx-compact', UI.compact ? '1' : '');
+    localStorage.setItem("phx-compact", UI.compact ? "1" : "");
   } catch (e) {}
   render();
 };
-A.skipMain = () => document.getElementById('main')?.focus();
+A.skipMain = () => document.getElementById("main")?.focus();
 const applyTheme = () => {
-  const t = UI.theme || 'light';
-  if (t === 'system') document.documentElement.removeAttribute('data-theme');
-  else document.documentElement.setAttribute('data-theme', t);
+  const t = UI.theme || "light";
+  if (t === "system") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", t);
 };
-A.setTheme = d => {
+A.setTheme = (d) => {
   UI.theme = d.v;
   try {
-    localStorage.setItem('phx-theme', d.v);
+    localStorage.setItem("phx-theme", d.v);
   } catch (e) {}
   applyTheme();
   render();
 };
 try {
   UI.compact = false; // the sidebar is always full width on desktop
-  UI.theme = localStorage.getItem('phx-theme') || 'light';
+  UI.theme = localStorage.getItem("phx-theme") || "light";
 } catch (e) {
-  UI.theme = 'light';
+  UI.theme = "light";
 }
 applyTheme();
-A.go = d => {
+A.go = (d) => {
   const p = { ...d };
   delete p.a;
   delete p.r;
   go(d.r, p);
 };
-A.tab = d => {
+A.tab = (d) => {
   UI.tab[d.k] = d.v;
   if (UI.snav && UI.snav[d.k]) UI.snav[d.k].mobile = false; // choosing a section folds the phone panel
   delete UI.p.tab;
@@ -1069,32 +1608,51 @@ A.tab = d => {
 A.closeM = closeM;
 A.mback = closeM;
 // Posting in a review conversation keeps any open dialog open, so the new message shows in place.
-F.cv = d => {
+F.cv = (d) => {
   const c = CONVO[d.k];
   const o = c && c.get(d.id);
   const pm = o && c.post(o);
   if (!pm) return render();
-  if (!validate('cv', d, { text: [['req', 'Write a message first.'], ['min', 2]] })) return render();
+  if (
+    !validate("cv", d, {
+      text: [
+        ["req", "Write a message first."],
+        ["min", 2],
+      ],
+    })
+  )
+    return render();
   convoAdd(o, pm.kind, d.text.trim());
   c.notify(o, pm.kind);
-  audit(pm.kind === 'reply' ? 'Clarification reply posted' : 'Review comment posted', o.id, d.text.trim());
-  clearF('cv');
-  toast('Message posted.');
+  audit(
+    pm.kind === "reply"
+      ? "Clarification reply posted"
+      : "Review comment posted",
+    o.id,
+    d.text.trim(),
+  );
+  clearF("cv");
+  toast("Message posted.");
   ok();
 };
 // Confirmation step for destructive or hard-to-reverse actions. The confirmed action still passes the guard layer.
-const CB = (label, act, data, msg, cls = 'btn-s btn-sm', yes) =>
-  B(label, 'confirmAct', { ...data, act, msg, yes: yes || String(label).replace(/<[^>]+>/g, '') }, cls);
-A.confirmAct = d => {
+const CB = (label, act, data, msg, cls = "btn-s btn-sm", yes) =>
+  B(
+    label,
+    "confirmAct",
+    { ...data, act, msg, yes: yes || String(label).replace(/<[^>]+>/g, "") },
+    cls,
+  );
+A.confirmAct = (d) => {
   const { act, msg, yes, a, ...rest } = d;
   // a row menu left open would re-render on the dialog's first mousedown and swallow the click
   UI.dvMenu = null;
   modal(
-    'Please confirm',
-    `<p class="muted">${h(msg)}</p><div class="actions">${B('Cancel', 'closeM')}${B(h(yes), 'confirmYes', { ...rest, act }, 'btn-d btn-sm')}</div>`,
+    "Please confirm",
+    `<p class="muted">${h(msg)}</p><div class="actions">${B("Cancel", "closeM")}${B(h(yes), "confirmYes", { ...rest, act }, "btn-d btn-sm")}</div>`,
   );
 };
-A.confirmYes = d => {
+A.confirmYes = (d) => {
   const { act, a, ...rest } = d;
   UI.modal = null;
   if (A[act]) A[act](rest);
@@ -1104,15 +1662,18 @@ A.toastX = () => {
   snapForms();
   render();
 };
-document.addEventListener('change', e => {
+document.addEventListener("change", (e) => {
   const i = e.target;
-  if (i.type === 'file') {
-    const l = i.closest('.field,.dz,label,form');
-    const t = l && l.querySelector('.fname');
+  if (i.type === "file") {
+    const l = i.closest(".field,.dz,label,form");
+    const t = l && l.querySelector(".fname");
     if (t)
       t.textContent = i.files[0]
-        ? i.files[0].name + ' · ' + (i.files[0].size / 1048576).toFixed(2) + ' MB'
-        : 'No file chosen';
+        ? i.files[0].name +
+          " · " +
+          (i.files[0].size / 1048576).toFixed(2) +
+          " MB"
+        : "No file chosen";
   }
 });
 const resetUI = () => {
@@ -1126,56 +1687,69 @@ const resetUI = () => {
   UI.panel = null;
 };
 A.logout = () => {
-  audit('Signed out', 'session', '');
+  audit("Signed out", "session", "");
   S.session = null;
   save();
   resetUI();
-  UI.route = 'login';
+  UI.route = "login";
   render();
 };
 /// BF-01: the switcher lists every role assignment with its organisation or programme context. Only Active
 // assignments can be chosen for work; pending, expired, suspended or declined ones are shown with their state.
 function roleChoices(pid = myId()) {
-  return S.assign.filter(x => x.pid === pid);
+  return S.assign.filter((x) => x.pid === pid);
 }
-const asgUsable = x => !!x && x.status === 'Active' && (S.contexts.find(c => c.id === x.ctx) || {}).status !== 'Suspended';
+const asgUsable = (x) =>
+  !!x &&
+  x.status === "Active" &&
+  (S.contexts.find((c) => c.id === x.ctx) || {}).status !== "Suspended";
 // A form holds unsaved input when any of its text fields has content.
 const unsavedForms = () =>
   Object.entries(UI.form || {})
-    .filter(([k, v]) => !['login', 'cv'].includes(k) && v && Object.values(v).some(x => String(x || '').trim() && x !== 'yes'))
+    .filter(
+      ([k, v]) =>
+        !["login", "cv"].includes(k) &&
+        v &&
+        Object.values(v).some((x) => String(x || "").trim() && x !== "yes"),
+    )
     .map(([k]) => k);
 function switcherBody(then) {
   const cur = S.session.aid;
   const list = roleChoices();
-  const byCtx = [...new Set(list.map(x => x.ctx))];
-  return `<p class="muted">Choose the role and context to work in. Your dashboard, menu, requests, counts and notifications are rebuilt for that choice; nothing from one context is carried into another.</p>${unsavedForms().length ? banner('warn', 'You have unsaved changes', 'Switching discards text you have not saved. Save it first if you want to keep it.') : ''}<div class="col" style="gap:14px">${byCtx
+  const byCtx = [...new Set(list.map((x) => x.ctx))];
+  return `<p class="muted">Choose the role and context to work in. Your dashboard, menu, requests, counts and notifications are rebuilt for that choice; nothing from one context is carried into another.</p>${unsavedForms().length ? banner("warn", "You have unsaved changes", "Switching discards text you have not saved. Save it first if you want to keep it.") : ""}<div class="col" style="gap:14px">${byCtx
     .map(
-      c => `<section class="col" style="gap:6px"><span class="lbl">${ic('building', 14)} ${h(ctxName(c))}</span>${list
-        .filter(x => x.ctx === c)
-        .map(x => {
-          const usable = asgUsable(x);
-          const isCur = x.id === cur;
-          return `<button class="demo-acc${usable ? '' : ' is-off'}" type="button" ${usable && !isCur ? `data-a="doSwitch" data-id="${x.id}"${then ? ` data-then="${h(then)}"` : ''}` : 'disabled aria-disabled="true"'}><span class="tile t-soft">${ic('user', 18)}</span><span class="col" style="flex:1"><b>${h(ROLE[x.role])}</b><span class="cap">${x.bundles.length ? 'Bundles: ' + h(x.bundles.join(', ')) : 'No specialist bundles'}${usable ? '' : ' · not available for work until it is active'}</span></span>${isCur ? pill('Current', 'p-teal') : pill(x.status)}</button>`;
-        })
-        .join('')}</section>`,
+      (c) =>
+        `<section class="col" style="gap:6px"><span class="lbl">${ic("building", 14)} ${h(ctxName(c))}</span>${list
+          .filter((x) => x.ctx === c)
+          .map((x) => {
+            const usable = asgUsable(x);
+            const isCur = x.id === cur;
+            return `<button class="demo-acc${usable ? "" : " is-off"}" type="button" ${usable && !isCur ? `data-a="doSwitch" data-id="${x.id}"${then ? ` data-then="${h(then)}"` : ""}` : 'disabled aria-disabled="true"'}><span class="tile t-soft">${ic("user", 18)}</span><span class="col" style="flex:1"><b>${h(roleName(x.role, x.ctx))}</b><span class="cap">${x.bundles.length ? "Bundles: " + h(x.bundles.join(", ")) : "No specialist bundles"}${usable ? "" : " · not available for work until it is active"}</span></span>${isCur ? pill("Current", "p-teal") : pill(x.status)}</button>`;
+          })
+          .join("")}</section>`,
     )
-    .join('')}</div>`;
+    .join("")}</div>`;
 }
 A.switcher = () => {
   if (roleChoices().length < 2) {
-    toast('You hold one role in one context.', 'warn');
+    toast("You hold one role in one context.", "warn");
     render();
     return;
   }
   UI.panel = null;
-  modal('Switch role or context', switcherBody());
+  modal("Switch role or context", switcherBody());
 };
 // A policy published in another tab reaches this one straight away.
-window.addEventListener('storage', e => {
+window.addEventListener("storage", (e) => {
   if (e.key !== KEY || !e.newValue || !S || !S.session) return;
   try {
     const n = JSON.parse(e.newValue);
-    if (n && n.agreements && JSON.stringify(n.agreements) !== JSON.stringify(S.agreements)) {
+    if (
+      n &&
+      n.agreements &&
+      JSON.stringify(n.agreements) !== JSON.stringify(S.agreements)
+    ) {
       S.agreements = n.agreements;
       render();
     }
@@ -1183,11 +1757,11 @@ window.addEventListener('storage', e => {
 });
 // Re-evaluate the chosen assignment, close dialogs, drop cached screen state and open My PHOENIX (or the item the
 // person asked for, which is checked again under the new context by the route guard and the object's own checks).
-A.doSwitch = d => {
-  const x = S.assign.find(a => a.id === d.id && a.pid === myId());
+A.doSwitch = (d) => {
+  const x = S.assign.find((a) => a.id === d.id && a.pid === myId());
   if (!asgUsable(x)) {
-    audit('Context switch refused', 'session', d.id, 'denied');
-    toast('That role is not active, so it cannot be used for work.', 'err');
+    audit("Context switch refused", "session", d.id, "denied");
+    toast("That role is not active, so it cannot be used for work.", "err");
     return render();
   }
   const from = asg();
@@ -1196,34 +1770,41 @@ A.doSwitch = d => {
   UI.drawer = false;
   S.session.aid = x.id;
   me().lastAid = x.id;
-  audit('Role/context switched', 'session', asgLabel(from) + ' → ' + asgLabel(x));
+  audit(
+    "Role/context switched",
+    "session",
+    asgLabel(from) + " → " + asgLabel(x),
+  );
   save();
   if (then) {
     go(then.r, then.p || {});
-    toast('Now working as ' + asgLabel(x) + '.');
+    toast("Now working as " + asgLabel(x) + ".");
   } else {
-    go('home');
-    toast('Now working as ' + asgLabel(x) + '.');
+    go("home");
+    toast("Now working as " + asgLabel(x) + ".");
   }
 };
 A.moreNav = () =>
   modal(
-    'Menu',
+    "Menu",
     `<div class="col" style="gap:4px">${navItems()
-      .filter((x, i, a) => a.findIndex(y => y[0].split(':')[0] === x[0].split(':')[0]) === i)
+      .filter(
+        (x, i, a) =>
+          a.findIndex((y) => y[0].split(":")[0] === x[0].split(":")[0]) === i,
+      )
       .slice(4)
       .map(([r, l, i]) => {
-        const [rt, tb] = r.split(':');
-        return `<a href="#" class="nav" data-a="go" data-r="${rt}"${tb ? ` data-tab="${tb}"` : ''}>${ic(i)}<span>${h(l)}</span></a>`;
+        const [rt, tb] = r.split(":");
+        return `<a href="#" class="nav" data-a="go" data-r="${rt}"${tb ? ` data-tab="${tb}"` : ""}>${ic(i)}<span>${h(l)}</span></a>`;
       })
       .join(
-        '',
-      )}${can('ai') ? `<a href="#" class="nav" data-a="go" data-r="ask">${ic('sparkle')}<span>Ask PHOENIX</span></a>` : ''}${role() !== 'T' ? `<a href="#" class="nav" data-a="go" data-r="privacy">${ic('shield')}<span>My records & consent</span></a>` : ''}<a href="#" class="nav out" data-a="logout">${ic('logout')}<span>Log out</span></a></div>`,
+        "",
+      )}${can("ai") ? `<a href="#" class="nav" data-a="go" data-r="ask">${ic("sparkle")}<span>Ask PHOENIX</span></a>` : ""}${role() !== "T" ? `<a href="#" class="nav" data-a="go" data-r="privacy">${ic("shield")}<span>My records & consent</span></a>` : ""}<a href="#" class="nav out" data-a="logout">${ic("logout")}<span>Log out</span></a></div>`,
   );
 // A notice for another role or context never opens protected content under the current one. It names its context
 // and asks for an explicit, safe switch first (BF-01 example: "Switch to Excelsior as Mentor?").
-A.read = d => {
-  const n = S.notifs.find(x => x.id === d.id);
+A.read = (d) => {
+  const n = S.notifs.find((x) => x.id === d.id);
   if (!n) return;
   n.read = true;
   save();
@@ -1231,25 +1812,34 @@ A.read = d => {
   const x = notifAsg(n);
   UI.panel = null;
   if (!asgUsable(x)) {
-    audit('Cross-context notice blocked', n.id, asgLabel(x) + ' is ' + (x ? x.status : 'missing'), 'denied');
+    audit(
+      "Cross-context notice blocked",
+      n.id,
+      asgLabel(x) + " is " + (x ? x.status : "missing"),
+      "denied",
+    );
     return modal(
-      'This notice cannot be opened',
-      `${banner('warn', 'The role it belongs to is not active', `This notice is for your <b>${h(asgLabel(x) || 'earlier')}</b> role${x ? ', which is ' + h(x.status).toLowerCase() : ''}. Its content stays protected until that role is active again.`)}<div class="actions">${B('Close', 'closeM')}${B('Help & support', 'go', { r: 'help' }, 'btn-p btn-sm')}</div>`,
+      "This notice cannot be opened",
+      `${banner("warn", "The role it belongs to is not active", `This notice is for your <b>${h(asgLabel(x) || "earlier")}</b> role${x ? ", which is " + h(x.status).toLowerCase() : ""}. Its content stays protected until that role is active again.`)}<div class="actions">${B("Close", "closeM")}${B("Help & support", "go", { r: "help" }, "btn-p btn-sm")}</div>`,
     );
   }
-  audit('Cross-context notice opened', n.id, 'switch offered to ' + asgLabel(x));
+  audit(
+    "Cross-context notice opened",
+    n.id,
+    "switch offered to " + asgLabel(x),
+  );
   modal(
-    `Switch to ${h(ctxShort(x.ctx))} as ${h(ROLE[x.role])}?`,
-    `<p class="muted">This notice belongs to your <b>${h(ROLE[x.role])}</b> role in <b>${h(ctxName(x.ctx))}</b>. You are working as <b>${h(asgLabel(asg()))}</b>, so it is not opened here.</p><div class="notice-q">${ic('bell', 16)}<span>${h(n.t)}</span></div><p class="cap">After the switch, your menu, requests and counts change to that context, and the item opens with that role's permissions.</p><div class="actions">${B('Stay here', 'closeM')}${B(`Switch to ${h(ctxShort(x.ctx))} as ${h(ROLE[x.role])} and open`, 'doSwitch', { id: x.id, then: JSON.stringify({ r: n.r, p: n.p }) }, 'btn-p btn-sm')}</div>`,
+    `Switch to ${h(ctxShort(x.ctx))} as ${h(roleName(x.role, x.ctx))}?`,
+    `<p class="muted">This notice belongs to your <b>${h(roleName(x.role, x.ctx))}</b> role in <b>${h(ctxName(x.ctx))}</b>. You are working as <b>${h(asgLabel(asg()))}</b>, so it is not opened here.</p><div class="notice-q">${ic("bell", 16)}<span>${h(n.t)}</span></div><p class="cap">After the switch, your menu, requests and counts change to that context, and the item opens with that role's permissions.</p><div class="actions">${B("Stay here", "closeM")}${B(`Switch to ${h(ctxShort(x.ctx))} as ${h(roleName(x.role, x.ctx))} and open`, "doSwitch", { id: x.id, then: JSON.stringify({ r: n.r, p: n.p }) }, "btn-p btn-sm")}</div>`,
   );
 };
 A.resetDemo = () =>
   modal(
-    'Reset local data?',
+    "Reset local data?",
     '<p class="muted">All changes made in this browser are discarded and the sample data is restored.</p><div class="actions">' +
-      B('Cancel', 'closeM') +
-      B('Reset', 'doReset', {}, 'btn-d btn-sm') +
-      '</div>',
+      B("Cancel", "closeM") +
+      B("Reset", "doReset", {}, "btn-d btn-sm") +
+      "</div>",
   );
 A.doReset = () => {
   try {
@@ -1262,17 +1852,21 @@ A.doReset = () => {
   UI.tab = {};
   UI.chat = {};
   save();
-  go('login');
-  toast('Demo data reset.');
+  go("login");
+  toast("Demo data reset.");
 };
 // Seed plus the derived records that boot needs (project sections, migrations).
 function freshData() {
   const d = seed();
-  d.projects.forEach(p => {
-    if (!p.sections && p.status !== 'Draft') {
-      const dr = draftSections(p.title, p.desc || p.title + '.', p.type);
+  d.projects.forEach((p) => {
+    if (!p.sections && p.status !== "Draft") {
+      const dr = draftSections(p.title, p.desc || p.title + ".", p.type);
       p.desc = p.desc || dr[0];
-      p.sections = SECTIONS.map((x, i) => ({ text: dr[i], ai: true, st: i % 3 === 1 ? 'Edited' : 'Accepted' }));
+      p.sections = SECTIONS.map((x, i) => ({
+        text: dr[i],
+        ai: true,
+        st: i % 3 === 1 ? "Edited" : "Accepted",
+      }));
     }
   });
   return d;
@@ -1290,62 +1884,79 @@ function boot() {
   }
   migrate();
   save();
-  if (S.session && !S.assign.find(a => a.id === S.session.aid)) S.session = null;
-  UI.route = S.session ? 'home' : 'login';
+  if (S.session && !S.assign.find((a) => a.id === S.session.aid))
+    S.session = null;
+  UI.route = S.session ? "home" : "login";
+  // A pack's Request access link (#apply?pack=<id>) opens the form for that pack only, with the pack locked.
+  const ap = /^#apply\?(.*)$/.exec(location.hash);
+  if (ap && !S.session) {
+    UI.route = "apply";
+    UI.p = { pack: new URLSearchParams(ap[1]).get("pack") || "", lock: 1 };
+  }
   render();
 }
 
 // ---------- Nested workspace navigation (Circles, Rope Teams, Action Workspaces) ----------
 // Same contract as tabs(): returns { cur, html } and selects through A.tab, so views keep their logic. Sections are
 // grouped under expandable parents; on phones the whole panel folds behind one "Sections" toggle.
-// opts: { label, groups: [[groupLabel, icon, [ids…]], …], others: [[label, route, params], …] (sibling spaces) }
+// opts: { label, groups: [[groupLabel, icon, [ids…]], …], others: [[label, route, params], …] (sibling spaces),
+//         icons: { id: icon } (an icon before an item's label; used for top-level items such as Overview) }
 UI.snav = UI.snav || {};
 function subnav(k, items, def, opts = {}) {
   items = items.filter(Boolean);
   const t = tabs(k, items, def);
   const cur = t.cur;
-  const byId = Object.fromEntries(items.map(i => [i[0], i]));
+  const byId = Object.fromEntries(items.map((i) => [i[0], i]));
   const used = new Set();
   const groups = (opts.groups || [])
-    .map(([gl, gi, ids]) => [gl, gi, ids.filter(id => byId[id] && !used.has(id) && used.add(id))])
-    .filter(g => g[2].length);
-  const rest = items.map(i => i[0]).filter(id => !used.has(id));
-  if (rest.length) groups.push([groups.length ? 'More' : '', 'more', rest]);
+    .map(([gl, gi, ids]) => [
+      gl,
+      gi,
+      ids.filter((id) => byId[id] && !used.has(id) && used.add(id)),
+    ])
+    .filter((g) => g[2].length);
+  const rest = items.map((i) => i[0]).filter((id) => !used.has(id));
+  if (rest.length) groups.push([groups.length ? "More" : "", "more", rest]);
   const st = (UI.snav[k] = UI.snav[k] || {});
-  const sid = String(k).replace(/[^\w-]/g, '_');
-  const item = id => {
+  const sid = String(k).replace(/[^\w-]/g, "_");
+  const item = (id) => {
     const [, l, c] = byId[id];
     const on = id === cur;
-    return `<li><button type="button" class="snav-i${on ? ' on' : ''}" data-a="tab" data-k="${h(k)}" data-v="${h(id)}"${on ? ' aria-current="page"' : ''}><span class="snav-l">${l}</span>${c != null ? `<span class="cnt">${c}</span>` : ''}</button></li>`;
+    const ico = (opts.icons || {})[id];
+    return `<li><button type="button" class="snav-i${on ? " on" : ""}" data-a="tab" data-k="${h(k)}" data-v="${h(id)}"${on ? ' aria-current="page"' : ""}>${ico ? ic(ico, 16) : ""}<span class="snav-l">${l}</span>${c != null ? `<span class="cnt">${c}</span>` : ""}</button></li>`;
   };
   const list = groups
     .map(([gl, gi, ids], n) => {
-      if (!gl) return `<ul class="snav-sub" role="list">${ids.map(item).join('')}</ul>`;
+      if (!gl)
+        return `<ul class="snav-sub" role="list">${ids.map(item).join("")}</ul>`;
       const hasCur = ids.includes(cur);
       const open = st[n] != null ? st[n] : true;
       const gid = `snav-${sid}-${n}`;
-      return `<li class="snav-g${hasCur ? ' has-cur' : ''}"><button type="button" class="snav-p" data-a="snavGroup" data-k="${h(k)}" data-v="${n}" aria-expanded="${open}" aria-controls="${gid}">${ic(gi, 16)}<span class="snav-l">${h(gl)}</span>${hasCur && !open ? '<span class="snav-dot" aria-hidden="true"></span>' : ''}<span class="snav-chev">${ic('chev', 14)}</span></button><ul class="snav-sub" id="${gid}" role="list"${open ? '' : ' hidden'}>${ids.map(item).join('')}</ul></li>`;
+      return `<li class="snav-g${hasCur ? " has-cur" : ""}"><button type="button" class="snav-p" data-a="snavGroup" data-k="${h(k)}" data-v="${n}" aria-expanded="${open}" aria-controls="${gid}">${ic(gi, 16)}<span class="snav-l">${h(gl)}</span>${hasCur && !open ? '<span class="snav-dot" aria-hidden="true"></span>' : ""}<span class="snav-chev">${ic("chev", 14)}</span></button><ul class="snav-sub" id="${gid}" role="list"${open ? "" : " hidden"}>${ids.map(item).join("")}</ul></li>`;
     })
-    .join('');
+    .join("");
   const others = (opts.others || []).length
-    ? `<div class="snav-others"><span class="snav-h">${h(opts.othersLabel || 'Switch to')}</span><ul role="list">${opts.others.map(([l, r, p]) => `<li>${L(`<span class="snav-l">${l}</span>`, r, p, 'snav-o')}</li>`).join('')}</ul></div>`
-    : '';
+    ? `<div class="snav-others"><span class="snav-h">${h(opts.othersLabel || "Switch to")}</span><ul role="list">${opts.others.map(([l, r, p]) => `<li>${L(`<span class="snav-l">${l}</span>`, r, p, "snav-o")}</li>`).join("")}</ul></div>`
+    : "";
   const open = !!st.mobile;
-  const label = opts.label || 'Sections';
+  const label = opts.label || "Sections";
   return {
     cur,
-    html: `<nav class="snav" aria-label="${h(label)}"><button type="button" class="snav-toggle" data-a="snavToggle" data-k="${h(k)}" aria-expanded="${open}" aria-controls="snav-${sid}"><span class="cap">${h(label)}</span><b>${byId[cur] ? byId[cur][1] : ''}</b>${ic('chev', 16)}</button><div class="snav-panel${open ? ' open' : ''}" id="snav-${sid}"><ul class="snav-list" role="list">${list}</ul>${others}</div></nav>`,
+    html: `<nav class="snav" aria-label="${h(label)}"><button type="button" class="snav-toggle" data-a="snavToggle" data-k="${h(k)}" aria-expanded="${open}" aria-controls="snav-${sid}"><span class="cap">${h(label)}</span><b>${byId[cur] ? byId[cur][1] : ""}</b>${ic("chev", 16)}</button><div class="snav-panel${open ? " open" : ""}" id="snav-${sid}"><ul class="snav-list" role="list">${list}</ul>${others}</div></nav>`,
   };
 }
 // Lay a section body beside its sub-navigation.
-const withSubnav = (t, body) => `<div class="snav-layout">${t.html}<div class="snav-main">${body}</div></div>`;
-A.snavGroup = d => {
+const withSubnav = (t, body) =>
+  `<div class="snav-layout">${t.html}<div class="snav-main">${body}</div></div>`;
+A.snavGroup = (d) => {
   const st = (UI.snav[d.k] = UI.snav[d.k] || {});
   st[d.v] = !(st[d.v] != null ? st[d.v] : true);
   render();
-  document.querySelector(`.snav-p[data-k="${CSS.escape(d.k)}"][data-v="${d.v}"]`)?.focus();
+  document
+    .querySelector(`.snav-p[data-k="${CSS.escape(d.k)}"][data-v="${d.v}"]`)
+    ?.focus();
 };
-A.snavToggle = d => {
+A.snavToggle = (d) => {
   const st = (UI.snav[d.k] = UI.snav[d.k] || {});
   st.mobile = !st.mobile;
   render();
@@ -1373,22 +1984,22 @@ UI.dv = UI.dv || {};
 UI.dvOpen = UI.dvOpen || null;
 UI.dvMenu = UI.dvMenu || null;
 try {
-  Object.assign(UI.dv, JSON.parse(sessionStorage.getItem('phx-dv') || '{}'));
+  Object.assign(UI.dv, JSON.parse(sessionStorage.getItem("phx-dv") || "{}"));
 } catch (e) {}
 const dvSave = () => {
   try {
     const keep = {};
     Object.entries(UI.dv).forEach(([k, v]) => (keep[k] = { ...v, sel: [] }));
-    sessionStorage.setItem('phx-dv', JSON.stringify(keep));
+    sessionStorage.setItem("phx-dv", JSON.stringify(keep));
   } catch (e) {}
 };
 const dvState = (k, o) => {
   const st = (UI.dv[k] = UI.dv[k] || {});
-  if (st.q == null) st.q = '';
-  if (st.quick == null) st.quick = '';
+  if (st.q == null) st.q = "";
+  if (st.quick == null) st.quick = "";
   st.f = st.f || {};
-  if (st.sort == null) st.sort = o.defaultSort || '';
-  st.dir = st.dir || o.defaultDir || 'asc';
+  if (st.sort == null) st.sort = o.defaultSort || "";
+  st.dir = st.dir || o.defaultDir || "asc";
   st.page = st.page || 1;
   st.size = st.size || o.pageSize || 10;
   st.sel = st.sel || [];
@@ -1399,38 +2010,50 @@ const dvPages = (cur, n) => {
   const out = [1];
   const lo = Math.max(2, cur - 1),
     hi = Math.min(n - 1, cur + 1);
-  if (lo > 2) out.push('…');
+  if (lo > 2) out.push("…");
   for (let i = lo; i <= hi; i++) out.push(i);
-  if (hi < n - 1) out.push('…');
+  if (hi < n - 1) out.push("…");
   out.push(n);
   return out;
 };
-const dvLive = msg => {
-  let el = document.getElementById('phx-live');
+const dvLive = (msg) => {
+  let el = document.getElementById("phx-live");
   if (!el) {
-    el = document.createElement('div');
-    el.id = 'phx-live';
-    el.className = 'sr';
-    el.setAttribute('aria-live', 'polite');
-    el.setAttribute('role', 'status');
+    el = document.createElement("div");
+    el.id = "phx-live";
+    el.className = "sr";
+    el.setAttribute("aria-live", "polite");
+    el.setAttribute("role", "status");
     document.body.appendChild(el);
   }
-  el.textContent = '';
+  el.textContent = "";
   setTimeout(() => (el.textContent = msg), 60);
 };
 function dataView(k, o) {
   DV[k] = o;
   const st = dvState(k, o);
-  const noun = o.label || 'items';
+  const noun = o.label || "items";
   const all = o.items || [];
   const filters = o.filters || [];
   const qn = st.q.trim().toLowerCase();
-  const fOn = Object.entries(st.f).filter(([fk, v]) => v && filters.some(x => x.key === fk));
+  const fOn = Object.entries(st.f).filter(
+    ([fk, v]) => v && filters.some((x) => x.key === fk),
+  );
   const quickTest = (it, v) => !v || !o.quick || o.quick.test(it, v);
-  const base = all.filter(it => (!qn || String(o.search ? o.search(it) : '').toLowerCase().includes(qn)) && fOn.every(([fk, v]) => filters.find(x => x.key === fk).test(it, v)));
-  let rows = base.filter(it => quickTest(it, st.quick));
-  const srt = (o.sorts || []).find(x => x[0] === st.sort);
-  if (srt) rows = rows.slice().sort((a, b) => srt[2](a, b) * (st.dir === 'desc' ? -1 : 1));
+  const base = all.filter(
+    (it) =>
+      (!qn ||
+        String(o.search ? o.search(it) : "")
+          .toLowerCase()
+          .includes(qn)) &&
+      fOn.every(([fk, v]) => filters.find((x) => x.key === fk).test(it, v)),
+  );
+  let rows = base.filter((it) => quickTest(it, st.quick));
+  const srt = (o.sorts || []).find((x) => x[0] === st.sort);
+  if (srt)
+    rows = rows
+      .slice()
+      .sort((a, b) => srt[2](a, b) * (st.dir === "desc" ? -1 : 1));
   const n = rows.length;
   const pages = Math.max(1, Math.ceil(n / st.size));
   if (st.page > pages) st.page = pages;
@@ -1438,111 +2061,165 @@ function dataView(k, o) {
   const to = Math.min(n, st.page * st.size);
   const pageRows = rows.slice(from ? from - 1 : 0, to);
   const ids = o.rowId ? pageRows.map(o.rowId) : [];
-  st.sel = st.sel.filter(id => all.some(it => o.rowId && o.rowId(it) === id));
+  st.sel = st.sel.filter((id) =>
+    all.some((it) => o.rowId && o.rowId(it) === id),
+  );
   const kk = h(k);
   // toolbar
   const search = o.search
-    ? `<div class="dv-search">${ic('search', 16)}<input type="search" class="input" data-dvq="${kk}" value="${h(st.q)}" placeholder="${h(o.searchLabel || 'Search ' + noun)}" aria-label="${h(o.searchLabel || 'Search ' + noun)}"></div>`
-    : '';
+    ? `<div class="dv-search">${ic("search", 16)}<input type="search" class="input" data-dvq="${kk}" value="${h(st.q)}" placeholder="${h(o.searchLabel || "Search " + noun)}" aria-label="${h(o.searchLabel || "Search " + noun)}"></div>`
+    : "";
   const quick = o.quick
-    ? `<div class="seg dv-quick" role="group" aria-label="${h(o.quick.label)}">${[['', 'All'], ...o.quick.options]
-        .map(([v, l]) => `<button type="button" data-a="dvQuick" data-k="${kk}" data-v="${h(v)}" aria-pressed="${st.quick === v}">${h(l)}<span class="cnt">${base.filter(it => quickTest(it, v)).length}</span></button>`)
-        .join('')}</div>`
-    : '';
+    ? `<div class="seg dv-quick" role="group" aria-label="${h(o.quick.label)}">${[
+        ["", "All"],
+        ...o.quick.options,
+      ]
+        .map(
+          ([v, l]) =>
+            `<button type="button" data-a="dvQuick" data-k="${kk}" data-v="${h(v)}" aria-pressed="${st.quick === v}">${h(l)}<span class="cnt">${base.filter((it) => quickTest(it, v)).length}</span></button>`,
+        )
+        .join("")}</div>`
+    : "";
   const fOpen = UI.dvOpen === k;
   const fbtn = filters.length
-    ? `<div class="dv-fwrap"><button type="button" class="btn btn-s btn-sm${fOn.length ? ' is-on' : ''}" data-a="dvFilters" data-k="${kk}" aria-expanded="${fOpen}" aria-controls="dvf-${kk}">${ic('panel', 16)}Filters${fOn.length ? `<span class="cnt">${fOn.length}</span>` : ''}</button>${
+    ? `<div class="dv-fwrap"><button type="button" class="btn btn-s btn-sm${fOn.length ? " is-on" : ""}" data-a="dvFilters" data-k="${kk}" aria-expanded="${fOpen}" aria-controls="dvf-${kk}">${ic("panel", 16)}Filters${fOn.length ? `<span class="cnt">${fOn.length}</span>` : ""}</button>${
         fOpen
-          ? `<div class="dv-fpanel" id="dvf-${kk}" role="dialog" aria-label="Filter ${h(noun)}"><div class="dv-fpanel-h"><b>Filters</b><button type="button" class="iconbtn" data-a="dvFilters" data-k="${kk}" aria-label="Close filters">${ic('x', 16)}</button></div>${filters
-              .map(x => `<label class="field"><span class="lbl">${h(x.label)}</span><select class="input" data-ch="dvFilter" data-k="${kk}" data-f="${h(x.key)}"><option value="">Any</option>${x.options.map(([v, l]) => `<option value="${h(v)}"${st.f[x.key] === v ? ' selected' : ''}>${h(l)}</option>`).join('')}</select></label>`)
-              .join('')}<div class="dv-fpanel-f">${B('Clear all', 'dvClear', { k }, 'btn-g btn-sm')}${B('Show ' + n + ' ' + noun, 'dvFilters', { k }, 'btn-p btn-sm')}</div></div>`
-          : ''
+          ? `<div class="dv-fpanel" id="dvf-${kk}" role="dialog" aria-label="Filter ${h(noun)}"><div class="dv-fpanel-h"><b>Filters</b><button type="button" class="iconbtn" data-a="dvFilters" data-k="${kk}" aria-label="Close filters">${ic("x", 16)}</button></div>${filters
+              .map(
+                (x) =>
+                  `<label class="field"><span class="lbl">${h(x.label)}</span><select class="input" data-ch="dvFilter" data-k="${kk}" data-f="${h(x.key)}"><option value="">Any</option>${x.options.map(([v, l]) => `<option value="${h(v)}"${st.f[x.key] === v ? " selected" : ""}>${h(l)}</option>`).join("")}</select></label>`,
+              )
+              .join(
+                "",
+              )}<div class="dv-fpanel-f">${B("Clear all", "dvClear", { k }, "btn-g btn-sm")}${B("Show " + n + " " + noun, "dvFilters", { k }, "btn-p btn-sm")}</div></div>`
+          : ""
       }</div>`
-    : '';
+    : "";
   const sorts = (o.sorts || []).length
-    ? `<div class="dv-sort"><label class="cap" for="dvs-${kk}">Sort</label><select class="input" id="dvs-${kk}" data-ch="dvSort" data-k="${kk}">${o.defaultSort ? '' : '<option value="">Default order</option>'}${o.sorts.map(([v, l]) => `<option value="${h(v)}"${st.sort === v ? ' selected' : ''}>${h(l)}</option>`).join('')}</select>${st.sort ? `<button type="button" class="iconbtn" data-a="dvDir" data-k="${kk}" aria-label="${st.dir === 'asc' ? 'Ascending — switch to descending' : 'Descending — switch to ascending'}">${ic('arrow', 16)}</button>` : ''}</div>`
-    : '';
+    ? `<div class="dv-sort"><label class="cap" for="dvs-${kk}">Sort</label><select class="input" id="dvs-${kk}" data-ch="dvSort" data-k="${kk}">${o.defaultSort ? "" : '<option value="">Default order</option>'}${o.sorts.map(([v, l]) => `<option value="${h(v)}"${st.sort === v ? " selected" : ""}>${h(l)}</option>`).join("")}</select>${st.sort ? `<button type="button" class="iconbtn" data-a="dvDir" data-k="${kk}" aria-label="${st.dir === "asc" ? "Ascending — switch to descending" : "Descending — switch to ascending"}">${ic("arrow", 16)}</button>` : ""}</div>`
+    : "";
   // nothing to search yet: the empty state stands alone (toolbar actions such as 'New …' stay available)
-  const bar = !all.length ? (o.actions ? `<div class="dv-bar"><div class="dv-find"></div><div class="dv-tools">${o.actions}</div></div>` : '') : search || quick || fbtn || sorts || o.actions ? `<div class="dv-bar"><div class="dv-find">${search}${quick}${fbtn}</div><div class="dv-tools">${sorts}${o.actions || ''}</div></div>` : '';
+  const bar = !all.length
+    ? o.actions
+      ? `<div class="dv-bar"><div class="dv-find"></div><div class="dv-tools">${o.actions}</div></div>`
+      : ""
+    : search || quick || fbtn || sorts || o.actions
+      ? `<div class="dv-bar"><div class="dv-find">${search}${quick}${fbtn}</div><div class="dv-tools">${sorts}${o.actions || ""}</div></div>`
+      : "";
   const chipList = [
-    ...(st.q.trim() ? [[`“${h(st.q.trim())}”`, 'q']] : []),
+    ...(st.q.trim() ? [[`“${h(st.q.trim())}”`, "q"]] : []),
     ...fOn.map(([fk, v]) => {
-      const x = filters.find(y => y.key === fk);
-      return [`${h(x.label)}: ${h((x.options.find(op => op[0] === v) || [v, v])[1])}`, fk];
+      const x = filters.find((y) => y.key === fk);
+      return [
+        `${h(x.label)}: ${h((x.options.find((op) => op[0] === v) || [v, v])[1])}`,
+        fk,
+      ];
     }),
   ];
   const chips = chipList.length
-    ? `<div class="dv-chips" role="group" aria-label="Active filters"><span class="cap">Filtered by</span>${chipList.map(([l, fk]) => `<button type="button" class="dv-chip" data-a="dvRemove" data-k="${kk}" data-f="${h(fk)}" aria-label="Remove filter ${l.replace(/<[^>]+>/g, '')}">${l}${ic('x', 14)}</button>`).join('')}${B('Clear all', 'dvClear', { k }, 'btn-g btn-sm')}</div>`
-    : '';
+    ? `<div class="dv-chips" role="group" aria-label="Active filters"><span class="cap">Filtered by</span>${chipList.map(([l, fk]) => `<button type="button" class="dv-chip" data-a="dvRemove" data-k="${kk}" data-f="${h(fk)}" aria-label="Remove filter ${l.replace(/<[^>]+>/g, "")}">${l}${ic("x", 14)}</button>`).join("")}${B("Clear all", "dvClear", { k }, "btn-g btn-sm")}</div>`
+    : "";
   const bulkBar =
     o.bulk && st.sel.length
-      ? `<div class="dv-bulk" role="region" aria-label="Bulk actions"><b>${st.sel.length} selected</b>${o.bulk.map((b, i) => B((b.icon ? ic(b.icon, 14) : '') + h(b.label), 'dvBulk', { k, i }, b.danger ? 'btn-d btn-sm' : 'btn-s btn-sm')).join('')}${B('Clear selection', 'dvSelNone', { k }, 'btn-g btn-sm')}</div>`
-      : '';
+      ? `<div class="dv-bulk" role="region" aria-label="Bulk actions"><b>${st.sel.length} selected</b>${o.bulk.map((b, i) => B((b.icon ? ic(b.icon, 14) : "") + h(b.label), "dvBulk", { k, i }, b.danger ? "btn-d btn-sm" : "btn-s btn-sm")).join("")}${B("Clear selection", "dvSelNone", { k }, "btn-g btn-sm")}</div>`
+      : "";
   // body
-  const selBox = it => {
-    if (!o.bulk || !o.rowId) return '';
+  const selBox = (it) => {
+    if (!o.bulk || !o.rowId) return "";
     const id = o.rowId(it);
-    return `<input type="checkbox" class="chk dv-sel" data-ch="dvSel" data-k="${kk}" data-id="${h(id)}"${st.sel.includes(id) ? ' checked' : ''} aria-label="Select">`;
+    return `<input type="checkbox" class="chk dv-sel" data-ch="dvSel" data-k="${kk}" data-id="${h(id)}"${st.sel.includes(id) ? " checked" : ""} aria-label="Select">`;
   };
   const menu = (it, m) => {
-    if (!m) return '';
+    if (!m) return "";
     const id = o.rowId ? o.rowId(it) : pageRows.indexOf(it);
-    const on = UI.dvMenu === k + '|' + id;
-    return `<div class="dv-menuwrap"><button type="button" class="iconbtn" data-a="dvMenu" data-k="${kk}" data-id="${h(id)}" aria-haspopup="menu" aria-expanded="${on}" aria-label="More actions">${ic('more')}</button>${on ? `<div class="menu dv-menu" role="menu">${m}</div>` : ''}</div>`;
+    const on = UI.dvMenu === k + "|" + id;
+    return `<div class="dv-menuwrap"><button type="button" class="iconbtn" data-a="dvMenu" data-k="${kk}" data-id="${h(id)}" aria-haspopup="menu" aria-expanded="${on}" aria-label="More actions">${ic("more")}</button>${on ? `<div class="menu dv-menu" role="menu">${m}</div>` : ""}</div>`;
   };
   let body;
   if (!all.length) {
-    const [ei, et, ex, ea] = o.empty || ['inbox', 'Nothing here yet', '', ''];
+    const [ei, et, ex, ea] = o.empty || ["inbox", "Nothing here yet", "", ""];
     body = empty(ei, et, ex, ea);
   } else if (!n) {
-    body = empty('search', `No ${h(noun)} match`, 'Try another search or remove a filter.', B('Clear all', 'dvClear', { k }, 'btn-s btn-sm'));
-  } else if (o.layout === 'table') {
+    body = empty(
+      "search",
+      `No ${h(noun)} match`,
+      "Try another search or remove a filter.",
+      B("Clear all", "dvClear", { k }, "btn-s btn-sm"),
+    );
+  } else if (o.layout === "table") {
     const cols = o.columns || [];
-    const sm = cols.filter(c => c.hideSm);
+    const sm = cols.filter((c) => c.hideSm);
     const th = cols
-      .map(c => {
-        const sc = c.sort && st.sort === c.sort ? (st.dir === 'asc' ? 'ascending' : 'descending') : null;
-        return `<th scope="col"${c.num ? ' class="num"' : ''}${sc ? ` aria-sort="${sc}"` : ''}${c.hideSm ? ' data-sm="hide"' : ''}>${c.sort ? `<button type="button" class="dv-th" data-a="dvColSort" data-k="${kk}" data-v="${h(c.sort)}">${c.label}${ic(sc === 'descending' ? 'chev' : 'chevr', 12)}</button>` : c.label || '<span class="sr">Actions</span>'}</th>`;
+      .map((c) => {
+        const sc =
+          c.sort && st.sort === c.sort
+            ? st.dir === "asc"
+              ? "ascending"
+              : "descending"
+            : null;
+        return `<th scope="col"${c.num ? ' class="num"' : ""}${sc ? ` aria-sort="${sc}"` : ""}${c.hideSm ? ' data-sm="hide"' : ""}>${c.sort ? `<button type="button" class="dv-th" data-a="dvColSort" data-k="${kk}" data-v="${h(c.sort)}">${c.label}${ic(sc === "descending" ? "chev" : "chevr", 12)}</button>` : c.label || '<span class="sr">Actions</span>'}</th>`;
       })
-      .join('');
-    body = `<div class="tblwrap dv-tblwrap"><table class="tbl dv-tbl${o.dense ? ' compact' : ''}"><thead><tr>${o.bulk ? `<th scope="col" class="dv-selc"><input type="checkbox" class="chk" data-ch="dvSelAll" data-k="${kk}" aria-label="Select all on this page"${ids.length && ids.every(id => st.sel.includes(id)) ? ' checked' : ''}></th>` : ''}${th}</tr></thead><tbody>${pageRows
+      .join("");
+    body = `<div class="tblwrap dv-tblwrap"><table class="tbl dv-tbl${o.dense ? " compact" : ""}"><thead><tr>${o.bulk ? `<th scope="col" class="dv-selc"><input type="checkbox" class="chk" data-ch="dvSelAll" data-k="${kk}" aria-label="Select all on this page"${ids.length && ids.every((id) => st.sel.includes(id)) ? " checked" : ""}></th>` : ""}${th}</tr></thead><tbody>${pageRows
       .map(
-        it =>
-          `<tr${o.rowId && st.sel.includes(o.rowId(it)) ? ' class="is-sel"' : ''}>${o.bulk ? `<td class="dv-selc">${selBox(it)}</td>` : ''}${cols
+        (it) =>
+          `<tr${o.rowId && st.sel.includes(o.rowId(it)) ? ' class="is-sel"' : ""}>${o.bulk ? `<td class="dv-selc">${selBox(it)}</td>` : ""}${cols
             .map((c, i) => {
-              const extra = i === 0 && sm.length ? `<details class="dv-more"><summary>More details</summary><dl class="kv2">${sm.map(x => `<dt>${x.label}</dt><dd>${x.cell(it)}</dd>`).join('')}</dl></details>` : '';
-              return `<td data-label="${h(String(c.label || '').replace(/<[^>]+>/g, ''))}"${c.num ? ' class="num"' : c.label ? '' : ' class="act"'}${c.hideSm ? ' data-sm="hide"' : ''}>${c.cell(it)}${extra}</td>`;
+              const extra =
+                i === 0 && sm.length
+                  ? `<details class="dv-more"><summary>More details</summary><dl class="kv2">${sm.map((x) => `<dt>${x.label}</dt><dd>${x.cell(it)}</dd>`).join("")}</dl></details>`
+                  : "";
+              return `<td data-label="${h(String(c.label || "").replace(/<[^>]+>/g, ""))}"${c.num ? ' class="num"' : c.label ? "" : ' class="act"'}${c.hideSm ? ' data-sm="hide"' : ""}>${c.cell(it)}${extra}</td>`;
             })
-            .join('')}</tr>`,
+            .join("")}</tr>`,
       )
-      .join('')}</tbody></table></div>`;
+      .join("")}</tbody></table></div>`;
   } else {
-    body = `<ul class="dv-list${o.dense ? ' dense' : ''}" role="list">${pageRows
-      .map(it => {
+    body = `<ul class="dv-list${o.dense ? " dense" : ""}" role="list">${pageRows
+      .map((it) => {
         const r = o.row(it);
         const sel = o.rowId && st.sel.includes(o.rowId(it));
-        return `<li class="dv-row${sel ? ' is-sel' : ''}">${selBox(it)}${r.lead ? `<div class="dv-lead">${r.lead}</div>` : ''}<div class="dv-main"><div class="dv-title">${r.title || ''}</div>${r.sub ? `<div class="dv-sub">${r.sub}</div>` : ''}${(r.meta || []).filter(Boolean).length ? `<div class="dv-meta">${r.meta.filter(Boolean).map(m => `<span>${m}</span>`).join('')}</div>` : ''}${r.extra || ''}</div>${r.badges ? `<div class="dv-badges">${r.badges}</div>` : ''}<div class="dv-act${r.wrap ? ' is-wrap' : ''}">${r.primary || ''}${menu(it, r.menu)}</div></li>`;
+        return `<li class="dv-row${sel ? " is-sel" : ""}">${selBox(it)}${r.lead ? `<div class="dv-lead">${r.lead}</div>` : ""}<div class="dv-main"><div class="dv-title">${r.title || ""}</div>${r.sub ? `<div class="dv-sub">${r.sub}</div>` : ""}${
+          (r.meta || []).filter(Boolean).length
+            ? `<div class="dv-meta">${r.meta
+                .filter(Boolean)
+                .map((m) => `<span>${m}</span>`)
+                .join("")}</div>`
+            : ""
+        }${r.extra || ""}</div>${r.badges ? `<div class="dv-badges">${r.badges}</div>` : ""}<div class="dv-act${r.wrap ? " is-wrap" : ""}">${r.primary || ""}${menu(it, r.menu)}</div></li>`;
       })
-      .join('')}</ul>`;
+      .join("")}</ul>`;
   }
   // pagination (always visible once there are results): rows per page and the range on the left, page navigation
   // (and Go to page on long lists) at the far right
   const pg = n
-    ? `<nav class="dv-pager" aria-label="Pagination for ${h(noun)}"><div class="dv-pager-info"><div class="dv-size"><label class="cap" for="dvz-${kk}">Rows per page</label><select class="input" id="dvz-${kk}" data-ch="dvSize" data-k="${kk}">${[10, 25, 50, 100].map(z => `<option${z === st.size ? ' selected' : ''}>${z}</option>`).join('')}</select></div><span class="dv-range">Showing <b>${from}–${to}</b> of <b>${n}</b>${n !== all.length ? ` <span class="cap">(${all.length} in total)</span>` : ''}</span></div><div class="dv-pages">${pages > 7 ? `<form class="dv-go" data-f="dvgo" novalidate><input type="hidden" name="k" value="${kk}"><label class="cap" for="dvg-${kk}">Go to page</label><input class="input" id="dvg-${kk}" name="p" type="number" min="1" max="${pages}" inputmode="numeric"><button type="submit" class="btn btn-s btn-sm">Go</button></form>` : ''}<button type="button" class="btn btn-s btn-sm" data-a="dvPage" data-k="${kk}" data-v="${st.page - 1}"${st.page <= 1 ? ' disabled' : ''} aria-label="Previous page">${ic('chevl', 16)}<span class="hide-sm">Previous</span></button><span class="dv-nums">${dvPages(st.page, pages)
-        .map(p => (p === '…' ? '<span class="dv-gap" aria-hidden="true">…</span>' : `<button type="button" class="dv-num${p === st.page ? ' on' : ''}" data-a="dvPage" data-k="${kk}" data-v="${p}"${p === st.page ? ' aria-current="page"' : ''} aria-label="Page ${p}">${p}</button>`))
-        .join('')}</span><span class="dv-pos">Page ${st.page} of ${pages}</span><button type="button" class="btn btn-s btn-sm" data-a="dvPage" data-k="${kk}" data-v="${st.page + 1}"${st.page >= pages ? ' disabled' : ''} aria-label="Next page"><span class="hide-sm">Next</span>${ic('chevr', 16)}</button></div></nav>`
-    : '';
-  st._msg = n ? `Showing ${from} to ${to} of ${n} ${noun}${fOn.length || st.q.trim() || st.quick ? ', filtered' : ''}. Page ${st.page} of ${pages}.` : `No ${noun} match.`;
-  return `<section class="dv${fOpen ? ' has-fpanel' : ''}" data-dv="${kk}" aria-label="${h(o.title || noun)}">${bar}${chips}${bulkBar}${body}${pg}</section>`;
+    ? `<nav class="dv-pager" aria-label="Pagination for ${h(noun)}"><div class="dv-pager-info"><div class="dv-size"><label class="cap" for="dvz-${kk}">Rows per page</label><select class="input" id="dvz-${kk}" data-ch="dvSize" data-k="${kk}">${[10, 25, 50, 100].map((z) => `<option${z === st.size ? " selected" : ""}>${z}</option>`).join("")}</select></div><span class="dv-range">Showing <b>${from}–${to}</b> of <b>${n}</b>${n !== all.length ? ` <span class="cap">(${all.length} in total)</span>` : ""}</span></div><div class="dv-pages">${pages > 7 ? `<form class="dv-go" data-f="dvgo" novalidate><input type="hidden" name="k" value="${kk}"><label class="cap" for="dvg-${kk}">Go to page</label><input class="input" id="dvg-${kk}" name="p" type="number" min="1" max="${pages}" inputmode="numeric"><button type="submit" class="btn btn-s btn-sm">Go</button></form>` : ""}<button type="button" class="btn btn-s btn-sm" data-a="dvPage" data-k="${kk}" data-v="${st.page - 1}"${st.page <= 1 ? " disabled" : ""} aria-label="Previous page">${ic("chevl", 16)}<span class="hide-sm">Previous</span></button><span class="dv-nums">${dvPages(
+        st.page,
+        pages,
+      )
+        .map((p) =>
+          p === "…"
+            ? '<span class="dv-gap" aria-hidden="true">…</span>'
+            : `<button type="button" class="dv-num${p === st.page ? " on" : ""}" data-a="dvPage" data-k="${kk}" data-v="${p}"${p === st.page ? ' aria-current="page"' : ""} aria-label="Page ${p}">${p}</button>`,
+        )
+        .join(
+          "",
+        )}</span><span class="dv-pos">Page ${st.page} of ${pages}</span><button type="button" class="btn btn-s btn-sm" data-a="dvPage" data-k="${kk}" data-v="${st.page + 1}"${st.page >= pages ? " disabled" : ""} aria-label="Next page"><span class="hide-sm">Next</span>${ic("chevr", 16)}</button></div></nav>`
+    : "";
+  st._msg = n
+    ? `Showing ${from} to ${to} of ${n} ${noun}${fOn.length || st.q.trim() || st.quick ? ", filtered" : ""}. Page ${st.page} of ${pages}.`
+    : `No ${noun} match.`;
+  return `<section class="dv${fOpen ? " has-fpanel" : ""}" data-dv="${kk}" aria-label="${h(o.title || noun)}">${bar}${chips}${bulkBar}${body}${pg}</section>`;
 }
 // Owner edits: which fields changed, as readable labels for the history, audit log and notifications.
 //   labels = { field: 'label', … }
 const changedFields = (before, after, labels) =>
   Object.keys(labels)
-    .filter(k => String(before[k] ?? '') !== String(after[k] ?? ''))
-    .map(k => labels[k]);
+    .filter((k) => String(before[k] ?? "") !== String(after[k] ?? ""))
+    .map((k) => labels[k]);
 // A menu item with the action on top and what it applies to underneath.
-const menuT = (action, detail) => `<span class="menu-t"><b>${action}</b>${detail ? `<span>${detail}</span>` : ""}</span>`;
+const menuT = (action, detail) =>
+  `<span class="menu-t"><b>${action}</b>${detail ? `<span>${detail}</span>` : ""}</span>`;
 const dvAfter = (k, focusSel) => {
   dvSave();
   render();
@@ -1550,17 +2227,23 @@ const dvAfter = (k, focusSel) => {
   if (st && st._msg) dvLive(st._msg);
   if (focusSel) document.querySelector(focusSel)?.focus();
 };
-const dvq = k => `[data-dv="${CSS.escape(k)}"]`;
-A.dvQuick = d => {
+const dvq = (k) => `[data-dv="${CSS.escape(k)}"]`;
+A.dvQuick = (d) => {
   const st = UI.dv[d.k];
   st.quick = d.v;
   st.page = 1;
   dvAfter(d.k, `${dvq(d.k)} [data-a="dvQuick"][data-v="${CSS.escape(d.v)}"]`);
 };
-A.dvFilters = d => {
+A.dvFilters = (d) => {
   UI.dvOpen = UI.dvOpen === d.k ? null : d.k;
   render();
-  document.querySelector(UI.dvOpen ? `#dvf-${CSS.escape(d.k)} select` : `${dvq(d.k)} [data-a="dvFilters"]`)?.focus();
+  document
+    .querySelector(
+      UI.dvOpen
+        ? `#dvf-${CSS.escape(d.k)} select`
+        : `${dvq(d.k)} [data-a="dvFilters"]`,
+    )
+    ?.focus();
 };
 A.dvFilter = (d, el) => {
   const st = UI.dv[d.k];
@@ -1568,18 +2251,18 @@ A.dvFilter = (d, el) => {
   st.page = 1;
   dvAfter(d.k, `#dvf-${CSS.escape(d.k)} [data-f="${CSS.escape(d.f)}"]`);
 };
-A.dvRemove = d => {
+A.dvRemove = (d) => {
   const st = UI.dv[d.k];
-  if (d.f === 'q') st.q = '';
+  if (d.f === "q") st.q = "";
   else delete st.f[d.f];
   st.page = 1;
   dvAfter(d.k, `${dvq(d.k)} .dv-chip, ${dvq(d.k)} input[data-dvq]`);
 };
-A.dvClear = d => {
+A.dvClear = (d) => {
   const st = UI.dv[d.k];
-  st.q = '';
+  st.q = "";
   st.f = {};
-  st.quick = '';
+  st.quick = "";
   st.page = 1;
   dvAfter(d.k, `${dvq(d.k)} input[data-dvq], ${dvq(d.k)} [data-a="dvFilters"]`);
 };
@@ -1589,26 +2272,28 @@ A.dvSort = (d, el) => {
   st.page = 1;
   dvAfter(d.k, `#dvs-${CSS.escape(d.k)}`);
 };
-A.dvColSort = d => {
+A.dvColSort = (d) => {
   const st = UI.dv[d.k];
-  if (st.sort === d.v) st.dir = st.dir === 'asc' ? 'desc' : 'asc';
+  if (st.sort === d.v) st.dir = st.dir === "asc" ? "desc" : "asc";
   else {
     st.sort = d.v;
-    st.dir = 'asc';
+    st.dir = "asc";
   }
   st.page = 1;
   dvAfter(d.k, `${dvq(d.k)} [data-a="dvColSort"][data-v="${CSS.escape(d.v)}"]`);
 };
-A.dvDir = d => {
+A.dvDir = (d) => {
   const st = UI.dv[d.k];
-  st.dir = st.dir === 'asc' ? 'desc' : 'asc';
+  st.dir = st.dir === "asc" ? "desc" : "asc";
   dvAfter(d.k, `${dvq(d.k)} [data-a="dvDir"]`);
 };
-A.dvPage = d => {
+A.dvPage = (d) => {
   const st = UI.dv[d.k];
   st.page = Math.max(1, +d.v || 1);
   dvAfter(d.k, `${dvq(d.k)} .dv-num.on`);
-  document.querySelector(dvq(d.k))?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  document
+    .querySelector(dvq(d.k))
+    ?.scrollIntoView({ block: "start", behavior: "smooth" });
 };
 A.dvSize = (d, el) => {
   const st = UI.dv[d.k];
@@ -1616,37 +2301,48 @@ A.dvSize = (d, el) => {
   st.page = 1;
   dvAfter(d.k, `#dvz-${CSS.escape(d.k)}`);
 };
-F.dvgo = d => {
+F.dvgo = (d) => {
   const st = UI.dv[d.k];
   if (st) st.page = Math.max(1, Math.floor(+d.p) || 1);
   dvAfter(d.k, `${dvq(d.k)} .dv-num.on`);
 };
-A.dvMenu = d => {
-  const key = d.k + '|' + d.id;
+A.dvMenu = (d) => {
+  const key = d.k + "|" + d.id;
   UI.dvMenu = UI.dvMenu === key ? null : key;
   render();
-  if (UI.dvMenu) document.querySelector(`${dvq(d.k)} .dv-menu .menu-i, ${dvq(d.k)} .dv-menu button`)?.focus();
+  if (UI.dvMenu)
+    document
+      .querySelector(
+        `${dvq(d.k)} .dv-menu .menu-i, ${dvq(d.k)} .dv-menu button`,
+      )
+      ?.focus();
 };
 A.dvSel = (d, el) => {
   const st = UI.dv[d.k];
-  st.sel = el.checked ? [...new Set([...st.sel, d.id])] : st.sel.filter(x => x !== d.id);
+  st.sel = el.checked
+    ? [...new Set([...st.sel, d.id])]
+    : st.sel.filter((x) => x !== d.id);
   render();
-  dvLive(st.sel.length + ' selected');
+  dvLive(st.sel.length + " selected");
 };
 A.dvSelAll = (d, el) => {
   const st = UI.dv[d.k];
   const o = DV[d.k];
-  const ids = [...document.querySelectorAll(`${dvq(d.k)} .dv-sel`)].map(x => x.dataset.id);
-  st.sel = el.checked ? [...new Set([...st.sel, ...ids])] : st.sel.filter(x => !ids.includes(x));
+  const ids = [...document.querySelectorAll(`${dvq(d.k)} .dv-sel`)].map(
+    (x) => x.dataset.id,
+  );
+  st.sel = el.checked
+    ? [...new Set([...st.sel, ...ids])]
+    : st.sel.filter((x) => !ids.includes(x));
   render();
-  dvLive(st.sel.length + ' selected');
+  dvLive(st.sel.length + " selected");
 };
-A.dvSelNone = d => {
+A.dvSelNone = (d) => {
   UI.dv[d.k].sel = [];
   render();
-  dvLive('Selection cleared');
+  dvLive("Selection cleared");
 };
-A.dvBulk = d => {
+A.dvBulk = (d) => {
   const o = DV[d.k],
     b = o && o.bulk && o.bulk[+d.i];
   if (!b) return;
@@ -1654,13 +2350,13 @@ A.dvBulk = d => {
   if (b.confirm) {
     modal(
       h(b.label),
-      `<p>${h(b.confirm)}</p><p class="cap">${ids.length} selected.</p><div class="actions">${B('Cancel', 'closeM', {}, 'btn-g')}${B(h(b.label), 'dvBulkYes', { k: d.k, i: d.i }, b.danger ? 'btn-d' : 'btn-p')}</div>`,
+      `<p>${h(b.confirm)}</p><p class="cap">${ids.length} selected.</p><div class="actions">${B("Cancel", "closeM", {}, "btn-g")}${B(h(b.label), "dvBulkYes", { k: d.k, i: d.i }, b.danger ? "btn-d" : "btn-p")}</div>`,
     );
     return;
   }
   A.dvBulkYes(d);
 };
-A.dvBulkYes = d => {
+A.dvBulkYes = (d) => {
   const o = DV[d.k],
     b = o.bulk[+d.i];
   const ids = UI.dv[d.k].sel.slice();
@@ -1671,7 +2367,7 @@ A.dvBulkYes = d => {
 };
 // search: debounced, focus and caret kept across the re-render
 let dvT = null;
-document.addEventListener('input', e => {
+document.addEventListener("input", (e) => {
   const el = e.target;
   if (!el.dataset || !el.dataset.dvq) return;
   const k = el.dataset.dvq;
@@ -1692,22 +2388,22 @@ document.addEventListener('input', e => {
   }, 220);
 });
 // menus and the filter popover close on outside click and Escape
-document.addEventListener('mousedown', e => {
+document.addEventListener("mousedown", (e) => {
   const t = e.target;
-  if (UI.dvMenu && !(t.closest && t.closest('.dv-menuwrap'))) {
+  if (UI.dvMenu && !(t.closest && t.closest(".dv-menuwrap"))) {
     UI.dvMenu = null;
     snapForms();
     render();
   }
-  if (UI.dvOpen && !(t.closest && t.closest('.dv-fwrap'))) {
+  if (UI.dvOpen && !(t.closest && t.closest(".dv-fwrap"))) {
     UI.dvOpen = null;
     render();
   }
 });
-document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || UI.modal) return;
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || UI.modal) return;
   if (UI.dvMenu) {
-    const [k] = UI.dvMenu.split('|');
+    const [k] = UI.dvMenu.split("|");
     UI.dvMenu = null;
     render();
     document.querySelector(`${dvq(k)} [data-a="dvMenu"]`)?.focus();
@@ -1723,4 +2419,5 @@ document.addEventListener('keydown', e => {
   };
 })();
 // a loading placeholder in the shape of the list it replaces
-const dvSkeleton = (n = 4) => `<ul class="dv-list" aria-busy="true" aria-label="Loading">${Array.from({ length: n }, () => '<li class="dv-row"><span class="skel av"></span><div class="dv-main col" style="gap:6px"><span class="skel" style="width:46%"></span><span class="skel" style="width:28%"></span></div></li>').join('')}</ul>`;
+const dvSkeleton = (n = 4) =>
+  `<ul class="dv-list" aria-busy="true" aria-label="Loading">${Array.from({ length: n }, () => '<li class="dv-row"><span class="skel av"></span><div class="dv-main col" style="gap:6px"><span class="skel" style="width:46%"></span><span class="skel" style="width:28%"></span></div></li>').join("")}</ul>`;

@@ -207,7 +207,7 @@ function pubTick() {
   });
 }
 
-// ---- publish and unpublish (owner publishes; owner, steward or Programme Administrator unpublishes)
+// ---- publish and unpublish (owner publishes; owner, steward or Organization Admin unpublishes)
 A.pubPublish = d => {
   const p = byId('projects', d.id);
   clearF('pubp');

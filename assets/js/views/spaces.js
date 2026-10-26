@@ -111,13 +111,13 @@ const sCan = (kind, o, act, pid = myId()) => {
   return !!r && (SPACE_CAN[kind][act] || []).includes(r);
 };
 // Programme-level authority that applies on top of space roles (administration, organization oversight).
-// Organization Representatives manage Circles in their context; Programme Administrators lead Action Rooms.
+// Organization Admins manage Circles in their context and lead Action Rooms.
 const spaceAdmin = (kind, o) =>
-  (kind === "circles" && role() === "O" && inCtx(o)) || (kind === "rooms" && role() === "A");
+  role() === "A" && (kind === "rooms" || (kind === "circles" && inCtx(o)));
 const roleTag = (kind, o) => {
   const r = spaceRole(kind, o);
   if (!r)
-    return spaceAdmin(kind, o) || ["A", "O"].includes(role())
+    return spaceAdmin(kind, o) || role() === "A"
       ? `<span class="srole" title="Programme oversight — not a member">${ic("shield", 13)}Oversight</span>`
       : "";
   return `<span class="srole" title="${h(SPACE_ROLE_HELP[r])}">${ic("user", 13)}Your role here: <b>${h(roleLabel(r, kind))}</b></span>`;
@@ -140,7 +140,7 @@ const roleLabel = (r, kind) => (r === "Member" ? (kind === "circles" ? "Collabor
 const roleSelect = (act, data, cur, label) =>
   `<select class="input role-sel" data-ch="${act}"${attr(data)} aria-label="${h(label || "Role in this space")}">${[...INVITE_ROLES, ...(INVITE_ROLES.includes(normRole(cur)) ? [] : [normRole(cur)])].map((x) => `<option value="${x}" ${x === normRole(cur) ? "selected" : ""}>${roleLabel(x, data.kind)}</option>`).join("")}</select>`;
 // Everyone in this context who could be added to a space, with their platform role.
-const eligiblePeople = (exclude = [], roles = ["P", "F", "M", "C", "O"]) =>
+const eligiblePeople = (exclude = [], roles = ["P", "F", "M", "C", "A"]) =>
   S.assign
     .filter(
       (a) =>
@@ -153,7 +153,7 @@ const eligiblePeople = (exclude = [], roles = ["P", "F", "M", "C", "O"]) =>
     .map((a) => ({
       pid: a.pid,
       sub:
-        ROLE[a.role] +
+        roleName(a.role, a.ctx) +
         (P(a.pid).org
           ? " · " +
             ((S.orgs.find((o) => o.id === P(a.pid).org) || {}).name || "")

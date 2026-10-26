@@ -5,89 +5,173 @@
 
 // Node kinds: s = start/end · a = this role acts · h = another role acts · y = PHOENIX does it automatically
 // d = decision with branches · g = moves to another module.
-const rfS = t => ({ k: 's', t });
-const rfA = (t, n) => ({ k: 'a', t, n });
-const rfY = (t, n) => ({ k: 'y', t, n });
-const rfH = (r, t, n) => ({ k: 'h', r, t, n });
-const rfD = (q, br, n) => ({ k: 'd', q, br, n });
-const rfG = t => ({ k: 'g', t });
+const rfS = (t) => ({ k: "s", t });
+const rfA = (t, n) => ({ k: "a", t, n });
+const rfY = (t, n) => ({ k: "y", t, n });
+const rfH = (r, t, n) => ({ k: "h", r, t, n });
+const rfD = (q, br, n) => ({ k: "d", q, br, n });
+const rfG = (t) => ({ k: "g", t });
 // A decision branch. out: 'cont' = the flow continues below, 'end' = this path stops, any other text = where it goes.
-const rfB = (l, nodes, out = 'cont') => ({ l, nodes, out });
-const RF_ORDER = ['P', 'F', 'M', 'C', 'O', 'S', 'A', 'T'];
+const rfB = (l, nodes, out = "cont") => ({ l, nodes, out });
+const RF_ORDER = ["P", "F", "M", "C", "S", "A", "T"];
 // Specialist bundles are capabilities attached to a person in a context, not personas. They appear as actors in
 // the flows (the person holding the bundle acts) under these codes.
-const RF_BUNDLE = { RV: 'Reviewer', TD: 'Trust/Data Steward', FO: 'Finance Owner', AO: 'AI Owner', IS: 'Incident/Safety Owner' };
-const rfName = c => ROLE[c] || RF_BUNDLE[c] || c;
+const RF_BUNDLE = {
+  RV: "Reviewer",
+  TD: "Trust/Data Steward",
+  FO: "Finance Owner",
+  AO: "AI Owner",
+  IS: "Incident/Safety Owner",
+};
+const rfName = (c) => ROLE[c] || RF_BUNDLE[c] || c;
 // Role chips: the base roles use the theme's wayfinding colours; '*' means "any member"; bundles are neutral.
-const rfChip = c =>
+const rfChip = (c) =>
   c
-    .split('/')
-    .map(x => `<span class="rfl-chip rfl-r-${RF_ORDER.includes(x) ? x : 'any'}">${x === '*' ? 'Space members' : x === 'SYS' ? 'PHOENIX' : h(rfName(x)) + (RF_BUNDLE[x] ? ' (bundle)' : '')}</span>`)
-    .join('');
+    .split("/")
+    .map(
+      (x) =>
+        `<span class="rfl-chip rfl-r-${RF_ORDER.includes(x) ? x : "any"}">${x === "*" ? "Space members" : x === "SYS" ? "PHOENIX" : h(rfName(x)) + (RF_BUNDLE[x] ? " (bundle)" : "")}</span>`,
+    )
+    .join("");
 
 // ---- shared: invitation (or access request), approval of sensitive roles, sign-in and onboarding for each role
 function rfAccess(c) {
-  const mfa = ['A', 'T'].includes(c);
-  const agr = { C: 'partner agreement', O: 'organisation agreement', S: 'Sponsor agreement' }[c] || rfName(c) + ' agreement';
+  const mfa = ["A", "T"].includes(c);
+  const agr =
+    {
+      C: "partner agreement",
+      S: "Sponsor agreement",
+    }[c] || rfName(c) + " agreement";
   const gate =
-    c === 'P'
-      ? rfG('Onboarding continues: required agreement, optional permissions and the Purpose Compass (next phases)')
-      : rfY('Onboarding gate', 'Accept the required ' + agr + ' (download it or compare it with the previous version). Optional permissions are asked separately and never bundled into it; declining them never blocks the core.');
+    c === "P"
+      ? rfG(
+          "Onboarding continues: required agreement, optional permissions and the Purpose Compass (next phases)",
+        )
+      : rfY(
+          "Onboarding gate",
+          "Accept the required " +
+            agr +
+            " (download it or compare it with the previous version). Optional permissions are asked separately and never bundled into it; declining them never blocks the core.",
+        );
   const signIn = [
-    rfA('Sign in with email and password' + (mfa ? ', then enter the two-step verification code' : ''), 'Wrong details show an error; after 5 failed attempts the account is temporarily locked.' + (mfa ? ' The code is always required for Programme and Platform Administrators.' : '')),
+    rfA(
+      "Sign in with email and password" +
+        (mfa ? ", then enter the two-step verification code" : ""),
+      "Wrong details show an error; after 5 failed attempts the account is temporarily locked." +
+        (mfa
+          ? " The code is always required for Programme and Platform Administrators."
+          : ""),
+    ),
     gate,
-    rfY('Agreement updates', 'When a new version of your agreement is published, a dialog shows it at sign-in. “Compare with previous policy” shows what changed. You accept to continue, or sign out.'),
-    rfY('One identity, several roles', 'Each role assignment is tied to a programme or organisation context. Switching role or context rebuilds the menu, counts and notifications. A role with an end date expires until it is renewed.'),
+    rfY(
+      "Agreement updates",
+      "When a new version of your agreement is published, a dialog shows it at sign-in. “Compare with previous policy” shows what changed. You accept to continue, or sign out.",
+    ),
+    rfY(
+      "One identity, several roles",
+      "Each role assignment is tied to a programme or organisation context. Switching role or context rebuilds the menu, counts and notifications. A role with an end date expires until it is renewed.",
+    ),
   ];
-  if (c === 'T')
+  if (c === "T")
     return [
-      rfS('Start: a Platform Administrator account is provisioned for you'),
-      rfY('No self-registration or invitation', 'Invitations can grant every role except Platform Administrator, so this account is set up outside the sign-up flows. Two-step verification is mandatory.'),
+      rfS("Start: a Platform Administrator account is provisioned for you"),
+      rfY(
+        "No self-registration or invitation",
+        "Invitations can grant every role except Platform Administrator, so this account is set up outside the sign-up flows. Two-step verification is mandatory.",
+      ),
       ...signIn,
-      rfG('Platform operations'),
+      rfG("Platform operations"),
     ];
-  const inviter = c === 'A' ? 'A/T' : 'A/O';
+  const inviter = c === "A" ? "A/T" : "A/O";
   const start =
-    c === 'P' || c === 'S'
+    c === "P" || c === "S"
       ? [
-          rfS('Start: open PHOENIX'),
-          rfD('Do you have an invitation link?', [
-            rfB('No', [
-              rfA('Request access', 'Name, email, programme and a short reason. This does not create an account.'),
-              rfD('Programme Administrator decides', [
-                rfB('Approve', [rfY('A normal single-use invitation is sent')]),
-                rfB('Decline', [rfY('Nothing is created')], 'end'),
+          rfS("Start: open PHOENIX"),
+          rfD("Do you have an invitation link?", [
+            rfB("No", [
+              rfA(
+                "Request access",
+                "Name, email, programme and a short reason. This does not create an account.",
+              ),
+              rfD("Organization Admin decides", [
+                rfB("Approve", [rfY("A normal single-use invitation is sent")]),
+                rfB("Decline", [rfY("Nothing is created")], "end"),
               ]),
             ]),
-            rfB('Yes', [rfH(inviter, 'You were invited', 'The invitation fixes your role, context (programme or organisation) and email.')]),
+            rfB("Yes", [
+              rfH(
+                inviter,
+                "You were invited",
+                "The invitation fixes your role, context (programme or organisation) and email.",
+              ),
+            ]),
           ]),
         ]
       : [
-          rfS('Start: you receive an invitation'),
-          rfH(inviter, c === 'A' ? 'A Platform Administrator names you as an organisation’s administrator, or a Programme Administrator invites you' : 'A Programme Administrator, or an Organisation Representative in its own programme, invites you', 'The invitation sets your role, context, link expiry and an optional role end date. No account exists before an invitation.'),
+          rfS("Start: you receive an invitation"),
+          rfH(
+            inviter,
+            c === "A"
+              ? "A Platform Administrator names you as an organisation’s administrator, or an Organization Admin invites you"
+              : "An Organization Admin invites you",
+            "The invitation sets your role, context, link expiry and an optional role end date. No account exists before an invitation.",
+          ),
         ];
-  const approval = ['O', 'A'].includes(c)
+  const approval = c === "A"
     ? rfD(
-        'Does the role need approval?',
+        "Does the role need approval?",
         [
-          c === 'A' && rfB('Pre-approved by the Platform Administrator', [rfY('Role active straight away')]),
-          rfB('Yes (sensitive role)', [
-            rfY('“Your role is awaiting approval”', 'Authorised approvers are notified.'),
-            rfD('Approver decides', [
-              rfB('Approve role', [rfH('A', 'Role becomes active')]),
-              rfB('Decline role', [rfY('“Role not activated” with the approver’s note', 'The account still exists; other roles are unaffected.')], 'end'),
+          c === "A" &&
+            rfB("Pre-approved by the Platform Administrator", [
+              rfY("Role active straight away"),
+            ]),
+          rfB("Yes (sensitive role)", [
+            rfY(
+              "“Your role is awaiting approval”",
+              "Authorised approvers are notified.",
+            ),
+            rfD("Approver decides", [
+              rfB("Approve role", [rfH("A", "Role becomes active")]),
+              rfB(
+                "Decline role",
+                [
+                  rfY(
+                    "“Role not activated” with the approver’s note",
+                    "The account still exists; other roles are unaffected.",
+                  ),
+                ],
+                "end",
+              ),
             ]),
           ]),
         ].filter(Boolean),
-        'Only sensitive roles (Organisation Representative, Programme Administrator) wait for approval.',
+        "Only the sensitive Organization Admin role waits for approval.",
       )
-    : rfY('Role active straight away', rfName(c) + ' activates without approval. Specialist bundles are approved separately.');
+    : rfY(
+        "Role active straight away",
+        rfName(c) +
+          " activates without approval. Specialist bundles are approved separately.",
+      );
   return [
     ...start,
-    rfA('Open the invitation link', 'PHOENIX checks the link. Expired, withdrawn or used links stop here with a “Request a new invitation” form.'),
-    rfD('Does this email already have a PHOENIX account?', [
-      rfB('No', [rfA('Accept and create your account', 'Role and email come from the invitation.'), rfA('Verify your email')]),
-      rfB('Yes', [rfY('No second account', 'The new role assignment is added to your existing identity.')]),
+    rfA(
+      "Open the invitation link",
+      "PHOENIX checks the link. Expired, withdrawn or used links stop here with a “Request a new invitation” form.",
+    ),
+    rfD("Does this email already have a PHOENIX account?", [
+      rfB("No", [
+        rfA(
+          "Accept and create your account",
+          "Role and email come from the invitation.",
+        ),
+        rfA("Verify your email"),
+      ]),
+      rfB("Yes", [
+        rfY(
+          "No second account",
+          "The new role assignment is added to your existing identity.",
+        ),
+      ]),
     ]),
     approval,
     ...signIn,
@@ -100,491 +184,765 @@ function rfFlows() {
   const V = S.settings.voting;
   return {
     P: {
-      lead: 'Learner or practitioner. Agrees to the core service, chooses optional permissions, sets a purpose, accepts a pathway, and moves through Circles, Rope Teams and ' + W + 's in whatever order fits, keeping control of their own profile.',
-      side: ['Conversations, help and safety'],
+      lead:
+        "Learner or practitioner. Agrees to the core service, chooses optional permissions, sets a purpose, accepts a pathway, and moves through Circles, Rope Teams and " +
+        W +
+        "s in whatever order fits, keeping control of their own profile.",
+      side: ["Conversations, help and safety"],
       phases: [
-        ['Authorize', 'Invitation and sign-in', rfAccess('P')],
+        ["Authorize", "Invitation and sign-in", rfAccess("P")],
         [
-          'Authorize',
-          'Required agreement and optional permissions',
+          "Authorize",
+          "Required agreement and optional permissions",
           [
-            rfA('Accept the required Participant agreement', 'It covers only what the core service needs. Download it or compare it with the previous version.'),
-            rfY('Optional permissions are asked separately', 'Five purposes, each on its own: AI processing, research and evaluation, cross-organisation sharing, public or funder release, external-system exchange. None is bundled into the agreement.'),
-            rfD('Your choice for each purpose', [
-              rfB('Allow', [rfY('Used for that purpose only')]),
-              rfB('Do not allow', [rfY('The core still works', 'Pathway, Circles, tasks and evidence stay available without it.')]),
-            ], 'You can change or withdraw each choice later.'),
+            rfA(
+              "Accept the required Participant agreement",
+              "It covers only what the core service needs. Download it or compare it with the previous version.",
+            ),
+            rfY(
+              "Optional permissions are asked separately",
+              "Five purposes, each on its own: AI processing, research and evaluation, cross-organisation sharing, public or funder release, external-system exchange. None is bundled into the agreement.",
+            ),
+            rfD(
+              "Your choice for each purpose",
+              [
+                rfB("Allow", [rfY("Used for that purpose only")]),
+                rfB("Do not allow", [
+                  rfY(
+                    "The core still works",
+                    "Pathway, Circles, tasks and evidence stay available without it.",
+                  ),
+                ]),
+              ],
+              "You can change or withdraw each choice later.",
+            ),
           ],
         ],
         [
-          'Orient',
-          'Minimum Purpose Compass',
+          "Orient",
+          "Minimum Purpose Compass",
           [
-            rfA('Answer the six Purpose Compass questions', 'Short reflective questions inspired by IKIGAI. You can save and finish later.'),
-            rfY('Never scored', 'No rating or ranking is made from your answers. Organisation Representatives and Sponsors never see them.'),
+            rfA(
+              "Answer the six Purpose Compass questions",
+              "Short reflective questions inspired by IKIGAI. You can save and finish later.",
+            ),
+            rfY(
+              "Never scored",
+              "No rating or ranking is made from your answers. Organization Admins and Sponsors never see them.",
+            ),
           ],
         ],
         [
-          'Orient',
-          'Accept a 3–5 step pathway',
+          "Orient",
+          "Accept a 3–5 step pathway",
           [
-            rfD('Where does the pathway come from?', [
-              rfB('Template or your own steps', [rfA('Choose a template or draft 3–5 steps')]),
-              rfB('Recommended to you', [rfH('F/M', 'A Facilitator, Circle Steward or Mentor recommends a pathway')]),
-            ]),
-            rfY('Each step has a requirement type and rules', 'Mandatory, Optional or Conditional (an explicit IF rule). Statuses are worked out at run time: Available, In progress, Pending review, Completed, Satisfied by prior evidence, Skipped – allowed, Blocked (with reason and next action).'),
-            rfD('Your answer', [
-              rfB('Accept', [rfY('Pathway becomes current', 'Nothing becomes current without your acceptance.')]),
-              rfB('Request a change', [rfH('F/M', 'Revises and proposes again')], 'Your answer'),
-            ]),
-            rfA('Work through the steps', 'Complete a step, skip an optional one, answer a condition question, or select approved prior evidence — a Reviewer confirms it where the step needs review.'),
-          ],
-        ],
-        [
-          'Connect',
-          'Join or link a Circle or Rope Team, as relevant',
-          [
-            rfD('Which space helps now?', [
-              rfB('A Circle', [rfA('Ask to join, accept an invitation, or propose one', 'Sessions, threaded discussion and equal voting.')]),
-              rfB('A Rope Team', [rfA('Join or link a Rope Team', 'A small mentored team.')]),
-              rfB('Neither yet', [rfY('No mandatory sequence')]),
-            ]),
-            rfY('Separate linked spaces', 'Circle, Rope Team and ' + W + ' are entered in any valid order and linked to each other, never converted into one another.'),
-          ],
-        ],
-        [
-          'Connect',
-          'Opportunity, match or direct collaboration',
-          [
-            rfD('How do you find collaborators?', [
-              rfB('Route A: PHOENIX match', [
-                rfA('Publish an Opportunity Card, or express interest in one'),
-                rfH('F', 'The assigned Steward reviews the Match Brief', 'Approve and request consent, ask for clarification, or close.'),
-                rfD('Both parties consent?', [rfB('Yes', [rfY('Introduced')]), rfB('No', [rfY('Match Brief closed')], 'end')]),
+            rfD("Where does the pathway come from?", [
+              rfB("Template or your own steps", [
+                rfA("Choose a template or draft 3–5 steps"),
               ]),
-              rfB('Route B: direct', [rfA('Propose a direct authorised collaboration', 'Only with people you already share an authorised space or organisation with.')]),
+              rfB("Recommended to you", [
+                rfH(
+                  "F/M",
+                  "A Facilitator, Circle Steward or Mentor recommends a pathway",
+                ),
+              ]),
             ]),
-            rfD('After the introduction', [
-              rfB('Close', [], 'end'),
-              rfB('Continue conversation', [], 'Decide later'),
-              rfB('Link or create a workspace', [rfA('Link an existing ' + W + ' or create a new one')]),
+            rfY(
+              "Each step has a requirement type and rules",
+              "Mandatory, Optional or Conditional (an explicit IF rule). Statuses are worked out at run time: Available, In progress, Pending review, Completed, Satisfied by prior evidence, Skipped – allowed, Blocked (with reason and next action).",
+            ),
+            rfD("Your answer", [
+              rfB("Accept", [
+                rfY(
+                  "Pathway becomes current",
+                  "Nothing becomes current without your acceptance.",
+                ),
+              ]),
+              rfB(
+                "Request a change",
+                [rfH("F/M", "Revises and proposes again")],
+                "Your answer",
+              ),
+            ]),
+            rfA(
+              "Work through the steps",
+              "Complete a step, skip an optional one, answer a condition question, or select approved prior evidence — a Reviewer confirms it where the step needs review.",
+            ),
+          ],
+        ],
+        [
+          "Connect",
+          "Join or link a Circle or Rope Team, as relevant",
+          [
+            rfD("Which space helps now?", [
+              rfB("A Circle", [
+                rfA(
+                  "Ask to join, accept an invitation, or propose one",
+                  "Sessions, threaded discussion and equal voting.",
+                ),
+              ]),
+              rfB("A Rope Team", [
+                rfA("Join or link a Rope Team", "A small mentored team."),
+              ]),
+              rfB("Neither yet", [rfY("No mandatory sequence")]),
+            ]),
+            rfY(
+              "Separate linked spaces",
+              "Circle, Rope Team and " +
+                W +
+                " are entered in any valid order and linked to each other, never converted into one another.",
+            ),
+          ],
+        ],
+        [
+          "Connect",
+          "Opportunity, match or direct collaboration",
+          [
+            rfD("How do you find collaborators?", [
+              rfB("Route A: PHOENIX match", [
+                rfA("Publish an Opportunity Card, or express interest in one"),
+                rfH(
+                  "F",
+                  "The assigned Steward reviews the Match Brief",
+                  "Approve and request consent, ask for clarification, or close.",
+                ),
+                rfD("Both parties consent?", [
+                  rfB("Yes", [rfY("Introduced")]),
+                  rfB("No", [rfY("Match Brief closed")], "end"),
+                ]),
+              ]),
+              rfB("Route B: direct", [
+                rfA(
+                  "Propose a direct authorised collaboration",
+                  "Only with people you already share an authorised space or organisation with.",
+                ),
+              ]),
+            ]),
+            rfD("After the introduction", [
+              rfB("Close", [], "end"),
+              rfB("Continue conversation", [], "Decide later"),
+              rfB("Link or create a workspace", [
+                rfA("Link an existing " + W + " or create a new one"),
+              ]),
             ]),
           ],
         ],
         [
-          'Act',
-          W + ': tasks',
+          "Act",
+          W + ": tasks",
           [
-            rfA('Plan tasks and milestones with your collaborators'),
-            rfD('Does the assignee accept the task?', [
-              rfB('Accept', [rfY('Task begins', 'To do → In progress → Review → Done.')]),
-              rfB('Decline', [rfY('Back to the task owner')], 'Reassign'),
-            ], 'No task starts until the assignee accepts it.'),
+            rfA("Plan tasks and milestones with your collaborators"),
+            rfD(
+              "Does the assignee accept the task?",
+              [
+                rfB("Accept", [
+                  rfY("Task begins", "To do → In progress → Review → Done."),
+                ]),
+                rfB("Decline", [rfY("Back to the task owner")], "Reassign"),
+              ],
+              "No task starts until the assignee accepts it.",
+            ),
           ],
         ],
         [
-          'Evidence',
-          'Evidence: review, level, confidentiality and release',
+          "Evidence",
+          "Evidence: review, level, confidentiality and release",
           [
-            rfA('Add evidence', 'File, link, reflection or record, linked to a task, milestone or space.'),
-            rfY('Four things are tracked separately', 'Review status, evidence level E0–E4, confidentiality, and lifecycle and release. Approving evidence never releases it.'),
-            rfD('A person with the Reviewer bundle reviews it', [
-              rfB('Approved', [rfY('Level and limitations recorded')]),
-              rfB('Needs revision', [rfA('Revise and resubmit')], 'Reviewed again'),
-              rfB('Rejected or insufficient', [rfY('Reason recorded')], 'end'),
+            rfA(
+              "Add evidence",
+              "File, link, reflection or record, linked to a task, milestone or space.",
+            ),
+            rfY(
+              "Four things are tracked separately",
+              "Review status, evidence level E0–E4, confidentiality, and lifecycle and release. Approving evidence never releases it.",
+            ),
+            rfD("A person with the Reviewer bundle reviews it", [
+              rfB("Approved", [rfY("Level and limitations recorded")]),
+              rfB(
+                "Needs revision",
+                [rfA("Revise and resubmit")],
+                "Reviewed again",
+              ),
+              rfB("Rejected or insufficient", [rfY("Reason recorded")], "end"),
             ]),
-            rfD('Release beyond the team?', [
-              rfB('No', [rfY('Stays at its confidentiality level')]),
-              rfB('Requested', [rfH('TD', 'Decides the release', 'Needs your public or funder release permission. Small numbers are suppressed.')]),
+            rfD("Release beyond the team?", [
+              rfB("No", [rfY("Stays at its confidentiality level")]),
+              rfB("Requested", [
+                rfH(
+                  "TD",
+                  "Decides the release",
+                  "Needs your public or funder release permission. Small numbers are suppressed.",
+                ),
+              ]),
             ]),
           ],
         ],
         [
-          'Learn',
-          'Learning Harvest',
+          "Learn",
+          "Learning Harvest",
           [
-            rfA('Contribute to the Learning Harvest', 'An AI draft is possible only if you allowed AI processing; a person completes the Harvest.'),
-            rfY('Dissent and negative findings are kept', 'They are not smoothed away.'),
+            rfA(
+              "Contribute to the Learning Harvest",
+              "An AI draft is possible only if you allowed AI processing; a person completes the Harvest.",
+            ),
+            rfY(
+              "Dissent and negative findings are kept",
+              "They are not smoothed away.",
+            ),
           ],
         ],
         [
-          'Evolve',
-          'Profile change candidate',
+          "Evolve",
+          "Profile change candidate",
           [
-            rfY('Candidates arrive with provenance', 'From completed steps, approved evidence and Harvests. Each shows where it came from.'),
-            rfD('Your decision on each candidate', [
-              rfB('Accept', [rfY('Added to your profile as a new version')]),
-              rfB('Edit', [rfA('Edit, then accept'), rfY('Added with your wording')]),
-              rfB('Reject', [rfY('Not added')], 'end'),
-            ], 'Only you decide what changes on your profile.'),
+            rfY(
+              "Candidates arrive with provenance",
+              "From completed steps, approved evidence and Harvests. Each shows where it came from.",
+            ),
+            rfD(
+              "Your decision on each candidate",
+              [
+                rfB("Accept", [rfY("Added to your profile as a new version")]),
+                rfB("Edit", [
+                  rfA("Edit, then accept"),
+                  rfY("Added with your wording"),
+                ]),
+                rfB("Reject", [rfY("Not added")], "end"),
+              ],
+              "Only you decide what changes on your profile.",
+            ),
           ],
         ],
         [
-          'Evolve',
-          'Next action',
+          "Evolve",
+          "Next action",
           [
-            rfA('Choose the next action', 'Continue the pathway, join or link another space, update your Purpose Compass, or change a permission.'),
-            rfS('End: the loop starts again'),
+            rfA(
+              "Choose the next action",
+              "Continue the pathway, join or link another space, update your Purpose Compass, or change a permission.",
+            ),
+            rfS("End: the loop starts again"),
           ],
         ],
         [
-          'Messages & support',
-          'Conversations, help and safety',
+          "Messages & support",
+          "Conversations, help and safety",
           [
-            rfA('Post in threaded discussions in your spaces', 'Members of an active space post; Observers read only.'),
-            rfA('Ask PHOENIX', 'Private help. Nothing changes on your record.'),
-            rfA('Report a concern'),
-            rfH('IS', 'Triages, reviews and records a decision'),
-            rfD('Accept the decision?', [rfB('Yes', [rfY('Case closed')], 'end'), rfB('No', [rfA('Appeal')], 'Reviewed again')]),
+            rfA(
+              "Post in threaded discussions in your spaces",
+              "Members of an active space post; Observers read only.",
+            ),
+            rfA("Ask PHOENIX", "Private help. Nothing changes on your record."),
+            rfA("Report a concern"),
+            rfH("IS", "Triages, reviews and records a decision"),
+            rfD("Accept the decision?", [
+              rfB("Yes", [rfY("Case closed")], "end"),
+              rfB("No", [rfA("Appeal")], "Reviewed again"),
+            ]),
           ],
         ],
       ],
     },
     F: {
-      lead: 'Facilitator / Steward. Creates or approves Circles, runs sessions and threaded discussion, opens equal votes, reviews Match Briefs when assigned as Steward, and links Circles to ' + W + 's and Learning Harvests.',
-      side: ['Pathways and evidence'],
+      lead:
+        "Facilitator / Steward. Creates or approves Circles, runs sessions and threaded discussion, opens equal votes, reviews Match Briefs when assigned as Steward, and links Circles to " +
+        W +
+        "s and Learning Harvests.",
+      side: ["Pathways and evidence"],
       phases: [
-        ['Authorize', 'Invitation and sign-in', rfAccess('F')],
+        ["Authorize", "Invitation and sign-in", rfAccess("F")],
         [
-          'Connect',
-          'Create or approve a Circle',
+          "Connect",
+          "Create or approve a Circle",
           [
-            rfD('How does the Circle start?', [
-              rfB('You create it', [rfA('Create the Circle', 'Name, purpose, outcome and agreement. You join as Facilitator.')]),
-              rfB('Someone proposes it', [
-                rfH('P', 'A participant proposes a Circle'),
-                rfD('Your decision', [rfB('Approve', [rfY('Circle active')]), rfB('Decline', [rfY('Proposer told why')], 'end')]),
+            rfD("How does the Circle start?", [
+              rfB("You create it", [
+                rfA(
+                  "Create the Circle",
+                  "Name, purpose, outcome and agreement. You join as Facilitator.",
+                ),
               ]),
-            ]),
-            rfA('Manage membership', 'Invite, decide join requests, change roles, remove members.'),
-          ],
-        ],
-        [
-          'Deliberate',
-          'Sessions and threaded discussion',
-          [
-            rfA('Run sessions and record decisions and commitments'),
-            rfA('Moderate threaded discussion', 'Asynchronous threads, not real-time chat.'),
-          ],
-        ],
-        [
-          'Deliberate',
-          'Proposals and equal voting',
-          [
-            rfA('Open a proposal for a vote', 'Threshold, quorum, voting window and reminders are configurable (now ' + V.threshold + '% of eligible voters, ' + V.quorum + '% quorum).'),
-            rfY('One eligible member = one vote', 'Equal weight for everyone. The AI source check is advisory only and never passes or fails a vote.'),
-            rfD('Result when the window closes', [
-              rfB('Threshold and quorum met', [rfY('Decision recorded')]),
-              rfB('Tie', [rfY('Returns to Shared for revision')], 'Re-vote'),
-              rfB('Not met', [rfY('Not adopted; recorded')]),
-            ]),
-          ],
-        ],
-        [
-          'Connect',
-          'Match Briefs (only if assigned as Steward)',
-          [
-            rfD('Are you the assigned Steward?', [
-              rfB('Yes', [
-                rfA('Review the Match Brief'),
-                rfD('Your decision', [
-                  rfB('Approve', [rfH('P/C', 'Both parties are asked for consent')]),
-                  rfB('Clarify', [rfH('P/C', 'Requester clarifies')], 'Decide again'),
-                  rfB('Close', [rfY('Brief closed')], 'end'),
+              rfB("Someone proposes it", [
+                rfH("P", "A participant proposes a Circle"),
+                rfD("Your decision", [
+                  rfB("Approve", [rfY("Circle active")]),
+                  rfB("Decline", [rfY("Proposer told why")], "end"),
                 ]),
               ]),
-              rfB('No', [rfY('Not in your queue')]),
+            ]),
+            rfA(
+              "Manage membership",
+              "Invite, decide join requests, change roles, remove members.",
+            ),
+          ],
+        ],
+        [
+          "Deliberate",
+          "Sessions and threaded discussion",
+          [
+            rfA("Run sessions and record decisions and commitments"),
+            rfA(
+              "Moderate threaded discussion",
+              "Asynchronous threads, not real-time chat.",
+            ),
+          ],
+        ],
+        [
+          "Deliberate",
+          "Proposals and equal voting",
+          [
+            rfA(
+              "Open a proposal for a vote",
+              "Threshold, quorum, voting window and reminders are configurable (now " +
+                V.threshold +
+                "% of eligible voters, " +
+                V.quorum +
+                "% quorum).",
+            ),
+            rfY(
+              "One eligible member = one vote",
+              "Equal weight for everyone. The AI source check is advisory only and never passes or fails a vote.",
+            ),
+            rfD("Result when the window closes", [
+              rfB("Threshold and quorum met", [rfY("Decision recorded")]),
+              rfB("Tie", [rfY("Returns to Shared for revision")], "Re-vote"),
+              rfB("Not met", [rfY("Not adopted; recorded")]),
             ]),
           ],
         ],
         [
-          'Act',
-          'Link or create an ' + W,
-          [rfA('Link an existing ' + W + ' or create one from the Circle', 'The spaces stay separate and linked; nothing is converted.'), rfH('*', 'Members accept and work on tasks')],
-        ],
-        [
-          'Learn',
-          'Learning Harvest',
-          [rfA('Contribute to or complete the Learning Harvest', 'A person completes it; dissent and negative findings are kept.')],
-        ],
-        [
-          'Evolve',
-          'Close or continue the Circle',
+          "Connect",
+          "Match Briefs (only if assigned as Steward)",
           [
-            rfD('What next for the Circle?', [
-              rfB('Continue', [rfY('Circle stays active')], 'Back to sessions'),
-              rfB('Close', [rfY('Circle closed; records kept')]),
+            rfD("Are you the assigned Steward?", [
+              rfB("Yes", [
+                rfA("Review the Match Brief"),
+                rfD("Your decision", [
+                  rfB("Approve", [
+                    rfH("P/C", "Both parties are asked for consent"),
+                  ]),
+                  rfB(
+                    "Clarify",
+                    [rfH("P/C", "Requester clarifies")],
+                    "Decide again",
+                  ),
+                  rfB("Close", [rfY("Brief closed")], "end"),
+                ]),
+              ]),
+              rfB("No", [rfY("Not in your queue")]),
             ]),
-            rfS('End: Circle closed'),
           ],
         ],
         [
-          'Records',
-          'Pathways and evidence',
+          "Act",
+          "Link or create an " + W,
           [
-            rfA('Propose a pathway to a participant', 'The participant accepts or requests a change.'),
-            rfD('Approve evidence?', [
-              rfB('With the Reviewer bundle', [rfA('Review: status, level E0–E4 and limitations')]),
-              rfB('Without it', [rfY('Comment only; a Reviewer decides')]),
-            ], 'Evidence approval needs the separate Reviewer bundle.'),
+            rfA(
+              "Link an existing " + W + " or create one from the Circle",
+              "The spaces stay separate and linked; nothing is converted.",
+            ),
+            rfH("*", "Members accept and work on tasks"),
+          ],
+        ],
+        [
+          "Learn",
+          "Learning Harvest",
+          [
+            rfA(
+              "Contribute to or complete the Learning Harvest",
+              "A person completes it; dissent and negative findings are kept.",
+            ),
+          ],
+        ],
+        [
+          "Evolve",
+          "Close or continue the Circle",
+          [
+            rfD("What next for the Circle?", [
+              rfB("Continue", [rfY("Circle stays active")], "Back to sessions"),
+              rfB("Close", [rfY("Circle closed; records kept")]),
+            ]),
+            rfS("End: Circle closed"),
+          ],
+        ],
+        [
+          "Records",
+          "Pathways and evidence",
+          [
+            rfA(
+              "Propose a pathway to a participant",
+              "The participant accepts or requests a change.",
+            ),
+            rfD(
+              "Approve evidence?",
+              [
+                rfB("With the Reviewer bundle", [
+                  rfA("Review: status, level E0–E4 and limitations"),
+                ]),
+                rfB("Without it", [rfY("Comment only; a Reviewer decides")]),
+              ],
+              "Evidence approval needs the separate Reviewer bundle.",
+            ),
           ],
         ],
       ],
     },
     M: {
-      lead: 'Mentor / Advisor. Supports an assigned participant or Rope Team, recommends pathway changes and opportunities, and contributes to the assigned ' + W + ' — recommends, never approves.',
-      side: ['Requests from another context'],
+      lead:
+        "Mentor. Supports an assigned participant or Rope Team, recommends pathway changes and opportunities, and contributes to the assigned " +
+        W +
+        " — recommends, never approves.",
+      side: ["Requests from another context"],
       phases: [
-        ['Authorize', 'Invitation and sign-in', rfAccess('M')],
+        ["Authorize", "Invitation and sign-in", rfAccess("M")],
         [
-          'Connect',
-          'Assigned participant or Rope Team',
+          "Connect",
+          "Assigned participant or Rope Team",
           [
-            rfH('F', 'A Facilitator / Steward raises a Mentor Request', 'Named to you, or open to every mentor in the programme.'),
-            rfD('Your answer', [
-              rfB('Accept', [rfY('You join the Rope Team or are linked to the participant')]),
-              rfB('Decline', [rfY('A named request is declined; an open one stays open')], 'end'),
+            rfH(
+              "F",
+              "A Facilitator / Steward raises a Mentor Request",
+              "Named to you, or open to every mentor in the programme.",
+            ),
+            rfD("Your answer", [
+              rfB("Accept", [
+                rfY("You join the Rope Team or are linked to the participant"),
+              ]),
+              rfB(
+                "Decline",
+                [rfY("A named request is declined; an open one stays open")],
+                "end",
+              ),
             ]),
           ],
         ],
         [
-          'Orient',
-          'Check-ins and support',
+          "Orient",
+          "Check-ins and support",
           [
-            rfA('Run check-ins and answer support requests'),
-            rfA('Keep protected mentor notes', 'They never leave the Rope Team.'),
+            rfA("Run check-ins and answer support requests"),
+            rfA(
+              "Keep protected mentor notes",
+              "They never leave the Rope Team.",
+            ),
           ],
         ],
         [
-          'Orient',
-          'Pathway recommendations',
+          "Orient",
+          "Pathway recommendations",
           [
-            rfD('What do you recommend?', [
-              rfB('A pathway step or change', [rfA('Recommend pathway steps')]),
-              rfB('Prior evidence covers a step', [rfA('Suggest prior evidence (a Reviewer confirms it)')]),
+            rfD("What do you recommend?", [
+              rfB("A pathway step or change", [rfA("Recommend pathway steps")]),
+              rfB("Prior evidence covers a step", [
+                rfA("Suggest prior evidence (a Reviewer confirms it)"),
+              ]),
             ]),
-            rfH('P', 'The participant accepts or declines', 'Mentors recommend; only the participant makes it current.'),
-          ],
-        ],
-        ['Connect', 'Suggest opportunities', [rfA('Suggest Opportunity Cards to the participant'), rfH('P', 'The participant decides whether to express interest')]],
-        ['Act', 'Contribute to the assigned ' + W + ' and Harvest', [rfA('Contribute to tasks in the assigned ' + W), rfA('Contribute to its Learning Harvest')]],
-        [
-          'Evolve',
-          'Close or continue support',
-          [
-            rfD('What next?', [rfB('Continue', [rfY('Support continues')], 'Back to check-ins'), rfB('Close', [rfY('Support closed')])]),
-            rfS('End: support closed'),
+            rfH(
+              "P",
+              "The participant accepts or declines",
+              "Mentors recommend; only the participant makes it current.",
+            ),
           ],
         ],
         [
-          'Context',
-          'Requests from another context',
+          "Connect",
+          "Suggest opportunities",
           [
-            rfY('Cross-context notice', 'A request belonging to another programme or organisation asks you to switch to that context first.'),
-            rfA('Switch role or context, then answer it there'),
+            rfA("Suggest Opportunity Cards to the participant"),
+            rfH("P", "The participant decides whether to express interest"),
+          ],
+        ],
+        [
+          "Act",
+          "Contribute to the assigned " + W + " and Harvest",
+          [
+            rfA("Contribute to tasks in the assigned " + W),
+            rfA("Contribute to its Learning Harvest"),
+          ],
+        ],
+        [
+          "Evolve",
+          "Close or continue support",
+          [
+            rfD("What next?", [
+              rfB("Continue", [rfY("Support continues")], "Back to check-ins"),
+              rfB("Close", [rfY("Support closed")]),
+            ]),
+            rfS("End: support closed"),
+          ],
+        ],
+        [
+          "Context",
+          "Requests from another context",
+          [
+            rfY(
+              "Cross-context notice",
+              "A request belonging to another programme or organisation asks you to switch to that context first.",
+            ),
+            rfA("Switch role or context, then answer it there"),
           ],
         ],
       ],
     },
     C: {
-      lead: 'Partner / Collaborator. Brings resources, expertise or opportunities through a Steward-reviewed match or a direct authorised collaboration, then contributes within a defined mandate.',
+      lead: "Collaborator. Brings resources, expertise or opportunities through a Steward-reviewed match or a direct authorised collaboration, then contributes within a defined mandate.",
       side: [],
       phases: [
-        ['Authorize', 'Invitation, partner agreement and sign-in', rfAccess('C')],
         [
-          'Connect',
-          'Opportunity Card and match',
+          "Authorize",
+          "Invitation, partner agreement and sign-in",
+          rfAccess("C"),
+        ],
+        [
+          "Connect",
+          "Opportunity Card and match",
           [
-            rfA('Publish an Opportunity Card', 'Need, Offer, Asset or Opportunity.'),
-            rfD('How does the collaboration start?', [
-              rfB('Route A: PHOENIX match', [
-                rfH('F', 'The assigned Steward reviews the Match Brief'),
-                rfD('Both parties consent?', [rfB('Yes', [rfY('Introduced')]), rfB('No', [rfY('Brief closed')], 'end')]),
+            rfA(
+              "Publish an Opportunity Card",
+              "Need, Offer, Asset or Opportunity.",
+            ),
+            rfD("How does the collaboration start?", [
+              rfB("Route A: PHOENIX match", [
+                rfH("F", "The assigned Steward reviews the Match Brief"),
+                rfD("Both parties consent?", [
+                  rfB("Yes", [rfY("Introduced")]),
+                  rfB("No", [rfY("Brief closed")], "end"),
+                ]),
               ]),
-              rfB('Route B: direct', [rfA('Direct authorised collaboration', 'Only with people you already share an authorised space or organisation with.')]),
+              rfB("Route B: direct", [
+                rfA(
+                  "Direct authorised collaboration",
+                  "Only with people you already share an authorised space or organisation with.",
+                ),
+              ]),
             ]),
           ],
         ],
         [
-          'Connect',
-          'After the introduction',
+          "Connect",
+          "After the introduction",
           [
-            rfD('What do you do next?', [
-              rfB('Close', [], 'end'),
-              rfB('Continue conversation', [], 'Decide later'),
-              rfB('Link existing workspace', [rfA('Link an existing ' + W)]),
-              rfB('Create new workspace', [rfA('Create a new ' + W)]),
+            rfD("What do you do next?", [
+              rfB("Close", [], "end"),
+              rfB("Continue conversation", [], "Decide later"),
+              rfB("Link existing workspace", [rfA("Link an existing " + W)]),
+              rfB("Create new workspace", [rfA("Create a new " + W)]),
             ]),
           ],
         ],
         [
-          'Act',
-          'Contribute within your mandate',
+          "Act",
+          "Contribute within your mandate",
           [
-            rfA('Accept tasks and contribute', 'Within the mandate your organisation granted.'),
-            rfA('Add evidence'),
-            rfH('RV', 'Reviews the evidence'),
-            rfS('End: collaboration closes with the ' + W),
-          ],
-        ],
-      ],
-    },
-    O: {
-      lead: 'Organisation Representative. Configures the organisation’s programme inside the pack envelope, invites the cohort, assigns approved roles and sees authorised aggregate progress only.',
-      side: [],
-      phases: [
-        ['Authorize', 'Sensitive-role onboarding and organisation agreement', rfAccess('O')],
-        [
-          'Configure',
-          'Configure inside the pack envelope',
-          [
-            rfA('Configure your programme', 'Labels, templates and the options the pack allows.'),
-            rfD('Is the change inside the pack envelope?', [
-              rfB('Yes', [rfY('Applied')]),
-              rfB('No', [rfH('A', 'Becomes a request to the Programme Administrator')], 'end'),
-            ]),
-          ],
-        ],
-        [
-          'People',
-          'Cohort, roles and mandates',
-          [
-            rfA('Invite your cohort'),
-            rfH('P/F/M/C', 'Invitees accept and create an account, or add the role to their identity'),
-            rfA('Assign approved roles and mandates'),
-          ],
-        ],
-        [
-          'Reports',
-          'Aggregate progress, reports and seats',
-          [
-            rfA('See authorised aggregate progress'),
-            rfY('Never personal detail', 'No raw Purpose Compass, hurdles, private reflections, AI conversations or Rope Team notes.'),
-            rfA('Reports and seats'),
-            rfS('End: programme running; continue from My PHOENIX'),
+            rfA(
+              "Accept tasks and contribute",
+              "Within the mandate your organisation granted.",
+            ),
+            rfA("Add evidence"),
+            rfH("RV", "Reviews the evidence"),
+            rfS("End: collaboration closes with the " + W),
           ],
         ],
       ],
     },
     S: {
-      lead: 'Sponsor / Funder. Posts open challenges under an alias and funds the selected team’s agreed milestones offline; buys seat pools or donates, follows aggregate seat use and sees approved, funder-safe outcomes. Identifiable stories need a separate release.',
+      lead: "Sponsor. Posts open challenges under an alias and funds the selected team’s agreed milestones offline; buys seat pools or donates, follows aggregate seat use and sees approved, funder-safe outcomes. Identifiable stories need a separate release.",
       side: [],
       phases: [
-        ['Authorize', 'Access, Sponsor agreement and sign-in', rfAccess('S')],
+        ["Authorize", "Access, Sponsor agreement and sign-in", rfAccess("S")],
         [
-          'Challenges',
-          'From an open challenge to confirmed milestone payments',
+          "Challenges",
+          "From an open challenge to confirmed milestone payments",
           [
-            rfA('Post an open challenge on the Explore board', 'Shown under an alias made for that post; name and organisation hidden.'),
-            rfH('P', 'Participants and Partners ask to take part and join the challenge chat room'),
-            rfA('Evaluate, shortlist and discuss in the chat room', 'All selection discussion stays in the chat room.'),
-            rfA('Form the team’s Circle and start the project in a Circle, Rope Team or Action Room'),
-            rfA('Stop new applications or archive the post', 'The selection chat room closes and stays readable.'),
-            rfA('Commit the full agreed amount', 'The Circle owner confirms the same figure before execution begins.'),
-            rfH('P', 'Circle owner agrees milestones with you and submits completed work'),
-            rfD('Is the milestone complete?', [
-              rfB('Yes', [rfA('Approve it, pay offline and record the payment'), rfH('P', 'Circle owner confirms receipt independently')]),
-              rfB('Not yet', [rfA('Request the missing information'), rfH('P', 'Circle owner resubmits')]),
-              rfB('Cannot agree', [rfH('A', 'Assigns a Steward with no tie to either side'), rfH('F', 'Steward decides from the evidence; both sides under aliases')]),
+            rfA(
+              "Post an open challenge on the Explore board",
+              "Shown under an alias made for that post; name and organisation hidden.",
+            ),
+            rfH(
+              "P",
+              "Participants and Partners ask to take part and join the challenge chat room",
+            ),
+            rfA(
+              "Evaluate, shortlist and discuss in the chat room",
+              "All selection discussion stays in the chat room.",
+            ),
+            rfA(
+              "Form the team’s Circle and start the project in a Circle, Rope Team or Action Room",
+            ),
+            rfA(
+              "Stop new applications or archive the post",
+              "The selection chat room closes and stays readable.",
+            ),
+            rfA(
+              "Commit the full agreed amount",
+              "The Circle owner confirms the same figure before execution begins.",
+            ),
+            rfH(
+              "P",
+              "Circle owner agrees milestones with you and submits completed work",
+            ),
+            rfD("Is the milestone complete?", [
+              rfB("Yes", [
+                rfA("Approve it, pay offline and record the payment"),
+                rfH("P", "Circle owner confirms receipt independently"),
+              ]),
+              rfB("Not yet", [
+                rfA("Request the missing information"),
+                rfH("P", "Circle owner resubmits"),
+              ]),
+              rfB("Cannot agree", [
+                rfH("A", "Assigns a Steward with no tie to either side"),
+                rfH(
+                  "F",
+                  "Steward decides from the evidence; both sides under aliases",
+                ),
+              ]),
             ]),
-            rfS('End: payments confirmed by both sides; continue from My PHOENIX'),
+            rfS(
+              "End: payments confirmed by both sides; continue from My PHOENIX",
+            ),
           ],
         ],
         [
-          'Seats',
-          'Seat pool or donation',
+          "Seats",
+          "Seat pool or donation",
           [
-            rfA('Choose a seat pool or a donation'),
-            rfD('How do you pay?', [rfB('Hosted payment', [rfA('Pay on the hosted payment page')]), rfB('Invoice', [rfA('Request an invoice')])]),
-            rfH('FO', 'Confirms payment and activates the pool'),
+            rfA("Choose a seat pool or a donation"),
+            rfD("How do you pay?", [
+              rfB("Hosted payment", [rfA("Pay on the hosted payment page")]),
+              rfB("Invoice", [rfA("Request an invoice")]),
+            ]),
+            rfH("FO", "Confirms payment and activates the pool"),
           ],
         ],
         [
-          'Outcomes',
-          'Utilisation and funder-safe outcomes',
+          "Outcomes",
+          "Utilisation and funder-safe outcomes",
           [
-            rfA('See seat utilisation', 'Aggregate only.'),
-            rfA('See approved initiatives, approved evidence summaries and funder-safe Learning Harvests', 'Small numbers are suppressed.'),
-            rfD('Want an identifiable story?', [
-              rfB('No', [rfY('Aggregate view only')]),
-              rfB('Yes', [rfA('Send a separate release request'), rfH('TD', 'Decides, with the person’s own release permission')]),
+            rfA("See seat utilisation", "Aggregate only."),
+            rfA(
+              "See approved initiatives, approved evidence summaries and funder-safe Learning Harvests",
+              "Small numbers are suppressed.",
+            ),
+            rfD("Want an identifiable story?", [
+              rfB("No", [rfY("Aggregate view only")]),
+              rfB("Yes", [
+                rfA("Send a separate release request"),
+                rfH("TD", "Decides, with the person’s own release permission"),
+              ]),
             ]),
-            rfS('End: continue from My PHOENIX'),
+            rfS("End: continue from My PHOENIX"),
           ],
         ],
       ],
     },
     A: {
-      lead: 'Programme Administrator. Runs invitations and access requests, sensitive-role approvals, pack configuration, voting parameters, resources, reports and configuration versions. Not the fallback approver for specialist decisions.',
-      side: ['Specialist decisions go to bundle holders'],
+      lead: "Organization Admin. Runs invitations and access requests, sensitive-role approvals, pack configuration, voting parameters, resources, reports and configuration versions. Not the fallback approver for specialist decisions.",
+      side: ["Specialist decisions go to bundle holders"],
       phases: [
-        ['Authorize', 'Invitation and sign-in with two-step code', rfAccess('A')],
         [
-          'Authorize',
-          'Invitations and access requests',
+          "Authorize",
+          "Invitation and sign-in with two-step code",
+          rfAccess("A"),
+        ],
+        [
+          "Authorize",
+          "Invitations and access requests",
           [
-            rfA('Invite people', 'Single or bulk, any role except Platform Administrator.'),
-            rfD('An access request arrives', [
-              rfB('Approve', [rfY('A normal single-use invitation is sent')]),
-              rfB('Decline', [rfY('Nothing is created')], 'end'),
-            ], 'No account exists before an invitation.'),
-            rfD('A sensitive role waits for approval', [rfB('Approve', [rfY('Role active; person notified')]), rfB('Decline', [rfY('“Role not activated”')], 'end')]),
+            rfA(
+              "Invite people",
+              "Single or bulk, any role except Platform Administrator.",
+            ),
+            rfD(
+              "An access request arrives",
+              [
+                rfB("Approve", [rfY("A normal single-use invitation is sent")]),
+                rfB("Decline", [rfY("Nothing is created")], "end"),
+              ],
+              "No account exists before an invitation.",
+            ),
+            rfD("A sensitive role waits for approval", [
+              rfB("Approve", [rfY("Role active; person notified")]),
+              rfB("Decline", [rfY("“Role not activated”")], "end"),
+            ]),
           ],
         ],
         [
-          'Configure',
-          'Pack, templates and Purpose Compass wording',
+          "Configure",
+          "Pack, templates and Purpose Compass wording",
           [
-            rfA('Configure the programme pack and templates'),
-            rfA('Edit Purpose Compass wording', 'The six questions stay unscored.'),
-            rfA('Set voting parameters', 'Threshold, quorum, window and reminders. Equal weight is frozen: one eligible member = one vote.'),
-            rfA('Resources and notifications'),
+            rfA("Configure the programme pack and templates"),
+            rfA(
+              "Edit Purpose Compass wording",
+              "The six questions stay unscored.",
+            ),
+            rfA(
+              "Set voting parameters",
+              "Threshold, quorum, window and reminders. Equal weight is frozen: one eligible member = one vote.",
+            ),
+            rfA("Resources and notifications"),
           ],
         ],
-        ['Reports', 'Reports', [rfA('Programme reports and exports')]],
+        ["Reports", "Reports", [rfA("Programme reports and exports")]],
         [
-          'Configure',
-          'Configuration versions',
-          [rfA('Save, export or restore a configuration version', 'Restoring never touches participant data.'), rfS('End: programme running; continue from My PHOENIX')],
+          "Configure",
+          "Configuration versions",
+          [
+            rfA(
+              "Save, export or restore a configuration version",
+              "Restoring never touches participant data.",
+            ),
+            rfS("End: programme running; continue from My PHOENIX"),
+          ],
         ],
         [
-          'Routing',
-          'Specialist decisions go to bundle holders',
+          "Routing",
+          "Specialist decisions go to bundle holders",
           [
-            rfH('RV', 'Evidence review'),
-            rfH('TD', 'Policy, consent and release'),
-            rfH('FO', 'Products and payments'),
-            rfH('AO', 'AI sources'),
-            rfH('IS', 'Incidents and safety'),
+            rfH("RV", "Evidence review"),
+            rfH("TD", "Policy, consent and release"),
+            rfH("FO", "Products and payments"),
+            rfH("AO", "AI sources"),
+            rfH("IS", "Incidents and safety"),
           ],
         ],
       ],
     },
     T: {
-      lead: 'Platform Administrator. Runs the platform: system health, contexts, approved role and bundle definitions, integrations, security, backups and audit. No policy publishing, Purpose Compass governance or participant content.',
+      lead: "Platform Administrator. Runs the platform: system health, contexts, approved role and bundle definitions, integrations, security, backups and audit. No policy publishing, Purpose Compass governance or participant content.",
       side: [],
       phases: [
-        ['Authorize', 'Provisioned account with two-step code', rfAccess('T')],
-        ['Operations', 'System health and contexts', [rfA('Monitor system health and alerts'), rfA('Create and manage contexts (tenants)')]],
+        ["Authorize", "Provisioned account with two-step code", rfAccess("T")],
         [
-          'Roles',
-          'Role and bundle definitions',
+          "Operations",
+          "System health and contexts",
           [
-            rfD('Is there an approved change reference?', [
-              rfB('Yes', [rfA('Apply the approved role or bundle definition')]),
-              rfB('No', [rfY('Cannot be applied')], 'end'),
+            rfA("Monitor system health and alerts"),
+            rfA("Create and manage contexts (tenants)"),
+          ],
+        ],
+        [
+          "Roles",
+          "Role and bundle definitions",
+          [
+            rfD("Is there an approved change reference?", [
+              rfB("Yes", [rfA("Apply the approved role or bundle definition")]),
+              rfB("No", [rfY("Cannot be applied")], "end"),
             ]),
           ],
         ],
         [
-          'Operations',
-          'Integrations, security and audit',
+          "Operations",
+          "Integrations, security and audit",
           [
-            rfA('Manage integrations'),
-            rfA('Security, backups and restore'),
-            rfA('Audit logs across the platform'),
-            rfY('Out of scope', 'No policy publishing, no Purpose Compass governance, no participant content.'),
-            rfS('End: platform running'),
+            rfA("Manage integrations"),
+            rfA("Security, backups and restore"),
+            rfA("Audit logs across the platform"),
+            rfY(
+              "Out of scope",
+              "No policy publishing, no Purpose Compass governance, no participant content.",
+            ),
+            rfS("End: platform running"),
           ],
         ],
       ],
@@ -596,100 +954,235 @@ function rfFlows() {
 function rfOverview() {
   const W = WL();
   return [
-    ['Authorize', 'Authorize', [rfS('Start: invitation, or Request access → approval → invitation'), rfH('A/O', 'Invite people; Programme Administrators decide access requests and sensitive roles'), rfY('Required agreement, then optional permissions', 'Each person accepts the required agreement; the five optional permissions are asked separately and declining them never blocks the core.')]],
-    ['Connect', 'Connect', [rfH('P/F/M/C', 'Join or link a Circle, Rope Team or ' + W + ' as relevant'), rfY('Separate linked spaces', 'Entered in any valid order, never converted.'), rfH('F/C', 'Steward-reviewed match with mutual consent, or direct authorised collaboration')]],
-    ['Orient', 'Orient', [rfH('P', 'Answers the Purpose Compass (never scored)'), rfH('M/F', 'Recommend a 3–5 step pathway'), rfH('P', 'Accepts it; nothing becomes current without that')]],
-    ['Deliberate', 'Deliberate', [rfH('F', 'Runs sessions and threaded discussion'), rfH('*', 'Vote on proposals: one eligible member = one vote')]],
-    ['Act', 'Act', [rfH('*', 'Work in the ' + W + '; a task begins once its assignee accepts')]],
-    ['Evidence', 'Evidence', [rfH('*', 'Add evidence'), rfH('RV', 'Reviews status and level E0–E4'), rfH('TD', 'Decides any release')]],
-    ['Learn', 'Learn', [rfH('*', 'Complete the Learning Harvest; dissent and negative findings kept')]],
-    ['Evolve', 'Evolve', [rfH('P', 'Accepts, edits or rejects profile change candidates'), rfH('P', 'Chooses the next action'), rfS('End: the loop continues')]],
-    ['Alongside', 'Supporting flows', [rfH('S', 'Seat pools, aggregate utilisation and funder-safe outcomes'), rfH('O', 'Configures inside the pack envelope; sees aggregates only'), rfH('T', 'Runs the platform; no participant content'), rfY('Role + context switching', 'One identity, several role assignments, each tied to a context.')]],
+    [
+      "Authorize",
+      "Authorize",
+      [
+        rfS("Start: invitation, or Request access → approval → invitation"),
+        rfH(
+          "A/O",
+          "Invite people; Organization Admins decide access requests and sensitive roles",
+        ),
+        rfY(
+          "Required agreement, then optional permissions",
+          "Each person accepts the required agreement; the five optional permissions are asked separately and declining them never blocks the core.",
+        ),
+      ],
+    ],
+    [
+      "Connect",
+      "Connect",
+      [
+        rfH(
+          "P/F/M/C",
+          "Join or link a Circle, Rope Team or " + W + " as relevant",
+        ),
+        rfY(
+          "Separate linked spaces",
+          "Entered in any valid order, never converted.",
+        ),
+        rfH(
+          "F/C",
+          "Steward-reviewed match with mutual consent, or direct authorised collaboration",
+        ),
+      ],
+    ],
+    [
+      "Orient",
+      "Orient",
+      [
+        rfH("P", "Answers the Purpose Compass (never scored)"),
+        rfH("M/F", "Recommend a 3–5 step pathway"),
+        rfH("P", "Accepts it; nothing becomes current without that"),
+      ],
+    ],
+    [
+      "Deliberate",
+      "Deliberate",
+      [
+        rfH("F", "Runs sessions and threaded discussion"),
+        rfH("*", "Vote on proposals: one eligible member = one vote"),
+      ],
+    ],
+    [
+      "Act",
+      "Act",
+      [
+        rfH(
+          "*",
+          "Work in the " + W + "; a task begins once its assignee accepts",
+        ),
+      ],
+    ],
+    [
+      "Evidence",
+      "Evidence",
+      [
+        rfH("*", "Add evidence"),
+        rfH("RV", "Reviews status and level E0–E4"),
+        rfH("TD", "Decides any release"),
+      ],
+    ],
+    [
+      "Learn",
+      "Learn",
+      [
+        rfH(
+          "*",
+          "Complete the Learning Harvest; dissent and negative findings kept",
+        ),
+      ],
+    ],
+    [
+      "Evolve",
+      "Evolve",
+      [
+        rfH("P", "Accepts, edits or rejects profile change candidates"),
+        rfH("P", "Chooses the next action"),
+        rfS("End: the loop continues"),
+      ],
+    ],
+    [
+      "Alongside",
+      "Supporting flows",
+      [
+        rfH("S", "Seat pools, aggregate utilisation and funder-safe outcomes"),
+        rfH("T", "Runs the platform; no participant content"),
+        rfY(
+          "Role + context switching",
+          "One identity, several role assignments, each tied to a context.",
+        ),
+      ],
+    ],
   ];
 }
 
 // ---- rendering
 function rfNode(n) {
-  if (n.k === 'd')
-    return `<li class="rfl-n rfl-d"><div class="rfl-dq"><span class="rfl-dia" aria-hidden="true">${ic('question', 14)}</span><b>${h(n.q)}</b>${n.n ? `<span class="cap">${h(n.n)}</span>` : ''}</div><div class="rfl-brs" role="group" aria-label="${h(n.q)}">${n.br
+  if (n.k === "d")
+    return `<li class="rfl-n rfl-d"><div class="rfl-dq"><span class="rfl-dia" aria-hidden="true">${ic("question", 14)}</span><b>${h(n.q)}</b>${n.n ? `<span class="cap">${h(n.n)}</span>` : ""}</div><div class="rfl-brs" role="group" aria-label="${h(n.q)}">${n.br
       .map(
-        b =>
-          `<div class="rfl-br"><span class="rfl-bl">${h(b.l)}</span>${b.nodes.length ? `<ol class="rfl-flow rfl-sub">${b.nodes.map(rfNode).join('')}</ol>` : ''}<span class="rfl-out ${b.out === 'end' ? 'is-end' : b.out === 'cont' ? 'is-cont' : 'is-to'}">${b.out === 'end' ? ic('x', 12) + 'Path ends' : b.out === 'cont' ? ic('arrow', 12) + 'Continues' : ic(/^Skips/.test(b.out) ? 'arrow' : 'refresh', 12) + h(b.out)}</span></div>`,
+        (b) =>
+          `<div class="rfl-br"><span class="rfl-bl">${h(b.l)}</span>${b.nodes.length ? `<ol class="rfl-flow rfl-sub">${b.nodes.map(rfNode).join("")}</ol>` : ""}<span class="rfl-out ${b.out === "end" ? "is-end" : b.out === "cont" ? "is-cont" : "is-to"}">${b.out === "end" ? ic("x", 12) + "Path ends" : b.out === "cont" ? ic("arrow", 12) + "Continues" : ic(/^Skips/.test(b.out) ? "arrow" : "refresh", 12) + h(b.out)}</span></div>`,
       )
-      .join('')}</div></li>`;
-  const icn = { s: 'flag', a: 'user', h: 'users', y: 'settings', g: 'arrow' }[n.k];
-  return `<li class="rfl-n rfl-${n.k}"><span class="rfl-ic" aria-hidden="true">${ic(icn, 14)}</span><div class="rfl-b">${n.k === 'h' ? `<div class="rfl-who">${rfChip(n.r)}</div>` : ''}<b>${h(n.t)}</b>${n.n ? `<span class="cap">${h(n.n)}</span>` : ''}</div></li>`;
+      .join("")}</div></li>`;
+  const icn = { s: "flag", a: "user", h: "users", y: "settings", g: "arrow" }[
+    n.k
+  ];
+  return `<li class="rfl-n rfl-${n.k}"><span class="rfl-ic" aria-hidden="true">${ic(icn, 14)}</span><div class="rfl-b">${n.k === "h" ? `<div class="rfl-who">${rfChip(n.r)}</div>` : ""}<b>${h(n.t)}</b>${n.n ? `<span class="cap">${h(n.n)}</span>` : ""}</div></li>`;
 }
 // Every other role this role hands off to or waits for, in role order.
 const rfPartners = (phases, self) => {
   const seen = new Set();
-  const walk = ns =>
-    ns.forEach(n => {
-      if (n.k === 'h') n.r.split('/').forEach(x => x !== self && RF_ORDER.includes(x) && seen.add(x));
-      if (n.k === 'd') n.br.forEach(b => walk(b.nodes));
+  const walk = (ns) =>
+    ns.forEach((n) => {
+      if (n.k === "h")
+        n.r
+          .split("/")
+          .forEach((x) => x !== self && RF_ORDER.includes(x) && seen.add(x));
+      if (n.k === "d") n.br.forEach((b) => walk(b.nodes));
     });
-  phases.forEach(p => walk(p[2]));
-  return RF_ORDER.filter(x => seen.has(x));
+  phases.forEach((p) => walk(p[2]));
+  return RF_ORDER.filter((x) => seen.has(x));
 };
 // What the role can open, from the live role record (Role management) or the default matrix.
 function rfAccessTable(c) {
   const rec = roleRec(c);
   const rows = Object.keys(MODULES)
-    .map(m => [MODULES[m][0], (rec && rec.perms ? rec.perms[m] : (MX[m] || {})[c]) || '-'])
-    .filter(([, v]) => v !== '-');
-  return table(['Module', 'Access'], rows.map(([l, v]) => [h(l), h(permText(v))]), 'No module access.');
+    .map((m) => [
+      MODULES[m][0],
+      (rec && rec.perms ? rec.perms[m] : (MX[m] || {})[c]) || "-",
+    ])
+    .filter(([, v]) => v !== "-");
+  return table(
+    ["Module", "Access"],
+    rows.map(([l, v]) => [h(l), h(permText(v))]),
+    "No module access.",
+  );
 }
 const rfLegend = () =>
   `<ul class="rfl-legend" aria-label="Legend">${[
-    ['s', 'flag', 'Start or end'],
-    ['a', 'user', 'This role acts'],
-    ['h', 'users', 'Another role acts'],
-    ['y', 'settings', 'PHOENIX does it'],
-    ['d', 'question', 'Decision'],
-    ['g', 'arrow', 'Moves on'],
+    ["s", "flag", "Start or end"],
+    ["a", "user", "This role acts"],
+    ["h", "users", "Another role acts"],
+    ["y", "settings", "PHOENIX does it"],
+    ["d", "question", "Decision"],
+    ["g", "arrow", "Moves on"],
   ]
-    .map(([k, i, l]) => `<li class="rfl-lg rfl-${k}"><span class="rfl-ic" aria-hidden="true">${ic(i, 12)}</span>${l}</li>`)
-    .join('')}</ul>`;
+    .map(
+      ([k, i, l]) =>
+        `<li class="rfl-lg rfl-${k}"><span class="rfl-ic" aria-hidden="true">${ic(i, 12)}</span>${l}</li>`,
+    )
+    .join("")}</ul>`;
 
 // ---- one role's data: its phases, which of them run alongside the main path, and its summary
 function rfData(cur) {
-  if (cur === 'all') return { phases: rfOverview(), side: new Set(['Supporting flows']), self: null, lead: 'The Alpha loop: Authorize → Connect → Orient → Deliberate → Act → Evidence → Learn → Evolve, with the role that acts at each step. Circle, Rope Team and ' + WL() + ' are separate linked spaces entered in any valid order.' };
+  if (cur === "all")
+    return {
+      phases: rfOverview(),
+      side: new Set(["Supporting flows"]),
+      self: null,
+      lead:
+        "The Alpha loop: Authorize → Connect → Orient → Deliberate → Act → Evidence → Learn → Evolve, with the role that acts at each step. Circle, Rope Team and " +
+        WL() +
+        " are separate linked spaces entered in any valid order.",
+    };
   const f = rfFlows()[cur];
-  return { phases: f.phases, side: new Set(f.side || []), self: cur, lead: f.lead };
+  return {
+    phases: f.phases,
+    side: new Set(f.side || []),
+    self: cur,
+    lead: f.lead,
+  };
 }
-const rfSlug = c => (c === 'all' ? 'all-roles' : rfName(c).toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, ''));
+const rfSlug = (c) =>
+  c === "all"
+    ? "all-roles"
+    : rfName(c)
+        .toLowerCase()
+        .replace(/[^a-z]+/g, "-")
+        .replace(/^-|-$/g, "");
 
 // ---- flowchart diagram (SVG). The same data drawn as one connected end-to-end flowchart: the main path runs
 // top to bottom from start to end; phases that run alongside it are drawn below as separate flows.
 // Fixed colours so the diagram and its exported image look the same in light and dark mode.
 const RFX = {
   font: "'Atkinson Hyperlegible Next', 'Segoe UI', Arial, sans-serif",
-  ink: '#17221e',
-  ink2: '#4f5d57',
-  ink3: '#76847e',
-  edge: '#7d8c86',
-  band: '#f5f8f6',
-  bandLine: '#dfe6e2',
-  self: ['#1f6450', '#ffffff', '#cfe6dc'],
-  sys: ['#eef1ef', '#c9d3ce', '#4f5d57'],
-  go: ['#fdeee6', '#e8b39a', '#9a3a12'],
-  term: ['#0f2e25', '#ffffff'],
-  dec: ['#fff6e0', '#d9a21b', '#5c3d00'],
-  end: ['#fdeeee', '#b4232a'],
-  loop: ['#ebf3fc', '#1e5aa8'],
-  role: { P: ['#e3f1eb', '#1f6450'], F: ['#f4eef8', '#6e4592'], M: ['#e6f4f5', '#0f6f7a'], C: ['#eef0f6', '#46557f'], O: ['#ebf3fc', '#1e5aa8'], S: ['#fff6e0', '#8a5a00'], A: ['#fdeee6', '#b4471a'], T: ['#eef0f1', '#4f5d57'], '*': ['#eef0f1', '#4f5d57'] },
+  ink: "#17221e",
+  ink2: "#4f5d57",
+  ink3: "#76847e",
+  edge: "#7d8c86",
+  band: "#f5f8f6",
+  bandLine: "#dfe6e2",
+  self: ["#1f6450", "#ffffff", "#cfe6dc"],
+  sys: ["#eef1ef", "#c9d3ce", "#4f5d57"],
+  go: ["#fdeee6", "#e8b39a", "#9a3a12"],
+  term: ["#0f2e25", "#ffffff"],
+  dec: ["#fff6e0", "#d9a21b", "#5c3d00"],
+  end: ["#fdeeee", "#b4232a"],
+  loop: ["#ebf3fc", "#1e5aa8"],
+  role: {
+    P: ["#e3f1eb", "#1f6450"],
+    F: ["#f4eef8", "#6e4592"],
+    M: ["#e6f4f5", "#0f6f7a"],
+    C: ["#eef0f6", "#46557f"],
+    S: ["#fff6e0", "#8a5a00"],
+    A: ["#fdeee6", "#b4471a"],
+    T: ["#eef0f1", "#4f5d57"],
+    "*": ["#eef0f1", "#4f5d57"],
+  },
 };
 const RFX_NW = 280; // node width
 const RFX_GAP = 26; // vertical gap between steps
 const rfxWrap = (t, n) => {
   const out = [];
-  let cur = '';
+  let cur = "";
   String(t)
     .split(/\s+/)
     .filter(Boolean)
-    .forEach(w => {
+    .forEach((w) => {
       if (!cur) cur = w;
-      else if ((cur + ' ' + w).length <= n) cur += ' ' + w;
+      else if ((cur + " " + w).length <= n) cur += " " + w;
       else {
         out.push(cur);
         cur = w;
@@ -702,43 +1195,73 @@ const rfxText = (x, y, lines, o) =>
   lines
     .map(
       (l, i) =>
-        `<text x="${x}" y="${y + i * o.lh}" font-size="${o.fs}"${o.bold ? ' font-weight="700"' : ''} fill="${o.fill}"${o.anchor ? ` text-anchor="${o.anchor}"` : ''}${o.ls ? ` letter-spacing="${o.ls}"` : ''}>${h(l)}</text>`,
+        `<text x="${x}" y="${y + i * o.lh}" font-size="${o.fs}"${o.bold ? ' font-weight="700"' : ""} fill="${o.fill}"${o.anchor ? ` text-anchor="${o.anchor}"` : ""}${o.ls ? ` letter-spacing="${o.ls}"` : ""}>${h(l)}</text>`,
     )
-    .join('');
-const rfxArrow = (x1, y1, x2, y2) => `<path d="M${x1} ${y1}L${x2} ${y2}" stroke="${RFX.edge}" stroke-width="1.5" fill="none" marker-end="url(#rfx-ah)"/>`;
-const rfxLine = pts => `<path d="M${pts.map(p => p.join(' ')).join('L')}" stroke="${RFX.edge}" stroke-width="1.5" fill="none"/>`;
+    .join("");
+const rfxArrow = (x1, y1, x2, y2) =>
+  `<path d="M${x1} ${y1}L${x2} ${y2}" stroke="${RFX.edge}" stroke-width="1.5" fill="none" marker-end="url(#rfx-ah)"/>`;
+const rfxLine = (pts) =>
+  `<path d="M${pts.map((p) => p.join(" ")).join("L")}" stroke="${RFX.edge}" stroke-width="1.5" fill="none"/>`;
 const rfxPill = (cx, y, t, [bg, fg]) => {
   const w = Math.round(t.length * 6.6 + 22);
-  return { w, svg: `<rect x="${cx - w / 2}" y="${y}" width="${w}" height="22" rx="11" fill="${bg}" stroke="${fg}" stroke-width="1"/><text x="${cx}" y="${y + 15}" font-size="11.5" font-weight="700" fill="${fg}" text-anchor="middle">${h(t)}</text>` };
+  return {
+    w,
+    svg: `<rect x="${cx - w / 2}" y="${y}" width="${w}" height="22" rx="11" fill="${bg}" stroke="${fg}" stroke-width="1"/><text x="${cx}" y="${y + 15}" font-size="11.5" font-weight="700" fill="${fg}" text-anchor="middle">${h(t)}</text>`,
+  };
 };
 // A step box: header line (who acts), title, optional note.
 function rfxNode(n, self) {
-  if (n.k === 's') {
+  if (n.k === "s") {
     const lines = rfxWrap(n.t, 34);
-    const w = Math.min(RFX_NW, Math.max(150, Math.max(...lines.map(l => l.length)) * 7.6 + 40));
+    const w = Math.min(
+      RFX_NW,
+      Math.max(150, Math.max(...lines.map((l) => l.length)) * 7.6 + 40),
+    );
     const hh = 18 + lines.length * 17;
     return {
       w,
       h: hh,
       exit: !/^End/.test(n.t),
-      draw: (cx, y) => `<rect x="${cx - w / 2}" y="${y}" width="${w}" height="${hh}" rx="${hh / 2}" fill="${RFX.term[0]}"/>${rfxText(cx, y + 22, lines, { fs: 13, lh: 17, bold: 1, fill: RFX.term[1], anchor: 'middle' })}`,
+      draw: (cx, y) =>
+        `<rect x="${cx - w / 2}" y="${y}" width="${w}" height="${hh}" rx="${hh / 2}" fill="${RFX.term[0]}"/>${rfxText(cx, y + 22, lines, { fs: 13, lh: 17, bold: 1, fill: RFX.term[1], anchor: "middle" })}`,
     };
   }
-  const roles = n.k === 'h' ? n.r.split('/') : [];
+  const roles = n.k === "h" ? n.r.split("/") : [];
   const head =
-    n.k === 'a' ? (self ? rfName(self) : 'This role') : n.k === 'h' ? roles.map(x => (x === '*' ? 'Space members' : rfName(x))).join(' · ') : n.k === 'y' ? 'PHOENIX (automatic)' : 'Next';
+    n.k === "a"
+      ? self
+        ? rfName(self)
+        : "This role"
+      : n.k === "h"
+        ? roles
+            .map((x) => (x === "*" ? "Space members" : rfName(x)))
+            .join(" · ")
+        : n.k === "y"
+          ? "PHOENIX (automatic)"
+          : "Next";
   const [bg, bd, fg, hd, nt] =
-    n.k === 'a'
+    n.k === "a"
       ? [RFX.self[0], RFX.self[0], RFX.self[1], RFX.self[2], RFX.self[2]]
-      : n.k === 'h'
-        ? [...(RFX.role[roles[0]] || RFX.role['*']), RFX.ink, (RFX.role[roles[0]] || RFX.role['*'])[1], RFX.ink2]
-        : n.k === 'y'
+      : n.k === "h"
+        ? [
+            ...(RFX.role[roles[0]] || RFX.role["*"]),
+            RFX.ink,
+            (RFX.role[roles[0]] || RFX.role["*"])[1],
+            RFX.ink2,
+          ]
+        : n.k === "y"
           ? [RFX.sys[0], RFX.sys[1], RFX.ink, RFX.sys[2], RFX.ink2]
           : [RFX.go[0], RFX.go[1], RFX.go[2], RFX.go[2], RFX.go[2]];
   const hl = rfxWrap(head.toUpperCase(), 40);
   const tl = rfxWrap(n.t, 34);
   const nl = n.n ? rfxWrap(n.n, 42) : [];
-  const hh = 12 + hl.length * 13 + 4 + tl.length * 17 + (nl.length ? 4 + nl.length * 14.5 : 0) + 10;
+  const hh =
+    12 +
+    hl.length * 13 +
+    4 +
+    tl.length * 17 +
+    (nl.length ? 4 + nl.length * 14.5 : 0) +
+    10;
   return {
     w: RFX_NW,
     h: Math.round(hh),
@@ -746,8 +1269,14 @@ function rfxNode(n, self) {
     draw: (cx, y) => {
       const x = cx - RFX_NW / 2 + 12;
       let yy = y + 22;
-      let out = `<rect x="${cx - RFX_NW / 2}" y="${y}" width="${RFX_NW}" height="${Math.round(hh)}" rx="8" fill="${bg}" stroke="${bd}" stroke-width="1.5"${n.k === 'h' ? ' stroke-dasharray="5 3"' : ''}/>`;
-      out += rfxText(x, yy, hl, { fs: 9.5, lh: 13, bold: 1, fill: hd, ls: 0.6 });
+      let out = `<rect x="${cx - RFX_NW / 2}" y="${y}" width="${RFX_NW}" height="${Math.round(hh)}" rx="8" fill="${bg}" stroke="${bd}" stroke-width="1.5"${n.k === "h" ? ' stroke-dasharray="5 3"' : ""}/>`;
+      out += rfxText(x, yy, hl, {
+        fs: 9.5,
+        lh: 13,
+        bold: 1,
+        fill: hd,
+        ls: 0.6,
+      });
       yy += hl.length * 13 + 6;
       out += rfxText(x, yy, tl, { fs: 13, lh: 17, bold: 1, fill: fg });
       yy += tl.length * 17 + 1;
@@ -763,10 +1292,15 @@ function rfxDecision(n, self) {
   const DH = Math.max(86, ql.length * 15 + 46);
   const nl = n.n ? rfxWrap(n.n, 48) : [];
   const NH = nl.length ? nl.length * 14 + 8 : 0;
-  const brs = n.br.map(b => {
+  const brs = n.br.map((b) => {
     const seq = rfxSeq(b.nodes, self);
     const lab = rfxPill(0, 0, b.l, RFX.dec.slice(0, 1).concat(RFX.dec[2]));
-    const outT = b.out === 'end' ? 'Path ends' : b.out === 'cont' ? '' : (/^Skips/.test(b.out) ? '→ ' : '↺ ') + b.out;
+    const outT =
+      b.out === "end"
+        ? "Path ends"
+        : b.out === "cont"
+          ? ""
+          : (/^Skips/.test(b.out) ? "→ " : "↺ ") + b.out;
     const outW = outT ? Math.round(outT.length * 6.6 + 22) : 0;
     return { b, seq, w: Math.max(seq.w, lab.w, outW, 160), outT };
   });
@@ -775,9 +1309,9 @@ function rfxDecision(n, self) {
   const w = Math.max(DW, brW, nl.length ? 340 : 0);
   const busY = DH + NH + 16;
   const topB = busY + 50;
-  const bottoms = brs.map(x => x.seq.h + (x.outT ? 34 : 0));
+  const bottoms = brs.map((x) => x.seq.h + (x.outT ? 34 : 0));
   const maxB = topB + Math.max(...bottoms);
-  const cont = brs.filter(x => x.b.out === 'cont' && x.seq.exit);
+  const cont = brs.filter((x) => x.b.out === "cont" && x.seq.exit);
   const mergeY = maxB + 22;
   return {
     w,
@@ -785,10 +1319,22 @@ function rfxDecision(n, self) {
     exit: cont.length > 0,
     draw: (cx, y) => {
       let out = `<polygon points="${cx},${y} ${cx + DW / 2},${y + DH / 2} ${cx},${y + DH} ${cx - DW / 2},${y + DH / 2}" fill="${RFX.dec[0]}" stroke="${RFX.dec[1]}" stroke-width="1.5"/>`;
-      out += rfxText(cx, y + DH / 2 - ((ql.length - 1) * 15) / 2 + 5, ql, { fs: 12.5, lh: 15, bold: 1, fill: RFX.dec[2], anchor: 'middle' });
-      if (nl.length) out += rfxText(cx, y + DH + 16, nl, { fs: 11, lh: 14, fill: RFX.ink2, anchor: 'middle' });
+      out += rfxText(cx, y + DH / 2 - ((ql.length - 1) * 15) / 2 + 5, ql, {
+        fs: 12.5,
+        lh: 15,
+        bold: 1,
+        fill: RFX.dec[2],
+        anchor: "middle",
+      });
+      if (nl.length)
+        out += rfxText(cx, y + DH + 16, nl, {
+          fs: 11,
+          lh: 14,
+          fill: RFX.ink2,
+          anchor: "middle",
+        });
       let x = cx - brW / 2;
-      const centers = brs.map(b => {
+      const centers = brs.map((b) => {
         const c = x + b.w / 2;
         x += b.w + BG;
         return c;
@@ -809,8 +1355,21 @@ function rfxDecision(n, self) {
         out += b.seq.draw(c, y + topB);
         const sb = y + topB + b.seq.h;
         if (b.outT) {
-          if (b.seq.exit) out += rfxLine([[c, sb], [c, sb + 12]]);
-          out += rfxPill(c, sb + 12, b.outT, b.b.out === 'end' ? RFX.end : /^Skips/.test(b.b.out) ? [RFX.go[0], RFX.go[2]] : RFX.loop).svg;
+          if (b.seq.exit)
+            out += rfxLine([
+              [c, sb],
+              [c, sb + 12],
+            ]);
+          out += rfxPill(
+            c,
+            sb + 12,
+            b.outT,
+            b.b.out === "end"
+              ? RFX.end
+              : /^Skips/.test(b.b.out)
+                ? [RFX.go[0], RFX.go[2]]
+                : RFX.loop,
+          ).svg;
         } else if (b.seq.exit) {
           out += rfxLine([
             [c, sb],
@@ -819,22 +1378,27 @@ function rfxDecision(n, self) {
           ]);
         }
       });
-      if (cont.length) out += `<circle cx="${cx}" cy="${y + mergeY}" r="3.5" fill="${RFX.edge}"/>`;
+      if (cont.length)
+        out += `<circle cx="${cx}" cy="${y + mergeY}" r="3.5" fill="${RFX.edge}"/>`;
       return out;
     },
   };
 }
 // A sequence of steps joined by arrows.
 function rfxSeq(nodes, self) {
-  const items = nodes.map(n => (n.k === 'd' ? rfxDecision(n, self) : rfxNode(n, self)));
-  const w = Math.max(RFX_NW, ...items.map(i => i.w));
-  const h = items.reduce((a, i) => a + i.h, 0) + RFX_GAP * Math.max(0, items.length - 1);
+  const items = nodes.map((n) =>
+    n.k === "d" ? rfxDecision(n, self) : rfxNode(n, self),
+  );
+  const w = Math.max(RFX_NW, ...items.map((i) => i.w));
+  const h =
+    items.reduce((a, i) => a + i.h, 0) +
+    RFX_GAP * Math.max(0, items.length - 1);
   return {
     w,
     h,
     exit: items.length ? items[items.length - 1].exit : true,
     draw: (cx, y) => {
-      let out = '';
+      let out = "";
       items.forEach((it, i) => {
         out += it.draw(cx, y);
         y += it.h;
@@ -851,13 +1415,19 @@ function rfxSeq(nodes, self) {
 function rfxDiagram(cur) {
   const d = rfData(cur);
   const M = 32;
-  const main = d.phases.filter(p => !d.side.has(p[1])).map(p => ({ p, seq: rfxSeq(p[2], d.self) }));
-  const side = d.phases.filter(p => d.side.has(p[1])).map(p => ({ p, seq: rfxSeq(p[2], d.self) }));
-  side.forEach(s => (s.w = Math.max(340, s.seq.w + 48)));
-  const mainW = Math.max(...main.map(m => m.seq.w)) + 280;
-  const W = Math.round(Math.max(1100, mainW + 2 * M, ...side.map(s => s.w + 2 * M)));
+  const main = d.phases
+    .filter((p) => !d.side.has(p[1]))
+    .map((p) => ({ p, seq: rfxSeq(p[2], d.self) }));
+  const side = d.phases
+    .filter((p) => d.side.has(p[1]))
+    .map((p) => ({ p, seq: rfxSeq(p[2], d.self) }));
+  side.forEach((s) => (s.w = Math.max(340, s.seq.w + 48)));
+  const mainW = Math.max(...main.map((m) => m.seq.w)) + 280;
+  const W = Math.round(
+    Math.max(1100, mainW + 2 * M, ...side.map((s) => s.w + 2 * M)),
+  );
   const cx = W / 2;
-  const title = cur === 'all' ? 'How the roles work together' : rfName(cur);
+  const title = cur === "all" ? "How the roles work together" : rfName(cur);
   const leadL = rfxWrap(d.lead, Math.floor((W - 2 * M) / 7.4));
   let y = M;
   let out = `<text x="${M}" y="${y + 12}" font-size="12" font-weight="700" letter-spacing="1.2" fill="${RFX.ink3}">PHOENIX · ROLE FLOW</text>`;
@@ -866,22 +1436,24 @@ function rfxDiagram(cur) {
   y += 68 + leadL.length * 19 + 6;
   // legend
   const leg = [
-    ['Start / end', RFX.term[0], RFX.term[0], 'pill'],
-    [cur === 'all' ? 'Role acts' : 'This role acts', RFX.self[0], RFX.self[0]],
-    ['Another role acts', RFX.role.F[0], RFX.role.F[1], 'dash'],
-    ['PHOENIX does it', RFX.sys[0], RFX.sys[1]],
-    ['Next', RFX.go[0], RFX.go[1]],
-    ['Decision', RFX.dec[0], RFX.dec[1], 'dia'],
-    ['Path ends', RFX.end[0], RFX.end[1], 'pill'],
-    ['Loops back', RFX.loop[0], RFX.loop[1], 'pill'],
+    ["Start / end", RFX.term[0], RFX.term[0], "pill"],
+    [cur === "all" ? "Role acts" : "This role acts", RFX.self[0], RFX.self[0]],
+    ["Another role acts", RFX.role.F[0], RFX.role.F[1], "dash"],
+    ["PHOENIX does it", RFX.sys[0], RFX.sys[1]],
+    ["Next", RFX.go[0], RFX.go[1]],
+    ["Decision", RFX.dec[0], RFX.dec[1], "dia"],
+    ["Path ends", RFX.end[0], RFX.end[1], "pill"],
+    ["Loops back", RFX.loop[0], RFX.loop[1], "pill"],
   ];
   let lx = M;
   leg.forEach(([l, bg, bd, shape]) => {
     const sw =
-      shape === 'dia'
+      shape === "dia"
         ? `<polygon points="${lx + 9},${y + 2} ${lx + 18},${y + 10} ${lx + 9},${y + 18} ${lx},${y + 10}" fill="${bg}" stroke="${bd}" stroke-width="1.5"/>`
-        : `<rect x="${lx}" y="${y + 3}" width="18" height="14" rx="${shape === 'pill' ? 7 : 3}" fill="${bg}" stroke="${bd}" stroke-width="1.5"${shape === 'dash' ? ' stroke-dasharray="3 2"' : ''}/>`;
-    out += sw + `<text x="${lx + 25}" y="${y + 15}" font-size="12" fill="${RFX.ink2}">${h(l)}</text>`;
+        : `<rect x="${lx}" y="${y + 3}" width="18" height="14" rx="${shape === "pill" ? 7 : 3}" fill="${bg}" stroke="${bd}" stroke-width="1.5"${shape === "dash" ? ' stroke-dasharray="3 2"' : ""}/>`;
+    out +=
+      sw +
+      `<text x="${lx + 25}" y="${y + 15}" font-size="12" fill="${RFX.ink2}">${h(l)}</text>`;
     lx += 25 + l.length * 6.6 + 22;
   });
   y += 40;
@@ -904,20 +1476,20 @@ function rfxDiagram(cur) {
   if (side.length) {
     y += 40;
     out += `<text x="${M}" y="${y + 14}" font-size="13" font-weight="700" letter-spacing="1" fill="${RFX.ink}">ALONGSIDE THE MAIN PATH</text>`;
-    out += `<text x="${M}" y="${y + 34}" font-size="12.5" fill="${RFX.ink2}">${h(cur === 'all' ? 'Flows that run in parallel with the project.' : 'These run in parallel with the main path, whenever they are needed.')}</text>`;
+    out += `<text x="${M}" y="${y + 34}" font-size="12.5" fill="${RFX.ink2}">${h(cur === "all" ? "Flows that run in parallel with the project." : "These run in parallel with the main path, whenever they are needed.")}</text>`;
     y += 50;
     const rows = [];
-    side.forEach(s => {
+    side.forEach((s) => {
       const r = rows[rows.length - 1];
       if (r && r.w + 20 + s.w <= W - 2 * M) {
         r.items.push(s);
         r.w += 20 + s.w;
       } else rows.push({ items: [s], w: s.w });
     });
-    rows.forEach(r => {
-      const rh = Math.max(...r.items.map(s => 54 + s.seq.h + 26));
+    rows.forEach((r) => {
+      const rh = Math.max(...r.items.map((s) => 54 + s.seq.h + 26));
       let x = M;
-      r.items.forEach(s => {
+      r.items.forEach((s) => {
         out += `<rect x="${x}" y="${y}" width="${s.w}" height="${rh}" rx="12" fill="${RFX.band}" stroke="${RFX.bandLine}"/>`;
         out += `<text x="${x + 18}" y="${y + 22}" font-size="10.5" font-weight="700" letter-spacing="0.8" fill="${RFX.ink3}">${h(s.p[0].toUpperCase())}</text><text x="${x + 18}" y="${y + 39}" font-size="15" font-weight="700" fill="${RFX.ink}">${h(s.p[1])}</text>`;
         out += s.seq.draw(x + s.w / 2, y + 54);
@@ -933,7 +1505,7 @@ function rfxDiagram(cur) {
   return {
     w: W,
     h: H,
-    svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${h(RFX.font)}" role="img" aria-label="${h('Flowchart: ' + title)}"><defs><marker id="rfx-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="${RFX.edge}"/></marker></defs><rect width="${W}" height="${H}" fill="#ffffff"/>${out}</svg>`,
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${h(RFX.font)}" role="img" aria-label="${h("Flowchart: " + title)}"><defs><marker id="rfx-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="${RFX.edge}"/></marker></defs><rect width="${W}" height="${H}" fill="#ffffff"/>${out}</svg>`,
   };
 }
 // Draw a diagram onto a canvas and return a PNG data URL (used by "Download image" and the image export).
@@ -943,69 +1515,74 @@ function rfxPng(cur, scale = 2) {
   return new Promise((ok_, bad) => {
     const img = new Image();
     img.onload = () => {
-      const c = document.createElement('canvas');
+      const c = document.createElement("canvas");
       c.width = Math.round(dg.w * sc);
       c.height = Math.round(dg.h * sc);
-      const x = c.getContext('2d');
-      x.fillStyle = '#ffffff';
+      const x = c.getContext("2d");
+      x.fillStyle = "#ffffff";
       x.fillRect(0, 0, c.width, c.height);
       x.scale(sc, sc);
       x.drawImage(img, 0, 0, dg.w, dg.h);
-      ok_(c.toDataURL('image/png'));
+      ok_(c.toDataURL("image/png"));
     };
     img.onerror = bad;
-    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(dg.svg);
+    img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(dg.svg);
   });
 }
 
 // ---- the page
 const rfPhase = ([mod, title, nodes], i, side) =>
-  `<section class="rfl-phase" id="rfl-ph-${i}" aria-labelledby="rfl-ph-${i}-t"><header class="rfl-ph-h"><span class="rfl-num">${i + 1}</span><div><span class="rfl-mod">${h(mod)}${side ? ' · runs alongside the main path' : ''}</span><h2 class="h3" id="rfl-ph-${i}-t">${h(title)}</h2></div></header><ol class="rfl-flow">${nodes.map(rfNode).join('')}</ol></section>`;
+  `<section class="rfl-phase" id="rfl-ph-${i}" aria-labelledby="rfl-ph-${i}-t"><header class="rfl-ph-h"><span class="rfl-num">${i + 1}</span><div><span class="rfl-mod">${h(mod)}${side ? " · runs alongside the main path" : ""}</span><h2 class="h3" id="rfl-ph-${i}-t">${h(title)}</h2></div></header><ol class="rfl-flow">${nodes.map(rfNode).join("")}</ol></section>`;
 PUB.roleflow = () => {
   const flows = rfFlows();
-  const cur = UI.rf && (UI.rf === 'all' || flows[UI.rf]) ? UI.rf : 'all';
-  const view = UI.rfView === 'steps' ? 'steps' : 'chart';
-  const tab = (id, l) => `<button type="button" role="tab" class="rfl-tab ${cur === id ? 'on' : ''}" aria-selected="${cur === id}" data-a="rfRole" data-v="${id}">${l}</button>`;
+  const cur = UI.rf && (UI.rf === "all" || flows[UI.rf]) ? UI.rf : "all";
+  const view = UI.rfView === "steps" ? "steps" : "chart";
+  const tab = (id, l) =>
+    `<button type="button" role="tab" class="rfl-tab ${cur === id ? "on" : ""}" aria-selected="${cur === id}" data-a="rfRole" data-v="${id}">${l}</button>`;
   const d = rfData(cur);
   const phases = d.phases;
-  const partners = cur === 'all' ? [] : rfPartners(phases, cur);
+  const partners = cur === "all" ? [] : rfPartners(phases, cur);
   const intro =
-    cur === 'all'
+    cur === "all"
       ? `<div class="rfl-intro"><h2 class="h2">How the roles work together</h2><p class="sub">${h(d.lead)} Choose a role above for its complete journey.</p></div>`
-      : `<div class="rfl-intro"><div class="rfl-intro-h"><span class="rfl-chip rfl-r-${cur} rfl-chip-lg">${h(rfName(cur))}</span></div><p class="sub">${h(d.lead)}</p>${partners.length ? `<div class="rfl-with"><span class="cap">Works with</span>${partners.map(rfChip).join('')}</div>` : ''}</div>`;
-  const vbtn = (id, l, i) => `<button type="button" class="rfl-vb ${view === id ? 'on' : ''}" aria-pressed="${view === id}" data-a="rfView" data-v="${id}">${ic(i, 14)}${l}</button>`;
+      : `<div class="rfl-intro"><div class="rfl-intro-h"><span class="rfl-chip rfl-r-${cur} rfl-chip-lg">${h(rfName(cur))}</span></div><p class="sub">${h(d.lead)}</p>${partners.length ? `<div class="rfl-with"><span class="cap">Works with</span>${partners.map(rfChip).join("")}</div>` : ""}</div>`;
+  const vbtn = (id, l, i) =>
+    `<button type="button" class="rfl-vb ${view === id ? "on" : ""}" aria-pressed="${view === id}" data-a="rfView" data-v="${id}">${ic(i, 14)}${l}</button>`;
   const body =
-    view === 'chart'
-      ? `<div class="rfl-chart-bar"><p class="cap">The main path runs from start to end; flows that run alongside it are drawn below. Scroll to see the whole chart.</p>${B(ic('download', 14) + 'Download image', 'rfPng', { c: cur }, 'btn-s btn-sm')}</div><div class="rfl-chart" tabindex="0" aria-label="Flowchart, scrollable">${rfxDiagram(cur).svg}</div>`
-      : `${rfLegend()}<nav class="rfl-jump" aria-label="Phases">${phases.map((p, i) => `<button type="button" class="rfl-jb" data-a="rfJump" data-i="${i}">${i + 1}. ${h(phases.filter(q => q[0] === p[0]).length > 1 ? p[1] : p[0])}</button>`).join('')}</nav><div class="rfl-phases">${phases.map((p, i) => rfPhase(p, i, d.side.has(p[1]))).join('')}</div>`;
-  return `<div class="rfl-page"><header class="rfl-top"><div class="brand"><span class="mark">${MARK(20)}</span><span class="wm"><b>PHOENIX</b><span>Foundation</span></span></div><div class="row rfl-top-a">${B(ic('file', 14) + 'Print', 'rfPrint', {}, 'btn-s btn-sm')}${B(ic('chevl', 14) + 'Back to sign in', 'go', { r: 'login' }, 'btn-p btn-sm')}</div></header>
+    view === "chart"
+      ? `<div class="rfl-chart-bar"><p class="cap">The main path runs from start to end; flows that run alongside it are drawn below. Scroll to see the whole chart.</p>${B(ic("download", 14) + "Download image", "rfPng", { c: cur }, "btn-s btn-sm")}</div><div class="rfl-chart" tabindex="0" aria-label="Flowchart, scrollable">${rfxDiagram(cur).svg}</div>`
+      : `${rfLegend()}<nav class="rfl-jump" aria-label="Phases">${phases.map((p, i) => `<button type="button" class="rfl-jb" data-a="rfJump" data-i="${i}">${i + 1}. ${h(phases.filter((q) => q[0] === p[0]).length > 1 ? p[1] : p[0])}</button>`).join("")}</nav><div class="rfl-phases">${phases.map((p, i) => rfPhase(p, i, d.side.has(p[1]))).join("")}</div>`;
+  return `<div class="rfl-page"><header class="rfl-top"><div class="brand"><span class="mark">${MARK(20)}</span><span class="wm"><b>PHOENIX</b><span>Foundation</span></span></div><div class="row rfl-top-a">${B(ic("file", 14) + "Print", "rfPrint", {}, "btn-s btn-sm")}${B(ic("chevl", 14) + "Back to sign in", "go", { r: "login" }, "btn-p btn-sm")}</div></header>
   <main class="rfl-main"><div class="rfl-head"><h1 class="h1">Role Flow</h1><p class="sub">How each role works in PHOENIX, from invitation and agreement to evidence, learning and the next action. One identity can hold several role assignments, each tied to a programme or organisation context.</p></div>
-  <div class="rfl-tabs" role="tablist" aria-label="Role">${tab('all', 'All roles')}${RF_ORDER.map(c => tab(c, h(rfName(c)))).join('')}</div>
-  ${intro}<div class="rfl-views" role="group" aria-label="View">${vbtn('chart', 'Flowchart', 'steps')}${vbtn('steps', 'Step details', 'menu')}</div>
+  <div class="rfl-tabs" role="tablist" aria-label="Role">${tab("all", "All roles")}${RF_ORDER.map((c) => tab(c, h(rfName(c)))).join("")}</div>
+  ${intro}<div class="rfl-views" role="group" aria-label="View">${vbtn("chart", "Flowchart", "steps")}${vbtn("steps", "Step details", "menu")}</div>
   ${body}
-  ${cur === 'all' ? '' : `<section class="rfl-phase rfl-acc-wrap"><header class="rfl-ph-h"><span class="rfl-num">${ic('shield', 14)}</span><div><span class="rfl-mod">Permissions</span><h2 class="h3">What ${h(rfName(cur))} can open</h2></div></header><p class="cap">Read from the current role settings. Specialist bundles (Reviewer, Trust/Data Steward, Finance Owner, AI Owner, Incident/Safety Owner) are capabilities attached to a person in a context, not personas; they add rights on top of the role and are approved separately.</p>${rfAccessTable(cur)}</section>`}
+  ${cur === "all" ? "" : `<section class="rfl-phase rfl-acc-wrap"><header class="rfl-ph-h"><span class="rfl-num">${ic("shield", 14)}</span><div><span class="rfl-mod">Permissions</span><h2 class="h3">What ${h(rfName(cur))} can open</h2></div></header><p class="cap">Read from the current role settings. Specialist bundles (Reviewer, Trust/Data Steward, Finance Owner, AI Owner, Incident/Safety Owner) are capabilities attached to a person in a context, not personas; they add rights on top of the role and are approved separately.</p>${rfAccessTable(cur)}</section>`}
   </main></div>`;
 };
-A.rfRole = d => {
+A.rfRole = (d) => {
   UI.rf = d.v;
   render();
   window.scrollTo(0, 0);
 };
-A.rfView = d => {
+A.rfView = (d) => {
   UI.rfView = d.v;
   render();
 };
-A.rfJump = d => document.getElementById('rfl-ph-' + d.i)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+A.rfJump = (d) =>
+  document
+    .getElementById("rfl-ph-" + d.i)
+    ?.scrollIntoView({ behavior: "smooth", block: "start" });
 A.rfPrint = () => window.print();
-A.rfPng = d =>
+A.rfPng = (d) =>
   rfxPng(d.c)
-    .then(url => {
-      const a = document.createElement('a');
-      a.download = 'role-flow-' + rfSlug(d.c) + '.png';
+    .then((url) => {
+      const a = document.createElement("a");
+      a.download = "role-flow-" + rfSlug(d.c) + ".png";
       a.href = url;
       a.click();
     })
     .catch(() => {
-      toast('The image could not be created in this browser.', 'err');
+      toast("The image could not be created in this browser.", "err");
       render();
     });

@@ -1168,3 +1168,49 @@ div.adm-id {
 .adm-panel > .card-h + .dv {
   margin-top: 0;
 }
+
+/* ---------- Approval inbox: one list of every request, split by who has to act ---------- */
+.adm-box {
+  margin: calc(var(--s-1) * -1) 0 var(--s-4);
+}
+/* the source of a request, above its title: where it came from is the first thing read */
+.adm-src-l {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+/* what each decision does, under the request: so Approve and Decline are never a guess */
+.adm-out {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border-left: 3px solid var(--line-strong);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+.adm-out b {
+  color: var(--text);
+}
+.adm-past > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-2);
+  margin-bottom: var(--s-3);
+}
+/* a shareable link with its copy button; the link wraps rather than overflowing on phones */
+.adm-link {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+}
+.adm-link code {
+  overflow-wrap: anywhere;
+}

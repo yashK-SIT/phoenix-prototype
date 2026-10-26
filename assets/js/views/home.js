@@ -33,14 +33,15 @@ function inboxItems() {
   if (r === "F" || r === "A")
     S.projects
       .filter(
-        (p) =>
-          inCtx(p) && projDecidable(p) && (stewardOf(p) || r === "A"),
+        (p) => inCtx(p) && projDecidable(p) && (stewardOf(p) || r === "A"),
       )
       .forEach((p) =>
         out.push([
           "Project review",
           p.title,
-          projAnswered(p) ? "Owner replied to your clarification request" : "Submitted " + fmt(p.submitted),
+          projAnswered(p)
+            ? "Owner replied to your clarification request"
+            : "Submitted " + fmt(p.submitted),
           "project",
           { id: p.id },
         ]),
@@ -89,9 +90,14 @@ function inboxItems() {
             ]),
           ),
       );
-  // Pathway review: your own reviews plus the shared Reviewer queue (no Programme Administrator assignment needed).
+  // Pathway review: your own reviews plus the shared Reviewer queue (no Organization Admin assignment needed).
   S.pathways
-    .filter((p) => inCtx(p) && ((p.reviewer === me_ && p.state === "In review") || (!p.reviewer && pwCanReview(p))))
+    .filter(
+      (p) =>
+        inCtx(p) &&
+        ((p.reviewer === me_ && p.state === "In review") ||
+          (!p.reviewer && pwCanReview(p))),
+    )
     .forEach((p) =>
       out.push([
         "Pathway approval",
@@ -104,12 +110,26 @@ function inboxItems() {
   // Pathway steps waiting for a Reviewer (prior evidence or a completion check)
   if (typeof pwPendItems === "function")
     pwPendItems().forEach(([p, i, s]) =>
-      out.push(["Pathway step review", P(p.pid).name + " · " + s.t, s.pend.kind === "prior" ? "Prior evidence proposed" : "Completion to check", "pathway", {}]),
+      out.push([
+        "Pathway step review",
+        P(p.pid).name + " · " + s.t,
+        s.pend.kind === "prior"
+          ? "Prior evidence proposed"
+          : "Completion to check",
+        "pathway",
+        {},
+      ]),
     );
   // Participants asking for a pathway recommendation
   if (r === "F" || r === "M")
     pwReqsForMe().forEach((q) =>
-      out.push(["Pathway recommendation request", P(q.pid).name, "“" + q.goal + "”", "pathway", {}]),
+      out.push([
+        "Pathway recommendation request",
+        P(q.pid).name,
+        "“" + q.goal + "”",
+        "pathway",
+        {},
+      ]),
     );
   if (r === "F")
     S.matches
@@ -229,7 +249,7 @@ function inboxItems() {
       .forEach((a) =>
         out.push([
           "Role approval",
-          P(a.pid).name + " — " + ROLE[a.role],
+          P(a.pid).name + " — " + roleName(a.role, a.ctx),
           S.contexts.find((c) => c.id === a.ctx).name,
           "admin",
           { tab: "users" },
@@ -253,14 +273,27 @@ function inboxItems() {
           { id: x.ev },
         ]),
       );
-  // open-challenge disputes: the Programme Administrator assigns an independent Steward, who then decides (challenges.js)
+  // open-challenge disputes: the Organization Admin assigns an independent Steward, who then decides (challenges.js)
   (S.disputes || [])
-    .filter((d) => inCtx(d) && ((r === "A" && d.status === "Awaiting Steward assignment") || (r === "F" && d.steward === me_ && ["Awaiting Steward acceptance", "Under review"].includes(d.status))))
+    .filter(
+      (d) =>
+        inCtx(d) &&
+        ((r === "A" && d.status === "Awaiting Steward assignment") ||
+          (r === "F" &&
+            d.steward === me_ &&
+            ["Awaiting Steward acceptance", "Under review"].includes(
+              d.status,
+            ))),
+    )
     .forEach((d) =>
       out.push([
         "Dispute",
         d.ref + " · " + dspSubject(d),
-        r === "A" ? "Assign an independent Steward" : d.status === "Under review" ? "Review the evidence and decide" : "Confirm your independence",
+        r === "A"
+          ? "Assign an independent Steward"
+          : d.status === "Under review"
+            ? "Review the evidence and decide"
+            : "Confirm your independence",
         "dispute",
         { id: d.id },
       ]),
@@ -381,22 +414,58 @@ function nextAction() {
     const pw = S.pathways.find(
       (p) => p.pid === pid && inCtx(p) && p.state === PW_REC,
     );
-    if (pw) return ["Review a recommended pathway", h(pw.name) + " · recommended by " + pwRoleLine(pw) + ". Nothing becomes active until you accept.", "pathway", {}];
+    if (pw)
+      return [
+        "Review a recommended pathway",
+        h(pw.name) +
+          " · recommended by " +
+          pwRoleLine(pw) +
+          ". Nothing becomes active until you accept.",
+        "pathway",
+        {},
+      ];
     const cur = S.pathways.find(
       (p) => p.pid === pid && inCtx(p) && p.state === "Current",
     );
     if (cur) {
       // pathway step rules (FR-F04): a recommendation waiting for the participant first, then the deterministic
       // next step — the lowest-numbered required step whose prerequisites are complete
-      const ri = cur.steps.findIndex((s) => s.rec && s.rec.status === "Awaiting participant" && !pwClosed(s));
+      const ri = cur.steps.findIndex(
+        (s) => s.rec && s.rec.status === "Awaiting participant" && !pwClosed(s),
+      );
       if (ri >= 0)
-        return [`Accept or decline a recommendation for step ${ri + 1}`, `${nm(cur.steps[ri].rec.by)} recommends that prior evidence satisfies “${h(cur.steps[ri].t)}”. Nothing changes unless you accept.`, "pathway", {}];
+        return [
+          `Accept or decline a recommendation for step ${ri + 1}`,
+          `${nm(cur.steps[ri].rec.by)} recommends that prior evidence satisfies “${h(cur.steps[ri].t)}”. Nothing changes unless you accept.`,
+          "pathway",
+          {},
+        ];
       pwSync(cur);
       // a condition only the participant can answer comes before the next step
-      const qi = cur.steps.findIndex((s, j) => s.type === "Conditional" && pwCond(cur, j) === null && pwFactDef(s) && pwFactDef(s).who === "P" && !s.done);
-      if (qi >= 0) return [`Answer a question for step ${qi + 1} of your pathway`, h(pwFactDef(cur.steps[qi]).q) + " Your answer decides whether the step applies.", "pathway", {}];
+      const qi = cur.steps.findIndex(
+        (s, j) =>
+          s.type === "Conditional" &&
+          pwCond(cur, j) === null &&
+          pwFactDef(s) &&
+          pwFactDef(s).who === "P" &&
+          !s.done,
+      );
+      if (qi >= 0)
+        return [
+          `Answer a question for step ${qi + 1} of your pathway`,
+          h(pwFactDef(cur.steps[qi]).q) +
+            " Your answer decides whether the step applies.",
+          "pathway",
+          {},
+        ];
       const i = pwNext(cur);
-      if (i >= 0) return [`${pwStepState(cur, i).st === PW_S.PROGRESS ? "Finish" : "Complete"} step ${i + 1} of your pathway`, h(cur.steps[i].t), "pathway", {}];
+      if (i >= 0)
+        return [
+          `${pwStepState(cur, i).st === PW_S.PROGRESS ? "Finish" : "Complete"} step ${i + 1} of your pathway`,
+          h(cur.steps[i].t),
+          "pathway",
+          {},
+        ];
     }
     return [
       "Define your first project",
@@ -407,7 +476,9 @@ function nextAction() {
   }
   if (r === "M") {
     // BF-01: only surface Mentor Requests that belong to the active context
-    const m = S.mentorReqs.find((x) => x.to === pid && x.status === "Pending" && mentorReqVisible(x));
+    const m = S.mentorReqs.find(
+      (x) => x.to === pid && x.status === "Pending" && mentorReqVisible(x),
+    );
     if (m)
       return [
         "Respond to a Mentor Request",
@@ -516,38 +587,14 @@ function nextAction() {
         { tab: "reports" },
       ];
   }
-  if (r === "O") {
-    const pa = S.assign.find(
-      (a) => a.ctx === ctxId() && a.status === "Pending role approval",
-    );
-    if (pa)
-      return [
-        "Approve a role request",
-        nm(pa.pid) + " — " + ROLE[pa.role],
-        "org",
-        { tab: "users" },
-      ];
-    const iv = S.invites.filter(
-      (i) => i.ctx === ctxId() && i.status === "Expired",
-    ).length;
-    if (iv)
-      return [
-        iv + " invitation(s) expired",
-        "Resend or revoke them.",
-        "org",
-        { tab: "invites" },
-      ];
-  }
   if (r === "T") {
-    const bad = S.integrations.find(
-      (i) => !["Healthy", "Configured"].includes(i.status),
-    );
-    if (bad)
+    const q = sqForwarded().find((x) => SQ_OPEN.includes(x.status));
+    if (q)
       return [
-        "Integration needs attention",
-        h(bad.name) + " · " + h(bad.status),
-        "platform",
-        { tab: "integrations" },
+        "Forwarded support request waiting",
+        nm(q.by) + " · " + h(ctxName(q.ctx)),
+        "support",
+        { sq: q.id },
       ];
   }
   {
@@ -623,11 +670,7 @@ function metric(id) {
         .flatMap((r) => r.milestones)
         .filter((m) => m.status === "Achieved");
       return ms.length
-        ? Math.round(
-            (ms.filter(msReady).length /
-              ms.length) *
-              100,
-          ) + "%"
+        ? Math.round((ms.filter(msReady).length / ms.length) * 100) + "%"
         : "No data yet";
     }
     case "m8": {
@@ -684,7 +727,6 @@ route("home", "home", () => {
     F: homeF,
     M: homeM,
     C: homeC,
-    O: homeO,
     S: homeS,
     A: homeA,
     T: homeT,
@@ -698,7 +740,11 @@ function nextCard() {
 function upcomingAgr() {
   const g = agrUpcoming(ctxId(), role());
   return g
-    ? banner("info", `${h(g.type)} v${g.ver} takes effect on ${fmt(g.effective)}`, `${h(g.summary || "")} Nothing is paused before then. ${L("Review it now", "privacy", { tab: "consent" })}`) + '<div style="height:12px"></div>'
+    ? banner(
+        "info",
+        `${h(g.type)} v${g.ver} takes effect on ${fmt(g.effective)}`,
+        `${h(g.summary || "")} Nothing is paused before then. ${L("Review it now", "privacy", { tab: "consent" })}`,
+      ) + '<div style="height:12px"></div>'
     : "";
 }
 // Render a Doc1 Table 28 continuum rail. `stages`: [{k, done, r, p?, meta}]
@@ -722,142 +768,509 @@ function roleJourney() {
   const a = asg();
   const onb = a?.onb || {};
   if (r === "P") {
-    const authorized = !!(onb.agreement && onb.consents && onb.profile && onb.compass);
+    const authorized = !!(
+      onb.agreement &&
+      onb.consents &&
+      onb.profile &&
+      onb.compass
+    );
     const connected =
       myCircles().length + myRopes().length > 0 ||
-      S.matches.some((m) => (m.a === pid || m.b === pid) && ["Awaiting consent", "Introduced"].includes(m.status));
-    const pw = S.pathways.find((p) => p.pid === pid && inCtx(p) && p.state === "Current");
+      S.matches.some(
+        (m) =>
+          (m.a === pid || m.b === pid) &&
+          ["Awaiting consent", "Introduced"].includes(m.status),
+      );
+    const pw = S.pathways.find(
+      (p) => p.pid === pid && inCtx(p) && p.state === "Current",
+    );
     const oriented = !!pw;
-    const deliberated = myCircles().some((c) => (c.decisions || []).length > 0 || (c.polls || []).some((p) => p.votes?.[pid] != null));
+    const deliberated = myCircles().some(
+      (c) =>
+        (c.decisions || []).length > 0 ||
+        (c.polls || []).some((p) => p.votes?.[pid] != null),
+    );
     const acted = myRooms().length > 0;
     const evidenced = S.evidence.some((e) => e.owner === pid && inCtx(e));
     const learned =
       S.harvests.some((hv) => (hv.contrib || []).some((c) => c.by === pid)) ||
-      (pw && (pw.steps || []).some((s) => /harvest|reflection/i.test(s.t) && s.done));
-    const evolved = S.candidates.some((c) => c.pid === pid && ["Accepted", "Edited"].includes(c.status));
+      (pw &&
+        (pw.steps || []).some(
+          (s) => /harvest|reflection/i.test(s.t) && s.done,
+        ));
+    const evolved = S.candidates.some(
+      (c) => c.pid === pid && ["Accepted", "Edited"].includes(c.status),
+    );
     return journeyRail(
       "Your PHOENIX journey",
       "Your journey",
       "Authorize → Evolve · Participant continuum",
       [
-        { k: "Authorize", done: authorized, r: "privacy", p: { tab: "consent" }, meta: authorized ? "Agreements & consent on file" : "Finish agreements & consent" },
-        { k: "Connect", done: connected, r: "matches", meta: connected ? "Circles, Rope Teams or Match Briefs" : "Join a space or review a Match Brief" },
-        { k: "Orient", done: oriented, r: "pathway", meta: oriented ? h(pw.name) : "Accept a learning pathway" },
-        { k: "Deliberate", done: deliberated, r: "circles", meta: deliberated ? "Circle decisions on record" : "Vote or decide in a Circle" },
-        { k: "Act", done: acted, r: "rooms", meta: acted ? myRooms().length + " " + WL() + (myRooms().length === 1 ? "" : "s") : "Work in an " + WL() },
-        { k: "Evidence", done: evidenced, r: "evidence", meta: evidenced ? "Evidence submitted" : "Upload first evidence" },
-        { k: "Learn", done: learned, r: "harvests", meta: learned ? "Harvest contribution recorded" : "Contribute to a Learning Harvest" },
-        { k: "Evolve", done: evolved, r: "profile", p: { tab: "cand" }, meta: evolved ? "Profile updated from candidates" : "Review profile change candidates" },
+        {
+          k: "Authorize",
+          done: authorized,
+          r: "privacy",
+          p: { tab: "consent" },
+          meta: authorized
+            ? "Agreements & consent on file"
+            : "Finish agreements & consent",
+        },
+        {
+          k: "Connect",
+          done: connected,
+          r: "matches",
+          meta: connected
+            ? "Circles, Rope Teams or Match Briefs"
+            : "Join a space or review a Match Brief",
+        },
+        {
+          k: "Orient",
+          done: oriented,
+          r: "pathway",
+          meta: oriented ? h(pw.name) : "Accept a learning pathway",
+        },
+        {
+          k: "Deliberate",
+          done: deliberated,
+          r: "circles",
+          meta: deliberated
+            ? "Circle decisions on record"
+            : "Vote or decide in a Circle",
+        },
+        {
+          k: "Act",
+          done: acted,
+          r: "rooms",
+          meta: acted
+            ? myRooms().length +
+              " " +
+              WL() +
+              (myRooms().length === 1 ? "" : "s")
+            : "Work in an " + WL(),
+        },
+        {
+          k: "Evidence",
+          done: evidenced,
+          r: "evidence",
+          meta: evidenced ? "Evidence submitted" : "Upload first evidence",
+        },
+        {
+          k: "Learn",
+          done: learned,
+          r: "harvests",
+          meta: learned
+            ? "Harvest contribution recorded"
+            : "Contribute to a Learning Harvest",
+        },
+        {
+          k: "Evolve",
+          done: evolved,
+          r: "profile",
+          p: { tab: "cand" },
+          meta: evolved
+            ? "Profile updated from candidates"
+            : "Review profile change candidates",
+        },
       ],
     );
   }
   if (r === "M") {
-    const reqs = S.mentorReqs.filter((m) => m.to === pid && mentorReqVisible(m));
-    const accepted = reqs.some((m) => m.status === "Accepted") || myRopes().some((rt) => rt.mentor === pid);
+    const reqs = S.mentorReqs.filter(
+      (m) => m.to === pid && mentorReqVisible(m),
+    );
+    const accepted =
+      reqs.some((m) => m.status === "Accepted") ||
+      myRopes().some((rt) => rt.mentor === pid);
     const pending = reqs.some((m) => m.status === "Pending");
-    const sharedPw = S.pathways.some((p) => inCtx(p) && (p.by === pid || myRopes().some((rt) => memberOf(rt, p.pid))));
-    const reviewed = myRopes().some((rt) => (rt.reviews || []).some((v) => v.status !== "Awaiting review"));
-    const supported = myRopes().some((rt) => (rt.support || []).some((s) => s.status === "Resolved"));
-    return journeyRail("Mentor flow", "Your mentoring flow", "Requests → Rope Teams → pathway & support (Doc 1 §6.2)", [
-      { k: "Requests", done: accepted || !pending, r: "ropeteams", meta: pending ? "Mentor Request waiting" : accepted ? "Request accepted" : "No open requests" },
-      { k: "Rope Teams", done: myRopes().some((rt) => rt.mentor === pid), r: "ropeteams", meta: myRopes().filter((rt) => rt.mentor === pid).length + " assigned" },
-      { k: "Shared pathway", done: sharedPw, r: "pathway", meta: sharedPw ? "Pathway visible for assigned people" : "Open a shared pathway when linked" },
-      { k: "Review work", done: reviewed, r: "ropeteams", meta: reviewed ? "Reviews on record" : "Awaiting shared work to review" },
-      { k: "Support", done: supported, r: "messages", meta: supported ? "Support closed" : "Respond to open support needs" },
-    ]);
+    const sharedPw = S.pathways.some(
+      (p) =>
+        inCtx(p) &&
+        (p.by === pid || myRopes().some((rt) => memberOf(rt, p.pid))),
+    );
+    const reviewed = myRopes().some((rt) =>
+      (rt.reviews || []).some((v) => v.status !== "Awaiting review"),
+    );
+    const supported = myRopes().some((rt) =>
+      (rt.support || []).some((s) => s.status === "Resolved"),
+    );
+    return journeyRail(
+      "Mentor flow",
+      "Your mentoring flow",
+      "Requests → Rope Teams → pathway & support (Doc 1 §6.2)",
+      [
+        {
+          k: "Requests",
+          done: accepted || !pending,
+          r: "ropeteams",
+          meta: pending
+            ? "Mentor Request waiting"
+            : accepted
+              ? "Request accepted"
+              : "No open requests",
+        },
+        {
+          k: "Rope Teams",
+          done: myRopes().some((rt) => rt.mentor === pid),
+          r: "ropeteams",
+          meta:
+            myRopes().filter((rt) => rt.mentor === pid).length + " assigned",
+        },
+        {
+          k: "Shared pathway",
+          done: sharedPw,
+          r: "pathway",
+          meta: sharedPw
+            ? "Pathway visible for assigned people"
+            : "Open a shared pathway when linked",
+        },
+        {
+          k: "Review work",
+          done: reviewed,
+          r: "ropeteams",
+          meta: reviewed
+            ? "Reviews on record"
+            : "Awaiting shared work to review",
+        },
+        {
+          k: "Support",
+          done: supported,
+          r: "messages",
+          meta: supported ? "Support closed" : "Respond to open support needs",
+        },
+      ],
+    );
   }
   if (r === "F") {
     const circles = myCircles().length > 0;
-    const inbox = typeof inboxItems === "function" ? inboxItems().length === 0 : true;
-    const briefs = !S.matches.some((m) => m.steward === pid && ["In steward review", "Clarification requested"].includes(m.status));
+    const inbox =
+      typeof inboxItems === "function" ? inboxItems().length === 0 : true;
+    const briefs = !S.matches.some(
+      (m) =>
+        m.steward === pid &&
+        ["In steward review", "Clarification requested"].includes(m.status),
+    );
     const linked = myRooms().length > 0;
-    const hv = S.harvests.some((h) => h.by === pid || (h.scope && myCircles().some((c) => c.id === h.scope)));
+    const hv = S.harvests.some(
+      (h) =>
+        h.by === pid || (h.scope && myCircles().some((c) => c.id === h.scope)),
+    );
     const stages = [
-      { k: "Circles", done: circles, r: "circles", meta: circles ? myCircles().length + " active" : "Facilitate a Circle" },
-      { k: "Reviews", done: inbox, r: "inbox", meta: inbox ? "Inbox clear" : "Items in Review inbox" },
-      { k: "Match Briefs", done: briefs, r: "matches", meta: briefs ? "No briefs waiting" : "Steward review due" },
-      { k: "Linked work", done: linked, r: "rooms", meta: linked ? myRooms().length + " linked " + WL() + "s" : "Link an " + WL() },
-      { k: "Harvests", done: hv, r: "harvests", meta: hv ? "Harvest in progress or done" : "Complete a Learning Harvest" },
+      {
+        k: "Circles",
+        done: circles,
+        r: "circles",
+        meta: circles ? myCircles().length + " active" : "Facilitate a Circle",
+      },
+      {
+        k: "Reviews",
+        done: inbox,
+        r: "inbox",
+        meta: inbox ? "Inbox clear" : "Items in Review inbox",
+      },
+      {
+        k: "Match Briefs",
+        done: briefs,
+        r: "matches",
+        meta: briefs ? "No briefs waiting" : "Steward review due",
+      },
+      {
+        k: "Linked work",
+        done: linked,
+        r: "rooms",
+        meta: linked
+          ? myRooms().length + " linked " + WL() + "s"
+          : "Link an " + WL(),
+      },
+      {
+        k: "Harvests",
+        done: hv,
+        r: "harvests",
+        meta: hv
+          ? "Harvest in progress or done"
+          : "Complete a Learning Harvest",
+      },
     ];
     if (hasB("Reviewer")) {
-      const evQ = S.evidence.filter((e) => e.review === "Submitted" && e.owner !== pid && inCtx(e)).length === 0;
-      stages.push({ k: "Evidence", done: evQ, r: "evidence", p: { tab: "queue" }, meta: evQ ? "Review queue clear" : "Evidence awaiting Reviewer" });
+      const evQ =
+        S.evidence.filter(
+          (e) => e.review === "Submitted" && e.owner !== pid && inCtx(e),
+        ).length === 0;
+      stages.push({
+        k: "Evidence",
+        done: evQ,
+        r: "evidence",
+        p: { tab: "queue" },
+        meta: evQ ? "Review queue clear" : "Evidence awaiting Reviewer",
+      });
     }
-    return journeyRail("Facilitator flow", "Your steward flow", "Circles → reviews → linked work → Harvest (Doc 1 §6.3)", stages);
+    return journeyRail(
+      "Facilitator flow",
+      "Your steward flow",
+      "Circles → reviews → linked work → Harvest (Doc 1 §6.3)",
+      stages,
+    );
   }
   if (r === "C") {
-    const mandate = !!(a.mandate && a.mandate.valid && a.mandate.until >= today());
+    const mandate = !!(
+      a.mandate &&
+      a.mandate.valid &&
+      a.mandate.until >= today()
+    );
     const cards = S.cards.some((c) => c.owner === pid && c.status === "Active");
-    const mb = S.matches.some((m) => (m.a === pid || m.b === pid) && ["Awaiting consent", "Introduced"].includes(m.status));
+    const mb = S.matches.some(
+      (m) =>
+        (m.a === pid || m.b === pid) &&
+        ["Awaiting consent", "Introduced"].includes(m.status),
+    );
     const rooms = myRooms().length > 0;
-    const ev = S.evidence.some((e) => e.owner === pid) || myRooms().some((x) => (x.contribs || []).some((c) => c.by === pid));
-    return journeyRail("Partner flow", "Your collaboration flow", "Mandate → opportunities → workspaces → evidence (Doc 1 §6.4)", [
-      { k: "Mandate", done: mandate, r: "mandate", meta: mandate ? "Active mandate on file" : "Mandate required for binding commitments" },
-      { k: "Opportunities", done: cards, r: "opportunities", meta: cards ? "Active card published" : "Publish a need or offer" },
-      { k: "Match Briefs", done: mb, r: "matches", meta: mb ? "Brief in progress or introduced" : "Await a steward-approved brief" },
-      { k: WL() + "s", done: rooms, r: "rooms", meta: rooms ? "Active in " + myRooms().length : "Join an " + WL() },
-      { k: "Evidence", done: ev, r: "evidence", meta: ev ? "Contribution or evidence on record" : "Submit a contribution" },
-    ]);
-  }
-  if (r === "O") {
-    const people = S.assign.some((x) => x.ctx === ctxId() && x.status === "Active");
-    const inv = S.invites.some((i) => i.ctx === ctxId());
-    const spaces = S.circles.some((c) => c.ctx === ctxId()) || S.rooms.some((x) => x.ctx === ctxId());
-    const pend = !S.assign.some((x) => x.ctx === ctxId() && x.status === "Pending role approval");
-    return journeyRail("Organisation flow", "Your organisation flow", "People → invitations → spaces → progress (Doc 1 §6.5)", [
-      { k: "People", done: people, r: "org", p: { tab: "users" }, meta: "Cohort in this context" },
-      { k: "Invitations", done: inv, r: "org", p: { tab: "invites" }, meta: inv ? "Invites on file" : "Invite people into the programme" },
-      { k: "Role requests", done: pend, r: "org", p: { tab: "users" }, meta: pend ? "No pending approvals" : "Approve pending role requests" },
-      { k: "Spaces", done: spaces, r: "org", p: { tab: "spaces" }, meta: spaces ? "Scoped spaces visible" : "No spaces yet" },
-      { k: "Progress", done: true, r: "metrics", meta: "Aggregate programme progress" },
-      { k: "Reports", done: true, r: "org", p: { tab: "reports" }, meta: "Organisation reports" },
-    ]);
+    const ev =
+      S.evidence.some((e) => e.owner === pid) ||
+      myRooms().some((x) => (x.contribs || []).some((c) => c.by === pid));
+    return journeyRail(
+      "Partner flow",
+      "Your collaboration flow",
+      "Mandate → opportunities → workspaces → evidence (Doc 1 §6.4)",
+      [
+        {
+          k: "Mandate",
+          done: mandate,
+          r: "mandate",
+          meta: mandate
+            ? "Active mandate on file"
+            : "Mandate required for binding commitments",
+        },
+        {
+          k: "Opportunities",
+          done: cards,
+          r: "opportunities",
+          meta: cards ? "Active card published" : "Publish a need or offer",
+        },
+        {
+          k: "Match Briefs",
+          done: mb,
+          r: "matches",
+          meta: mb
+            ? "Brief in progress or introduced"
+            : "Await a steward-approved brief",
+        },
+        {
+          k: WL() + "s",
+          done: rooms,
+          r: "rooms",
+          meta: rooms ? "Active in " + myRooms().length : "Join an " + WL(),
+        },
+        {
+          k: "Evidence",
+          done: ev,
+          r: "evidence",
+          meta: ev
+            ? "Contribution or evidence on record"
+            : "Submit a contribution",
+        },
+      ],
+    );
   }
   if (r === "S") {
-    const seats = (typeof myPools === "function" ? myPools() : []).some((s) => s.status === "Active");
-    const inits = S.initiatives.some((i) => i.status === "Published") || (typeof sponsorInitProjects === "function" && sponsorInitProjects().length);
-    const cleared = typeof sponsorCleared === "function" && sponsorCleared().length > 0;
-    const due = !S.payments.some((p) => p.pid === pid && p.state === "Invoice due");
+    const seats = (typeof myPools === "function" ? myPools() : []).some(
+      (s) => s.status === "Active",
+    );
+    const inits =
+      S.initiatives.some((i) => i.status === "Published") ||
+      (typeof sponsorInitProjects === "function" &&
+        sponsorInitProjects().length);
+    const cleared =
+      typeof sponsorCleared === "function" && sponsorCleared().length > 0;
+    const due = !S.payments.some(
+      (p) => p.pid === pid && p.state === "Invoice due",
+    );
     const chs = S.challenges.filter((c) => inCtx(c) && c.sponsor === pid);
-    return journeyRail("Sponsor flow", "Your sponsorship flow", "Open challenges → seats → initiatives → safe reports → invoices (Doc 1 §6.6)", [
-      { k: "Challenges", done: chs.length > 0 && !chTodo().length, r: "challenges", meta: !chs.length ? "Post an open challenge" : chTodo().length ? chTodo().length + " waiting for you" : chs.length + " posted · nothing waiting" },
-      { k: "Seats", done: seats, r: "funding", p: { tab: "seats" }, meta: seats ? "Active seat pool" : "Buy seats by invoice" },
-      { k: "Initiatives", done: !!inits, r: "funding", p: { tab: "initiatives" }, meta: inits ? "Approved initiatives visible" : "Awaiting published initiatives" },
-      { k: "Evidence", done: !!cleared, r: "evidence", meta: cleared ? "Cleared summaries available" : "No funder-cleared evidence yet" },
-      { k: "Reports", done: !!cleared || (typeof funderHarvests === "function" && funderHarvests().length > 0), r: "funding", p: { tab: "reports" }, meta: "Funder-safe aggregate reports" },
-      { k: "Invoices", done: due, r: "funding", p: { tab: "invoices" }, meta: due ? "Nothing outstanding" : "Invoice due" },
-    ]);
+    return journeyRail(
+      "Sponsor flow",
+      "Your sponsorship flow",
+      "Open challenges → seats → initiatives → safe reports → invoices (Doc 1 §6.6)",
+      [
+        {
+          k: "Challenges",
+          done: chs.length > 0 && !chTodo().length,
+          r: "challenges",
+          meta: !chs.length
+            ? "Post an open challenge"
+            : chTodo().length
+              ? chTodo().length + " waiting for you"
+              : chs.length + " posted · nothing waiting",
+        },
+        {
+          k: "Seats",
+          done: seats,
+          r: "funding",
+          p: { tab: "seats" },
+          meta: seats ? "Active seat pool" : "Buy seats by invoice",
+        },
+        {
+          k: "Initiatives",
+          done: !!inits,
+          r: "funding",
+          p: { tab: "initiatives" },
+          meta: inits
+            ? "Approved initiatives visible"
+            : "Awaiting published initiatives",
+        },
+        {
+          k: "Evidence",
+          done: !!cleared,
+          r: "evidence",
+          meta: cleared
+            ? "Cleared summaries available"
+            : "No funder-cleared evidence yet",
+        },
+        {
+          k: "Reports",
+          done:
+            !!cleared ||
+            (typeof funderHarvests === "function" &&
+              funderHarvests().length > 0),
+          r: "funding",
+          p: { tab: "reports" },
+          meta: "Funder-safe aggregate reports",
+        },
+        {
+          k: "Invoices",
+          done: due,
+          r: "funding",
+          p: { tab: "invoices" },
+          meta: due ? "Nothing outstanding" : "Invoice due",
+        },
+      ],
+    );
   }
   if (r === "A") {
     const packs = !!(S.packs && S.packs.length);
     const tpl = S.templates.some((t) => t.status === "Approved");
     const queue =
-      S.projects.filter((p) => inCtx(p) && p.status === "Submitted" && !(p.stewards || []).length).length +
-        S.pathways.filter((p) => inCtx(p) && typeof pwNeedsSteward === "function" && pwNeedsSteward(p)).length ===
+      S.projects.filter(
+        (p) =>
+          inCtx(p) && p.status === "Submitted" && !(p.stewards || []).length,
+      ).length +
+        S.pathways.filter(
+          (p) =>
+            inCtx(p) &&
+            typeof pwNeedsSteward === "function" &&
+            pwNeedsSteward(p),
+        ).length ===
       0;
-    const rolesOk = !S.assign.some((x) => x.ctx === ctxId() && x.status === "Pending role approval");
+    const rolesOk = !S.assign.some(
+      (x) => x.ctx === ctxId() && x.status === "Pending role approval",
+    );
     const vers = (S.configVersions || []).length > 0;
-    return journeyRail("Admin flow", "Your programme operations", "Queues → people → packs → versions (Doc 1 §6.7)", [
-      { k: "Approval inbox", done: queue, r: "admin", p: { tab: "requests" }, meta: queue ? "No reviews stuck without a reviewer" : "Assign reviewers" },
-      { k: "Users & roles", done: rolesOk, r: "admin", p: { tab: "users" }, meta: rolesOk ? "No pending role approvals" : "Role requests waiting" },
-      { k: "Invitations", done: S.invites.some((i) => i.ctx === ctxId()), r: "admin", p: { tab: "invites" }, meta: "Programme invitations" },
-      { k: "Packs", done: packs, r: "admin", p: { tab: "packs" }, meta: packs ? "Pack configuration live" : "Configure a pack" },
-      { k: "Templates", done: tpl, r: "admin", p: { tab: "library" }, meta: tpl ? "Approved templates" : "Approve pathway templates" },
-      { k: "Announce", done: (S.announcements || []).some((x) => x.ctx === ctxId()), r: "admin", p: { tab: "notify" }, meta: "Send to Explore board audience" },
-      { k: "Versions", done: vers, r: "admin", p: { tab: "versions" }, meta: vers ? "Config versions on file" : "Save a configuration version" },
-    ]);
+    return journeyRail(
+      "Admin flow",
+      "Your programme operations",
+      "Queues → people → packs → versions (Doc 1 §6.7)",
+      [
+        {
+          k: "Approval inbox",
+          done: queue,
+          r: "admin",
+          p: { tab: "requests" },
+          meta: queue
+            ? "No reviews stuck without a reviewer"
+            : "Assign reviewers",
+        },
+        {
+          k: "Users & roles",
+          done: rolesOk,
+          r: "admin",
+          p: { tab: "users" },
+          meta: rolesOk ? "No pending role approvals" : "Role requests waiting",
+        },
+        {
+          k: "Invitations",
+          done: S.invites.some((i) => i.ctx === ctxId()),
+          r: "admin",
+          p: { tab: "invites" },
+          meta: "Programme invitations",
+        },
+        {
+          k: "Packs",
+          done: packs,
+          r: "admin",
+          p: { tab: "packs" },
+          meta: packs ? "Pack configuration live" : "Configure a pack",
+        },
+        {
+          k: "Templates",
+          done: tpl,
+          r: "admin",
+          p: { tab: "library" },
+          meta: tpl ? "Approved templates" : "Approve pathway templates",
+        },
+        {
+          k: "Announce",
+          done: (S.announcements || []).some((x) => x.ctx === ctxId()),
+          r: "admin",
+          p: { tab: "notify" },
+          meta: "Send to Explore board audience",
+        },
+        {
+          k: "Versions",
+          done: vers,
+          r: "admin",
+          p: { tab: "versions" },
+          meta: vers
+            ? "Config versions on file"
+            : "Save a configuration version",
+        },
+      ],
+    );
   }
   if (r === "T") {
-    const healthy = S.integrations.every((i) => ["Healthy", "Configured"].includes(i.status));
-    const backup = (S.backups || []).some((b) => /Completed|passed/i.test(b.status));
-    return journeyRail("Platform flow", "System health & recovery", "Contexts → roles → integrations → backups (Doc 1 §6.8)", [
-      { k: "Contexts", done: S.contexts.length > 0, r: "tenants", meta: S.contexts.length + " contexts" },
-      { k: "Roles & bundles", done: (S.roles || []).length > 0, r: "roles", meta: "Role matrix available" },
-      { k: "Integrations", done: healthy, r: "platform", p: { tab: "integrations" }, meta: healthy ? "All operating" : "Integration needs attention" },
-      { k: "Security", done: (S.security || []).length > 0, r: "platform", p: { tab: "security" }, meta: "Security events logged" },
-      { k: "Backups", done: backup, r: "platform", p: { tab: "storage" }, meta: backup ? "Recent backup OK" : "Run or verify a backup" },
-      { k: "Audit", done: true, r: "audit", meta: "Technical audit log" },
-    ]);
+    const healthy = S.integrations.every((i) =>
+      ["Healthy", "Configured"].includes(i.status),
+    );
+    const backup = (S.backups || []).some((b) =>
+      /Completed|passed/i.test(b.status),
+    );
+    return journeyRail(
+      "Platform flow",
+      "System health & recovery",
+      "Contexts → roles → integrations → backups (Doc 1 §6.8)",
+      [
+        {
+          k: "Contexts",
+          done: S.contexts.length > 0,
+          r: "tenants",
+          meta: S.contexts.length + " contexts",
+        },
+        {
+          k: "Roles & bundles",
+          done: (S.roles || []).length > 0,
+          r: "roles",
+          meta: "Role matrix available",
+        },
+        {
+          k: "Integrations",
+          done: healthy,
+          r: "platform",
+          p: { tab: "integrations" },
+          meta: healthy ? "All operating" : "Integration needs attention",
+        },
+        {
+          k: "Security",
+          done: (S.security || []).length > 0,
+          r: "platform",
+          p: { tab: "security" },
+          meta: "Security events logged",
+        },
+        {
+          k: "Backups",
+          done: backup,
+          r: "platform",
+          p: { tab: "storage" },
+          meta: backup ? "Recent backup OK" : "Run or verify a backup",
+        },
+        { k: "Audit", done: true, r: "audit", meta: "Technical audit log" },
+      ],
+    );
   }
   return "";
 }
@@ -898,7 +1311,9 @@ function homeP() {
     c.polls
       .filter(
         (p) =>
-          p.status === "Open" && p.votes[pid] == null && eligibleVoter(c, pid, p),
+          p.status === "Open" &&
+          p.votes[pid] == null &&
+          eligibleVoter(c, pid, p),
       )
       .forEach((p) =>
         pend.push(
@@ -1052,7 +1467,25 @@ function homeP() {
    B(ic("upload", 16) + "Upload evidence", "go", { r: "newevidence" }),
    "hm-tbl",
  )}`,
-   `${card("My pathway", pw ? h(pw.name) : "", pw ? `<div class="hm-prog"><div class="progress"><span class="bar" style="width:${(pwProg(pw).n / pw.steps.length) * 100}%"></span></div><span class="cap">${pwProg(pw).n} of ${pw.steps.length}</span></div><ol class="hm-steps">${pw.steps.map((s, i) => { const x = pwStepState(pw, i); const nx = i === pwNext(pw); return `<li class="${pwClosed(s) ? "done" : nx ? "cur" : ""}"><span class="hm-step-m" aria-hidden="true">${pwClosed(s) ? ic("check", 12) : i + 1}</span><span class="hm-step-t"><b>${h(s.t)}</b><span class="cap">${h(s.type || "Mandatory")} · ${h(x.st)}${nx ? " · next step" : ""}${x.st === "Blocked" ? " — " + h(x.why) + " Next action: " + h(x.next) : ""}${s.rec && s.rec.status === "Awaiting participant" && !pwClosed(s) ? " · recommendation waiting for you" : ""}</span></span></li>`; }).join("")}</ol>` : empty("route", "No current pathway", "A facilitator or mentor may propose one. You decide whether to accept it."), pw ? L("Open", "pathway") : "", "hm-list")}
+   `${card(
+     "My pathway",
+     pw ? h(pw.name) : "",
+     pw
+       ? `<div class="hm-prog"><div class="progress"><span class="bar" style="width:${(pwProg(pw).n / pw.steps.length) * 100}%"></span></div><span class="cap">${pwProg(pw).n} of ${pw.steps.length}</span></div><ol class="hm-steps">${pw.steps
+           .map((s, i) => {
+             const x = pwStepState(pw, i);
+             const nx = i === pwNext(pw);
+             return `<li class="${pwClosed(s) ? "done" : nx ? "cur" : ""}"><span class="hm-step-m" aria-hidden="true">${pwClosed(s) ? ic("check", 12) : i + 1}</span><span class="hm-step-t"><b>${h(s.t)}</b><span class="cap">${h(s.type || "Mandatory")} · ${h(x.st)}${nx ? " · next step" : ""}${x.st === "Blocked" ? " — " + h(x.why) + " Next action: " + h(x.next) : ""}${s.rec && s.rec.status === "Awaiting participant" && !pwClosed(s) ? " · recommendation waiting for you" : ""}</span></span></li>`;
+           })
+           .join("")}</ol>`
+       : empty(
+           "route",
+           "No current pathway",
+           "A facilitator or mentor may propose one. You decide whether to accept it.",
+         ),
+     pw ? L("Open", "pathway") : "",
+     "hm-list",
+   )}
  ${card("Collaborations", "In this context", [...myCircles().map((c) => hrow("users", h(c.name), "Circle · " + c.members.length + " members" + (unreadIn(c) ? " · " + unreadIn(c) + " unread" : ""), unr(c) + pill(c.state) + " " + L("Open", "circle", { id: c.id }), "t-purple")), ...myRopes().map((c) => hrow("route", h(c.name), "Rope Team · mentor " + (c.mentor ? nm(c.mentor) : "—") + (unreadIn(c) ? " · " + unreadIn(c) + " unread" : ""), unr(c) + pill(c.state) + " " + L("Open", "rope", { id: c.id }), "t-teal")), ...myRooms().map((c) => hrow("room", h(c.name), WL(), pill(c.state) + " " + L("Open", "room", { id: c.id }), "t-navy"))].join("") || empty("users", "No collaborations yet", "When a steward accepts your project, they create a Circle and invite you."), "", "hm-list")}
  ${card("Opportunities for you", "Cards visible to you", opps.map((c) => hrow("megaphone", h(c.title), h(c.kind) + " · expires " + fmt(c.expires), L("View", "card", { id: c.id }))).join("") || empty("megaphone", "No open opportunities", "New cards for your audience appear here."), L("Browse", "opportunities"), "hm-list")}
  <section class="card hm-ask"><div class="hm-ask-h"><span class="tile t-soft" aria-hidden="true">${ic("sparkle", 18)}</span><div><b>Ask PHOENIX</b><p class="cap">${purposeOn("ai", pid) ? "Private answers from approved sources. Nothing is saved to your record." : `AI processing is off for you, so Ask PHOENIX is unavailable. Everything else keeps working. You can change this in ${L("My records & consent", "privacy", { tab: "consent" })}.`}</p></div></div>${purposeOn("ai", pid) ? B("What should I do next to reach my milestone?", "askPreset", { q: "What should I do next to reach my milestone?" }, "btn-s") : `<button type="button" class="btn btn-s" disabled title="AI processing is off for you">What should I do next to reach my milestone?</button>`}</section>`,
@@ -1074,7 +1507,12 @@ function homeF() {
     .filter(([, , it]) => byId("evidence", it.ev)?.owner !== pid);
   // Support indicators are ROPE_TEAM_ONLY and mentor/facilitator-only: never a dashboard snippet for other members.
   const attention = S.ropes
-    .filter((r) => inCtx(r) && memberOf(r) && (sCan("ropes", r, "mentor") || spaceRole("ropes", r) === "Facilitator"))
+    .filter(
+      (r) =>
+        inCtx(r) &&
+        memberOf(r) &&
+        (sCan("ropes", r, "mentor") || spaceRole("ropes", r) === "Facilitator"),
+    )
     .flatMap((r) =>
       Object.entries(r.indicators || {})
         .filter(
@@ -1113,7 +1551,24 @@ function homeF() {
     ) +
     `<div class="hm">
  <div class="hm-top">
- <section class="card hm-ns hm-purpose" aria-labelledby="hm-pp-t"><span class="over" id="hm-pp-t">Programme purpose</span><p class="hm-ns-q">${h(ctx().name)}: move climate ideas from learning to accountable local action.</p><div class="hm-spaces">${[["Circles", myCircles().length, "circles", "t-purple", "users"], ["Rope Teams", S.ropes.filter((r) => inCtx(r) && memberOf(r)).length, "ropeteams", "t-teal", "route"], [WL() + "s", myRooms().length, "rooms", "t-navy", "room"]].map(([l, n, r, t, i]) => `<a href="#" data-a="go" data-r="${r}"><span class="tile ${t}" aria-hidden="true">${ic(i, 16)}</span><b>${n}</b><span>${l}</span></a>`).join("")}</div><p class="cap hm-ns-n">Spaces you facilitate or belong to in this programme.</p></section>${nextCard()}</div>
+ <section class="card hm-ns hm-purpose" aria-labelledby="hm-pp-t"><span class="over" id="hm-pp-t">Programme purpose</span><p class="hm-ns-q">${h(ctx().name)}: move climate ideas from learning to accountable local action.</p><div class="hm-spaces">${[
+   ["Circles", myCircles().length, "circles", "t-purple", "users"],
+   [
+     "Rope Teams",
+     S.ropes.filter((r) => inCtx(r) && memberOf(r)).length,
+     "ropeteams",
+     "t-teal",
+     "route",
+   ],
+   [WL() + "s", myRooms().length, "rooms", "t-navy", "room"],
+ ]
+   .map(
+     ([l, n, r, t, i]) =>
+       `<a href="#" data-a="go" data-r="${r}"><span class="tile ${t}" aria-hidden="true">${ic(i, 16)}</span><b>${n}</b><span>${l}</span></a>`,
+   )
+   .join(
+     "",
+   )}</div><p class="cap hm-ns-n">Spaces you facilitate or belong to in this programme.</p></section>${nextCard()}</div>
  ${hmStrip([stat("s-purple", "t-purple", "folder", subs.length, "Project submissions", "Awaiting review or clarification", "projects"), stat("s-teal", "t-teal", "link", S.matches.filter((m) => m.steward === pid && m.status === "In steward review").length, "Match Briefs", "Awaiting your review", "matches"), ...(hasB("Reviewer") ? [stat("s-slate", "t-navy", "award", S.evidence.filter((e) => e.review === "Submitted" && e.owner !== pid && inCtx(e)).length, "Evidence to review", "Reviewer bundle · set status and E0–E4", "evidence", { tab: "queue" })] : msMine.length ? [stat("s-slate", "t-navy", "award", msMine.length, "Milestone evidence", "Comment only — approval needs the Reviewer bundle", "evidence", { tab: "queue" })] : []), stat("s-mist", "t-soft", "route", S.pathways.filter((x) => x.reviewer === pid && x.state === "In review").length, "Pathways to review", "Assigned to you", "pathway")], "Your review queue")}
  ${roleJourney()}
  ${hmCols(
@@ -1128,7 +1583,9 @@ function homeF() {
 }
 function homeM() {
   // only requests that belong to the active context (BF-01)
-  const reqs = S.mentorReqs.filter((m) => m.to === myId() && mentorReqVisible(m));
+  const reqs = S.mentorReqs.filter(
+    (m) => m.to === myId() && mentorReqVisible(m),
+  );
   const review = myRopes()
     .filter((rt) => rt.mentor === myId())
     .flatMap((rt) =>
@@ -1147,18 +1604,13 @@ function homeM() {
     r.support
       .filter((s) => s.status !== "Resolved")
       .map((s) =>
-        hrow(
-          "message",
-          h(s.t),
-          nm(s.by) + " · " + h(r.name),
-          pill(s.status),
-        ),
+        hrow("message", h(s.t), nm(s.by) + " · " + h(r.name), pill(s.status)),
       ),
   );
   return (
     head(
       "My PHOENIX",
-      `Mentor / Advisor · ${h(ctx().name)}`,
+      `Mentor · ${h(ctx().name)}`,
       B(ic("message", 16) + "Messages", "go", { r: "messages" }, "btn-s"),
     ) +
     `<div class="hm">
@@ -1207,30 +1659,34 @@ function homeM() {
    "hm-tbl",
  )}`,
    `${card(
-   "Assigned Rope Teams",
-   "",
-   myRopes()
-     .map((r) =>
-       hrow(
+     "Assigned Rope Teams",
+     "",
+     myRopes()
+       .map((r) =>
+         hrow(
+           "users",
+           h(r.name),
+           r.members
+             .filter(
+               (m) =>
+                 ["Member", "Project owner"].includes(normRole(m.role)) &&
+                 m.status !== "Removed",
+             )
+             .map((m) => nm(m.pid))
+             .join(", "),
+           L("Open", "rope", { id: r.id }),
+           "t-teal",
+         ),
+       )
+       .join("") ||
+       empty(
          "users",
-         h(r.name),
-         r.members
-           .filter(
-             (m) =>
-               ["Member", "Project owner"].includes(normRole(m.role)) &&
-               m.status !== "Removed",
-           )
-           .map((m) => nm(m.pid))
-           .join(", "),
-         L("Open", "rope", { id: r.id }),
-         "t-teal",
+         "None yet",
+         "Accept a Mentor Request to join a Rope Team.",
        ),
-     )
-     .join("") ||
-     empty("users", "None yet", "Accept a Mentor Request to join a Rope Team."),
-   "",
-   "hm-list",
- )}
+     "",
+     "hm-list",
+   )}
  ${card(
    "Open support requests",
    "",
@@ -1294,7 +1750,7 @@ function homeC() {
   return (
     head(
       "My PHOENIX",
-      `Partner / Collaborator · ${h(S.orgs.find((o) => o.id === me().org)?.name || "")}`,
+      `Collaborator · ${h(S.orgs.find((o) => o.id === me().org)?.name || "")}`,
       B(ic("plus", 16) + "Publish a card", "go", { r: "newcard" }, "btn-p"),
     ) +
     `<div class="hm">
@@ -1313,19 +1769,19 @@ function homeC() {
    "hm-list",
  )}`,
    `${card(
-   "Mandate",
-   "",
-   (asg().mandate
-     ? dl([
-         ["Status", pill(asg().mandate.valid ? "Active" : "Expired")],
-         ["Scope", h(asg().mandate.scope)],
-         ["Valid until", fmt(asg().mandate.until)],
-       ])
-     : `<p class="muted">No mandate on file</p>`) +
-     `<div class="row wrap hm-acts">${B(ic("edit", 14) + "Organization profile", "orgEdit")}${B("Request cross-organization sharing", "xoNew")}</div>`,
-   "",
-   "hm-list",
- )}
+     "Mandate",
+     "",
+     (asg().mandate
+       ? dl([
+           ["Status", pill(asg().mandate.valid ? "Active" : "Expired")],
+           ["Scope", h(asg().mandate.scope)],
+           ["Valid until", fmt(asg().mandate.until)],
+         ])
+       : `<p class="muted">No mandate on file</p>`) +
+       `<div class="row wrap hm-acts">${B(ic("edit", 14) + "Organization profile", "orgEdit")}${B("Request cross-organization sharing", "xoNew")}</div>`,
+     "",
+     "hm-list",
+   )}
  ${card(
    WL() + "s",
    "",
@@ -1343,37 +1799,6 @@ function homeC() {
    "",
    "hm-list",
  )}`,
- )}</div>`
-  );
-}
-function homeO() {
-  const c = ctxId();
-  const inv = S.invites.filter((i) => i.ctx === c);
-  return (
-    head(
-      "My PHOENIX",
-      `Organization Representative · ${h(S.orgs.find((o) => o.id === me().org)?.name || "")}`,
-      B("People & cohorts", "go", { r: "org", tab: "users" }, "btn-p"),
-    ) +
-    `<div class="hm">
- ${hmStrip([stat("s-purple", "t-purple", "mail", inv.filter((i) => ["Pending", "Resent"].includes(i.status)).length, "Invitations pending", inv.filter((i) => i.status === "Accepted").length + " accepted", "org", { tab: "invites" }), stat("s-teal", "t-teal", "users", metric("m2"), "Circle participation", "Aggregate", "metrics"), stat("s-slate", "t-navy", "flag", metric("m6"), "Milestones completed", "Aggregate", "metrics"), stat("s-mist", "t-soft", "card", S.seatPools.filter((s) => s.sponsor === myId()).reduce((a, s) => a + s.assigned.length, 0) + "/" + S.seatPools.filter((s) => s.sponsor === myId()).reduce((a, s) => a + s.total, 0), "Institution seats", "Assigned / total", "org")], "Your organization summary")}
- ${roleJourney()}
- ${hmCols(
-   card("Circle and " + WL() + " activity", "Aggregate only — no individual participant records", table(["Space", "Type", "State", "Members"], [...S.circles.filter((x) => x.ctx === c).map((x) => [h(x.name), "Circle", pill(x.state), x.members.length]), ...S.rooms.filter((x) => x.ctx === c).map((x) => [h(x.name), WL(), pill(x.state), x.members.length])]), "", "hm-tbl"),
-   card(
-     "Aggregated evidence",
-     "Approved evidence counts by type",
-     table(
-       ["Type", "Approved items"],
-       Object.entries(
-         S.evidence
-           .filter((e) => e.review === "Approved")
-           .reduce((a, e) => ((a[e.type] = (a[e.type] || 0) + 1), a), {}),
-       ).map(([k, v]) => [h(k), v]),
-     ),
-     "",
-     "hm-tbl",
-   ),
  )}</div>`
   );
 }
@@ -1397,8 +1822,7 @@ function homeS() {
   return (
     head(
       "My PHOENIX",
-      "Sponsor / Funder · " +
-        h(S.orgs.find((o) => o.id === me().org)?.name || ""),
+      "Sponsor · " + h(S.orgs.find((o) => o.id === me().org)?.name || ""),
       B("Funder-safe reports", "go", { r: "funding", tab: "reports" }, "btn-p"),
     ) +
     `<div class="hm">
@@ -1409,35 +1833,89 @@ function homeS() {
    `${card(
      "Open challenges",
      "Posted under an alias. Payments happen offline; PHOENIX records what both sides confirm.",
-     (todo.length ? todo.slice(0, 4).map((t) => hrow("flag", t[0], t[1], B("Open", "go", { r: t[2], ...t[3] }, "btn-p btn-sm"), "t-ember")).join("") : "") +
+     (todo.length
+       ? todo
+           .slice(0, 4)
+           .map((t) =>
+             hrow(
+               "flag",
+               t[0],
+               t[1],
+               B("Open", "go", { r: t[2], ...t[3] }, "btn-p btn-sm"),
+               "t-ember",
+             ),
+           )
+           .join("")
+       : "") +
        (chs.length
-         ? chs.filter((c) => !todo.some((t) => t[3].id === c.id)).slice(0, 3).map((c) => hrow("megaphone", h(c.title), h(c.alias) + " · " + h(chStateLabel(c)), L("Open", "challenge", { id: c.id }), "t-ember")).join("")
-         : empty("megaphone", "No open challenges yet", "Post a challenge to find people for a project you want to fund.", B("Post an open challenge", "chNew", {}, "btn-p btn-sm"))),
+         ? chs
+             .filter((c) => !todo.some((t) => t[3].id === c.id))
+             .slice(0, 3)
+             .map((c) =>
+               hrow(
+                 "megaphone",
+                 h(c.title),
+                 h(c.alias) + " · " + h(chStateLabel(c)),
+                 L("Open", "challenge", { id: c.id }),
+                 "t-ember",
+               ),
+             )
+             .join("")
+         : empty(
+             "megaphone",
+             "No open challenges yet",
+             "Post a challenge to find people for a project you want to fund.",
+             B("Post an open challenge", "chNew", {}, "btn-p btn-sm"),
+           )),
      L("All challenges", "challenges"),
      "hm-list",
    )}
  ${card(
-     "Seat utilisation",
-     "Counts only: sponsors never see who holds a seat",
-     seats
-       .map((s) => {
-         const a = poolActive(s);
-         return s.status === "Active"
-           ? `<div class="hm-seat"><div class="row hm-seat-h"><b>${sup(a)} of ${s.total} seats active</b><span class="cap">${supPct(a, s.total)}</span></div><div class="progress"><span class="bar" style="width:${isSupp(a) ? 0 : Math.round((a / s.total) * 100)}%"></span></div><span class="cap">${h(ctxNameOf(s.ctx))} · valid until ${fmt(s.until)}</span></div>`
-           : hrow("card", s.total + " seats · " + h(ctxNameOf(s.ctx)), "Awaiting invoice payment", pill(s.status));
-       })
-       .join("") || empty("card", "No seat pools", "Buy sponsored seats by invoice.", B("Buy seats by invoice", "checkout", { id: "pd5" }, "btn-p btn-sm")),
-     L("Seat utilisation", "funding", { tab: "seats" }),
-     "hm-list",
-   )}
+   "Seat utilisation",
+   "Counts only: sponsors never see who holds a seat",
+   seats
+     .map((s) => {
+       const a = poolActive(s);
+       return s.status === "Active"
+         ? `<div class="hm-seat"><div class="row hm-seat-h"><b>${sup(a)} of ${s.total} seats active</b><span class="cap">${supPct(a, s.total)}</span></div><div class="progress"><span class="bar" style="width:${isSupp(a) ? 0 : Math.round((a / s.total) * 100)}%"></span></div><span class="cap">${h(ctxNameOf(s.ctx))} · valid until ${fmt(s.until)}</span></div>`
+         : hrow(
+             "card",
+             s.total + " seats · " + h(ctxNameOf(s.ctx)),
+             "Awaiting invoice payment",
+             pill(s.status),
+           );
+     })
+     .join("") ||
+     empty(
+       "card",
+       "No seat pools",
+       "Buy sponsored seats by invoice.",
+       B("Buy seats by invoice", "checkout", { id: "pd5" }, "btn-p btn-sm"),
+     ),
+   L("Seat utilisation", "funding", { tab: "seats" }),
+   "hm-list",
+ )}
  ${card(
    "Approved initiatives",
    "Aggregate status only",
    [
-     ...inits.map((i) => hrow("megaphone", h(i.title), "Initiative · published " + fmt(i.at))),
+     ...inits.map((i) =>
+       hrow("megaphone", h(i.title), "Initiative · published " + fmt(i.at)),
+     ),
      ...projs.map((p) => {
        const ms = projMilestones(p);
-       return hrow("folder", h(p.title), h(plainStage(p)) + (ms.length ? " · " + ms.filter((m) => m.status === "Achieved").length + " of " + ms.length + " milestones achieved" : ""));
+       return hrow(
+         "folder",
+         h(p.title),
+         h(plainStage(p)) +
+           (ms.length
+             ? " · " +
+               ms.filter((m) => m.status === "Achieved").length +
+               " of " +
+               ms.length +
+               " milestones achieved"
+             : ""),
+       );
      }),
    ].join("") || empty("folder", "No approved initiatives yet", ""),
    L("All initiatives", "funding", { tab: "initiatives" }),
@@ -1446,7 +1924,17 @@ function homeS() {
  ${card(
    "Approved evidence summaries",
    "Cleared for funder reports by the owner and a disclosure review",
-   ev.map((e) => hrow("award", h(e.title), [h(e.type || ""), e.level ? "Support level " + h(e.level) : ""].filter(Boolean).join(" · "))).join("") || empty("award", "No approved evidence summaries yet", ""),
+   ev
+     .map((e) =>
+       hrow(
+         "award",
+         h(e.title),
+         [h(e.type || ""), e.level ? "Support level " + h(e.level) : ""]
+           .filter(Boolean)
+           .join(" · "),
+       ),
+     )
+     .join("") || empty("award", "No approved evidence summaries yet", ""),
    L("Funder-safe reports", "funding", { tab: "reports" }),
    "hm-list",
  )}`,
@@ -1464,7 +1952,18 @@ function homeS() {
  ${card(
    "Invoices and receipts",
    "",
-   pays.slice(0, 3).map((p) => hrow("coin", h(p.ref || p.id), h((byId("products", p.product) || {}).name || p.product) + (p.amount ? " · " + h(p.amount) : ""), pill(p.state))).join("") || empty("coin", "No invoices yet", ""),
+   pays
+     .slice(0, 3)
+     .map((p) =>
+       hrow(
+         "coin",
+         h(p.ref || p.id),
+         h((byId("products", p.product) || {}).name || p.product) +
+           (p.amount ? " · " + h(p.amount) : ""),
+         pill(p.state),
+       ),
+     )
+     .join("") || empty("coin", "No invoices yet", ""),
    L("All invoices", "funding", { tab: "invoices" }),
    "hm-list",
  )}
@@ -1482,7 +1981,7 @@ function homeA() {
   return (
     head(
       "My PHOENIX",
-      `Programme Administrator · ${h(ctx().name)}`,
+      `Organization Admin · ${h(ctx().name)}`,
       B("Approval inbox", "go", { r: "admin", tab: "requests" }, "btn-p"),
     ) +
     `<div class="hm">
@@ -1490,23 +1989,23 @@ function homeA() {
  ${roleJourney()}
  ${hmCols(
    `${card(
-   "Programme metrics",
-   "Starter registry",
-   table(
-     ["Metric", "Category", "Value", "Governance gate"],
-     S.metrics
-       .filter((m) => m.status === "Active")
-       .map((m) => [
-         h(m.name),
-         h(m.cat),
-         "<b>" + metric(m.id) + "</b>",
-         h(m.gate),
-       ]),
-   ),
-   L("All metrics", "metrics"),
-   "hm-tbl",
- )}`,
-   `${card("Inactive or incomplete users", "Onboarding not finished", inactive.map((a) => hrow("user", nm(a.pid), ROLE[a.role], B("Send reminder", "remind", { pid: a.pid }))).join("") || empty("check", "Everyone is active", ""), inactive.length ? `<span class="cnt">${inactive.length}</span>` : "", "hm-list")}
+     "Programme metrics",
+     "Starter registry",
+     table(
+       ["Metric", "Category", "Value", "Governance gate"],
+       S.metrics
+         .filter((m) => m.status === "Active")
+         .map((m) => [
+           h(m.name),
+           h(m.cat),
+           "<b>" + metric(m.id) + "</b>",
+           h(m.gate),
+         ]),
+     ),
+     L("All metrics", "metrics"),
+     "hm-tbl",
+   )}`,
+   `${card("Inactive or incomplete users", "Onboarding not finished", inactive.map((a) => hrow("user", nm(a.pid), roleName(a.role, a.ctx), B("Send reminder", "remind", { pid: a.pid }))).join("") || empty("check", "Everyone is active", ""), inactive.length ? `<span class="cnt">${inactive.length}</span>` : "", "hm-list")}
  ${card(
    "Pilot scope and your permissions",
    "",
@@ -1516,9 +2015,11 @@ function homeA() {
      ["Your role", ROLE[role()]],
      [
        "Specialist bundles",
-       `<span class="row wrap hm-pills">${asg()
-         .bundles.map((b) => pill(b, "p-grey"))
-         .join(" ") || "None"}</span>`,
+       `<span class="row wrap hm-pills">${
+         asg()
+           .bundles.map((b) => pill(b, "p-grey"))
+           .join(" ") || "None"
+       }</span>`,
      ],
      [
        "Effective permission",
@@ -1531,45 +2032,77 @@ function homeA() {
  )}</div>`
   );
 }
+// Platform Administrator dashboard: the organizations, people and support requests it looks after. Account data only
+// (names, roles, dates); no participant content.
 function homeT() {
+  const tenants = S.orgs.filter((o) => S.contexts.some((c) => c.org === o.id));
+  const people = S.people.filter((p) => S.assign.some((a) => a.pid === p.id && roleBase(a.role) !== "T"));
+  const active = people.filter((p) => S.assign.some((a) => a.pid === p.id && a.status === "Active"));
+  const adminsOf = (o) => S.assign.filter((a) => roleBase(a.role) === "A" && S.contexts.some((c) => c.id === a.ctx && c.org === o.id));
+  const noAdmin = tenants.filter((o) => !adminsOf(o).some((a) => a.status === "Active"));
+  const openSq = sqForwarded().filter((q) => SQ_OPEN.includes(q.status));
+  const pendAdmin = S.assign.filter((a) => roleBase(a.role) === "A" && a.status === "Pending role approval");
+  // Joined = first agreement accepted (the step that activates an account). Newest first.
+  const joined = people
+    .map((p) => ({ p, at: S.accepts.filter((x) => x.pid === p.id).map((x) => x.at).sort()[0] }))
+    .filter((x) => x.at)
+    .sort((a, b) => String(b.at).localeCompare(String(a.at)))
+    .slice(0, 6);
+  const where = (pid) => {
+    const a = S.assign.find((x) => x.pid === pid && roleBase(x.role) !== "T");
+    return a ? h(roleName(a.role, a.ctx)) + " · " + h(ctxName(a.ctx)) : "";
+  };
+  const roleMix = Object.keys(ROLE)
+    .filter((k) => k !== "T")
+    .map((k) => [h(ROLE[k]), S.assign.filter((a) => roleBase(a.role) === k && a.status === "Active").length])
+    .filter(([, n]) => n);
   return (
-    head(
-      "Platform health",
-      "Technical operations · no default access to participant content",
-    ) +
+    head("Dashboard", "Organizations, people and support requests across the platform. No access to participant content.") +
     `<div class="hm">
- ${hmStrip([hmFig("t-soft", "link", S.integrations.filter((i) => !["Degraded", "Unavailable"].includes(i.status)).length + " of " + S.integrations.length, "Integrations operating", ""), hmFig("t-soft", "lock", S.security.length, "Security events", S.security[0] ? "Latest " + fmt(S.security[0].at) : ""), hmFig("t-soft", "archive", S.backups[0] ? fmt(S.backups[0].at) : "—", "Last backup", S.backups[0] ? h(S.backups[0].status) : ""), hmFig("t-soft", "sparkle", S.settings.aiUsed + "/" + S.settings.aiQuota, "AI requests today", "Used / quota")], "Platform summary")}
- ${roleJourney()}
+ ${hmStrip([
+   hmFig("t-soft", "building", tenants.length, "Organizations", noAdmin.length ? noAdmin.length + " without an active Organization Admin" : "All have an Organization Admin"),
+   hmFig("t-soft", "users", people.length, "People", active.length + " active"),
+   hmFig("t-soft", "shield", pendAdmin.length, "Admin roles awaiting approval", ""),
+   hmFig("t-soft", "inbox", openSq.length, "Open forwarded requests", sqForwarded().length + " forwarded in total"),
+ ])}
  ${hmCols(
-   `${card("Integration health", "", S.integrations.map((i) => hrow("link", h(i.name), "", pill(i.status))).join(""), L("Manage", "platform", { tab: "integrations" }), "hm-list")}
- ${card("Storage and backups", "", S.backups.map((b) => hrow("archive", fmt(b.at), h(b.size), pill(b.status.includes("passed") ? "Completed" : b.status))).join(""), "", "hm-list")}`,
    `${card(
-   "Security events",
-   "",
-   S.security
-     .slice(0, 5)
-     .map((s) => hrow("lock", h(s.t), fmt(s.at)))
-     .join(""),
-   L("All", "platform", { tab: "security" }),
-   "hm-list",
- )}
+     "Organizations",
+     "",
+     tenants
+       .map((o) => {
+         const c = S.contexts.find((x) => x.org === o.id);
+         const n = new Set(S.assign.filter((a) => a.ctx === c.id).map((a) => a.pid)).size;
+         const adm = adminsOf(o).filter((a) => a.status === "Active");
+         return hrow(
+           "building",
+           h(o.name),
+           n + " people · " + (adm.length ? "Admin: " + adm.slice(0, 2).map((a) => nm(a.pid)).join(", ") + (adm.length > 2 ? " +" + (adm.length - 2) + " more" : "") : "No Organization Admin") + (o.pack ? " · pack: " + h(packName(o.pack)) : ""),
+           (adm.length ? "" : pill("Needs an admin", "p-amber")) + L("Open", "tenants", { id: o.id }, "btn btn-s btn-sm"),
+         );
+       })
+       .join("") || '<p class="cap">No organizations yet.</p>',
+     L("All organizations", "tenants"),
+     "hm-list",
+   )}
  ${card(
-   "AI gateway",
+   "Recently joined",
+   "People who most recently accepted their agreement and became active.",
+   joined.map((x) => hrow("user", nm(x.p.id), where(x.p.id), `<span class="cap">${fmt(x.at)}</span>`)).join("") || '<p class="cap">Nobody has joined yet.</p>',
    "",
-   dl([
-     ["Provider", pill(adapterUp('ai') ? "Healthy" : "Unavailable")],
-     [
-       "Quota used",
-       S.settings.aiUsed + " of " + S.settings.aiQuota + " requests today",
-     ],
-     [
-       "Refused requests (logged)",
-       S.audit.filter((a) => a.a === "AI request refused").length,
-     ],
-   ]),
-   "",
-   "hm-list hm-kvs",
+   "hm-list",
  )}`,
+   `${card(
+     "Forwarded support requests",
+     "",
+     openSq
+       .slice(0, 5)
+       .map((q) => hrow("inbox", h(q.cat || "General"), nm(q.by) + " · " + h(ctxName(q.ctx)) + " · " + fmt(q.at), pill(q.status)))
+       .join("") || '<p class="cap">No open forwarded requests.</p>',
+     L("All", "support"),
+     "hm-list",
+   )}
+ ${card("Active roles", "", dl(roleMix), L("Roles & bundles", "roles"), "hm-list hm-kvs")}`,
  )}</div>`
   );
 }
@@ -1580,4 +2113,3 @@ A.remind = (d) => {
   ok();
 };
 // Notifications are a dropdown from the bell (views/assist.js).
-

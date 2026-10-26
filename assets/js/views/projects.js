@@ -23,7 +23,7 @@ function draftSections(t, dsc, type) {
     `“${t}”: ${s}. Three milestones over about eight weeks. Main risks are participation and scope.`,
   ];
 }
-// ---- review conversation between the project owner and the Programme Administrator / assigned reviewer
+// ---- review conversation between the project owner and the Organization Admin / assigned reviewer
 const projParty = p => !!p && (p.owner === myId() || (role() === 'F' && p.stewards.includes(myId())) || role() === 'A');
 const ctxAdmins = c => [...new Set(S.assign.filter(a => a.ctx === c && roleBase(a.role) === 'A' && a.status === 'Active').map(a => a.pid))];
 // Owner and reviewers always; administrators while no reviewer is assigned, or once they have joined the conversation.
@@ -40,7 +40,7 @@ CONVO.project = {
       : p.stewards.includes(pid)
         ? 'Assigned reviewer'
         : ctxAdmins(p.ctx).includes(pid)
-          ? 'Programme Administrator'
+          ? 'Organization Admin'
           : '',
   post: p =>
     !projParty(p)
@@ -79,17 +79,13 @@ route('projects', 'projects', () => {
         ? p.owner === myId()
         : r === 'F'
           ? stewardOf(p) || p.status !== 'Draft'
-          : r === 'O'
-            ? p.status !== 'Draft'
-            : true),
+          : true),
   );
   const phases = PROJ_PHASES.filter(x => list.some(p => projPhase(p) === x));
   return (
     head(
       r === 'P' ? 'My projects' : 'Projects',
-      r === 'O'
-        ? 'Projects in your organisation’s context (read-only)'
-        : r === 'F'
+      r === 'F'
           ? 'Submissions and projects you steward'
           : 'Ideas, needs and opportunities moving from submission to closure.',
       r === 'P' ? B(ic('plus', 16) + 'Start a project', 'go', { r: 'newproject' }, 'btn-p') : '',
@@ -370,12 +366,12 @@ route('project', 'projects', () => {
         : banner('info', 'Waiting for ' + nm(p.owner), 'You can accept the project once the owner replies in the review conversation or resubmits it.')
       : '') +
     (lastRej ? banner('err', 'Rejected by ' + nm(lastRej.by), `“${h(lastRej.text)}” · ${fmt(lastRej.at)}`) : '') +
-    (p.status === 'Submitted' && !p.stewards.length ? banner('info', 'Waiting for a reviewer', r === 'A' ? 'Assign a Steward, Faculty member or Facilitator to review this project.' : 'The Programme Administrator assigns a Steward, Faculty member or Facilitator to review this project. You are notified when it is assigned.') : '') +
+    (p.status === 'Submitted' && !p.stewards.length ? banner('info', 'Waiting for a reviewer', r === 'A' ? 'Assign a Steward, Faculty member or Facilitator to review this project.' : 'The Organization Admin assigns a Steward, Faculty member or Facilitator to review this project. You are notified when it is assigned.') : '') +
     (p.stage === 'Final review' && p.finalNote ? banner('info', 'Final deliverables submitted', h(p.finalNote)) : '') +
     (p.changesNote ? banner('warn', 'Changes requested', h(p.changesNote)) : '') +
     `</div>` +
     `<div class="g12 prj-body"><div class="c8 col prj-main"><section class="card prj-summary"><div class="card-h"><div><h2 class="h2">Project summary</h2>${p.sections ? `<p class="cap">${p.sections.filter(s => ['Accepted', 'Edited'].includes(s.st)).length} of 8 sections accepted or edited</p>` : ''}</div></div>${p.sections ? `<ol class="prj-secs">${p.sections.map((s, i) => `<li class="prj-sec"><span class="sn" aria-hidden="true">${i + 1}</span><div class="prj-sec-b"><div class="prj-sec-t"><h3 class="h3">${SECTIONS[i]}</h3>${pill(s.st, { Accepted: 'p-green', Edited: 'p-teal', Rejected: 'p-red' }[s.st] || 'p-grey')}</div><p class="prj-sec-x">${h(s.text) || '<span class="cap">Empty</span>'}</p></div></li>`).join('')}</ol>` : `<p class="muted">${h(p.desc || 'No sections yet.')}</p>`}</section>
- ${projParty(p) && p.status !== 'Draft' ? card('Review conversation and activity', 'Messages between the project owner, the Programme Administrator and the assigned reviewer, with every review step. Oldest first.', convoHtml('project', p), '', 'cv-card') : ''}
+ ${projParty(p) && p.status !== 'Draft' ? card('Review conversation and activity', 'Messages between the project owner, the Organization Admin and the assigned reviewer, with every review step. Oldest first.', convoHtml('project', p), '', 'cv-card') : ''}
  ${projEvidenceCard(p)}
  ${projParty(p) && p.status !== 'Draft'
    ? ''
@@ -399,7 +395,7 @@ route('project', 'projects', () => {
    'Reviewer and starting space',
    '',
    dl([
-     ['Reviewer', p.stewards.map(nm).join(', ') || 'Assigned by the Programme Administrator after submission'],
+     ['Reviewer', p.stewards.map(nm).join(', ') || 'Assigned by the Organization Admin after submission'],
      ['Starts in', h(pathLabel(p.supportPath) || 'Chosen on acceptance') + '<div class="cap">Other spaces can be linked in any order.</div>'],
    ]),
    '',
@@ -437,7 +433,7 @@ F.submitProj = d => {
   p.clar.forEach(c => (c.resolved = true));
   if (re && (d.note || '').trim()) convoAdd(p, 'resubmit', d.note.trim());
   else projLog(p, re ? 'Resubmitted after clarification' : 'Submitted for review');
-  // The Programme Administrator assigns the reviewer; a resubmission goes straight back to the assigned reviewer.
+  // The Organization Admin assigns the reviewer; a resubmission goes straight back to the assigned reviewer.
   if (p.stewards.length) p.stewards.forEach(s => notify(s, `${re ? 'Resubmitted' : 'New'} project for review: “${p.title}”`, 'project', { id: p.id }));
   else
     S.assign
@@ -445,7 +441,7 @@ F.submitProj = d => {
       .forEach(a => notify(a.pid, `Assign a reviewer to the new project “${p.title}”`, 'admin', { tab: 'requests' }));
   audit('Project submitted', p.id, p.stewards.length ? 'Reviewers: ' + p.stewards.join(',') : 'Awaiting reviewer assignment');
   clearF('sp');
-  toast(p.stewards.length ? 'Resubmitted to your reviewer.' : 'Submitted. The Programme Administrator will assign a Steward, Faculty member or Facilitator to review it.');
+  toast(p.stewards.length ? 'Resubmitted to your reviewer.' : 'Submitted. The Organization Admin will assign a Steward, Faculty member or Facilitator to review it.');
   ok();
 };
 // ---- the project owner edits the project's details until it is closed or rejected (the 8 sections have their own flow)
@@ -610,7 +606,7 @@ A.assignStewards = d => {
     () =>
       `<form data-f="asst" class="col prj-dlg" novalidate><input type="hidden" name="id" value="${p.id}">${dl([['Project', h(p.title)], ['Owner', nm(p.owner)], ['Areas', (p.tags || []).map(h).join(', ') || '—']])}${
         rv.length
-          ? fi('asst', 's', 'Steward, Faculty or Facilitator', { type: 'select', req: true, ph: 'Choose a reviewer', opts: rv.map(a => [a.pid, P(a.pid).name + ' · ' + ROLE[a.role]]), help: 'Active Stewards, Faculty and Facilitators in this programme. They review the project, ask for clarification if needed and accept it. The reviewer cannot be changed once assigned.' })
+          ? fi('asst', 's', 'Steward, Faculty or Facilitator', { type: 'select', req: true, ph: 'Choose a reviewer', opts: rv.map(a => [a.pid, P(a.pid).name + ' · ' + roleName(a.role, a.ctx)]), help: 'Active Stewards, Faculty and Facilitators in this programme. They review the project, ask for clarification if needed and accept it. The reviewer cannot be changed once assigned.' })
           : banner('warn', 'No reviewer available in this programme', 'Invite a Facilitator / Steward from ' + L('Programme admin → Invitations', 'admin', { tab: 'invites' }) + ', then assign them here.')
       }<div class="actions"><span></span><button class="btn btn-p" type="submit" ${rv.length ? '' : 'disabled'}>Assign</button></div></form>`,
   );

@@ -191,7 +191,7 @@ route(
   () =>
     head(
       "Metrics & reports",
-      role() === "O" || role() === "S"
+      role() === "S"
         ? "Approved aggregate only"
         : "Starter metrics registry",
     ) + reportsView(role() !== "A"),
@@ -208,11 +208,10 @@ const AUD_TYPES = [
 ];
 const audType = (a) => (AUD_TYPES.find(([, re]) => re.test(a.a || "")) || ["Records"])[0];
 route("audit", "any", () => {
-  if (!["A", "O", "T"].includes(role())) return deniedView("audit");
+  if (!["A", "T"].includes(role())) return deniedView("audit");
   const q = UI.q.aud || "";
   const list = S.audit.filter(
     (a) =>
-      (role() !== "O" || a.ctx === ctxId()) &&
       (!q || JSON.stringify(a).toLowerCase().includes(q.toLowerCase())),
   );
   return (
@@ -297,6 +296,7 @@ F.prov = (d) => {
 // ---------- GAP CLOSURE (Section 6 user-story audit) ----------
 function migrate() {
   ensurePlatformData();
+  syncCtxNames();
   // accounts that are not in the seed were created in this browser (registration or Programme admin)
   const seedIds = new Set(seed().people.map((p) => p.id));
   S.people.forEach((p) => {
@@ -348,6 +348,7 @@ function migrate() {
   // integrations are adapters with enabled / provider_status / consent_required / data_scope / purpose / last_* fields
   adaptersMigrate();
   scopeStore();
+  relMigrate(); // dated claims and a past workspace for My collaborations (views/freeze.js)
   chMigrate(); // sponsors' open challenges, their chat rooms and disputes (views/challenges.js)
   // Role approvals moved into Programme admin → Users
   S.notifs.forEach((n) => {
@@ -385,7 +386,7 @@ function migrate() {
       audience: "All roles",
       status: "Published",
       by: "p7",
-      desc: "How the Excelsior Climate Programme runs: stages, roles and timelines.",
+      desc: "How the Excelsior University runs: stages, roles and timelines.",
     },
     {
       id: "rs2",
@@ -455,7 +456,6 @@ function migrate() {
       at: "2026-09-30",
     },
   ];
-  S.cohortReqs = S.cohortReqs || [];
   S.feedback = S.feedback || [];
   S.ropes.forEach((r) => {
     r.contribs = r.contribs || [
@@ -523,7 +523,6 @@ const AUD = {
   F: "Facilitators",
   M: "Mentors",
   C: "Partners",
-  O: "Organization representatives",
   S: "Sponsors",
   A: "All roles",
   T: "All roles",
@@ -622,7 +621,7 @@ A.resNew = () => {
   modal(
     role() === "A" ? "Add resource" : "Suggest a resource",
     () =>
-      `<form data-f="res" class="col fgap" novalidate>${fi("res", "title", "Title", { req: true })}${fi("res", "kind", "Type", { type: "select", req: true, opts: ["Guide", "Learning resource", "Template guidance", "Governance guidance"] })}${fi("res", "audience", "Audience", { type: "select", req: true, opts: ["All roles", "Participants", "Facilitators", "Mentors", "Partners", "Organization representatives", "Sponsors"] })}${fi("res", "desc", "Description", { type: "textarea", rows: 3, req: true })}<div class="field"><label class="lbl">File or link</label><input type="file" name="f" class="input res-file"></div>${role() !== "A" ? banner("info", "", "A Programme Administrator reviews suggestions before they are published.") : ""}<div class="actions"><span></span><button class="btn btn-p" type="submit">${role() === "A" ? "Publish" : "Submit for review"}</button></div></form>`,
+      `<form data-f="res" class="col fgap" novalidate>${fi("res", "title", "Title", { req: true })}${fi("res", "kind", "Type", { type: "select", req: true, opts: ["Guide", "Learning resource", "Template guidance", "Governance guidance"] })}${fi("res", "audience", "Audience", { type: "select", req: true, opts: ["All roles", "Participants", "Facilitators", "Mentors", "Partners", "Organization representatives", "Sponsors"] })}${fi("res", "desc", "Description", { type: "textarea", rows: 3, req: true })}<div class="field"><label class="lbl">File or link</label><input type="file" name="f" class="input res-file"></div>${role() !== "A" ? banner("info", "", "An Organization Admin reviews suggestions before they are published.") : ""}<div class="actions"><span></span><button class="btn btn-p" type="submit">${role() === "A" ? "Publish" : "Submit for review"}</button></div></form>`,
   );
 };
 F.res = (d) => {
@@ -736,7 +735,7 @@ const xorgView = () =>
 A.xoDecide = (d) => {
   if (role() !== "A")
     return deny(
-      "only a Programme Administrator approves cross-organization activity",
+      "only an Organization Admin approves cross-organization activity",
     );
   const x = byId("xorg", d.id);
   x.status = d.v;
@@ -778,7 +777,7 @@ F.xo = (d) => {
   audit("Cross-organization request", me().org, d.what);
   UI.modal = null;
   clearF("xo");
-  toast("Sent to the Programme Administrator.");
+  toast("Sent to the Organization Admin.");
   ok();
 };
 // ---- MFA for administrators (PFA-01)
@@ -903,7 +902,7 @@ A.orgEdit = () => {
 F.orgp = (d) => {
   if (!validate("orgp", d, { name: ["req"], profile: ["req", ["min", 20]] }))
     return render();
-  if (!["C", "O"].includes(role()))
+  if (!["C", "A"].includes(role()))
     return deny("only an organization member edits its profile");
   const o = S.orgs.find((x) => x.id === me().org);
   Object.assign(o, {
@@ -917,11 +916,11 @@ F.orgp = (d) => {
   clearF("orgp");
   ok();
 };
-// ---- Org: templates and new cohort (OUR-02, OUR-09)
+// ---- Org: templates (OUR-02)
 F.tplOrg = (d) => {
   if (!validate("tplOrg", d, { circle: ["req"], room: ["req"], cats: ["req"] }))
     return render();
-  if (!["A", "O"].includes(role())) return deny("not permitted");
+  if (role() !== "A") return deny("not permitted");
   S.orgTemplates = {
     circle: d.circle,
     room: d.room,
@@ -941,37 +940,6 @@ const tplForm = () =>
     "Circle, " + WL() + " and opportunity templates for this context.",
     `<form data-f="tplOrg" class="col fgap" novalidate>${fi("tplOrg", "circle", "Circle template sections", { value: S.orgTemplates.circle, req: true })}${fi("tplOrg", "room", WL() + " template sections", { value: S.orgTemplates.room, req: true })}${fi("tplOrg", "cats", "Opportunity categories (comma-separated)", { value: S.orgTemplates.categories.join(", "), req: true })}<div class="actions"><span></span><button class="btn btn-s" type="submit">Save templates</button></div></form>`,
   );
-A.cohortNew = () => {
-  clearF("coh");
-  modal(
-    "Launch a new cohort or initiative",
-    () =>
-      `<form data-f="coh" class="col fgap" novalidate>${fi("coh", "name", "Name", { req: true, ph: "e.g. Spring 2027 cohort" })}${fi("coh", "pack", "Use-case pack", { type: "select", opts: S.packs.filter((p) => p.status === "Active").map((p) => [p.id, p.name]) })}${fi("coh", "start", "Start date", { type: "date", req: true })}${banner("info", "", "The Platform Administrator creates the isolated context; you then configure it and invite your cohort.")}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send request</button></div></form>`,
-  );
-};
-F.coh = (d) => {
-  if (!validate("coh", d, { name: ["req"], start: ["req", "date"] }))
-    return render();
-  S.cohortReqs.push({
-    id: uid("cr"),
-    name: d.name,
-    pack: d.pack,
-    start: d.start,
-    org: me().org,
-    by: myId(),
-    status: "Pending",
-  });
-  S.assign
-    .filter((a) => roleBase(a.role) === "T")
-    .forEach((a) =>
-      notify(a.pid, "New cohort requested: " + d.name, "platform"),
-    );
-  audit("Cohort requested", d.name, "");
-  UI.modal = null;
-  clearF("coh");
-  toast("Request sent to the Platform Administrator.");
-  ok();
-};
 // Contexts are no longer created from the Platform Admin screens; cohort requests stay on record.
 // ---- Facilitator AI summary of a Circle (FCS-09, class B)
 A.circleSummary = (d) => {

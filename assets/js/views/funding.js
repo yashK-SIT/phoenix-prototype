@@ -146,9 +146,9 @@ function sponsorInitiatives() {
   return (
     card(
       'Programme initiatives',
-      'Published by the Programme Administrator for sponsors.',
+      'Published by the Organization Admin for sponsors.',
       inits.map(i => lrow('megaphone', h(i.title), h(i.summary) + `<span class="cap"> · Published ${fmt(i.at)}</span>`)).join('') ||
-        empty('megaphone', 'No initiatives published yet', 'The Programme Administrator publishes initiative summaries for sponsors.'),
+        empty('megaphone', 'No initiatives published yet', 'The Organization Admin publishes initiative summaries for sponsors.'),
       '',
       'hm-list',
     ) +
@@ -225,10 +225,10 @@ function sponsorReports() {
     ) +
     card(
       'Funder-safe Harvests',
-      'Learning Harvests the Programme Administrator released to funders. Only the funder-safe sections are shown.',
+      'Learning Harvests the Organization Admin released to funders. Only the funder-safe sections are shown.',
       hv
         .map(x => `<details class="fdisc-more"><summary>${ic('sparkle', 14)}<b>${h(x.scopeName)}</b> <span class="cap">· ${h(x.trigger || '')}</span></summary>${dl(HV_FUNDER_SECTIONS.filter(k => x.sections && x.sections[k]).map(k => [h(k), h(x.sections[k])]))}</details>`)
-        .join('') || empty('sparkle', 'No Harvests released to funders yet', 'A Harvest appears here only after the Programme Administrator approves a funder release.'),
+        .join('') || empty('sparkle', 'No Harvests released to funders yet', 'A Harvest appears here only after the Organization Admin approves a funder release.'),
       '',
       'hm-list',
     ) +
@@ -280,7 +280,7 @@ function sponsorInvoices() {
     ) + `<p class="cap bill-note">A donation grants no entitlement. Payment never buys authority, visibility, matching priority or access to participants’ work.</p>`
   );
 }
-// Programme Administrator view of the same boundary (sponsors have their own tabs above).
+// Organization Admin view of the same boundary (sponsors have their own tabs above).
 function sponsorshipOverview() {
   const pools = S.seatPools.filter(s => inCtx(s));
   return (
@@ -375,7 +375,7 @@ A.fundInterest = d => {
   modal(
     'Funding request',
     () =>
-      `<form data-f="fr" class="col fgap" novalidate><input type="hidden" name="id" value="${d.id}"><input type="hidden" name="pitch" value="${d.pitch || ''}">${fi('fr', 'amount', 'Total commitment (USD)', { type: 'number', req: true, min: 1 })}<div class="g3">${fi('fr', 't1', 'Tranche 1 · Circle', { type: 'number', req: true, min: 0 })}${fi('fr', 't2', 'Tranche 2 · Rope Team', { type: 'number', req: true, min: 0 })}${fi('fr', 't3', 'Tranche 3 · ' + WL(), { type: 'number', req: true, min: 0 })}</div>${fe('fr', 'sum') ? `<span class="emsg">${ic('alert', 14)}${fe('fr', 'sum')}</span>` : ''}${banner('info', '', 'The request needs Programme Administrator / Finance Owner approval, then you sign the funding agreement. PHOENIX never handles card details.')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send funding request</button></div></form>`,
+      `<form data-f="fr" class="col fgap" novalidate><input type="hidden" name="id" value="${d.id}"><input type="hidden" name="pitch" value="${d.pitch || ''}">${fi('fr', 'amount', 'Total commitment (USD)', { type: 'number', req: true, min: 1 })}<div class="g3">${fi('fr', 't1', 'Tranche 1 · Circle', { type: 'number', req: true, min: 0 })}${fi('fr', 't2', 'Tranche 2 · Rope Team', { type: 'number', req: true, min: 0 })}${fi('fr', 't3', 'Tranche 3 · ' + WL(), { type: 'number', req: true, min: 0 })}</div>${fe('fr', 'sum') ? `<span class="emsg">${ic('alert', 14)}${fe('fr', 'sum')}</span>` : ''}${banner('info', '', 'The request needs Organization Admin / Finance Owner approval, then you sign the funding agreement. PHOENIX never handles card details.')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send funding request</button></div></form>`,
   );
 };
 F.fr = d => {
@@ -528,13 +528,12 @@ route('billing', 'payments', () => {
     'bill',
     [
       ['access', 'My access'],
-      r === 'O' && ['org', 'Institution seats'],
       r === 'A' && ['products', 'Products'],
       r === 'A' && ['ents', 'Entitlements'],
       r === 'A' && ['seats', 'Seat pools'],
       r === 'A' && ['events', 'Payment events'],
     ],
-    UI.p.tab || (r === 'A' ? 'products' : r === 'O' ? 'org' : 'access'),
+    UI.p.tab || (r === 'A' ? 'products' : 'access'),
   );
   let body = '';
   if (t.cur === 'access') {
@@ -611,81 +610,10 @@ route('billing', 'payments', () => {
   }
   if (r === 'S' && t.cur === 'access')
     body = banner('info', 'Your sponsorship', `Seat pools, utilisation, invoices and receipts are under ${L('Sponsorship', 'funding', { tab: 'seats' })}. Sponsors see seat counts only, never seat holders.`) + body;
-  if (t.cur === 'org') {
-    const pools = S.seatPools.filter(s => s.sponsor === myId());
-    body =
-      pools
-        .map(sp =>
-          card(
-            `Seat pool · ${h(S.contexts.find(c => c.id === sp.ctx).name)}`,
-            `${sp.assigned.length} of ${sp.total} assigned · until ${fmt(sp.until)} · ${h(sp.status)}`,
-            `<div class="seat-meter"><div class="seat-meter-h"><span class="fig">${sp.assigned.length}<span class="fig-of"> / ${sp.total}</span></span><span class="cap">seats assigned · ${sp.total - sp.assigned.length} available</span></div><div class="progress" role="img" aria-label="${sp.assigned.length} of ${sp.total} seats assigned"><div class="bar" style="width:${(sp.assigned.length / sp.total) * 100}%"></div></div></div>${(() => {
-              const est = pid => (S.ents.find(e => e.pid === pid && e.source.includes(sp.id)) || { state: 'Active' }).state;
-              return dataView('bill:pool:' + sp.id, {
-                label: 'seat holders',
-                items: sp.assigned,
-                search: pid => P(pid).name,
-                quick: { label: 'Entitlement', options: [...new Set(sp.assigned.map(est))].map(v => [v, v]), test: (pid, v) => est(pid) === v },
-                sorts: [['name', 'Name', (a, b) => P(a).name.localeCompare(P(b).name)]],
-                defaultSort: 'name',
-                row: pid => {
-                  const e = S.ents.find(e => e.pid === pid && e.source.includes(sp.id));
-                  return {
-                    lead: `<span class="av" aria-hidden="true">${ini(pid)}</span>`,
-                    title: nm(pid),
-                    sub: h(P(pid).email || ''),
-                    badges: pill(est(pid)),
-                    primary:
-                      (e && e.state === 'Suspended'
-                        ? B('Reactivate', 'seat', { sp: sp.id, pid, v: 'Active' })
-                        : CB('Suspend', 'seat', { sp: sp.id, pid, v: 'Suspended' }, 'Suspend the sponsored seat for ' + P(pid).name + '? Sponsored access pauses; consent, correction and export rights continue.')) +
-                      CB('Release seat', 'seat', { sp: sp.id, pid, v: 'release' }, 'Release this seat? ' + P(pid).name + ' loses the sponsored entitlement and the seat returns to the pool.'),
-                  };
-                },
-                empty: ['users', 'No seats assigned yet', 'Use “Assign seat” to give a participant a sponsored seat.', ''],
-              });
-            })()}`,
-            B(ic('plus', 14) + 'Assign seat', 'seatAssign', { sp: sp.id }, 'btn-p btn-sm'),
-            'bill-pool',
-          ),
-        )
-        .join('') +
-      (r === 'O'
-        ? card(
-            'Request an institution-specific package',
-            'Products and prices are set by the Finance Owner.',
-            `<form data-f="pkg" class="col fgap" novalidate>${fi('pkg', 'seats', 'Seats needed', { type: 'number', req: true, min: 1 })}${fi('pkg', 'note', 'Requirements', { type: 'textarea', rows: 3, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send request</button></div></form>`,
-          )
-        : card(
-            'Sponsor more seats or donate',
-            '',
-            `<div class="row wrap">${B('Buy a seat pool (invoice)', 'checkout', { id: 'pd5' })}${B('Donate', 'checkout', { id: 'pd6' })}</div><p class="cap bill-note">A donation grants no entitlement. Sponsors receive only authorised aggregate reporting.</p>`,
-          )) +
-      card(
-        'Transactions',
-        'Read-only',
-        dataView('bill:tx', {
-      label: 'transactions',
-      items: S.payments.filter(p => p.pid === myId()),
-      search: p => p.id + ' ' + (byId('products', p.product)?.name || p.product) + ' ' + p.state,
-      quick: { label: 'Status', options: [...new Set(S.payments.filter(p => p.pid === myId()).map(p => p.state))].map(v => [v, v]), test: (p, v) => p.state === v },
-      sorts: [['new', 'Newest first', (a, b) => String(b.at).localeCompare(String(a.at))], ['old', 'Oldest first', (a, b) => String(a.at).localeCompare(String(b.at))]],
-      layout: 'table',
-      dense: true,
-      columns: [
-        { label: 'Reference', cell: p => `<span class="mono">${h(p.id)}</span>` },
-        { label: 'Product', cell: p => h(byId('products', p.product)?.name || p.product) },
-        { label: 'State', cell: p => pill(p.state) },
-        { label: 'Date', sort: 'new', cell: p => fmt(p.at) },
-      ],
-      empty: ['inbox', 'No transactions yet', 'Payments, refunds and cancellations appear here once the provider confirms them.', ''],
-    }),
-      );
-  }
   if (t.cur === 'products')
     body = card(
       'Product catalogue',
-      'Finance Owner approves and releases; Programme Administrator drafts. Pricing policy is set by Finance.',
+      'Finance Owner approves and releases; Organization Admin drafts. Pricing policy is set by Finance.',
       dataView('bill:products', {
         label: 'products',
         items: S.products,
@@ -1067,7 +995,7 @@ A.poolNew = () => {
   modal(
     'Create seat pool',
     () =>
-      `<form data-f="pool" class="col fgap" novalidate>${fi('pool', 'sponsor', 'Sponsor / institution contact', { type: 'select', req: true, opts: S.assign.filter(a => a.ctx === ctxId() && ['S', 'O'].includes(roleBase(a.role))).map(a => [a.pid, P(a.pid).name]) })}${fi('pool', 'total', 'Seats', { type: 'number', req: true, min: 1 })}${fi('pool', 'until', 'Valid until', { type: 'date', req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Create</button></div></form>`,
+      `<form data-f="pool" class="col fgap" novalidate>${fi('pool', 'sponsor', 'Sponsor / institution contact', { type: 'select', req: true, opts: S.assign.filter(a => a.ctx === ctxId() && ['S', 'A'].includes(roleBase(a.role))).map(a => [a.pid, P(a.pid).name]) })}${fi('pool', 'total', 'Seats', { type: 'number', req: true, min: 1 })}${fi('pool', 'until', 'Valid until', { type: 'date', req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Create</button></div></form>`,
   );
 };
 F.pool = d => {

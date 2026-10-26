@@ -67,7 +67,7 @@ route('opportunities', 'opportunities', () => {
     head(
       'Opportunities',
       'Needs, assets, offers and opportunities. The owner decides who can discover each card. No paid ranking.',
-      ['P', 'C', 'O'].includes(r) ? B(ic('plus', 16) + 'New card', 'go', { r: 'newcard' }, 'btn-p') : '',
+      ['P', 'C', 'A'].includes(r) ? B(ic('plus', 16) + 'New card', 'go', { r: 'newcard' }, 'btn-p') : '',
     ) +
     t.html +
     card(t.cur === 'mine' ? 'Your cards' : 'Cards you can discover', '', dataView('opps:' + t.cur, {
@@ -94,7 +94,7 @@ route('opportunities', 'opportunities', () => {
         badges: oppKind(c.kind) + pill(c.status),
         primary: L('Open', 'card', { id: c.id }, 'btn btn-s btn-sm'),
       }),
-      empty: t.cur === 'mine' ? ['megaphone', 'No cards yet', 'Publish a need, asset, offer or opportunity with an audience and expiry.', ['P', 'C', 'O'].includes(r) ? B(ic('plus', 16) + 'New card', 'go', { r: 'newcard' }, 'btn-p btn-sm') : ''] : ['megaphone', 'No cards match these filters.', ''],
+      empty: t.cur === 'mine' ? ['megaphone', 'No cards yet', 'Publish a need, asset, offer or opportunity with an audience and expiry.', ['P', 'C', 'A'].includes(r) ? B(ic('plus', 16) + 'New card', 'go', { r: 'newcard' }, 'btn-p btn-sm') : ''] : ['megaphone', 'No cards match these filters.', ''],
     }))
   );
 });
@@ -451,7 +451,7 @@ route('matches', 'matching', () => {
     ) + rbList()
   );
 });
-// Route B records the person is part of (all of them for the Programme Administrator), for audit and follow-up.
+// Route B records the person is part of (all of them for the Organization Admin), for audit and follow-up.
 function rbList() {
   const r = role();
   const rows = S.cards.flatMap(c => (c.proposals || []).filter(pp => (pp.ctx || c.ctx) === ctxId() && (r === 'A' || pp.from === myId() || pp.to === myId())).map(pp => [c, pp]));
@@ -819,7 +819,7 @@ A.collabFind = d => {
         req.trim()
           ? cands.length
             ? `<fieldset class="np-fs col"><legend class="lbl">Potential collaborators — rule-identified, not ranked by a score</legend><div class="col opp-cands">${cands.map(c => `<label class="choice np-choice opp-cand ${fv('colf', 'pid') === c.a.pid ? 'sel' : ''}"><input type="radio" name="pid" value="${c.a.pid}" ${fv('colf', 'pid') === c.a.pid ? 'checked' : ''} data-ch="colfPick"><span class="rad" aria-hidden="true"></span><span class="col np-ct"><b>${nm(c.a.pid)} · ${h(c.org.name || 'No organization')}</b><span class="cap">${c.hits.length ? 'Why suggested: ' + c.hits.map(([k]) => h(k)).join(', ') : 'No direct match in records held in PHOENIX — include only if you know this partner can help.'}</span>${c.blockers.length ? `<span class="cap opp-block">Do not introduce yet: ${c.blockers.map(h).join('; ')}</span>` : ''}</span></label>`).join('')}</div></fieldset>`
-            : banner('info', 'No collaborators in this programme yet', 'Ask the Programme Administrator or Organization Representative to invite a partner (D-05).')
+            : banner('info', 'No collaborators in this programme yet', 'Ask the Organization Admin to invite a partner (D-05).')
           : ''
       }<div class="actions"><span></span><button class="btn btn-p" type="submit" ${cands.length ? '' : 'disabled'}>Draft Match Brief</button></div></form>`,
   );

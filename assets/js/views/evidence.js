@@ -137,11 +137,11 @@ route('evidence', 'evidence', () => {
   if (UI.p.id) {
     const e = byId('evidence', UI.p.id);
     if (!e) return empty('award', 'Not found', '');
-    if (['S', 'O'].includes(r)) return deniedView('evidence');
+    if (r === 'S') return deniedView('evidence');
     if (!evVisible(e)) return deniedView('evidence');
     return evDetail(e);
   }
-  if (['S', 'O'].includes(r)) {
+  if (r === 'S') {
     // Only evidence cleared for this audience by a separate release decision; never every approved record.
     const aud = r === 'S' ? 'Funder report' : 'Organisation report';
     const ap = evReleasedTo(aud);
@@ -312,7 +312,7 @@ function evReleaseCard(e, rr) {
   );
 }
 function evCommentsCard(e) {
-  const can_ = evVisible(e) && !['S', 'O'].includes(role()) && e.lifecycle === 'Active';
+  const can_ = evVisible(e) && role() !== 'S' && e.lifecycle === 'Active';
   const list = (e.comments || []).map(c => `<li class="tl"><span class="cap">${nm(c.by)} · ${fmt(c.at)}</span><p style="white-space:pre-line">${h(c.t)}</p></li>`).join('');
   return card(
     'Evidence comments',
@@ -885,7 +885,7 @@ route('repository', 'repository', () => {
       x.owner === myId() ||
       x.linked.some(l => {
         const o = byId('circles', l) || byId('rooms', l) || byId('ropes', l);
-        return o && (memberOf(o) || r === 'O');
+        return o && (memberOf(o) || r === 'A');
       }),
   );
   const plain = s => String(s).replace(/<[^>]+>/g, '');
@@ -894,7 +894,7 @@ route('repository', 'repository', () => {
     head(
       'Records repository',
       'Meeting notes, transcripts, approved chat exports, decisions and documents — with consent, sensitivity, visibility and retention.',
-      r !== 'O' ? B(ic('upload', 16) + 'Upload record', 'repoUp', {}, 'btn-p') : '',
+      B(ic('upload', 16) + 'Upload record', 'repoUp', {}, 'btn-p'),
     ) +
     (r === 'A'
       ? `<div class="repo-store" role="status">${ic('archive', 18)}<div class="grow"><div class="bt">Storage</div><p class="cap">${used.toFixed(1)} MB used of the 50 GB quota (${((used / 51200) * 100).toFixed(2)}%). Warning at 80%.</p></div><div class="progress repo-meter" aria-hidden="true"><span class="bar" style="width:${Math.max(1, Math.min(100, (used / 51200) * 100))}%"></span></div></div>`
@@ -948,7 +948,7 @@ A.repoView = d => {
           'Versions',
           (x.versions || [{ ver: 1, note: 'Original' }]).map(v => 'v' + v.ver + ' ' + h(v.note)).join(' · '),
         ],
-      ])}${aiBlock ? banner('warn', 'AI extraction and broader sharing blocked', 'Recording consent is missing for at least one participant.') : ''}<div class="row wrap repo-acts">${B(ic('download', 14) + 'Export with metadata', 'repoExport', { id: x.id })}${can_ ? B('Upload corrected version', 'repoCorrect', { id: x.id }) : ''}${can_ && x.state !== 'Deletion requested' ? CB(ic('trash', 14) + 'Request deletion', 'repoDel', { id: x.id }, 'Request deletion of this record? A Programme Administrator approves it; the audit entry is preserved.') : ''}${role() === 'A' && x.state === 'Deletion requested' ? B('Approve deletion', 'repoDelOk', { id: x.id }, 'btn-d btn-sm') : ''}</div>`,
+      ])}${aiBlock ? banner('warn', 'AI extraction and broader sharing blocked', 'Recording consent is missing for at least one participant.') : ''}<div class="row wrap repo-acts">${B(ic('download', 14) + 'Export with metadata', 'repoExport', { id: x.id })}${can_ ? B('Upload corrected version', 'repoCorrect', { id: x.id }) : ''}${can_ && x.state !== 'Deletion requested' ? CB(ic('trash', 14) + 'Request deletion', 'repoDel', { id: x.id }, 'Request deletion of this record? An Organization Admin approves it; the audit entry is preserved.') : ''}${role() === 'A' && x.state === 'Deletion requested' ? B('Approve deletion', 'repoDelOk', { id: x.id }, 'btn-d btn-sm') : ''}</div>`,
   );
 };
 A.repoExport = d => {
@@ -1071,15 +1071,14 @@ route('harvests', 'harvest', () => {
     return (
       (r === 'A' && !rope) ||
       (o && (memberOf(o) || (r === 'F' && !rope))) ||
-      x.personal === myId() ||
-      (r === 'O' && (x.cleared || []).some(c => c.aud === 'Organisation report'))
+      x.personal === myId()
     );
   });
   return (
     head(
       'Learning Harvests',
       'Source records → optional AI draft / advisory → human review and edits → a person approves or rejects → a separate release decision. Previous versions are kept.',
-      r !== 'S' && r !== 'O' ? B(ic('plus', 16) + 'Start a Harvest', 'newHarvest', {}, 'btn-p') : '',
+      r !== 'S' ? B(ic('plus', 16) + 'Start a Harvest', 'newHarvest', {}, 'btn-p') : '',
     ) +
     card('Your Learning Harvests', '', dataView('harvests', {
       label: 'Harvests',
@@ -1191,7 +1190,7 @@ route('harvest', 'harvest', () => {
   const r = role();
   const o = byId('circles', x.scope) || byId('rooms', x.scope) || byId('ropes', x.scope);
   const mem = o ? memberOf(o) : x.personal === myId();
-  if (r === 'S' || (r === 'O' && !(x.cleared || []).some(c => c.aud === 'Organisation report'))) return deniedView('harvest');
+  if (r === 'S') return deniedView('harvest');
   // a Rope Team's Harvest is ROPE_TEAM_ONLY until released: members only, whatever the platform role
   const rope = !!byId('ropes', x.scope);
   if (rope && !mem && x.state !== 'Released') return deniedView('harvest');
@@ -1334,7 +1333,7 @@ A.rbDecide = d => {
   if (
     d.v === 'Accepted' &&
     !canCreateRoom() &&
-    !['F', 'C', 'O', 'A'].includes((S.assign.find(a => a.pid === pp.from && a.ctx === c.ctx) || {}).role)
+    !['F', 'C', 'A'].includes((S.assign.find(a => a.pid === pp.from && a.ctx === c.ctx) || {}).role)
   )
     S.assign
       .filter(a => a.ctx === c.ctx && roleBase(a.role) === 'F')
