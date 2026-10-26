@@ -108,6 +108,7 @@ function chatPreview(o) {
   if (m.sys) return h(m.t);
   const who = m.by === myId() ? 'You' : h(cvDisp(o, m.by));
   const a = attOf(m);
+  if (m.poll) return `${who}: ${ic('vote', 12)} Poll: ${h(m.t)}`;
   return `${who}: ${a && !m.t ? ic(IMG_RE.test(a.n) ? 'image' : 'clip', 12) + ' ' + h(a.n) : h(m.t)}`;
 }
 // ---- conversation list (left pane)
@@ -220,11 +221,12 @@ function chatThread(kind, o, opts = {}) {
       const toolBtns = tools
         ? (!mine ? B(ic('reply', 15), 'msgReply', { c: o.id, k: kind, id: m.id }, 'mtool', 'aria-label="Reply" title="Reply"') : '') +
           (m.q && !m.ans && (mine || acc.mod) ? B(ic('check', 15), 'msgAns', { c: o.id, k: kind, id: m.id }, 'mtool', 'aria-label="Mark answered" title="Mark answered"') : '') +
+          (m.poll && !m.poll.closed && (mine || acc.mod) ? B(ic('lock', 15), 'chatPollClose', { c: o.id, k: kind, id: m.id }, 'mtool', 'aria-label="Close poll" title="Close poll"') : '') +
           (acc.mod && !mine ? B(ic('eye', 15), 'msgHide', { c: o.id, k: kind, id: m.id }, 'mtool', 'aria-label="Hide message" title="Hide message (moderation)"') : '')
         : '';
       return (
         out +
-        `<div class="mrow ${mine ? 'mine' : ''} ${grouped ? 'grp' : ''}" id="msg-${m.id}">${!mine ? (grouped ? '<span class="mav-sp"></span>' : `<span class="av" title="${cvNm(o, m.by)}">${cvIni(o, m.by)}</span>`) : ''}<div class="mcol">${!mine && !grouped ? `<div class="mwho">${cvNm(o, m.by)}<span class="cap"> · ${h(roleIn(o, m.by))}</span></div>` : ''}<div class="mbub bubble ${mine ? 'me' : ''} ${m.hidden ? 'hid' : ''} ${m.q && !m.hidden ? 'q' : ''}">${rp ? `<a href="#msg-${rp.id}" class="mquote"><b>${rp.by ? cvNm(o, rp.by) : 'System'}</b><span>${h((rp.t || attOf(rp)?.n || '').slice(0, 90))}</span></a>` : ''}${m.q && !m.hidden ? `<div class="mqtag">${ic('question', 13)}${m.ans ? 'Question · answered' : 'Open question'}</div>` : ''}${m.hidden ? `<i>${h(m.t)}</i>` : m.t ? `<div class="mtext">${h(m.t).replace(/\n/g, '<br>')}</div>` : ''}${a && !m.hidden ? attCard(a, mine) : ''}<div class="mmeta">${tm(m.at)}${mine ? `<span class="mtick ${allSeen ? 'seen' : ''}" title="${seen.length ? 'Seen by ' + h(seen.join(', ')) : 'Sent'}">${ic(seen.length ? 'checks' : 'check', 14)}</span>` : ''}</div></div></div>${toolBtns ? `<div class="mtools">${toolBtns}</div>` : ''}</div>`
+        `<div class="mrow ${mine ? 'mine' : ''} ${grouped ? 'grp' : ''}" id="msg-${m.id}">${!mine ? (grouped ? '<span class="mav-sp"></span>' : `<span class="av" title="${cvNm(o, m.by)}">${cvIni(o, m.by)}</span>`) : ''}<div class="mcol">${!mine && !grouped ? `<div class="mwho">${cvNm(o, m.by)}<span class="cap"> · ${h(roleIn(o, m.by))}</span></div>` : ''}<div class="mbub bubble ${mine ? 'me' : ''} ${m.hidden ? 'hid' : ''} ${m.q && !m.hidden ? 'q' : ''}">${rp ? `<a href="#msg-${rp.id}" class="mquote"><b>${rp.by ? cvNm(o, rp.by) : 'System'}</b><span>${h((rp.t || attOf(rp)?.n || '').slice(0, 90))}</span></a>` : ''}${m.q && !m.hidden ? `<div class="mqtag">${ic('question', 13)}${m.ans ? 'Question · answered' : 'Open question'}</div>` : ''}${m.hidden ? `<i>${h(m.t)}</i>` : m.poll ? chatPollHtml(kind, o, m, acc.mem && !acc.ro) : m.t ? `<div class="mtext">${h(m.t).replace(/\n/g, '<br>')}</div>` : ''}${a && !m.hidden ? attCard(a, mine) : ''}<div class="mmeta">${tm(m.at)}${mine ? `<span class="mtick ${allSeen ? 'seen' : ''}" title="${seen.length ? 'Seen by ' + h(seen.join(', ')) : 'Sent'}">${ic(seen.length ? 'checks' : 'check', 14)}</span>` : ''}</div></div></div>${toolBtns ? `<div class="mtools">${toolBtns}</div>` : ''}</div>`
       );
     })
     .join('');
@@ -248,7 +250,7 @@ function chatThread(kind, o, opts = {}) {
     acc.ro
       ? `<div class="mro">${ic('lock', 16)}<span>${h(acc.ro)}</span></div>`
       : `<form data-f="chat" class="composer ${asQ ? 'asq' : ''}" novalidate><input type="hidden" name="c" value="${o.id}"><input type="hidden" name="kind" value="${kind}">${reply ? `<div class="mreplying">${ic('reply', 14)}<div class="mreplying-t"><b>Replying to ${reply.by ? cvNm(o, reply.by) : 'system'}</b><span class="cap mprev">${h((reply.t || attOf(reply)?.n || '').slice(0, 90))}</span></div>${B(ic('x', 14), 'msgReplyX', {}, 'mtool', 'aria-label="Cancel reply"')}</div>` : ''}<div class="mpend" hidden>${ic('clip', 14)}<span class="fname"></span>${B(ic('x', 14), 'clearFile', {}, 'mtool', 'aria-label="Remove attachment"')}</div>
-  <div class="mcomp"><label class="iconbtn mattach" title="Attach a file (up to ${S.settings.maxFileMB} MB)">${ic('clip')}<input type="file" name="f" data-chatfile="1" aria-label="Attach a file" class="sr"></label><textarea name="t" rows="1" class="mta" placeholder="Write a message" aria-label="Message" data-draft="${o.id}">${h(draft)}</textarea><button type="button" class="iconbtn mqbtn ${asQ ? 'on' : ''}" data-a="chatAsQ" data-id="${o.id}" aria-pressed="${asQ}" title="Send as a question">${ic('question')}</button><button class="btn btn-p msend" type="submit" aria-label="Send message" title="Send (Enter)">${ic('send', 18)}</button></div>
+  <div class="mcomp"><label class="iconbtn mattach" title="Attach a file (up to ${S.settings.maxFileMB} MB)">${ic('clip')}<input type="file" name="f" data-chatfile="1" aria-label="Attach a file" class="sr"></label><textarea name="t" rows="1" class="mta" placeholder="Write a message" aria-label="Message" data-draft="${o.id}">${h(draft)}</textarea><button type="button" class="iconbtn mpollbtn" data-a="chatPoll" data-c="${o.id}" data-k="${kind}" aria-label="Create poll" title="Create poll">${ic('vote')}</button><button type="button" class="iconbtn mqbtn ${asQ ? 'on' : ''}" data-a="chatAsQ" data-id="${o.id}" aria-pressed="${asQ}" title="Send as a question">${ic('question')}</button><button class="btn btn-p msend" type="submit" aria-label="Send message" title="Send (Enter)">${ic('send', 18)}</button></div>
   <div class="mhelp">${asQ ? '<b>Sending as a question.</b> ' : ''}Enter to send · Shift+Enter for a new line · files up to ${S.settings.maxFileMB} MB, video by link · members only</div></form>`
   }</section>`;
 }
@@ -427,6 +429,13 @@ F.chat = (d, form) => {
   UI.chat.asQ = null;
   if (UI.chat.drafts) delete UI.chat.drafts[o.id];
   markRead(o);
+  chatNotify(o, d.kind, text || (m.att && m.att.n) || '');
+  audit('Chat message', o.id, (m.att ? 'with attachment' : '') + (m.q ? ' · question' : ''));
+  ok();
+  focusComposer();
+};
+// Tells the other active members; unread messages in one conversation fold into a single notification.
+function chatNotify(o, kind, preview) {
   o.members
     .filter(x => x.pid !== myId() && (!x.status || x.status === 'Active'))
     .forEach(x => {
@@ -436,13 +445,97 @@ F.chat = (d, form) => {
         ex.t = `${ex.cnt} new messages in ${o.name}`;
         ex.at = today();
       } else {
-        notify(x.pid, `${o.alias && myId() === o.sponsor ? o.alias : me().display} in ${o.name}: ${(text || (m.att && m.att.n) || '').slice(0, 60)}`, 'messages', { c: o.id, k: d.kind });
+        notify(x.pid, `${o.alias && myId() === o.sponsor ? o.alias : me().display} in ${o.name}: ${preview.slice(0, 60)}`, 'messages', { c: o.id, k: kind });
         S.notifs[0].chat = o.id;
       }
     });
-  audit('Chat message', o.id, (m.att ? 'with attachment' : '') + (m.q ? ' · question' : ''));
+}
+// ---- chat polls: a quick show of hands inside any space conversation. Not a governed decision: Circle decisions
+// keep their own polls (eligible voters, quorum, audit trail). Members can see who chose each option.
+const CHAT_POLL_MAX = 6;
+function chatPollHtml(kind, o, m, canVote) {
+  const p = m.poll;
+  const votes = p.votes || {};
+  const who = Object.keys(votes).filter(pid => votes[pid].length);
+  const n = who.length;
+  const my = votes[myId()] || [];
+  const live = !p.closed && canVote;
+  const opts = p.opts
+    .map((t, i) => {
+      const vs = who.filter(pid => votes[pid].includes(i));
+      const pct = n ? Math.round((vs.length / n) * 100) : 0;
+      const on = my.includes(i);
+      const names = vs.map(pid => cvDisp(o, pid)).join(', ') || 'No votes yet';
+      const inner = `<span class="mpoll-bar" style="width:${pct}%" aria-hidden="true"></span><span class="mpoll-l"><span class="mpoll-mk" aria-hidden="true">${on ? ic('check', 12) : ''}</span><span>${h(t)}</span></span><span class="mpoll-n">${vs.length}<span class="sr"> vote${vs.length === 1 ? '' : 's'}</span></span>`;
+      return live
+        ? `<button type="button" class="mpoll-o ${on ? 'on' : ''}" data-a="chatPollVote" data-c="${o.id}" data-k="${kind}" data-id="${m.id}" data-i="${i}" aria-pressed="${on}" title="${h(names)}">${inner}</button>`
+        : `<div class="mpoll-o ${on ? 'on' : ''}" title="${h(names)}">${inner}</div>`;
+    })
+    .join('');
+  return `<div class="mpolltag">${ic('vote', 13)}${p.closed ? 'Poll closed' : 'Poll'} · ${p.multi ? 'choose any' : 'choose one'}</div><div class="mtext mpoll-q">${h(m.t)}</div><div class="mpoll" role="group" aria-label="${h(m.t)}">${opts}</div><div class="mpoll-f">${n} ${n === 1 ? 'person' : 'people'} voted${live ? ' · select again to change your vote' : ''}</div>`;
+}
+const chatPollMsg = d => {
+  const o = byId(d.k, d.c);
+  const m = o && (o.chat || []).find(x => x.id === d.id);
+  return [o, m && m.poll && !m.hidden ? m : null];
+};
+A.chatPoll = d => {
+  saveDraft();
+  clearF('cpoll');
+  const o = byId(d.k, d.c);
+  if (!o) return;
+  modal(
+    'Create poll',
+    () => `${errSum('cpoll')}<form data-f="cpoll" class="col" style="gap:12px" novalidate><input type="hidden" name="c" value="${o.id}"><input type="hidden" name="kind" value="${d.k}">
+    ${fi('cpoll', 'q', 'Question', { req: true, ph: 'e.g. Which day works for the site visit?' })}
+    ${Array.from({ length: CHAT_POLL_MAX }, (_, i) => fi('cpoll', 'o' + (i + 1), 'Option ' + (i + 1), { req: i < 2, help: i === 2 ? 'Options 3 to ' + CHAT_POLL_MAX + ' are optional.' : '' })).join('')}
+    ${fi('cpoll', 'multi', 'Allow people to choose more than one option', { type: 'checkbox' })}
+    ${banner('info', '', 'Posted in ' + h(o.name) + '. Members can see who chose each option. This is a quick poll, not a formal decision vote.')}
+    <div class="actions">${B('Cancel', 'closeM')}<button class="btn btn-p" type="submit">${ic('vote', 16)}Post poll</button></div></form>`,
+  );
+};
+F.cpoll = d => {
+  const filled = Array.from({ length: CHAT_POLL_MAX }, (_, i) => (d['o' + (i + 1)] || '').trim()).filter(Boolean);
+  const dup = filled.some((t, i) => filled.findIndex(x => x.toLowerCase() === t.toLowerCase()) !== i);
+  if (
+    !validate('cpoll', d, {
+      q: ['req'],
+      o1: [['req', 'Enter at least two options.']],
+      o2: [['req', 'Enter at least two options.'], ['fn', { f: () => !dup, m: 'Each option must be different.' }]],
+    })
+  )
+    return render();
+  const o = byId(d.kind, d.c);
+  const q = d.q.trim();
+  o.chat.push({ id: uid('m'), by: myId(), at: now(), t: q, poll: { opts: filled, multi: d.multi === 'yes', votes: {} } });
+  UI.modal = null;
+  clearF('cpoll');
+  markRead(o);
+  chatNotify(o, d.kind, 'Poll: ' + q);
+  audit('Chat poll created', o.id, q + ' · ' + filled.length + ' options');
+  toast('Poll posted.');
   ok();
-  focusComposer();
+};
+A.chatPollVote = d => {
+  const [o, m] = chatPollMsg(d);
+  if (!m || m.poll.closed) return render();
+  const i = +d.i;
+  const votes = (m.poll.votes = m.poll.votes || {});
+  const cur = votes[myId()] || [];
+  const next = cur.includes(i) ? cur.filter(x => x !== i) : m.poll.multi ? [...cur, i].sort() : [i];
+  if (next.length) votes[myId()] = next;
+  else delete votes[myId()];
+  audit('Chat poll vote', o.id, m.id + (next.length ? ' · ' + next.map(x => m.poll.opts[x]).join(', ') : ' · withdrawn'));
+  ok();
+};
+A.chatPollClose = d => {
+  const [o, m] = chatPollMsg(d);
+  if (!m) return render();
+  m.poll.closed = true;
+  sysMsg(o, 'Poll closed by ' + me().display + ': “' + m.t + '”');
+  audit('Chat poll closed', o.id, m.id);
+  toast('Poll closed. Results stay visible.');
+  ok();
 };
 // Posting in a pathway conversation: same rules as the pathway dialog (CONVO.pathway), plus an optional file.
 F.pwchat = (d, form) => {

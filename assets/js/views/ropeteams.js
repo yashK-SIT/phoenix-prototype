@@ -755,6 +755,7 @@ route("rope", "ropeteams", () => {
       d.mb != null ? d.mb + " MB" : "—",
       nm(d.by),
       fmt(d.at),
+      docShareBtnFor(d),
     ];
     const lc = linkedObjs(x.id, "circles").filter((c) =>
       canOpenSpace("circles", c),
@@ -770,7 +771,7 @@ route("rope", "ropeteams", () => {
           : "") +
         ".",
       table(
-        ["Document", "Size", "Uploaded by", "Date"],
+        ["Document", "Size", "Uploaded by", "Date", ""],
         own.map(row),
         "No documents yet.",
       ),

@@ -994,6 +994,42 @@ Object.assign(G, {
       "only the person who asked, or a moderator, can mark it answered"
     );
   },
+  // chat polls: contributing members of an active space open polls and vote; the opener or a moderator closes one
+  chatPoll: (d) => {
+    const o = byId(d.k, d.c);
+    return (
+      (o && memberOf(o) && o.state === "Active" && sCan(d.k, o, "post")) ||
+      "you can open a poll only as a contributing member of an active space"
+    );
+  },
+  cpoll: (d) => {
+    const o = byId(d.kind, d.c);
+    return (
+      (o && memberOf(o) && o.state === "Active" && sCan(d.kind, o, "post")) ||
+      "you can open a poll only as a contributing member of an active space"
+    );
+  },
+  chatPollVote: (d) => {
+    const o = byId(d.k, d.c);
+    const m = o && (o.chat || []).find((x) => x.id === d.id);
+    return (
+      (m &&
+        m.poll &&
+        !m.poll.closed &&
+        memberOf(o) &&
+        o.state === "Active" &&
+        sCan(d.k, o, "post")) ||
+      "you can vote only as a contributing member while the poll is open"
+    );
+  },
+  chatPollClose: (d) => {
+    const o = byId(d.k, d.c);
+    const m = o && (o.chat || []).find((x) => x.id === d.id);
+    return (
+      (m && m.poll && memberOf(o) && (m.by === myId() || sCan(d.k, o, "moderate"))) ||
+      "only the person who opened the poll, or a moderator, can close it"
+    );
+  },
   // rope teams
   checkin: (d) =>
     sCan("ropes", byId("ropes", d.id), "mentor") ||
@@ -1640,6 +1676,16 @@ Object.assign(G, {
     const p = byId("projects", d.id);
     const x = docCanOpen(p) && docFind(p, d.k);
     return (x && docSees(p, x)) || "this file is Private to its space";
+  },
+  docShare: (d) => {
+    const p = byId("projects", d.id);
+    const x = docCanOpen(p) && docFind(p, d.k);
+    return (x && docShareable(p, x)) || "only Public files you can open can be shared by link";
+  },
+  docCopyLink: (d) => {
+    const p = byId("projects", d.id);
+    const x = docCanOpen(p) && docFind(p, d.k);
+    return (x && docShareable(p, x)) || "only Public files you can open can be shared by link";
   },
   docVis: (d) => {
     const p = byId("projects", d.id);

@@ -566,6 +566,8 @@ route('circle', 'circles', () => {
           lead: `<span class="tile t-soft" aria-hidden="true">${ic('file', 16)}</span>`,
           title: `<b>${h(x.n)}</b>`,
           meta: [x.mb != null ? x.mb + ' MB' : '—', 'Uploaded by ' + nm(x.by), fmt(x.at)],
+          badges: x.docVis === 'Public' ? docVisPill('Public') : '',
+          primary: docShareBtnFor(x),
         }),
         empty: ['file', 'No documents yet.', '', ''],
       }),

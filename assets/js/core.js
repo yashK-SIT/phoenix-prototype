@@ -1894,6 +1894,8 @@ function boot() {
     UI.p = { pack: new URLSearchParams(ap[1]).get("pack") || "", lock: 1 };
   }
   render();
+  // A document Share link (#doc?p=<project>&k=<file>) opens once signed in; until then it waits in the address bar.
+  docLinkOpen();
 }
 
 // ---------- Nested workspace navigation (Circles, Rope Teams, Action Workspaces) ----------

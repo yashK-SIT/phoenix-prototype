@@ -224,7 +224,7 @@ function rfFlows() {
           [
             rfA(
               "Answer the six Purpose Compass questions",
-              "Short reflective questions inspired by IKIGAI. You can save and finish later.",
+              "Short reflective questions inspired by IKIGAI.",
             ),
             rfY(
               "Never scored",

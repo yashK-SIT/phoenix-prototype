@@ -335,13 +335,12 @@ function ONB() {
       return ONB();
     }
     const f = 'agr';
-    body = `${UI.p.notnow ? banner('info', 'You can come back to this later', 'Access starts once you accept. Until then this is the only screen available.') : ''}
-  <div class="col onb-h"><p class="over">Step 2 of ${steps.length}</p><h1 class="h1">Review your agreement</h1><p class="sub">This agreement applies to your role in ${h(ctxName(a.ctx))}. Optional uses of your information are separate choices on the next step.</p></div>
+    body = `<div class="col onb-h"><p class="over">Step 2 of ${steps.length}</p><h1 class="h1">Review your agreement</h1><p class="sub">This agreement applies to your role in ${h(ctxName(a.ctx))}. Optional uses of your information are separate choices on the next step.</p></div>
   <section class="card col onb-card"><div class="kv onb-meta"><div class="col"><span class="cap">Agreement</span><b>${h(g.type)}</b></div><div class="col"><span class="cap">Version</span><b>v${g.ver}</b></div><div class="col"><span class="cap">Effective</span><b>${fmt(g.effective)}</b></div></div>
   <div class="scrollbox" tabindex="0" aria-label="Agreement text"><div class="col onb-pol">${polBody(g)}<p class="cap">Published by the Trust/Data Steward for this programme.</p></div></div>
   <div class="row wrap onb-tools">${B(ic('download', 16) + 'Download policy', 'polDownload', { id: g.id })}</div>
   <form data-f="agr" class="col onb-agr" id="agrf" novalidate>${fi(f, 'a1', `I have read and accept <b>${h(g.type)} v${g.ver}</b>.`, { type: 'checkbox', req: true })}${fi(f, 'a2', 'I accept the PHOENIX service terms.', { type: 'checkbox', req: true })}<input type="hidden" name="g" value="${g.id}"><span class="help">A dated receipt of your acceptance is stored in Privacy & agreements.</span>
-  <div class="actions">${B('Not now', 'agrNotNow', {}, 'btn-s')}<button class="btn btn-p" type="submit">Accept and continue</button></div></form></section>`;
+  <div class="actions"><button class="btn btn-p" type="submit">Accept and continue</button></div></form></section>`;
   } else if (cur === 3) {
     const f = 'prof';
     const pr = S.profiles[myId()] || {};
@@ -376,7 +375,7 @@ function ONB() {
   ${set.q.map(q => blField(f, q, ans)).join('')}
   ${st === 0 ? `<div class="col onb-have"><span class="lbl">Already in your profile</span>${dl([['Interests', h(claimVals(myId(), 'Interests') || '—')], ['Role assignments', `<div class="col onb-roles">${blRoles(myId())}</div>`]])}<span class="help">Role assignments and their expiry are set by your administrator.</span></div>` : ''}
   ${st === n - 1 ? banner('ok', '', 'Your answers appear on My PHOENIX as “My purpose / current direction”, self-declared. Strengths, learning interests, support needs and opportunity preferences are asked later, only when they help. Change anything in Profile → Purpose Compass.') : ''}
-  <div class="actions">${st ? B(ic('chevl', 16) + 'Previous', 'pcPrev', {}, 'btn-g') : B(ic('chevl', 16) + 'Back', 'onbBack', { s: 'profile' }, 'btn-g')}<div class="row wrap">${B('Save and finish later', 'logout', {}, 'btn-s')}<button class="btn btn-p" type="submit">${st === n - 1 ? 'Finish and go to My PHOENIX' : 'Next'}</button></div></div></form>`;
+  <div class="actions">${st ? B(ic('chevl', 16) + 'Previous', 'pcPrev', {}, 'btn-g') : B(ic('chevl', 16) + 'Back', 'onbBack', { s: 'profile' }, 'btn-g')}<button class="btn btn-p" type="submit">${st === n - 1 ? 'Finish and go to My PHOENIX' : 'Next'}</button></div></form>`;
   }
   return `<div class="onb">${onbTop(cur, steps)}<main class="onb-body">${body}</main></div>`;
 }
@@ -422,11 +421,6 @@ A.polDownload = d => {
   audit('Policy downloaded', g.id, g.type + ' v' + g.ver);
   toast('Policy downloaded.');
   ok();
-};
-A.agrNotNow = () => {
-  audit('Agreement not accepted (not now)', asg().id, '');
-  UI.p = { notnow: 1 };
-  render();
 };
 A.onbBack = d => {
   const a = asg();

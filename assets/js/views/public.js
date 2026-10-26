@@ -191,6 +191,7 @@ function startSession(p, mfaDone) {
   audit("Signed in", "session", p.email);
   save();
   go("home");
+  docLinkOpen();
 }
 F.login = (d) => {
   if (!validate("login", d, { email: ["req", "email"], pw: ["req"] }))

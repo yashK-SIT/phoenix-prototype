@@ -749,13 +749,15 @@ function docFilesView(p, list, k, withFolder) {
           (d.lock
             ? `<span class="doc-lock" title="${h(d.lock)}" aria-label="${h(d.lock)}">${ic("lock", 14)}</span>`
             : ""),
-        primary: B(
-          ic("download", 14) + '<span class="hide-sm">Download</span>',
-          "docDl",
-          { id: p.id, k: d.key },
-          "btn-s btn-sm",
-          'aria-label="Download ' + h(d.n) + '"',
-        ),
+        primary:
+          docShareBtn(p, d) +
+          B(
+            ic("download", 14) + '<span class="hide-sm">Download</span>',
+            "docDl",
+            { id: p.id, k: d.key },
+            "btn-s btn-sm",
+            'aria-label="Download ' + h(d.n) + '"',
+          ),
         menu: sw,
       };
     },
@@ -1093,6 +1095,101 @@ A.docVis = (d) => {
   toast("“" + x.n + "” is now " + d.v + ".");
   ok();
 };
+
+// ---- share links
+// A Public file gets a link to it. The link grants nothing by itself: the person signs in and must still be able to
+// see the file under its normal rules. A missing, Private or hidden file gives the same "not available" answer.
+const docShareUrl = (p, d) =>
+  location.href.split("#")[0] +
+  "#doc?p=" +
+  encodeURIComponent(p.id) +
+  "&k=" +
+  encodeURIComponent(d.key);
+const docShareable = (p, d) =>
+  !!p &&
+  !!d &&
+  !d.lock &&
+  docCanOpen(p) &&
+  docVisOf(d) === "Public" &&
+  docSees(p, d);
+const docShareBtn = (p, d) =>
+  docShareable(p, d)
+    ? B(
+        ic("link", 14) + '<span class="hide-sm">Share link</span>',
+        "docShare",
+        { id: p.id, k: d.key },
+        "btn-s btn-sm",
+        'aria-label="Share link to ' + h(d.n) + '"',
+      )
+    : "";
+// Circle and Rope Team Documents tabs list their own upload records; find that record's row in its project.
+function docShareBtnFor(rec) {
+  for (const p of S.projects || []) {
+    const d = docIndex(p).find((x) => x.h === rec);
+    if (d) return docShareBtn(p, d);
+  }
+  return "";
+}
+const docShareWho = (p, d) =>
+  d.f === "rope"
+    ? "Members of this Rope Team"
+    : projVis(p) === "Public"
+      ? "Everyone in " + ctxName(p.ctx) + " who can open Documents"
+      : "The project team";
+A.docShare = (d) => {
+  const p = byId("projects", d.id);
+  const x = docFind(p, d.k);
+  if (!docShareable(p, x))
+    return toast("Only Public files can be shared by link.", "warn");
+  modal(
+    "Share link",
+    `<div class="col" style="gap:12px"><p>Anyone with this link who can see “${h(x.n)}” can open and download it after signing in.</p>
+    ${dl([["Can open it", h(docShareWho(p, x))], ["Visibility", docVisPill("Public")]])}
+    <div class="adm-link"><code class="adm-mono">${h(docShareUrl(p, x))}</code></div>
+    <span class="help">If the file is made Private later, the link stops working.</span>
+    <div class="actions">${B("Close", "closeM")}${B(ic("link", 14) + "Copy link", "docCopyLink", { id: p.id, k: x.key }, "btn-p")}</div></div>`,
+  );
+};
+A.docCopyLink = (d) => {
+  const p = byId("projects", d.id);
+  const x = docFind(p, d.k);
+  if (!docShareable(p, x)) return;
+  const u = docShareUrl(p, x);
+  try {
+    navigator.clipboard.writeText(u).then(
+      () => {
+        audit("Document share link copied", d.k, x.n);
+        save();
+        toast("Link copied.");
+      },
+      () => toast("Copy did not work. Select the link and copy it.", "warn"),
+    );
+  } catch (e) {
+    toast("Copy did not work. Select the link and copy it.", "warn");
+  }
+};
+// Opens a #doc?p=…&k=… link once signed in (called from boot and after sign-in).
+function docLinkOpen() {
+  const m = /^#doc\?(.*)$/.exec(location.hash);
+  if (!m || !S.session) return;
+  history.replaceState(null, "", location.href.split("#")[0]);
+  const q = new URLSearchParams(m[1]);
+  const p = byId("projects", q.get("p") || "");
+  const x = p && docFind(p, q.get("k") || "");
+  if (!docShareable(p, x))
+    return toast("This link is not available to you.", "warn");
+  go("documents", { id: p.id, f: x.f });
+  modal(
+    h(x.n),
+    `<div class="col" style="gap:12px">${dl([
+      ["Project", h(p.title)],
+      ["Where", h(docPath(p, x).join(" / "))],
+      ["Shared by", nm(x.by)],
+      ["Size", docSize(x.mb)],
+      ["Visibility", docVisPill("Public")],
+    ])}<div class="actions">${B("Close", "closeM")}${B(ic("download", 14) + "Download", "docDl", { id: p.id, k: x.key }, "btn-p")}</div></div>`,
+  );
+}
 
 // ---- downloads
 A.docDl = (d) => {
