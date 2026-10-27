@@ -37,7 +37,7 @@ function delivBlock(x, k, edit, lead) {
   const none = '<span class="cap">None</span>';
   return `<section class="tk-deliv"><h3 class="h3">Deliverable</h3>
   ${edit && lead ? fi('tke', 'req', 'Required deliverable — must be done before evidence upload and the Learning Harvest', { type: 'checkbox', value: k.opt ? '' : 'yes' }) : `<div><span class="lbl">Requirement</span>${pill(k.opt ? 'Optional' : 'Required', k.opt ? 'p-grey' : 'p-navy')}</div>`}
-  ${edit ? msel('tke', 'partners', 'Partners / contributors', people, k.partners || [], { none: 'No other active members.' }) : `<div><span class="lbl">Partners / contributors</span>${(k.partners || []).map(nm).join(', ') || none}</div>`}
+  ${edit ? msel('tke', 'partners', 'Collaborators / contributors', people, k.partners || [], { none: 'No other active members.' }) : `<div><span class="lbl">Partners / contributors</span>${(k.partners || []).map(nm).join(', ') || none}</div>`}
   <div class="field"><span class="lbl">Supporting records and evidence</span>${edit ? chkGroup('evidence', roomEvidence(x).map(e => [e.id, h(e.title) + ` <span class="cap">· ${h(e.review)}</span>`]), k.evidence || []) : kev.map(e => L(h(e.title), 'evidence', { id: e.id })).join(', ') || '<span class="cap">None attached</span>'}${x.state === 'Active' && memberOf(x) ? `<div class="tk-up">${B(ic('upload', 14) + 'Upload evidence for this deliverable', 'go', { r: 'newevidence', link: x.id, task: k.id })}</div>` : ''}</div>
   ${docFilesLine(x, k.files, { s: 'tk', it: k.id })}
   ${k.status === 'Done' ? `<div class="field"><span class="lbl">Completion</span><div class="row wrap" style="gap:8px">${pill('Completed', 'p-green')}<span class="cap">${k.doneAt ? fmt(k.doneAt) : ''}</span></div>${edit ? fi('tke', 'doneNote', 'Completion note', { type: 'textarea', rows: 2, ph: 'What was delivered, and anything others should know' }) : k.doneNote ? `<p class="muted tk-note">${h(k.doneNote)}</p>` : ''}</div>` : ''}
@@ -281,7 +281,7 @@ F.tke = d => {
   const pts = arr(d.partners),
     evs = arr(d.evidence);
   if (!same(pts, k.partners || [])) {
-    ch.push('Partners: ' + (pts.map(p => P(p).name).join(', ') || 'none'));
+    ch.push('Collaborators: ' + (pts.map(p => P(p).name).join(', ') || 'none'));
     k.partners = pts;
   }
   if (!same(evs, k.evidence || [])) {

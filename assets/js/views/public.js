@@ -2,12 +2,12 @@
 const PUB = {};
 const authWrap = (inner, wide) =>
   `<div class="auth"><aside class="auth-side"><div class="brand"><span class="mark">${MARK(22)}</span><span class="wm"><b>PHOENIX</b><span>Foundation</span></span></div><div class="col auth-story"><p class="auth-lead">From purpose to <em>collaboration</em>, action, evidence and learning.</p><p class="auth-copy">One account across every programme you take part in. You decide what is shared, with whom, and for what purpose.</p><ul class="auth-path" aria-label="Three kinds of space, entered in any order"><li class="k-circle"><span class="n">${ic("users", 14)}</span><b>Circle</b><span>Shared learning, sensemaking and decisions.</span></li><li class="k-rope"><span class="n">${ic("route", 14)}</span><b>Rope Team</b><span>Small mentoring, support and accountability.</span></li><li class="k-room"><span class="n">${ic("room", 14)}</span><b>Action Workspace</b><span>Tasks, milestones, risks and evidence.</span></li></ul><p class="auth-copy">Separate, linked spaces. Start in whichever fits; nothing is converted into anything else.</p></div><div class="col auth-notes"><div class="row">${ic("shield", 16)}<span>No personal information is public by default.</span></div><div class="row">${ic("lock", 16)}<span>AI, research, sharing, release and exchange are five separate optional choices.</span></div></div></aside><main class="auth-main"><div class="mhead"><span class="mark">${MARK(20)}</span><span class="wm"><b>PHOENIX</b><span>Foundation</span></span></div><section class="auth-card ${wide ? "wide" : ""}">${inner}</section><p class="cap auth-foot"><a href="#" class="cap" data-a="resetDemo">Reset local data</a></p></main></div>`;
-// BF-05: one clean account per baseline role plus one per specialist bundle, so every consequential action can be
+// BF-05: one clean account per baseline role (plus the Reviewer bundle), so every consequential action can be
 // shown succeeding for the authorised account and refused for a similar unauthorised one.
 const DEMO = [
-  ["p1", "a1", "Participant · Excelsior + Riverside (2 contexts)"],
+  ["p1", "a1", "Participant · Excelsior (pending tenant invitation)"],
   ["p9", "a9", "Participant · pathway in progress (every step status)"],
-  ["p3", "a3", "Mentor · Excelsior + Participant · Riverside"],
+  ["p3", "a3", "Mentor · Excelsior (pending tenant invitation)"],
   ["p13", "a13", "Facilitator / Steward (plain, no bundles)"],
   ["p2", "a2", "Facilitator / Steward + Reviewer bundle"],
   ["p4", "a4", "Collaborator"],
@@ -15,12 +15,9 @@ const DEMO = [
   ["p6", "a6", "Sponsor"],
   ["p7", "a7", "Organization Admin (plain, no bundles)"],
   ["p8", "a8", "Platform Administrator"],
-  ["p14", "a14", "Trust/Data Steward bundle"],
-  ["p15", "a15", "Finance Owner bundle"],
-  ["p16", "a16", "AI Owner bundle"],
-  ["p17", "a17", "Incident/Safety Owner bundle"],
   ["p11", "a11", "Participant — onboarding unfinished"],
   ["p12", "a12", "Organization Admin — role awaiting approval"],
+  ["p18", "a18", "Organization Admin · Women's Enterprise Network (second tenant)"],
 ];
 PUB.login = () => {
   const f = "login";
@@ -97,9 +94,10 @@ A.loginPick = (d) => {
 let fails = {};
 function startSession(p, mfaDone) {
   const list = S.assign.filter((a) => a.pid === p.id);
-  // First sign-in uses the invited context (first assignment); afterwards the last-used valid context.
+  // First sign-in uses the primary membership (the invited context); afterwards the last-used valid context.
   let a =
     (p.lastAid && list.find((x) => x.id === p.lastAid && asgUsable(x))) ||
+    list.find((x) => x.id === p.primary && asgUsable(x)) ||
     list.find((x) => asgUsable(x)) ||
     list[0];
   if (UI.pre?.mfaPid) delete UI.pre.mfaPid;
@@ -137,8 +135,6 @@ function startSession(p, mfaDone) {
         compass: roleBase(r.role) !== "P",
       },
     };
-    if (r.inv && byId("invites", r.inv)?.until)
-      na.until = byId("invites", r.inv).until;
     const piv = r.inv && byId("invites", r.inv);
     if (piv && piv.preApproved)
       na.approval = [
@@ -282,7 +278,7 @@ PUB.register = () => {
          )
          .join(
            "",
-         )}</div><p class="cap">Facilitators, Mentors, Partners and Organization Admins join by invitation only.</p></fieldset>`
+         )}</div><p class="cap">Facilitators, Mentors, Collaborators and Organization Admins join by invitation only.</p></fieldset>`
  }
  <div class="f2">${fi(f, "name", "Full name", { req: true, auto: "name" })}${fi(f, "display", "Display name", { req: true })}</div>
  <div class="f2">${inv ? fi(f, "email", "Email address", { value: inv.email, ro: true, help: "From your invitation" }) : fi(f, "email", "Email address", { type: "email", req: true, auto: "email" })}</div>
@@ -371,7 +367,6 @@ F.reg = (d) => {
       profile: false,
       compass: role !== "P",
     },
-    ...(inv && inv.until ? { until: inv.until } : {}),
     ...(inv && inv.preApproved ? { preApproved: inv.preApproved } : {}),
   };
   S.assign.push(a);
@@ -392,7 +387,7 @@ PUB.invite = () => {
   const inv = tok ? S.invites.find((i) => i.token === tok.trim()) : null;
   if (!tok)
     return authWrap(
-      `<h1 class="h1">Open your invitation</h1><p class="muted">Paste the code from your invitation email, or open the link in the email directly.</p><form data-f="tok" class="col auth-form" novalidate>${fi("tok", "token", "Invitation code", { req: true, ph: "TKN-…" })}<button class="btn btn-p btn-block" type="submit">Continue</button></form><div class="col auth-codes"><span class="cap">Invitation codes:</span><div class="row wrap">${S.invites.map((i) => `<button class="chip auth-chip" type="button" data-a="go" data-r="invite" data-token="${i.token}">${i.token}</button>`).join("")}<button class="chip auth-chip" type="button" data-a="go" data-r="invite" data-token="TKN-UNKNOWN">TKN-UNKNOWN</button></div></div>${L("Back to sign in", "login")}`,
+      `<h1 class="h1">Open your invitation</h1><p class="muted">Paste the code from your invitation email, or open the link in the email directly.</p><form data-f="tok" class="col auth-form" novalidate>${fi("tok", "token", "Invitation code", { req: true, ph: "TKN-…" })}<button class="btn btn-p btn-block" type="submit">Continue</button></form><div class="col auth-codes"><span class="cap">Invitation codes:</span><div class="row wrap">${S.invites.filter((i) => i.token).map((i) => `<button class="chip auth-chip" type="button" data-a="go" data-r="invite" data-token="${i.token}">${i.token}</button>`).join("")}<button class="chip auth-chip" type="button" data-a="go" data-r="invite" data-token="TKN-UNKNOWN">TKN-UNKNOWN</button></div></div>${L("Back to sign in", "login")}`,
     );
   const bad = !inv
     ? "This link is not valid"
@@ -536,10 +531,6 @@ PUB.pending = () => {
     UI.pre = { verifyPid: a.pid };
     return PUB.verify();
   }
-  if (a.status === "Expired")
-    return authWrap(
-      `<h1 class="h1">Role assignment expired</h1>${banner("warn", "Your " + roleName(a.role, a.ctx) + " assignment in " + h(ctx().name) + " expired on " + fmt(a.until), "Ask your Organization Admin to renew it. Your account, consent, correction and export rights continue, and your other roles are unaffected.")}${S.assign.filter((x) => x.pid === myId()).length > 1 ? B("Switch to another role", "switcher", {}, "btn-s btn-block") : ""}${B("Sign out", "logout", {}, "btn-s btn-block")}`,
-    );
   if (a.status === "Deactivated")
     return authWrap(
       `<h1 class="h1">Access deactivated</h1>${banner("err", "Your " + roleName(a.role, a.ctx) + " access in " + h(ctx().name) + " is deactivated", "Contact your Organization Admin. Your consent, correction and export rights continue.")}${S.assign.filter((x) => x.pid === myId()).length > 1 ? B("Switch to another role", "switcher", {}, "btn-s btn-block") : ""}${B("Sign out", "logout", {}, "btn-s btn-block")}`,

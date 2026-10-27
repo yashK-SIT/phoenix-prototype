@@ -114,7 +114,7 @@ function sponsorSeats() {
           `Seat pool · ${h(ctxNameOf(sp.ctx))}`,
           `${sp.total} seats · valid until ${fmt(sp.until)}${!pending && d >= 0 ? ' · ' + d + ' days left' : ''}`,
           (pending
-            ? banner('info', 'Awaiting invoice payment', 'This pool activates when the Finance Owner confirms the invoice is paid.')
+            ? banner('info', 'Awaiting invoice payment', 'This pool activates when the Platform Administrator confirms the invoice is paid.')
             : `<div class="seat-meter"><div class="seat-meter-h"><span class="fig">${sup(ac)}<span class="fig-of"> / ${sp.total}</span></span><span class="cap">seats active · utilisation ${supPct(ac, sp.total)}</span></div><div class="progress" role="img" aria-label="${isSupp(ac) ? 'Fewer than 5' : ac} of ${sp.total} seats active"><div class="bar" style="width:${isSupp(ac) ? 0 : Math.round((ac / sp.total) * 100)}%"></div></div></div>`) +
             dl([
               ['Purchased', sp.total.toLocaleString('en-US')],
@@ -235,7 +235,7 @@ function sponsorReports() {
     (reqs.length
       ? card(
           'Your story requests',
-          'Each request is decided by the participant first, then by the Trust/Data Steward. Sponsorship has no bearing on the decision.',
+          'Each request is decided by the participant first, then by the Organization Admin. Sponsorship has no bearing on the decision.',
           table(
             ['Evidence', 'Requested', 'Status'],
             reqs.map(x => [h((byId('evidence', x.ev) || {}).title || '—'), fmt(x.at), pill(x.status)]),
@@ -309,14 +309,14 @@ function sponsorshipOverview() {
   );
 }
 // ---- a sponsor asks for an identifiable story: a separate release request, decided by the participant, then the
-// Trust/Data Steward. It never grants direct access.
+// Organization Admin. It never grants direct access.
 A.storyReq = d => {
   const e = byId('evidence', d.id);
   clearF('story');
   modal(
     'Request an identifiable story',
     () =>
-      `<form data-f="story" class="col fgap" novalidate><input type="hidden" name="id" value="${e.id}"><p class="cap">About: <b>${h(e.title)}</b></p>${fi('story', 'use', 'Where the story would be used', { type: 'select', req: true, ph: 'Select', opts: ['Funder report to our board', 'Annual report', 'Public communication'] })}${fi('story', 'why', 'Why you are asking', { type: 'textarea', rows: 3, req: true, help: 'The participant reads this when deciding.' })}${banner('info', 'How this is decided', 'The participant decides first. If they agree, the Trust/Data Steward reviews disclosure. Nothing identifiable is shared unless both approve, and your sponsorship has no bearing on either decision.')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send request</button></div></form>`,
+      `<form data-f="story" class="col fgap" novalidate><input type="hidden" name="id" value="${e.id}"><p class="cap">About: <b>${h(e.title)}</b></p>${fi('story', 'use', 'Where the story would be used', { type: 'select', req: true, ph: 'Select', opts: ['Funder report to our board', 'Annual report', 'Public communication'] })}${fi('story', 'why', 'Why you are asking', { type: 'textarea', rows: 3, req: true, help: 'The participant reads this when deciding.' })}${banner('info', 'How this is decided', 'The participant decides first. If they agree, the Organization Admin reviews disclosure. Nothing identifiable is shared unless both approve, and your sponsorship has no bearing on either decision.')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send request</button></div></form>`,
   );
 };
 F.story = d => {
@@ -337,12 +337,11 @@ F.story = d => {
   S.releases.push(x);
   notify(e.owner, 'Release request: ' + org + ' asks to tell an identifiable story about “' + e.title + '”. You decide.', 'evidence', { id: e.id });
   S.assign
-    .filter(a => a.ctx === ctxId() && a.status === 'Active' && (a.bundles || []).includes('Trust/Data Steward'))
-    .forEach(a => notify(a.pid, 'Story request recorded (owner decides first): ' + e.title, 'evidence', { id: e.id }));
+  ctxAdmins(ctxId()).forEach(pid => notify(pid, 'Story request recorded (owner decides first): ' + e.title, 'evidence', { id: e.id }));
   audit('Identifiable story requested', e.id, x.audience);
   UI.modal = null;
   clearF('story');
-  toast('Request sent. The participant decides first, then the Trust/Data Steward.');
+  toast('Request sent. The participant decides first, then the Organization Admin.');
   ok();
 };
 // Simulated provider-hosted invoice payment.
@@ -375,7 +374,7 @@ A.fundInterest = d => {
   modal(
     'Funding request',
     () =>
-      `<form data-f="fr" class="col fgap" novalidate><input type="hidden" name="id" value="${d.id}"><input type="hidden" name="pitch" value="${d.pitch || ''}">${fi('fr', 'amount', 'Total commitment (USD)', { type: 'number', req: true, min: 1 })}<div class="g3">${fi('fr', 't1', 'Tranche 1 · Circle', { type: 'number', req: true, min: 0 })}${fi('fr', 't2', 'Tranche 2 · Rope Team', { type: 'number', req: true, min: 0 })}${fi('fr', 't3', 'Tranche 3 · ' + WL(), { type: 'number', req: true, min: 0 })}</div>${fe('fr', 'sum') ? `<span class="emsg">${ic('alert', 14)}${fe('fr', 'sum')}</span>` : ''}${banner('info', '', 'The request needs Organization Admin / Finance Owner approval, then you sign the funding agreement. PHOENIX never handles card details.')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send funding request</button></div></form>`,
+      `<form data-f="fr" class="col fgap" novalidate><input type="hidden" name="id" value="${d.id}"><input type="hidden" name="pitch" value="${d.pitch || ''}">${fi('fr', 'amount', 'Total commitment (USD)', { type: 'number', req: true, min: 1 })}<div class="g3">${fi('fr', 't1', 'Tranche 1 · Circle', { type: 'number', req: true, min: 0 })}${fi('fr', 't2', 'Tranche 2 · Rope Team', { type: 'number', req: true, min: 0 })}${fi('fr', 't3', 'Tranche 3 · ' + WL(), { type: 'number', req: true, min: 0 })}</div>${fe('fr', 'sum') ? `<span class="emsg">${ic('alert', 14)}${fe('fr', 'sum')}</span>` : ''}${banner('info', '', 'The request needs Organization Admin / Platform Administrator approval, then you sign the funding agreement. PHOENIX never handles card details.')}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send funding request</button></div></form>`,
   );
 };
 F.fr = d => {
@@ -403,9 +402,7 @@ F.fr = d => {
   S.funding.push(f);
   p.funding = f.id;
   if (d.pitch) byId('pitches', d.pitch).status = 'Accepted — funding requested';
-  S.assign
-    .filter(a => a.ctx === p.ctx && a.bundles.includes('Finance Owner'))
-    .forEach(a => notify(a.pid, 'Funding request needs approval: ' + p.title, 'funding'));
+  platformAdmins().forEach(pid => notify(pid, 'Funding request needs approval: ' + p.title, 'billing'));
   notify(p.owner, 'A sponsor requested to fund “' + p.title + '”', 'funding');
   audit('Funding requested', f.id, 'USD ' + d.amount);
   UI.modal = null;
@@ -524,16 +521,18 @@ F.pit = d => {
 // ---------- PAYMENTS, ENTITLEMENTS, SEATS (E11, F10) ----------
 route('billing', 'payments', () => {
   const r = role();
+  // Finance tabs: Organization Admins and the Platform Administrator (Finance: Products & Payments, no personal access).
+  const fin = r === 'A' || r === 'T';
   const t = tabs(
     'bill',
     [
-      ['access', 'My access'],
-      r === 'A' && ['products', 'Products'],
-      r === 'A' && ['ents', 'Entitlements'],
-      r === 'A' && ['seats', 'Seat pools'],
-      r === 'A' && ['events', 'Payment events'],
+      r !== 'T' && ['access', 'My access'],
+      fin && ['products', 'Products'],
+      fin && ['ents', 'Entitlements'],
+      fin && ['seats', 'Seat pools'],
+      fin && ['events', 'Payment events'],
     ],
-    UI.p.tab || (r === 'A' ? 'products' : 'access'),
+    UI.p.tab || (fin ? 'products' : 'access'),
   );
   let body = '';
   if (t.cur === 'access') {
@@ -613,7 +612,7 @@ route('billing', 'payments', () => {
   if (t.cur === 'products')
     body = card(
       'Product catalogue',
-      'Finance Owner approves and releases; Organization Admin drafts. Pricing policy is set by Finance.',
+      'The Platform Administrator approves and releases; an Organization Admin may draft. Pricing policy is set by Finance.',
       dataView('bill:products', {
         label: 'products',
         items: S.products,
@@ -633,7 +632,7 @@ route('billing', 'payments', () => {
           badges: pill(p.status),
           primary: prodAct(p),
         }),
-        empty: ['coin', 'No products yet', 'Draft a product; the Finance Owner approves and releases it.', ''],
+        empty: ['coin', 'No products yet', 'Draft a product; the Platform Administrator approves and releases it.', ''],
       }),
       B(ic('plus', 14) + 'Draft product', 'prodNew', {}, 'btn-p btn-sm'),
       'bill-prod',
@@ -695,9 +694,9 @@ route('billing', 'payments', () => {
           badges: pill(s.status),
           primary:
             s.status === 'Pending'
-              ? hasB('Finance Owner')
+              ? isFinanceAdmin()
                 ? B('Confirm invoice paid · activate', 'poolActivate', { id: s.id }, 'btn-p btn-sm')
-                : '<span class="cap">Needs Finance Owner</span>'
+                : '<span class="cap">Needs the Platform Administrator</span>'
               : '',
         }),
         empty: ['users', 'No seat pools yet', 'Use “Create seat pool” for a sponsor’s seats.', ''],
@@ -733,7 +732,7 @@ route('billing', 'payments', () => {
         ],
         empty: ['inbox', 'No payment events yet', 'Provider webhook events appear here.', ''],
       }),
-      hasB('Finance Owner')
+      isFinanceAdmin()
         ? B('Reconcile with provider', 'reconcile', {}, 'btn-p btn-sm') +
             B('Simulate renewal failure', 'simRenewFail', {})
         : '',
@@ -741,7 +740,7 @@ route('billing', 'payments', () => {
     );
   return (
     head(
-      r === 'A' ? 'Products & payments' : r === 'S' ? 'Seats & payments' : 'Access & billing',
+      fin ? 'Products & payments' : r === 'S' ? 'Seats & payments' : 'Access & billing',
       'Commercial entitlement never confers authority, trust, visibility or access to restricted records.',
     ) +
     t.html +
@@ -750,12 +749,24 @@ route('billing', 'payments', () => {
     '</div>'
   );
 });
+// The Platform Administrator holds technical-level access to payments; that is enough to open this module.
+ROUTES.billing.tech = true;
+// People a finance form can choose: the active members of this context, or of every context from the platform.
+const finPeople = (bases) =>
+  S.assign.filter(
+    a =>
+      (role() === 'T' || a.ctx === ctxId()) &&
+      a.status === 'Active' &&
+      roleBase(a.role) !== 'T' &&
+      (!bases || bases.includes(roleBase(a.role))),
+  );
+const finLabel = a => P(a.pid).name + (role() === 'T' ? ' · ' + ctxName(a.ctx) : '');
 function prodAct(p) {
   return p.status === 'Draft'
-    ? hasB('Finance Owner')
+    ? isFinanceAdmin()
       ? B('Approve & release', 'prodRel', { id: p.id }, 'btn-p btn-sm')
-      : '<span class="cap">Needs Finance Owner</span>'
-    : p.status === 'Released' && hasB('Finance Owner')
+      : '<span class="cap">Needs the Platform Administrator</span>'
+    : p.status === 'Released' && isFinanceAdmin()
       ? CB('Retire', 'prodRetire', { id: p.id }, 'Retire ' + p.name + '? It leaves checkout; existing entitlements are not affected.')
       : '';
 }
@@ -807,7 +818,7 @@ A.payResult = d => {
     ev.processed = false;
     S.payments.push(ev);
     S.ents.push({ id: uid('en'), pid: myId(), ctx: ctxId(), product: p.id, source: 'Card payment (provider-hosted) ' + ev.id, state: 'PAYMENT_PENDING', until: null, evt: ev.id });
-    S.assign.filter(a => (a.bundles || []).includes('Finance Owner') && a.status === 'Active').forEach(a => notify(a.pid, 'Payment awaiting verification: ' + p.name + ' · ' + me().name, 'billing', { tab: 'ents' }));
+    platformAdmins().forEach(pid => notify(pid, 'Payment awaiting verification: ' + p.name + ' · ' + me().name, 'billing', { tab: 'ents' }));
     audit('Payment pending verification', ev.id, p.name + ' · entitlement PAYMENT_PENDING, not active');
     UI.modal = null;
     toast('Payment is waiting for the provider’s confirmation. Access starts once it is verified. ' + PAY_KEEPS, 'warn');
@@ -924,7 +935,7 @@ A.prodNew = () => {
   modal(
     'Draft a product',
     () =>
-      `<form data-f="prod" class="col fgap" novalidate>${fi('prod', 'name', 'Name', { req: true })}${fi('prod', 'kind', 'Type', { type: 'select', req: true, opts: ['One-time payment', 'Monthly subscription', 'Annual subscription', 'Donation', 'Sponsored access', 'Invoice'] })}<div class="f2">${fi('prod', 'price', 'Price', { req: true, help: 'Set by the Finance Owner' })}${fi('prod', 'cycle', 'Billing cycle', { type: 'select', opts: ['One-time', 'Monthly', 'Annual', '—'] })}</div>${fi('prod', 'ent', 'Entitlement', { req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save draft</button></div></form>`,
+      `<form data-f="prod" class="col fgap" novalidate>${fi('prod', 'name', 'Name', { req: true })}${fi('prod', 'kind', 'Type', { type: 'select', req: true, opts: ['One-time payment', 'Monthly subscription', 'Annual subscription', 'Donation', 'Sponsored access', 'Invoice'] })}<div class="f2">${fi('prod', 'price', 'Price', { req: true, help: 'Set by the Platform Administrator' })}${fi('prod', 'cycle', 'Billing cycle', { type: 'select', opts: ['One-time', 'Monthly', 'Annual', '—'] })}</div>${fi('prod', 'ent', 'Entitlement', { req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save draft</button></div></form>`,
   );
 };
 F.prod = d => {
@@ -937,7 +948,7 @@ F.prod = d => {
 };
 A.prodRel = d => {
   byId('products', d.id).status = 'Released';
-  audit('Product approved & released', d.id, 'Finance Owner');
+  audit('Product approved & released', d.id, 'Platform Administrator');
   ok();
 };
 A.prodRetire = d => {
@@ -950,15 +961,18 @@ A.entGrant = () => {
   modal(
     'Grant access',
     () =>
-      `<form data-f="eg" class="col fgap" novalidate>${fi('eg', 'pid', 'Person', { type: 'select', req: true, ph: 'Select', opts: S.assign.filter(a => a.ctx === ctxId() && a.status === 'Active').map(a => [a.pid, P(a.pid).name]) })}${fi('eg', 'product', 'Product', { type: 'select', req: true, opts: S.products.filter(p => p.status === 'Released').map(p => [p.id, p.name]) })}${fi('eg', 'until', 'Until', { type: 'date', req: true })}${fi('eg', 'why', 'Reason (recorded)', { req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Grant</button></div></form>`,
+      `<form data-f="eg" class="col fgap" novalidate>${fi('eg', 'aid', 'Person', { type: 'select', req: true, ph: 'Select', opts: finPeople().map(a => [a.id, finLabel(a)]) })}${fi('eg', 'product', 'Product', { type: 'select', req: true, opts: S.products.filter(p => p.status === 'Released').map(p => [p.id, p.name]) })}${fi('eg', 'until', 'Until', { type: 'date', req: true })}${fi('eg', 'why', 'Reason (recorded)', { req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Grant</button></div></form>`,
   );
 };
 F.eg = d => {
-  if (!validate('eg', d, { pid: ['req'], product: ['req'], until: ['req', 'date'], why: ['req'] })) return render();
+  if (!validate('eg', d, { aid: ['req'], product: ['req'], until: ['req', 'date'], why: ['req'] })) return render();
+  const a = finPeople().find(x => x.id === d.aid);
+  if (!a) return deny('choose a person in a context you administer');
+  d.pid = a.pid;
   S.ents.push({
     id: uid('en'),
-    pid: d.pid,
-    ctx: ctxId(),
+    pid: a.pid,
+    ctx: a.ctx,
     product: d.product,
     source: 'Admin grant: ' + d.why,
     state: 'Active',
@@ -995,22 +1009,24 @@ A.poolNew = () => {
   modal(
     'Create seat pool',
     () =>
-      `<form data-f="pool" class="col fgap" novalidate>${fi('pool', 'sponsor', 'Sponsor / institution contact', { type: 'select', req: true, opts: S.assign.filter(a => a.ctx === ctxId() && ['S', 'A'].includes(roleBase(a.role))).map(a => [a.pid, P(a.pid).name]) })}${fi('pool', 'total', 'Seats', { type: 'number', req: true, min: 1 })}${fi('pool', 'until', 'Valid until', { type: 'date', req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Create</button></div></form>`,
+      `<form data-f="pool" class="col fgap" novalidate>${fi('pool', 'sponsor', 'Sponsor / institution contact', { type: 'select', req: true, opts: finPeople(['S', 'A']).map(a => [a.id, finLabel(a)]) })}${fi('pool', 'total', 'Seats', { type: 'number', req: true, min: 1 })}${fi('pool', 'until', 'Valid until', { type: 'date', req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Create</button></div></form>`,
   );
 };
 F.pool = d => {
   if (!validate('pool', d, { sponsor: ['req'], total: ['req', 'num'], until: ['req', 'date'] })) return render();
+  const a = finPeople(['S', 'A']).find(x => x.id === d.sponsor);
+  if (!a) return deny('choose a sponsor in a context you administer');
   S.seatPools.push({
     id: uid('sp'),
-    sponsor: d.sponsor,
-    org: P(d.sponsor).org,
-    ctx: ctxId(),
+    sponsor: a.pid,
+    org: P(a.pid).org,
+    ctx: a.ctx,
     total: +d.total,
     assigned: [],
     until: d.until,
     status: 'Active',
   });
-  audit('Seat pool created', d.sponsor, d.total);
+  audit('Seat pool created', a.pid, d.total);
   UI.modal = null;
   clearF('pool');
   ok();
@@ -1062,12 +1078,10 @@ A.seat = d => {
 };
 F.pkg = d => {
   if (!validate('pkg', d, { seats: ['req', 'num'], note: ['req'] })) return render();
-  S.assign
-    .filter(a => a.bundles.includes('Finance Owner'))
-    .forEach(a => notify(a.pid, `Package request from ${me().name}: ${d.seats} seats`, 'billing', { tab: 'products' }));
+  platformAdmins().forEach(pid => notify(pid, `Package request from ${me().name}: ${d.seats} seats`, 'billing', { tab: 'products' }));
   audit('Institution package requested', me().org, d.seats + ' seats');
   clearF('pkg');
-  toast('Request sent to the Finance Owner.');
+  toast('Request sent to the Platform Administrator.');
   ok();
 };
 
@@ -1076,7 +1090,7 @@ A.poolActivate = d => {
   sp.status = 'Active';
   const isSp = S.assign.some(a => a.pid === sp.sponsor && roleBase(a.role) === 'S');
   notify(sp.sponsor, 'Your seat pool is active: ' + sp.total + ' seats until ' + fmt(sp.until), isSp ? 'funding' : 'billing', isSp ? { tab: 'seats' } : {});
-  audit('Seat pool activated against invoice', sp.id, 'Finance Owner');
+  audit('Seat pool activated against invoice', sp.id, 'Platform Administrator');
   toast('Seat pool activated.');
   ok();
 };

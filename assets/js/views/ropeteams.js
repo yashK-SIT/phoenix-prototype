@@ -1302,7 +1302,7 @@ A.escalateRope = (d) => {
           type: "select",
           opts: [
             ["steward", "Steward / facilitator"],
-            ["safety", "Incident/Safety Owner"],
+            ["safety", "Organization Admin (safety)"],
           ],
           req: true,
         },
@@ -1323,18 +1323,16 @@ F.esc = (d) => {
       state: "Reported",
       owner: null,
       paused: false,
-      conf: "Restricted to Incident/Safety Owner",
+      conf: "Restricted to Organization Admin",
       timeline: [{ at: today(), t: "Reported by mentor" }],
       decision: null,
     };
     S.incidents.push(inc);
-    S.assign
-      .filter((a) => a.bundles.includes("Incident/Safety Owner"))
-      .forEach((a) =>
-        notify(a.pid, "Concern escalated from " + x.name, "incidents", {
-          id: inc.id,
-        }),
-      );
+    safetyOwners(x.ctx).forEach((p) =>
+      notify(p, "Concern escalated from " + x.name, "incidents", {
+        id: inc.id,
+      }),
+    );
   } else {
     x.members
       .filter((m) => m.role === "Facilitator")

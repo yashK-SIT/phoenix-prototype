@@ -335,7 +335,7 @@ const chHow = () =>
       ],
       [
         "Applications",
-        "Participants and Partners ask to take part. Review what they share and shortlist.",
+        "Participants and Collaborators ask to take part. Review what they share and shortlist.",
       ],
       [
         "Chat room",
@@ -373,8 +373,8 @@ route("challenges", "any", () => {
       "",
       empty(
         "megaphone",
-        "Open challenges are for Sponsors, Participants and Partners",
-        "Sponsors post challenges on the Explore board; Participants and Partners ask to take part. Disputes about a challenge are handled from Dispute reviews.",
+        "Open challenges are for Sponsors, Participants and Collaborators",
+        "Sponsors post challenges on the Explore board; Participants and Collaborators ask to take part. Disputes about a challenge are handled from Dispute reviews.",
         L("Back to My PHOENIX", "home", {}, "btn btn-s btn-sm"),
       ),
     )
@@ -609,7 +609,7 @@ route("chnew", "any", () => {
   return (
     head(
       ch ? "Edit project" : "Define a new project",
-      "Start in your own words. Participants and Partners read this to decide whether to take part.",
+      "Start in your own words. Participants and Collaborators read this to decide whether to take part.",
       "",
       [["My projects", "challenges"], ch ? [h(ch.title), "challenge", { id: ch.id }] : null, [ch ? "Edit" : "New project"]].filter(Boolean),
     ) +
@@ -622,7 +622,7 @@ route("chnew", "any", () => {
   ${fi(f, "title", "Working title", { req: true, max: 120, ph: "e.g. Community cooling map for Ward 7" })}
   ${fi(f, "problem", "Describe it in your own words", { type: "textarea", rows: 6, req: true, max: 3000, ph: "What is the need or idea? Who is affected? What would be different if it worked?", help: "At least 40 characters." })}</div>
   <div class="np-sec">${sec(2, "Who should find it")}
-  <fieldset class="np-fs col"><legend class="lbl">Areas of interest</legend><div class="np-chips">${[...PROJECT_AREAS, ...tags.filter((t) => !PROJECT_AREAS.includes(t))].map((a) => `<label class="chipchk np-chip"><input type="checkbox" name="tags" value="${h(a)}" ${tags.includes(a) ? "checked" : ""}><span>${h(a)}</span></label>`).join("")}</div><div class="field np-other"><label class="lbl" for="chn_areaOther">Add your own</label><input id="chn_areaOther" name="areaOther" class="input" value="${h(fv(f, "areaOther", ""))}" placeholder="Comma-separated, e.g. Air quality, School gardens" maxlength="160"></div><span class="help">Helps Participants and Partners find your project under Opportunities on the Explore board.</span></fieldset></div>
+  <fieldset class="np-fs col"><legend class="lbl">Areas of interest</legend><div class="np-chips">${[...PROJECT_AREAS, ...tags.filter((t) => !PROJECT_AREAS.includes(t))].map((a) => `<label class="chipchk np-chip"><input type="checkbox" name="tags" value="${h(a)}" ${tags.includes(a) ? "checked" : ""}><span>${h(a)}</span></label>`).join("")}</div><div class="field np-other"><label class="lbl" for="chn_areaOther">Add your own</label><input id="chn_areaOther" name="areaOther" class="input" value="${h(fv(f, "areaOther", ""))}" placeholder="Comma-separated, e.g. Air quality, School gardens" maxlength="160"></div><span class="help">Helps Participants and Collaborators find your project under Opportunities on the Explore board.</span></fieldset></div>
   <div class="np-sec">${sec(3, "Place")}
   <div class="f2">${countryField(f, { help: "The country the project takes place in." })}${fi(f, "area", "Location or programme area (optional)", { ph: "e.g. Ward 7, Excelsior City" })}</div></div>
   <div class="np-sec">${sec(4, "Goals and needs")}
@@ -633,7 +633,7 @@ route("chnew", "any", () => {
   ${fi(f, "closes", "Applications close on", { type: "date", req: true, help: "You can stop new applications earlier." })}
   ${banner("info", "Payments stay offline", "PHOENIX has no payment gateway. It never processes, holds or transfers money. Payments you make to the project owner are recorded only when both of you confirm them.")}</div>
   <div class="actions">${L("Cancel", ch ? "challenge" : "challenges", ch ? { id: ch.id } : {}, "btn btn-g")}<button class="btn btn-p" type="submit">${ch ? "Save changes" : "Create project"}</button></div></form>
-  <aside class="c4 col np-side"><div class="ch-alias-box">${ic("shield", 18)}<div><b>This project shows as <span class="ch-alias">${h(UI.chAlias)}</span></b><p class="cap">The alias is made for this project only. Your name, organisation and contact details never appear on it, in its chat room or in notices to applicants.</p></div></div>${card("What happens next", "", "<p class=\"cap\">Your project is listed under Opportunities on the Explore board for everyone in the programme. Participants and Partners ask to take part; you shortlist, talk in the chat room, form the team, then commit funding and agree milestones.</p>", "", "quiet")}</aside></div>`
+  <aside class="c4 col np-side"><div class="ch-alias-box">${ic("shield", 18)}<div><b>This project shows as <span class="ch-alias">${h(UI.chAlias)}</span></b><p class="cap">The alias is made for this project only. Your name, organisation and contact details never appear on it, in its chat room or in notices to applicants.</p></div></div>${card("What happens next", "", "<p class=\"cap\">Your project is listed under Opportunities on the Explore board for everyone in the programme. Participants and Collaborators ask to take part; you shortlist, talk in the chat room, form the team, then commit funding and agree milestones.</p>", "", "quiet")}</aside></div>`
   );
 });
 A.chEdit = (d) => A.chNew(d);
@@ -801,7 +801,7 @@ const chGone = () =>
     empty(
       "megaphone",
       "This challenge is not available to you",
-      "It may have been archived, or it belongs to another programme. Open challenges are posted for Participants and Partners, and their agreements are visible only to the sponsor and the selected team.",
+      "It may have been archived, or it belongs to another programme. Open challenges are posted for Participants and Collaborators, and their agreements are visible only to the sponsor and the selected team.",
       L("Open challenges", "challenges", {}, "btn btn-s btn-sm"),
     ),
   );
@@ -974,8 +974,8 @@ function chIdentity(ch) {
       "On the Explore board",
       ch.status === "Archived"
         ? "Archived: no longer shown."
-        : "Listed under Opportunities. Everyone in the programme sees it; Participants and Partners can ask to take part.",
-      `<article class="board-i ch-prev"><span class="tile t-purple" aria-hidden="true">${ic("megaphone", 18)}</span><div class="col board-b"><span class="over">Opportunity · Sponsor project</span><b>${h(ch.title)}</b><span class="cap">${chBoardSub(ch)}</span><span class="cap board-src">${ic("shield", 12)}Posted by ${h(ch.alias)}</span></div></article>`,
+        : "Listed under Opportunities. Everyone in the programme sees it; Participants and Collaborators can ask to take part.",
+      `<div class="ch-prev">${boardPost({ k: "opp", kl: "Sponsor project", at: ch.at, t: ch.title, s: chBoardSub(ch), who: h(ch.alias), src: "Sponsor’s name not shown" })}</div>`,
     )
   );
 }
@@ -1246,7 +1246,7 @@ function chApps(ch) {
         empty: [
           "users",
           "No applications yet",
-          "Participants and Partners apply from the Explore board or the Open challenges page.",
+          "Participants and Collaborators apply from the Explore board or the Open challenges page.",
           "",
         ],
       }),

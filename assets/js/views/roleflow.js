@@ -18,10 +18,6 @@ const RF_ORDER = ["P", "F", "M", "C", "S", "A", "T"];
 // the flows (the person holding the bundle acts) under these codes.
 const RF_BUNDLE = {
   RV: "Reviewer",
-  TD: "Trust/Data Steward",
-  FO: "Finance Owner",
-  AO: "AI Owner",
-  IS: "Incident/Safety Owner",
 };
 const rfName = (c) => ROLE[c] || RF_BUNDLE[c] || c;
 // Role chips: the base roles use the theme's wayfinding colours; '*' means "any member"; bundles are neutral.
@@ -369,7 +365,7 @@ function rfFlows() {
               rfB("No", [rfY("Stays at its confidentiality level")]),
               rfB("Requested", [
                 rfH(
-                  "TD",
+                  "A",
                   "Decides the release",
                   "Needs your public or funder release permission. Small numbers are suppressed.",
                 ),
@@ -434,7 +430,7 @@ function rfFlows() {
             ),
             rfA("Ask PHOENIX", "Private help. Nothing changes on your record."),
             rfA("Report a concern"),
-            rfH("IS", "Triages, reviews and records a decision"),
+            rfH("A", "Triages, reviews and records a decision"),
             rfD("Accept the decision?", [
               rfB("Yes", [rfY("Case closed")], "end"),
               rfB("No", [rfA("Appeal")], "Reviewed again"),
@@ -760,7 +756,7 @@ function rfFlows() {
             ),
             rfH(
               "P",
-              "Participants and Partners ask to take part and join the challenge chat room",
+              "Participants and Collaborators ask to take part and join the challenge chat room",
             ),
             rfA(
               "Evaluate, shortlist and discuss in the chat room",
@@ -812,7 +808,7 @@ function rfFlows() {
               rfB("Hosted payment", [rfA("Pay on the hosted payment page")]),
               rfB("Invoice", [rfA("Request an invoice")]),
             ]),
-            rfH("FO", "Confirms payment and activates the pool"),
+            rfH("T", "Confirms payment and activates the pool"),
           ],
         ],
         [
@@ -828,7 +824,7 @@ function rfFlows() {
               rfB("No", [rfY("Aggregate view only")]),
               rfB("Yes", [
                 rfA("Send a separate release request"),
-                rfH("TD", "Decides, with the person’s own release permission"),
+                rfH("A", "Decides, with the person’s own release permission"),
               ]),
             ]),
             rfS("End: continue from My PHOENIX"),
@@ -837,8 +833,8 @@ function rfFlows() {
       ],
     },
     A: {
-      lead: "Organization Admin. Runs invitations and access requests, sensitive-role approvals, pack configuration, voting parameters, resources, reports and configuration versions. Not the fallback approver for specialist decisions.",
-      side: ["Specialist decisions go to bundle holders"],
+      lead: "Organization Admin. Runs invitations and access requests, sensitive-role approvals, pack configuration, voting parameters, resources, reports and configuration versions, release disclosure review and Report a concern cases for the programme.",
+      side: ["Evidence review goes to Reviewer bundle holders"],
       phases: [
         [
           "Authorize",
@@ -869,18 +865,14 @@ function rfFlows() {
         ],
         [
           "Configure",
-          "Pack, templates and Purpose Compass wording",
+          "Pack and templates",
           [
             rfA("Configure the programme pack and templates"),
-            rfA(
-              "Edit Purpose Compass wording",
-              "The six questions stay unscored.",
-            ),
             rfA(
               "Set voting parameters",
               "Threshold, quorum, window and reminders. Equal weight is frozen: one eligible member = one vote.",
             ),
-            rfA("Resources and notifications"),
+            rfA("Resources"),
           ],
         ],
         ["Reports", "Reports", [rfA("Programme reports and exports")]],
@@ -896,20 +888,28 @@ function rfFlows() {
           ],
         ],
         [
+          "Trust & safety",
+          "Release disclosure review and incidents",
+          [
+            rfA(
+              "Complete disclosure review for a release",
+              "Only after the owner authorises it, and only in this programme.",
+            ),
+            rfA("Triage, review and decide incidents", "Never a case you reported yourself."),
+          ],
+        ],
+        [
           "Routing",
-          "Specialist decisions go to bundle holders",
+          "Decisions that go elsewhere",
           [
             rfH("RV", "Evidence review"),
-            rfH("TD", "Policy, consent and release"),
-            rfH("FO", "Products and payments"),
-            rfH("AO", "AI sources"),
-            rfH("IS", "Incidents and safety"),
+            rfH("T", "Policies, products and payments"),
           ],
         ],
       ],
     },
     T: {
-      lead: "Platform Administrator. Runs the platform: system health, contexts, approved role and bundle definitions, integrations, security, backups and audit. No policy publishing, Purpose Compass governance or participant content.",
+      lead: "Platform Administrator. Runs the platform: system health, contexts, approved role and bundle definitions, Trust/Data: Policies, Finance: Products & Payments, integrations, security, backups and audit. No participant content.",
       side: [],
       phases: [
         ["Authorize", "Provisioned account with two-step code", rfAccess("T")],
@@ -932,6 +932,22 @@ function rfFlows() {
           ],
         ],
         [
+          "Trust/Data",
+          "Policies",
+          [
+            rfA("Draft, compare and publish policy and agreement versions"),
+            rfY("People it applies to review and accept the new version"),
+          ],
+        ],
+        [
+          "Finance",
+          "Products & Payments",
+          [
+            rfA("Approve, release and retire products"),
+            rfA("Verify or reconcile payments; confirm invoices and activate seat pools"),
+          ],
+        ],
+        [
           "Operations",
           "Integrations, security and audit",
           [
@@ -940,7 +956,7 @@ function rfFlows() {
             rfA("Audit logs across the platform"),
             rfY(
               "Out of scope",
-              "No policy publishing, no Purpose Compass governance, no participant content.",
+              "No participant content. Purpose Compass questions are fixed.",
             ),
             rfS("End: platform running"),
           ],
@@ -1020,7 +1036,7 @@ function rfOverview() {
       [
         rfH("*", "Add evidence"),
         rfH("RV", "Reviews status and level E0–E4"),
-        rfH("TD", "Decides any release"),
+        rfH("A", "Decides any release"),
       ],
     ],
     [

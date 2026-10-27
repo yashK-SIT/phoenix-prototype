@@ -24,6 +24,10 @@ const activeSpace = (kind, id) => {
   const o = byId(kind, id);
   return o && o.state === "Active";
 };
+const tinvMine = (d) => {
+  const i = byId("invites", d.id);
+  return !!i && i.kind === "member" && i.pid === myId() && tinvLive(i);
+};
 const roomLead = (id) => {
   const x = byId("rooms", id);
   return !!x && (isLead(x) || role() === "A");
@@ -414,17 +418,17 @@ const G = {
       "only people who can see this evidence can comment on it"
     );
   },
-  hvRelNo: () =>
-    hasB("Trust/Data Steward") ||
-    "only the Trust/Data Steward withholds a release",
+  hvRelNo: (d) =>
+    (isReleaseReviewer() && hvCtx(byId("harvests", d.id) || {}) === ctxId()) ||
+    "only an Organization Admin of this context withholds a release",
   relDecide: (d) => {
     const x = byId("releases", d.id);
     if (!x) return "not found";
     const e = byId("evidence", x.ev);
     if (["Released", "Withheld after disclosure review"].includes(d.v))
       return (
-        hasB("Trust/Data Steward") ||
-        "only the Trust/Data Steward completes disclosure review for a release"
+        evReviewsHere(e) ||
+        "only an Organization Admin of this context completes disclosure review for a release"
       );
     return e.owner === myId() || "only the evidence owner decides on a release";
   },
@@ -433,8 +437,8 @@ const G = {
   // harvest
   hvRel: (d) =>
     d.v === "Released"
-      ? hasB("Trust/Data Steward") ||
-        "only the Trust/Data Steward authorises a public or funder release"
+      ? (isReleaseReviewer() && hvCtx(byId("harvests", d.id) || {}) === ctxId()) ||
+        "only an Organization Admin of this context authorises a public or funder release"
       : canComplete() ||
         "only an authorised Facilitator, Reviewer or Project Lead can request release",
   hvCand: () =>
@@ -490,7 +494,7 @@ const G = {
   pitchNew: () => "Staged project funding and pitches are outside the Alpha",
   pit: () => "Staged project funding and pitches are outside the Alpha",
   pitchDecide: () => "Staged project funding and pitches are outside the Alpha",
-  // A sponsor asks for an identifiable story only through a separate release request (owner, then Trust/Data Steward).
+  // A sponsor asks for an identifiable story only through a separate release request (owner, then Organization Admin).
   storyReq: (d) =>
     (role() === "S" && sponsorCleared().some((e) => e.id === d.id)) ||
     "only a sponsor can request a story, and only about evidence already cleared for funder reports",
@@ -502,20 +506,31 @@ const G = {
       (p) => p.id === d.id && p.pid === myId() && p.state === "Invoice due",
     ) || "only the invoiced sponsor pays this invoice",
   prodRel: () =>
-    hasB("Finance Owner") ||
-    "only the Finance Owner approves and releases products",
+    isFinanceAdmin() ||
+    "only the Platform Administrator approves and releases products",
   prodRetire: () =>
-    hasB("Finance Owner") || "only the Finance Owner retires products",
-  prodNew: () => role() === "A" || "only an Organization Admin drafts products",
+    isFinanceAdmin() || "only the Platform Administrator retires products",
+  prodNew: () =>
+    role() === "A" ||
+    isFinanceAdmin() ||
+    "only an Organization Admin or the Platform Administrator drafts products",
   entGrant: () =>
-    role() === "A" || "only an authorised administrator grants access",
-  eg: () => role() === "A" || "only an authorised administrator grants access",
+    role() === "A" ||
+    isFinanceAdmin() ||
+    "only an authorised administrator grants access",
+  eg: () =>
+    role() === "A" ||
+    isFinanceAdmin() ||
+    "only an authorised administrator grants access",
   entRevoke: () =>
-    role() === "A" || "only an authorised administrator revokes access",
+    role() === "A" ||
+    isFinanceAdmin() ||
+    "only an authorised administrator revokes access",
   reconcile: () =>
-    hasB("Finance Owner") || "only the Finance Owner reconciles payments",
+    isFinanceAdmin() || "only the Platform Administrator reconciles payments",
   poolNew: () =>
     role() === "A" ||
+    isFinanceAdmin() ||
     "only Finance/Organization administration creates seat pools",
   // Sponsors see seat counts only (BF-08): naming or changing individual seat holders stays with the programme / institution.
   seatAssign: (d) =>
@@ -563,12 +578,18 @@ const G = {
       userEditable(d.pid)) ||
     "you cannot delete this account",
   invNew: () => role() === "A" || "only administrators create invitations",
+  // An Organization Admin invites only into, and manages only the invitations of, the tenant they are working in.
+  // Another tenant's invitation is reported as not found, never as forbidden.
   inv: (d) =>
-    role() === "A" || "only an Organization Admin creates invitations",
+    (role() === "A" && d.ctx === ctxId()) ||
+    "only an Organization Admin of this tenant creates invitations for it",
   invAct: (d) => {
     const i = byId("invites", d.id);
-    return (i && role() === "A") || "not permitted";
+    return (i && role() === "A" && i.ctx === ctxId()) || "invitation not found";
   },
+  // tenant invitations: only the invited person answers, and only while the invitation is open
+  tinvAccept: (d) => tinvMine(d) || "there is no invitation to respond to",
+  tinvReject: (d) => tinvMine(d) || "there is no invitation to respond to",
   cfg: () => role() === "A" || "only administrators change configuration",
   vote: (d) =>
     d.c
@@ -641,12 +662,9 @@ const G = {
       "only an Organization Admin approves roles — never their own"
     );
   },
-  srcToggle: () => hasB("AI Owner") || "only the AI Owner approves AI sources",
   aiRev: () =>
-    hasB("AI Owner") ||
     hasB("Reviewer") ||
-    "only the AI Owner or a Reviewer releases consequential AI outputs",
-  ann: () => role() === "A" || "only an Organization Admin sends announcements",
+    "only a Reviewer releases consequential AI outputs",
   // platform
   ctxAdmin: () => role() === "T" || "not permitted",
   cxa: () => role() === "T" || "not permitted",
@@ -665,19 +683,19 @@ const G = {
         "only the reporter can appeal a recorded decision"
       );
     return (
-      hasB("Incident/Safety Owner") ||
-      "only the Incident/Safety Owner manages cases"
+      incOwnerOf(i) ||
+      "only an Organization Admin of this context manages cases, never their own report"
     );
   },
-  incPause: () =>
-    hasB("Incident/Safety Owner") ||
-    "only the Incident/Safety Owner applies an emergency pause",
-  incDecide: () =>
-    hasB("Incident/Safety Owner") ||
-    "only the Incident/Safety Owner records decisions",
-  icd: () =>
-    hasB("Incident/Safety Owner") ||
-    "only the Incident/Safety Owner records decisions",
+  incPause: (d) =>
+    incOwnerOf(byId("incidents", d.id)) ||
+    "only an Organization Admin of this context applies an emergency pause",
+  incDecide: (d) =>
+    incOwnerOf(byId("incidents", d.id)) ||
+    "only an Organization Admin of this context records decisions",
+  icd: (d) =>
+    incOwnerOf(byId("incidents", d.id)) ||
+    "only an Organization Admin of this context records decisions",
 };
 Object.assign(G, {
   resState: () =>
@@ -892,7 +910,8 @@ Object.assign(G, {
     (role() === "F" && isSteward(d.project)) ||
     "only an assigned Faculty/Steward starts a collaborator match",
   poolActivate: () =>
-    hasB("Finance Owner") || "only the Finance Owner confirms invoice payment",
+    isFinanceAdmin() ||
+    "only the Platform Administrator confirms invoice payment",
   hvRedraft: (d) => {
     const x = byId("harvests", d.id);
     return (
@@ -1345,34 +1364,17 @@ Object.assign(G, {
   roleState: platformOnly("archives or restores roles"),
   packRoles: platformOnly("sets role names for packs"),
   pkr: platformOnly("sets role names for packs"),
-  // Trust/Data Steward governs agreement and consent policy; the Organization Admin configures Compass wording.
+  // Agreement and consent policy is governed from Trust/Data: Policies in the Platform Administrator console.
   polNew: () =>
-    hasB("Trust/Data Steward") || "only the Trust/Data Steward writes policies",
+    isPolicyAdmin() || "only the Platform Administrator writes policies",
   polEdit: () =>
-    hasB("Trust/Data Steward") || "only the Trust/Data Steward writes policies",
+    isPolicyAdmin() || "only the Platform Administrator writes policies",
   poled: () =>
-    hasB("Trust/Data Steward") || "only the Trust/Data Steward writes policies",
+    isPolicyAdmin() || "only the Platform Administrator writes policies",
   polPublish: () =>
-    hasB("Trust/Data Steward") ||
-    "only the Trust/Data Steward publishes policies",
+    isPolicyAdmin() || "only the Platform Administrator publishes policies",
   polDel: () =>
-    hasB("Trust/Data Steward") ||
-    "only the Trust/Data Steward deletes policy drafts",
-  cqNew: () =>
-    role() === "A" ||
-    "only the Organization Admin configures Purpose Compass wording",
-  cqEdit: () =>
-    role() === "A" ||
-    "only the Organization Admin configures Purpose Compass wording",
-  cq: () =>
-    role() === "A" ||
-    "only the Organization Admin configures Purpose Compass wording",
-  cqMove: () =>
-    role() === "A" ||
-    "only the Organization Admin configures Purpose Compass wording",
-  cqDel: () =>
-    role() === "A" ||
-    "only the Organization Admin configures Purpose Compass wording",
+    isPolicyAdmin() || "only the Platform Administrator deletes policy drafts",
 });
 // ---- Rope Team documents; project owners create their own Action Room; milestone validation
 // Mentor Requests form a Rope Team, so they are not raised on the Circle → Room path.
@@ -1408,12 +1410,10 @@ Object.assign(G, {
     "only members of an active Rope Team upload documents",
   // owners edit their own records
   // optional purposes, capability scopes and integration adapters (purposes.js)
+  // Programme-level optional purposes are no longer configurable; only the organization level remains.
   scopeSet: (d) =>
-    d.level === "tenant"
-      ? role() === "T" ||
-        "only the Platform Administrator sets organization-level capability scopes"
-      : (role() === "A" && d.id === ctxId()) ||
-        "only the Organization Admin of this programme sets its optional purposes",
+    (d.level === "tenant" && role() === "T") ||
+    "only the Platform Administrator sets organization-level capability scopes",
   adapterSet: () =>
     role() === "T" ||
     "only the Platform Administrator manages integration adapters",
@@ -1421,13 +1421,13 @@ Object.assign(G, {
     byId("evidence", d.id)?.owner === myId() ||
     "only the record owner restricts its purposes",
   payVerify: (d) =>
-    ((role() === "A" || hasB("Finance Owner")) &&
+    ((role() === "A" || isFinanceAdmin()) &&
       byId("ents", d.id)?.state === "PAYMENT_PENDING") ||
-    "only the Finance Owner or Organization Admin confirms a pending payment",
+    "only the Platform Administrator or Organization Admin confirms a pending payment",
   prc: (d) =>
-    ((role() === "A" || hasB("Finance Owner")) &&
+    ((role() === "A" || isFinanceAdmin()) &&
       byId("ents", d.id)?.state === "PAYMENT_PENDING") ||
-    "only the Finance Owner or Organization Admin confirms a pending payment",
+    "only the Platform Administrator or Organization Admin confirms a pending payment",
   storyReq: (d) => {
     const e = byId("evidence", d.id);
     if (!(role() === "S" && sponsorCleared().some((x) => x.id === d.id)))
@@ -1525,7 +1525,7 @@ function msRevOk(d) {
   const e = it && byId("evidence", it.ev);
   return !!e && msOpen(d, msIsSteward) && e.owner !== myId() && msToReview(it);
 }
-// ---- deliverables → evidence → Learning Harvest → profile evolution; role assignment expiry
+// ---- deliverables → evidence → Learning Harvest → profile evolution
 Object.assign(G, {
   hvGen: (d) => {
     const x = byId("rooms", d.r);
@@ -1558,13 +1558,6 @@ Object.assign(G, {
   evoDecide: (d) =>
     byId("evolution", d.id)?.pid === myId() ||
     "only the person whose profile it is can approve or reject a suggested change",
-  aexp: (d) => {
-    const a = byId("assign", d.id);
-    return (
-      (a && a.pid !== myId() && role() === "A") ||
-      "only an administrator in this context sets a role expiry"
-    );
-  },
 });
 // ---- pathways created by participants, reviewer assigned by the Organization Admin
 Object.assign(G, {
@@ -1870,10 +1863,10 @@ Object.assign(G, {
   },
   chApply: (d) =>
     chCanApply(chById(d.id)) ||
-    "only Participants and Partners apply, while the challenge accepts applications",
+    "only Participants and Collaborators apply, while the challenge accepts applications",
   cha: (d) =>
     chCanApply(chById(d.id)) ||
-    "only Participants and Partners apply, while the challenge accepts applications",
+    "only Participants and Collaborators apply, while the challenge accepts applications",
   chWithdraw: (d) => {
     const ch = chById(d.id);
     const a = ch && chApp(ch);

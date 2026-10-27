@@ -64,7 +64,7 @@ const ROLE = {
 // Seeded defaults only. At run time roles live in S.roles (managed in Role management) and ROLE mirrors their names.
 // Onboarding route C (Build-Freeze review): only the Organization Admin role waits for approval. An organization has
 // one administrative role: the Organization Representative was merged into it.
-// Participant, Mentor, Facilitator and Partner activate normally; specialist bundles are approved separately.
+// Participant, Mentor, Facilitator and Collaborator activate normally; specialist bundles are approved separately.
 const SENSITIVE_ROLES = ["A"];
 // Default role × module matrix (Section 10, Table 30), used to seed S.roles and to reset a seeded role.
 const MX = {
@@ -208,6 +208,30 @@ const can = (m, need) => {
 const tech = (m) =>
   lvl(m).includes("T") || (lvl(m).includes("M") && role() === "T");
 const hasB = (b) => (asg()?.bundles || []).includes(b);
+// Specialist authority without separate bundle holders: policies and products & payments are Platform Administrator
+// modules; release disclosure review and incident handling stay with the Organization Admin of the context.
+const isPolicyAdmin = () => role() === "T";
+const isFinanceAdmin = () => role() === "T";
+const isReleaseReviewer = () => role() === "A";
+const isSafetyOwner = () => role() === "A";
+// Who receives incidents and safety escalations in a context: its Organization Admins.
+const safetyOwners = (c) => ctxAdmins(c || ctxId());
+// Help & support requests and concerns are routed by the sender's role when they are sent: a member's go to the
+// Organization Admins (Tenant Admins) of the context they sent it in; an Organization Admin's go to the Platform
+// Administrator, never back to their own tenant's admins or to another tenant's. Records without `to` are "tenant".
+const routeTo = () => (role() === "A" ? "platform" : "tenant");
+// An incident is handled by whoever it was routed to, never by the person who reported it.
+const incOwnerOf = (i) =>
+  !!i &&
+  i.by !== myId() &&
+  (i.to === "platform" ? role() === "T" : isSafetyOwner() && inCtx(i));
+const platformAdmins = () => [
+  ...new Set(
+    S.assign
+      .filter((a) => roleBase(a.role) === "T" && a.status === "Active")
+      .map((a) => a.pid),
+  ),
+];
 const mine = (pid) => pid === S.session?.pid;
 const myId = () => S.session?.pid;
 // BF-02: the required agreement is separate from five optional purposes. Each purpose is Granted, Declined or
@@ -258,6 +282,17 @@ const ctxName = (id) => (S.contexts.find((c) => c.id === id) || {}).name || "—
 const ctxShort = (id) => ctxName(id).split(/\s+/)[0];
 const asgLabel = (a) =>
   a ? `${roleName(a.role, a.ctx)} · ${ctxName(a.ctx)}` : "";
+// Primary membership: the person's home organization and role. It is fixed when the first membership is created;
+// switching tenants or accepting a tenant invitation never changes it.
+const primaryAsg = (pid = myId()) => {
+  const l = S.assign.filter((a) => a.pid === pid);
+  const p = P(pid);
+  return (
+    l.find((a) => a.id === p.primary) ||
+    l.find((a) => a.status === "Active") ||
+    l[0]
+  );
+};
 // Agreement versions take effect on their effective date. A version published for a future date is shown as
 // upcoming and does not gate anything early (Build-Freeze review: "future version gated early").
 const agrFor = (ctxid, base) =>
@@ -936,23 +971,21 @@ function navItems() {
   const always = () => {
     if (hasB("Reviewer") && r !== "F")
       items.push(["inbox", "Review inbox", "inbox"]);
-    if (hasB("Trust/Data Steward"))
-      items.push(["policies", "Trust/Data: policies", "shield"]);
-    if (hasB("Finance Owner"))
-      items.push(["billing", "Finance: products & payments", "card"]);
-    if (hasB("AI Owner"))
-      items.push(["aiadmin", "AI Owner: sources", "sparkle"]);
-    if (hasB("Incident/Safety Owner"))
-      items.push(["incidents", "Incident queue", "alert"]);
-    // The Platform Administrator stops here: it receives support requests (Support requests above) rather than sending
-    // them, and needs neither the public project showcase nor personal records.
+    // The module is named "Report a concern" for every role. An Organization Admin handles the context's cases and
+    // reports their own concerns from the same page; those go to the Platform Administrator.
+    if (isSafetyOwner()) items.push(["incidents", "Report a concern", "alert"]);
+    // The Platform Administrator stops here: it receives support requests and admins' concerns (listed above) rather
+    // than sending them, and needs neither the public project showcase nor personal records.
     if (r === "T") return items;
     items.push(["publicprojects", "Public projects", "globe"]);
+    // shown only to people who have received a tenant invitation (waiting or answered)
+    if (myTenantInvites().length)
+      items.push(["myinvites", "Tenant invitations", "mail"]);
     items.push(["profile", "Profile", "user"]);
     items.push(["privacy", "My records & consent", "lock"]);
     items.push(["resources", "Resources & guidance", "file"]);
     items.push(["help", "Help & support", "info"]);
-    if (!hasB("Incident/Safety Owner"))
+    if (!isSafetyOwner())
       items.push(["incidents", "Report a concern", "alert"]);
     return items;
   };
@@ -962,11 +995,14 @@ function navItems() {
       ["tenants", "Contexts & tenants", "building"],
       ["roles", "Roles & bundles", "shield"],
       ["packs", "Packs & role names", "settings"],
+      ["policies", "Trust/Data: Policies", "shield"],
+      ["billing", "Finance: Products & Payments", "card"],
       // Integrations, Capability scopes, Security & access, Backups & restore and Deployment status are run by the
       // technical team, not from this console; their pages stay in the code but are hidden from the menu for now.
       ["platform:lms", "LMS deep links", "globe"],
       ["audit", "Audit & logs", "file"],
       ["support", "Support requests", "inbox"],
+      ["incidents", "Report a concern", "alert"],
     );
     return always();
   }
@@ -1074,9 +1110,6 @@ function navItems() {
       ["admin:users", "Users & roles", "users"],
       ["admin:packs", "Pack configuration", "settings"],
       ["admin:library", "Template library", "route"],
-      ["compassqs", "Purpose Compass settings", "target"],
-      ["admin:purposes", "Optional purposes", "checks"],
-      ["admin:notify", "Notifications", "bell"],
       ["admin:initiatives", "Sponsor initiatives", "coin"],
       ["admin:support", "Support & requests", "question"],
       ["metrics", "Reports & exports", "chart"],
@@ -1126,13 +1159,12 @@ const GROUP = {
   org: "Organisation",
   admin: "Administration",
   disputes: "Administration",
-  compassqs: "Administration",
   metrics: "Administration",
   audit: "Administration",
   policies: "Specialist",
   billing: "Specialist",
-  aiadmin: "Specialist",
   publicprojects: "Always available",
+  myinvites: "Always available",
   privacy: "Always available",
   resources: "Always available",
   help: "Always available",
@@ -1148,6 +1180,7 @@ function navGroup(rt) {
   if (rt === "pathway" && r !== "P") return "Work";
   if (rt === "matches" && r === "F") return "Work";
   if (rt === "inbox" && r !== "F") return "Specialist";
+  if (rt === "incidents" && isSafetyOwner()) return "Administration";
   if (rt === "evidence" && r === "S") return "Sponsorship";
   if (rt === "challenges" && r === "S") return "Sponsorship";
   if (rt === "disputes" && r === "F") return "Work";
@@ -1156,9 +1189,12 @@ function navGroup(rt) {
 function navCount(r, tb) {
   const pid = myId();
   if (r === "admin") return admCount(tb);
-  if (r === "support") return sqForwarded().filter((q) => SQ_OPEN.includes(q.status)).length;
+  if (r === "support") return sqPlatform().filter((q) => SQ_OPEN.includes(q.status)).length;
+  if (r === "incidents" && role() === "T")
+    return S.incidents.filter((i) => incOwnerOf(i) && i.state !== "Closed").length;
   if (r === "funding" && tb === "invoices") return dueInvoices().length;
   if (r === "messages") return unreadTotal();
+  if (r === "myinvites") return myTenantInvites(true).length;
   if (r === "projects" && role() === "F")
     return S.projects.filter(
       (p) => inCtx(p) && p.status === "Submitted" && stewardOf(p),
@@ -1227,8 +1263,10 @@ function sidebar() {
       return `${sec}<a href="#" class="nav${on}" data-a="go" data-r="${rt}"${tb ? ` data-tab="${tb}"` : ""} data-tip="${h(l)}"${on ? ' aria-current="page"' : ""}>${ic(i)}<span class="t">${h(l)}</span><span class="ts" aria-hidden="true">${h(SHORT[rt] || l.split(" ")[0])}</span>${n ? `<span class="ncount" aria-label="${n} new">${n}</span>` : ""}</a>`;
     })
     .join("");
-  const sub = `${h(roleName(a.role, a.ctx))} · ${h(ctxShort(a.ctx))}${a.bundles.length ? " · +" + a.bundles.length + " bundle" + (a.bundles.length > 1 ? "s" : "") : ""}`;
-  return `<aside class="side" id="side-nav" aria-label="Main navigation"${UI.drawer ? ' role="dialog" aria-modal="true"' : ""}><div class="side-plate"><a href="#" class="brand" data-a="go" data-r="home" aria-label="PHOENIX home"><span class="mark">${MARK()}</span><span class="wm"><b>PHOENIX</b><span>Foundation</span></span></a><button class="side-user" type="button" data-a="switcher" aria-label="${h(me().name)}, ${h(asgLabel(a))}${others > 1 ? ". Switch role or context" : ""}" title="${h(me().name)} · ${h(asgLabel(a))}"><span class="av side-av" aria-hidden="true">${ini(myId())}</span><span class="side-user-t"><b title="${h(me().name)}">${h(me().name)}</b><small title="${h(asgLabel(a))}">${sub}</small></span><span class="side-user-chev">${ic("chev", 16)}</span></button></div><nav class="side-nav" aria-label="Sections">${items}</nav><div class="side-foot"><button type="button" class="nav side-close" data-a="drawerClose">${ic("x")}<span class="t">Close menu</span></button></div></aside>`;
+  // Tenant switcher: the active tenant and the person's role in it; the primary membership is marked.
+  const sub = `${h(roleName(a.role, a.ctx))}${a.id === primaryAsg().id ? " · Primary" : ""}${a.bundles.length ? " · +" + a.bundles.length + " bundle" + (a.bundles.length > 1 ? "s" : "") : ""}`;
+  const switchable = others > 1 || myTenantInvites(true).length;
+  return `<aside class="side" id="side-nav" aria-label="Main navigation"${UI.drawer ? ' role="dialog" aria-modal="true"' : ""}><div class="side-plate"><a href="#" class="brand" data-a="go" data-r="home" aria-label="PHOENIX home"><span class="mark">${MARK()}</span><span class="wm"><b>PHOENIX</b><span>Foundation</span></span></a><button class="side-user" type="button" data-a="switcher" aria-label="${h(me().name)}, ${h(asgLabel(a))}${switchable ? ". Switch tenant or role" : ""}" title="${h(me().name)} · ${h(asgLabel(a))}"><span class="av side-av" aria-hidden="true">${h(ctxName(a.ctx)[0])}</span><span class="side-user-t"><b title="${h(ctxName(a.ctx))}">${h(ctxName(a.ctx))}</b><small title="${h(asgLabel(a))}">${sub}</small></span><span class="side-user-chev">${ic("chev", 16)}</span></button></div><nav class="side-nav" aria-label="Sections">${items}</nav><div class="side-foot"><button type="button" class="nav side-close" data-a="drawerClose">${ic("x")}<span class="t">Close menu</span></button></div></aside>`;
 }
 // The PHOENIX mark: an ember plume rising from a baseline.
 const MARK = (s = 20) =>
@@ -1250,6 +1288,7 @@ function topbar() {
 const SHORT = {
   home: "Home",
   messages: "Chats",
+  myinvites: "Invites",
   pathway: "Pathway",
   profile: "Profile",
   projects: "Projects",
@@ -1280,9 +1319,7 @@ const SHORT = {
   help: "Help",
   privacy: "Privacy",
   mandate: "Mandate",
-  compassqs: "Compass",
   policies: "Trust",
-  aiadmin: "AI",
   incidents: "Safety",
   metrics: "Reports",
 };
@@ -1723,7 +1760,9 @@ function switcherBody(then) {
   const cur = S.session.aid;
   const list = roleChoices();
   const byCtx = [...new Set(list.map((x) => x.ctx))];
-  return `<p class="muted">Choose the role and context to work in. Your dashboard, menu, requests, counts and notifications are rebuilt for that choice; nothing from one context is carried into another.</p>${unsavedForms().length ? banner("warn", "You have unsaved changes", "Switching discards text you have not saved. Save it first if you want to keep it.") : ""}<div class="col" style="gap:14px">${byCtx
+  const prim = primaryAsg().id;
+  const inv = myTenantInvites(true).length;
+  return `<p class="muted">Choose the tenant and role to work in. Your dashboard, menu, requests, counts and notifications are rebuilt for that choice; nothing from one tenant is carried into another. Switching never changes your primary organization.</p>${unsavedForms().length ? banner("warn", "You have unsaved changes", "Switching discards text you have not saved. Save it first if you want to keep it.") : ""}${inv ? banner("info", inv + " tenant invitation" + (inv > 1 ? "s" : "") + " waiting", L("Review invitations", "myinvites")) : ""}<div class="col" style="gap:14px">${byCtx
     .map(
       (c) =>
         `<section class="col" style="gap:6px"><span class="lbl">${ic("building", 14)} ${h(ctxName(c))}</span>${list
@@ -1731,20 +1770,20 @@ function switcherBody(then) {
           .map((x) => {
             const usable = asgUsable(x);
             const isCur = x.id === cur;
-            return `<button class="demo-acc${usable ? "" : " is-off"}" type="button" ${usable && !isCur ? `data-a="doSwitch" data-id="${x.id}"${then ? ` data-then="${h(then)}"` : ""}` : 'disabled aria-disabled="true"'}><span class="tile t-soft">${ic("user", 18)}</span><span class="col" style="flex:1"><b>${h(roleName(x.role, x.ctx))}</b><span class="cap">${x.bundles.length ? "Bundles: " + h(x.bundles.join(", ")) : "No specialist bundles"}${usable ? "" : " · not available for work until it is active"}</span></span>${isCur ? pill("Current", "p-teal") : pill(x.status)}</button>`;
+            return `<button class="demo-acc${usable ? "" : " is-off"}" type="button" ${usable && !isCur ? `data-a="doSwitch" data-id="${x.id}"${then ? ` data-then="${h(then)}"` : ""}` : 'disabled aria-disabled="true"'}><span class="tile t-soft">${ic("user", 18)}</span><span class="col" style="flex:1"><b>${h(roleName(x.role, x.ctx))}</b>${x.bundles.length || !usable ? `<span class="cap">${[x.bundles.length ? "Bundles: " + h(x.bundles.join(", ")) : "", usable ? "" : "Not available for work until it is active"].filter(Boolean).join(" · ")}</span>` : ""}</span>${x.id === prim ? pill("Primary", "p-navy") : ""}${isCur ? pill("Current", "p-teal") : pill(x.status)}</button>`;
           })
           .join("")}</section>`,
     )
     .join("")}</div>`;
 }
 A.switcher = () => {
-  if (roleChoices().length < 2) {
-    toast("You hold one role in one context.", "warn");
+  if (roleChoices().length < 2 && !myTenantInvites(true).length) {
+    toast("You hold one role in one tenant.", "warn");
     render();
     return;
   }
   UI.panel = null;
-  modal("Switch role or context", switcherBody());
+  modal("Switch tenant or role", switcherBody());
 };
 // A policy published in another tab reaches this one straight away.
 window.addEventListener("storage", (e) => {

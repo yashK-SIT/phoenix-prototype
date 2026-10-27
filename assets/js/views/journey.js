@@ -443,25 +443,6 @@ function returnsCard(o) {
 function tick() {
   if (typeof expireCards === "function") expireCards();
   pubTick(); // publication votes close at their closing time (publish.js)
-  const t = today();
-  S.assign.forEach((a) => {
-    if (a.status === "Active" && a.until && a.until < t) {
-      a.status = "Expired";
-      notify(
-        a.pid,
-        "Your " +
-          roleName(a.role, a.ctx) +
-          " assignment expired on " +
-          fmt(a.until),
-        "home",
-      );
-      audit(
-        "Role assignment expired",
-        a.id,
-        roleName(a.role, a.ctx) + " · until " + a.until,
-      );
-    }
-  });
   S.circles.forEach((c) =>
     (c.polls || []).forEach((p) => {
       if (p.status === "Open") pollTick(c, p); // closes at the closing time; sends the configured reminder (circles.js)

@@ -1010,7 +1010,7 @@ route("privacy", "agreements", () => {
       [
         "Consent settings",
         "Self-declared",
-        "You + Trust/Data Steward",
+        "You + Organization Admin",
         "Governance",
       ],
     ];

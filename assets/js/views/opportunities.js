@@ -873,7 +873,7 @@ F.colf = d => {
     outcome: null,
     blockers: c.blockers.filter(b => b !== 'No valid mandate to commit organization resources'),
   };
-  if (c.blockers.includes('No valid mandate to commit organization resources')) m.gaps.push('Partner has no valid mandate to commit organization resources — extra approval needed at join time');
+  if (c.blockers.includes('No valid mandate to commit organization resources')) m.gaps.push('Collaborator has no valid mandate to commit organization resources — extra approval needed at join time');
   S.matches.push(m);
   p.history.push({ at: today(), t: 'Collaborator match drafted for requirement: ' + d.req });
   audit('Collaborator match drafted', m.id, d.req);

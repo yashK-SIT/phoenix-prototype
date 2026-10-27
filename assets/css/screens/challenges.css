@@ -73,7 +73,7 @@
 .ch-kpis {
   margin-bottom: var(--s-4);
 }
-.ch-prev {
+.ch-prev .board-post {
   margin: 0;
   border: 1px dashed var(--line-strong);
 }

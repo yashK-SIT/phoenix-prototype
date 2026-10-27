@@ -9,56 +9,74 @@ const INC_STATES = [
   "Reopened",
 ];
 route("incidents", "governance", () => {
-  const own = hasB("Incident/Safety Owner");
-  const list = S.incidents.filter((i) => own || i.by === myId());
+  // Cases are handled by whoever they were routed to (incOwnerOf): the Organization Admins of the context for a
+  // member's report, the Platform Administrator for an Organization Admin's. Everyone sees their own reports.
+  const plat = role() === "T";
+  const own = isSafetyOwner() || plat;
+  const cases = S.incidents.filter(incOwnerOf);
+  const mine = S.incidents.filter((i) => i.by === myId());
   const sel = UI.p.id && byId("incidents", UI.p.id);
-  if (sel && (own || sel.by === myId())) return incDetail(sel, own);
-  const uniq = (xs) => [...new Set(xs.filter(Boolean))].sort().map((v) => [v, v]);
-  const rep = (i) => i.timeline[0]?.at || "";
+  if (sel && (incOwnerOf(sel) || sel.by === myId())) return incDetail(sel, incOwnerOf(sel));
   return (
     head(
-      own ? "Incidents & concerns" : "Report a concern",
-      "Reports are confidential. No automated sanctions.",
-      B(ic("plus", 16) + "Report an incident", "incNew", {}, "btn-p"),
+      "Report a concern",
+      plat
+        ? "Concerns Organization Admins reported, from every tenant. Reports are confidential. No automated sanctions."
+        : "Reports are confidential. No automated sanctions.",
+      plat ? "" : B(ic("plus", 16) + "Report an incident", "incNew", {}, "btn-p"),
     ) +
-    card(own ? "Cases" : "Your reports", "", dataView("incidents:" + (own ? "all" : "mine"), {
-      label: own ? "cases" : "reports",
-      items: list,
-      search: (i) => i.kind + " " + i.desc + " " + i.where + " " + i.id,
-      quick: {
-        label: "Status",
-        options: [["open", "Open"], ["closed", "Closed"]],
-        test: (i, v) => (v === "closed" ? i.state === "Closed" : i.state !== "Closed"),
-      },
-      filters: [
-        { key: "kind", label: "Category", options: uniq(list.map((i) => i.kind)), test: (i, v) => i.kind === v },
-        { key: "state", label: "State", options: INC_STATES.filter((s) => list.some((i) => i.state === s)).map((s) => [s, s]), test: (i, v) => i.state === v },
-        { key: "pause", label: "Emergency pause", options: [["yes", "Applied"], ["no", "Not applied"]], test: (i, v) => (v === "yes" ? !!i.paused : !i.paused) },
-      ],
-      sorts: [
-        ["new", "Newest reported", (a, b) => rep(b).localeCompare(rep(a))],
-        ["old", "Oldest reported", (a, b) => rep(a).localeCompare(rep(b))],
-        ["kind", "Category", (a, b) => a.kind.localeCompare(b.kind)],
-        ["state", "State", (a, b) => INC_STATES.indexOf(a.state) - INC_STATES.indexOf(b.state)],
-      ],
-      row: (i) => ({
-        lead: `<span class="tile${i.state === "Closed" ? " t-soft" : ""}" aria-hidden="true">${ic("shield", 18)}</span>`,
-        title: L(h(i.kind), "incidents", { id: i.id }, ""),
-        sub: h(i.desc.slice(0, 80)),
-        meta: [h(i.where), "Reported " + fmt(rep(i)), `<span class="mono">${h(i.id)}</span>`],
-        badges: pill(i.state) + (i.paused ? pill("Emergency pause", "p-red") : ""),
-        primary: L("Open", "incidents", { id: i.id }, "btn btn-s btn-sm"),
-      }),
-      empty: ["shield", own ? "No incidents." : "You have not reported anything.", "", ""],
-    }))
+    (own ? card("Cases", "", incList("all", cases, true)) : "") +
+    (own && !plat ? `<div class="section-gap"></div>` : "") +
+    (plat
+      ? ""
+      : card(
+          "Your reports",
+          own ? "Concerns you report go to the Platform Administrator, not to admins of this organization." : "",
+          incList("mine", mine, false),
+        ))
   );
 });
+function incList(key, list, own) {
+  const uniq = (xs) => [...new Set(xs.filter(Boolean))].sort().map((v) => [v, v]);
+  const rep = (i) => i.timeline[0]?.at || "";
+  const plat = own && role() === "T";
+  return dataView("incidents:" + key, {
+    label: own ? "cases" : "reports",
+    items: list,
+    search: (i) => i.kind + " " + i.desc + " " + i.where + " " + i.id,
+    quick: {
+      label: "Status",
+      options: [["open", "Open"], ["closed", "Closed"]],
+      test: (i, v) => (v === "closed" ? i.state === "Closed" : i.state !== "Closed"),
+    },
+    filters: [
+      { key: "kind", label: "Category", options: uniq(list.map((i) => i.kind)), test: (i, v) => i.kind === v },
+      { key: "state", label: "State", options: INC_STATES.filter((s) => list.some((i) => i.state === s)).map((s) => [s, s]), test: (i, v) => i.state === v },
+      { key: "pause", label: "Emergency pause", options: [["yes", "Applied"], ["no", "Not applied"]], test: (i, v) => (v === "yes" ? !!i.paused : !i.paused) },
+    ],
+    sorts: [
+      ["new", "Newest reported", (a, b) => rep(b).localeCompare(rep(a))],
+      ["old", "Oldest reported", (a, b) => rep(a).localeCompare(rep(b))],
+      ["kind", "Category", (a, b) => a.kind.localeCompare(b.kind)],
+      ["state", "State", (a, b) => INC_STATES.indexOf(a.state) - INC_STATES.indexOf(b.state)],
+    ],
+    row: (i) => ({
+      lead: `<span class="tile${i.state === "Closed" ? " t-soft" : ""}" aria-hidden="true">${ic("shield", 18)}</span>`,
+      title: L(h(i.kind), "incidents", { id: i.id }, ""),
+      sub: h(i.desc.slice(0, 80)),
+      meta: [plat && h(ctxName(i.ctx)), plat && "By " + nm(i.by), h(i.where), "Reported " + fmt(rep(i)), `<span class="mono">${h(i.id)}</span>`].filter(Boolean),
+      badges: pill(i.state) + (i.paused ? pill("Emergency pause", "p-red") : ""),
+      primary: L("Open", "incidents", { id: i.id }, "btn btn-s btn-sm"),
+    }),
+    empty: ["shield", own ? "No incidents." : "You have not reported anything.", "", ""],
+  });
+}
 function incDetail(i, own) {
   const acts = own
     ? `${i.state === "Reported" ? B("Triage", "incAct", { id: i.id, v: "Triaged" }) : ""}${["Reported", "Triaged"].includes(i.state) && !i.paused ? CB(ic("pause", 14) + "Apply emergency pause", "incPause", { id: i.id }, "Apply an emergency pause? The linked Circle becomes read-only for members until a decision is recorded.", "btn-d btn-sm", "Apply emergency pause") : ""}${["Triaged", "Reopened", "Appealed"].includes(i.state) ? B("Assign to me & review", "incAct", { id: i.id, v: "Under review" }) : ""}${i.state === "Under review" ? B("Record decision / remedy", "incDecide", { id: i.id }, "btn-p btn-sm") : ""}${["Decision recorded"].includes(i.state) ? B("Close case", "incAct", { id: i.id, v: "Closed" }) : ""}${i.state === "Closed" ? B("Reopen", "incAct", { id: i.id, v: "Reopened" }) : ""}`
     : "";
   return (
-    crumbsHtml([["Incidents", "incidents"], ["Case"]]) +
+    crumbsHtml([["Report a concern", "incidents"], ["Case"]]) +
     `<div class="shead-main inc-head"><span class="tile" aria-hidden="true">${ic("shield", 20)}</span><div class="shead-t"><div class="shead-kind">Incident case · <span class="mono">${h(i.id)}</span></div><div class="row wrap inc-title"><h1 class="h1">${h(i.kind)}</h1>${pill(i.state)}${i.paused ? pill("Emergency pause", "p-red") : ""}</div><div class="shead-meta"><span>${h(i.where)}</span><span>${h(i.conf)}</span><span>Reported ${fmt(i.timeline[0]?.at)}</span></div></div></div>` +
     `<div class="g12 inc-body"><div class="c8 col inc-main">${card(
       "Case",
@@ -66,6 +84,8 @@ function incDetail(i, own) {
       dl([
         ["Description", h(i.desc)],
         ["Reported by", own ? nm(i.by) : "You"],
+        ["Organization", h(ctxName(i.ctx))],
+        ["Handled by", i.to === "platform" ? "Platform Administrator" : "Organization Admins of " + h(ctxName(i.ctx))],
         ["Assigned to", i.owner ? nm(i.owner) : "Unassigned"],
         ["Emergency pause", i.paused ? "Applied" : "No"],
         ["Decision / remedy", h(i.decision || "—")],
@@ -81,7 +101,7 @@ A.incNew = () => {
   modal(
     "Report an incident",
     () =>
-      `<form data-f="inc" class="col fgap" novalidate>${fi("inc", "kind", "Type", { type: "select", req: true, ph: "Select", opts: ["Conduct concern", "Safety risk", "Privacy / data concern", "AI output concern", "Rights or access issue", "Other"] })}${fi("inc", "where", "Where did it happen?", { req: true })}${fi("inc", "desc", "What happened?", { type: "textarea", rows: 4, req: true })}${banner("info", "", "Only the Incident/Safety Owner sees this report. Reporting never depends on payment status.")}<div class="actions"><span></span><button class="btn btn-p" type="submit">Submit report</button></div></form>`,
+      `<form data-f="inc" class="col fgap" novalidate>${fi("inc", "kind", "Type", { type: "select", req: true, ph: "Select", opts: ["Conduct concern", "Safety risk", "Privacy / data concern", "AI output concern", "Rights or access issue", "Other"] })}${fi("inc", "where", "Where did it happen?", { req: true })}${fi("inc", "desc", "What happened?", { type: "textarea", rows: 4, req: true })}${banner("info", "", (routeTo() === "platform" ? "Only the Platform Administrator sees this report, not the other admins of your organization." : "Only your Organization Admin sees this report.") + " Reporting never depends on payment status.")}<div class="actions"><span></span><button class="btn btn-p" type="submit">Submit report</button></div></form>`,
   );
 };
 F.inc = (d) => {
@@ -93,25 +113,27 @@ F.inc = (d) => {
     })
   )
     return render();
+  const to = routeTo();
   const i = {
     id: uid("in"),
     by: myId(),
     ctx: ctxId(),
+    to,
     where: d.where,
     kind: d.kind,
     desc: d.desc,
     state: "Reported",
     owner: null,
     paused: false,
-    conf: "Restricted to Incident/Safety Owner",
+    conf: to === "platform" ? "Restricted to Platform Administrator" : "Restricted to Organization Admin",
     timeline: [{ at: today(), t: "Reported" }],
     decision: null,
   };
   S.incidents.push(i);
-  S.assign
-    .filter((a) => a.bundles.includes("Incident/Safety Owner"))
-    .forEach((a) =>
-      notify(a.pid, "New incident reported: " + d.kind, "incidents", {
+  (to === "platform" ? platformAdmins() : safetyOwners(i.ctx))
+    .filter((p) => p !== myId())
+    .forEach((p) =>
+      notify(p, "New incident reported: " + d.kind, "incidents", {
         id: i.id,
       }),
     );
@@ -138,7 +160,8 @@ A.incPause = (d) => {
   const i = byId("incidents", d.id);
   i.paused = true;
   i.timeline.push({ at: today(), t: "Emergency pause applied" });
-  const c = S.circles.find((c) => i.where.includes(c.name));
+  // only a Circle of the tenant the case came from: the Platform Administrator handles cases from every tenant
+  const c = S.circles.find((c) => c.ctx === i.ctx && i.where.includes(c.name));
   if (c && c.state === "Active") {
     c.state = "Paused/Repair";
     c.pause = {
@@ -297,6 +320,7 @@ F.prov = (d) => {
 function migrate() {
   ensurePlatformData();
   syncCtxNames();
+  tenantMigrate(); // second tenant's admin, sample tenant invitations, primary memberships (views/admin.js)
   // accounts that are not in the seed were created in this browser (registration or Programme admin)
   const seedIds = new Set(seed().people.map((p) => p.id));
   S.people.forEach((p) => {
@@ -359,8 +383,41 @@ function migrate() {
   S.agreements.forEach((g) => {
     if (!g.text) g.text = polSeedText(g);
   });
-  // Purpose Compass questions are data managed by the Platform Administrator
-  if (!S.compassQs) S.compassQs = seedCompassQs();
+  // Purpose Compass questions are fixed (onboarding.js compassQs); earlier stored edits are dropped.
+  delete S.compassQs;
+  // Programme-level optional purposes are no longer configurable: earlier programme overrides are cleared.
+  if (S.scopes) S.scopes.programme = {};
+  // Roles have no expiry date: stored expiry dates are dropped and roles that had expired are active again.
+  S.assign.forEach((a) => {
+    delete a.until;
+    if (a.status === "Expired") a.status = "Active";
+  });
+  (S.invites || []).forEach((i) => delete i.until);
+  // The Trust/Data Steward, Finance Owner, AI Owner and Incident/Safety Owner bundles and their demo accounts are gone:
+  // policies and products & payments belong to the Platform Administrator, release and incidents to the Organization Admin.
+  const GONE_B = ["Trust/Data Steward", "Finance Owner", "AI Owner", "Incident/Safety Owner"];
+  const GONE_A = ["a14", "a15", "a16", "a17"];
+  S.bundles = (S.bundles || []).filter((b) => !GONE_B.includes(b.name));
+  S.assign.forEach((a) => (a.bundles = (a.bundles || []).filter((b) => !GONE_B.includes(b))));
+  if (S.session && GONE_A.includes(S.session.aid)) S.session = null;
+  S.assign = S.assign.filter((a) => !GONE_A.includes(a.id));
+  ["p14", "p15", "p16", "p17"].forEach((pid) => {
+    const p = S.people.find((x) => x.id === pid && /@demo\.phoenix$/.test(x.email || ""));
+    if (p && !S.assign.some((a) => a.pid === pid)) {
+      S.people = S.people.filter((x) => x !== p);
+      delete S.pw[pid];
+    }
+  });
+  // Collaborator is the role's only label: resources for the role use it as their audience.
+  [...S.circles, ...S.ropes, ...S.rooms].forEach((o) =>
+    (o.members || []).forEach((m) => {
+      if (m.role === "Partner") m.role = "Collaborator";
+    }),
+  );
+  (S.resources || []).forEach((x) => {
+    if (x.audience === "Partners") x.audience = "Collaborators";
+    if (x.title === "Partner onboarding pack") x.title = "Collaborator onboarding pack";
+  });
   // one default programme for self-registration (there is no programme choice)
   S.settings.defaultCtx = S.settings.defaultCtx || "c1";
   // two-person conversations (sponsor ↔ project owner)
@@ -417,9 +474,9 @@ function migrate() {
     },
     {
       id: "rs5",
-      title: "Partner onboarding pack",
+      title: "Collaborator onboarding pack",
       kind: "Guide",
-      audience: "Partners",
+      audience: "Collaborators",
       status: "Published",
       by: "p7",
       desc: "Publishing cards, mandates and joining workspaces.",
@@ -501,7 +558,7 @@ function migrate() {
       { rule: "Storage > 80% of quota", to: "Platform admin", on: true },
       {
         rule: "AI provider unavailable",
-        to: "Platform admin + AI Owner",
+        to: "Platform admin",
         on: true,
       },
     ],
@@ -522,7 +579,7 @@ const AUD = {
   P: "Participants",
   F: "Facilitators",
   M: "Mentors",
-  C: "Partners",
+  C: "Collaborators",
   S: "Sponsors",
   A: "All roles",
   T: "All roles",
@@ -621,7 +678,7 @@ A.resNew = () => {
   modal(
     role() === "A" ? "Add resource" : "Suggest a resource",
     () =>
-      `<form data-f="res" class="col fgap" novalidate>${fi("res", "title", "Title", { req: true })}${fi("res", "kind", "Type", { type: "select", req: true, opts: ["Guide", "Learning resource", "Template guidance", "Governance guidance"] })}${fi("res", "audience", "Audience", { type: "select", req: true, opts: ["All roles", "Participants", "Facilitators", "Mentors", "Partners", "Organization representatives", "Sponsors"] })}${fi("res", "desc", "Description", { type: "textarea", rows: 3, req: true })}<div class="field"><label class="lbl">File or link</label><input type="file" name="f" class="input res-file"></div>${role() !== "A" ? banner("info", "", "An Organization Admin reviews suggestions before they are published.") : ""}<div class="actions"><span></span><button class="btn btn-p" type="submit">${role() === "A" ? "Publish" : "Submit for review"}</button></div></form>`,
+      `<form data-f="res" class="col fgap" novalidate>${fi("res", "title", "Title", { req: true })}${fi("res", "kind", "Type", { type: "select", req: true, opts: ["Guide", "Learning resource", "Template guidance", "Governance guidance"] })}${fi("res", "audience", "Audience", { type: "select", req: true, opts: ["All roles", "Participants", "Facilitators", "Mentors", "Collaborators", "Organization representatives", "Sponsors"] })}${fi("res", "desc", "Description", { type: "textarea", rows: 3, req: true })}<div class="field"><label class="lbl">File or link</label><input type="file" name="f" class="input res-file"></div>${role() !== "A" ? banner("info", "", "An Organization Admin reviews suggestions before they are published.") : ""}<div class="actions"><span></span><button class="btn btn-p" type="submit">${role() === "A" ? "Publish" : "Submit for review"}</button></div></form>`,
   );
 };
 F.res = (d) => {

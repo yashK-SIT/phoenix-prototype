@@ -224,7 +224,7 @@ const CORE_WITHOUT_OPTIONAL = [
   "Get help from a person",
 ];
 
-// ---- tenant (Platform Administrator) and programme (Organization Admin) scope settings
+// ---- tenant (Platform Administrator) scope settings
 function scopeMatrix(level, rows) {
   return table(
     [
@@ -280,32 +280,9 @@ function tenantScopesView() {
       "tenant",
       S.orgs.map((o) => [o.id, o.name]),
     ) +
-      `<p class="cap" style="margin-top:10px">Each programme can also turn a purpose off (Organization administration → Optional purposes). People decide for themselves in My records & consent, and owners can keep a single record out of a purpose.</p>`,
+      `<p class="cap" style="margin-top:10px">People decide for themselves in My records & consent, and owners can keep a single record out of a purpose.</p>`,
   );
 }
-function programmeScopesView() {
-  const c = ctxId();
-  return card(
-    "Optional purposes in this programme",
-    "Programme level. A purpose turned off here is off for everyone in " +
-      h(ctxName(c)) +
-      ", whatever their own choice. Turning it on does not grant anything: each person still decides.",
-    scopeMatrix("programme", [[c, ctxName(c)]]) +
-      (SCOPES.some(([k]) => !tenantScope(ctxOrg(c), k))
-        ? banner(
-            "info",
-            "Turned off by the organization",
-            SCOPES.filter(([k]) => !tenantScope(ctxOrg(c), k))
-              .map((s) => s[1])
-              .join(", ") +
-              " is off for " +
-              h(orgName(ctxOrg(c))) +
-              " at tenant level.",
-          )
-        : ""),
-  );
-}
-
 // ---- record level: an owner keeps one sensitive record out of particular purposes
 const REC_PURPOSES = ["research", "xorg", "public", "ext"];
 function recordPurposesCard(e) {

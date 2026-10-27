@@ -1,6 +1,6 @@
 // ---------- BUILD-FREEZE ADDITIONS (WSS Build-Freeze Review v1.0 and Action Pack, Oct 2026) ----------
 // Help & support (human, BF-14), Review Inbox (assigned items only), Explore board (Bulletin Board Lite, BF-15),
-// My collaborations (Relationship List Lite, BF-16), Partner organisation & mandate, AI Owner sources (BF-09).
+// My collaborations (Relationship List Lite, BF-16), Collaborator organisation & mandate.
 // Everything here composes existing, already-authorised records: no new feed, ranking, score or graph.
 
 // ---- Help & support: a human route, separate from Ask PHOENIX, mentor support and incident reporting.
@@ -18,17 +18,22 @@ const sqExt = n => (String(n).split('.').pop() || '').toLowerCase();
 const sqMB = b => +(b / 1048576).toFixed(2);
 const sqSize = mb => (mb < 1 ? Math.max(1, Math.round(mb * 1024)) + ' KB' : mb.toFixed(1) + ' MB');
 const sqIcon = k => ({ image: 'image', video: 'file', audio: 'file', pdf: 'file', text: 'file' })[k] || 'file';
-// The Organization Admin handles requests sent in the context they work in. When they cannot solve one they may
-// forward it (q.fwd); the Platform Administrator sees and handles only forwarded requests, from any organization.
-// Neither sends support requests of their own from these screens.
-const sqAdmin = q => !!q && ((role() === 'A' && q.ctx === ctxId()) || (role() === 'T' && !!q.fwd));
-const sqForwarded = () => S.supportQueries.filter(q => q.fwd);
+// Routing (q.to, set from routeTo() when sent): a member's request goes to the Organization Admins of the context it
+// was sent in; an Organization Admin's own request goes to the Platform Administrator, never to their own or another
+// tenant's admins. The Organization Admin may forward a member's request they cannot solve (q.fwd). The Platform
+// Administrator handles Organization Admins' requests and forwarded ones, from every organization, and sends none.
+const sqAdmin = q =>
+  !!q && q.by !== myId() && ((role() === 'A' && q.ctx === ctxId() && q.to !== 'platform') || (role() === 'T' && (q.to === 'platform' || !!q.fwd)));
+const sqPlatform = () => S.supportQueries.filter(q => q.to === 'platform' || q.fwd);
+// The people a request goes to, and where their copy of it opens.
+const sqDesk = q => S.assign.filter(a => a.status === 'Active' && (q.to === 'platform' ? roleBase(a.role) === 'T' : roleBase(a.role) === 'A' && a.ctx === q.ctx));
+const sqDeskLink = q => (q.to === 'platform' ? ['support', { sq: q.id }] : ['admin', { tab: 'support', sq: q.id }]);
+const sqDeskName = q => (q.to === 'platform' ? 'Platform support' : 'Programme support');
 // Where the support list lives for the current role: the Platform Administrator's own page, or Programme admin.
 const sqHome = (p = {}) => (role() === 'T' ? ['support', p] : ['admin', { tab: 'support', ...p }]);
 const sqMine = q => !!q && q.by === myId();
 const sqSees = q => sqMine(q) || sqAdmin(q);
 const sqLast = q => (q.log || []).reduce((m, x) => (x.at > m ? x.at : m), q.at || '');
-const sqAdmins = ctx => S.assign.filter(a => roleBase(a.role) === 'A' && a.ctx === ctx && a.status === 'Active');
 
 // Attachment files live in this browser's IndexedDB, keyed by attachment id; the request keeps only metadata.
 // A production build stores them server-side and serves them through authorised, short-lived links.
@@ -135,7 +140,7 @@ const sqTimeline = (q, admin) =>
     .reverse()
     .map(x => {
       const [icon, label] = SQ_LOG[x.k] || ['info', 'Update'];
-      const who = x.by === myId() ? 'You' : x.k === 'reply' && !admin ? 'Programme support (' + nm(x.by) + ')' : nm(x.by);
+      const who = x.by === myId() ? 'You' : x.k === 'reply' && !admin ? sqDeskName(q) + ' (' + nm(x.by) + ')' : nm(x.by);
       const body = x.k === 'status' ? `<span class="sq-move">${pill(x.from)}${ic('arrow', 14)}${pill(x.to)}</span>` : x.t ? `<p class="sq-msg">${h(x.t)}</p>` : '';
       return `<li class="tl sq-tl-i sq-${x.k}"><div class="row wrap" style="gap:6px;align-items:center">${ic(icon, 14)}<b>${label}</b>${x.k === 'note' ? pill('Admins only', 'p-grey') : ''}<span class="cap">${who} · ${fmt(x.at)}</span></div>${body}</li>`;
     })
@@ -157,6 +162,7 @@ const sqSummary = (q, admin) =>
     ['Submitted by', admin ? `${nm(q.by)}${P(q.by).email ? ` <span class="cap">· ${h(P(q.by).email)}</span>` : ''}` : 'You'],
     ['Topic', h(q.cat || 'General')],
     ['Context', h(ctxName(q.ctx))],
+    ['Sent to', q.to === 'platform' ? 'Platform Administrator' : 'Organization Admins of ' + h(ctxName(q.ctx)) + (q.fwd ? ' · forwarded to the Platform Administrator' : '')],
     ['Submitted', fmt(q.at)],
     ['Status', pill(q.status)],
     ['Last updated', fmt(sqLast(q))],
@@ -176,7 +182,7 @@ function sqUserDetail(q) {
       : `${errSum(f)}<form data-f="sqr" class="col fgap" novalidate><input type="hidden" name="id" value="${q.id}">${fi(f, 't', 'Add a reply', { type: 'textarea', rows: 3, req: true, max: 1000, ph: 'Add detail or answer a question from support.' })}<div class="actions"><span class="help">${q.status === 'Resolved' ? 'Replying reopens this request.' : 'The support team is notified.'}</span><button class="btn btn-p btn-sm" type="submit">${ic('send', 14)}Send reply</button></div></form>`;
   return (
     sqHead(q, [['Help & support', 'help'], [h(q.ref)]]) +
-    `<div class="g12 inc-body"><div class="c8 col inc-main">${card('Progress', '', sqSteps(q))}${last ? card('Latest response', 'From the programme support team · ' + fmt(last.at), `<p class="sq-msg">${h(last.t)}</p>`, '', 'accent') : ''}${card('Your request', '', `<p class="sq-msg">${h(q.t)}</p>`)}${card('Attachments', '', sqFileList(q, 'You did not attach any files.'))}${card('History', '', sqTimeline(q, false))}</div>
+    `<div class="g12 inc-body"><div class="c8 col inc-main">${card('Progress', '', sqSteps(q))}${last ? card('Latest response', 'From ' + sqDeskName(q).toLowerCase() + ' · ' + fmt(last.at), `<p class="sq-msg">${h(last.t)}</p>`, '', 'accent') : ''}${card('Your request', '', `<p class="sq-msg">${h(q.t)}</p>`)}${card('Attachments', '', sqFileList(q, 'You did not attach any files.'))}${card('History', '', sqTimeline(q, false))}</div>
  <div class="c4 col inc-side">${card('Details', '', sqSummary(q, false))}${card('Reply', '', replyBox)}</div></div>`
   );
 }
@@ -185,7 +191,7 @@ function sqUserDetail(q) {
 route('support', 'any', () => {
   if (role() !== 'T') return deniedView('support');
   if (UI.p.sq) return sqAdminDetail(UI.p.sq);
-  return head('Support requests', 'Forwarded by Organization Admins when they cannot solve a request. You can respond and change the status.') + sqAdminTable();
+  return head('Support requests', 'Sent by Organization Admins, or forwarded by them when they cannot solve a member’s request. You can respond and change the status.') + sqAdminTable();
 });
 route('help', 'any', () => {
   if (role() === 'T') return ROUTES.support.view();
@@ -200,21 +206,23 @@ route('help', 'any', () => {
   const aiOk = purposeOn('ai', myId());
   const f = 'helpq';
   const sending = !!UI.sqSending;
+  // An Organization Admin's request and concerns go to the Platform Administrator, not to their own organization.
+  const toPlat = routeTo() === 'platform';
   const tile = (icon, t, sub, act) => `<section class="card help-tile"><span class="tile t-soft" aria-hidden="true">${ic(icon, 18)}</span><div class="col" style="gap:4px"><b>${t}</b><p class="cap">${sub}</p></div><div class="row wrap" style="gap:8px">${act}</div></section>`;
   return (
     head('Help & support', `People who can help you in ${h(ctxName(ctxId()))}. Each route below is separate: asking one never sends anything to another.`) +
     `<div class="help-grid">${[
-      tile('user', 'Human support desk', 'A person from the programme team answers, usually within two working days. Use it for access, onboarding, records or anything that is not working.', B('Write to support', 'sqFocus', {}, 'btn-p btn-sm')),
+      tile('user', 'Human support desk', (toPlat ? 'The Platform Administrator answers requests from Organization Admins' : 'A person from the programme team answers') + ', usually within two working days. Use it for access, onboarding, records or anything that is not working.', B('Write to support', 'sqFocus', {}, 'btn-p btn-sm')),
       can('ai')
         ? tile('sparkle', 'Ask PHOENIX (AI, advisory)', aiOk ? 'Answers from approved programme sources, with sources and uncertainty. It advises; it never decides, approves or changes your record.' : 'AI processing is off for you, so Ask PHOENIX is unavailable. Everything else keeps working. You can change this in My records & consent.', aiOk ? B('Open Ask PHOENIX', 'askToggle', {}, 'btn-s btn-sm') : B('My records & consent', 'go', { r: 'privacy', tab: 'consent' }, 'btn-s btn-sm'))
         : '',
       rope ? tile('route', 'Your mentor', `${nm(rope.mentor)} supports you in ${h(rope.name)}. Mentoring conversations stay in your Rope Team.`, L('Open Rope Team', 'rope', { id: rope.id }, 'btn btn-s btn-sm')) : '',
-      tile('alert', 'Report a concern', 'For safety, conduct or misuse. Goes to the Incident/Safety Owner, never to the person concerned. You can report anonymously.', B('Report a concern', 'go', { r: 'incidents' }, 'btn-s btn-sm')),
+      tile('alert', 'Report a concern', `For safety, conduct or misuse. Goes confidentially to ${toPlat ? 'the Platform Administrator' : 'your programme’s Organization Admin'}. You can report anonymously.`, B('Report a concern', toPlat ? 'incNew' : 'go', toPlat ? {} : { r: 'incidents' }, 'btn-s btn-sm')),
     ].join('')}</div>` +
     `<div class="section-gap"></div>` +
     card(
       'Write to the support desk',
-      'Seen by the programme support team for this context only.',
+      toPlat ? 'Seen by the Platform Administrator only, not by other admins of this organization.' : 'Seen by the programme support team for this context only.',
       `${errSum(f)}<form data-f="helpq" id="helpq" class="col fgap" novalidate>${fi(f, 'cat', 'Topic', { type: 'select', req: true, ph: 'Choose a topic', opts: SQ_TOPICS })}${fi(f, 't', 'How can we help?', { type: 'textarea', rows: 3, req: true, max: 1000, ph: 'Describe what you need. Do not include other people’s private information.' })}${sqPicker()}<div class="actions"><span class="help">A person replies. AI is not used to answer support requests.</span><button class="btn btn-p btn-sm" type="submit" ${sending ? 'disabled aria-busy="true"' : ''}>${sending ? ic('refresh', 14) + 'Sending…' : ic('send', 14) + 'Send to support'}</button></div></form>`,
     ) +
     `<div class="section-gap"></div>` +
@@ -259,9 +267,10 @@ F.helpq = d => {
   render();
   (files.length ? sqPut(files.map((f, i) => [f.id, staged[i].file])) : Promise.resolve())
     .then(() => {
-      const q = { id, ref: 'SR-' + id.slice(2).padStart(4, '0'), by: myId(), t: d.t.trim(), cat: d.cat, ctx: ctxId(), at: now(), status: 'New', files, log: [{ at: now(), by: myId(), k: 'submitted' }] };
+      const q = { id, ref: 'SR-' + id.slice(2).padStart(4, '0'), by: myId(), t: d.t.trim(), cat: d.cat, ctx: ctxId(), to: routeTo(), at: now(), status: 'New', files, log: [{ at: now(), by: myId(), k: 'submitted' }] };
       S.supportQueries.unshift(q);
-      sqAdmins(q.ctx).forEach(a => notify(a.pid, `Support request ${q.ref}: ${d.cat} from ${me().name}`, 'admin', { tab: 'support', sq: q.id }, a.id));
+      const from = q.to === 'platform' ? `${me().name} (Organization Admin, ${ctxName(q.ctx)})` : me().name;
+      sqDesk(q).forEach(a => notify(a.pid, `Support request ${q.ref}: ${d.cat} from ${from}`, ...sqDeskLink(q), a.id));
       notify(myId(), `We received your support request ${q.ref}`, 'help', { id: q.id });
       audit('Support request sent', q.id, d.cat + (files.length ? ' · ' + files.length + ' attachment' + (files.length > 1 ? 's' : '') : ''));
       staged.forEach(x => x.url && URL.revokeObjectURL(x.url));
@@ -286,7 +295,7 @@ F.sqr = d => {
     q.log.push({ at: now(), by: myId(), k: 'status', from: 'Resolved', to: 'In Progress' });
     q.status = 'In Progress';
   }
-  sqAdmins(q.ctx).forEach(a => notify(a.pid, `New reply on ${q.ref} from ${me().name}`, 'admin', { tab: 'support', sq: q.id }, a.id));
+  sqDesk(q).forEach(a => notify(a.pid, `New reply on ${q.ref} from ${me().name}`, ...sqDeskLink(q), a.id));
   audit('Support request reply', q.id, q.status);
   clearF('sqr');
   toast('Reply sent to the support team.');
@@ -351,11 +360,11 @@ A.sqDl = d =>
 // ---- Organization Admin: table of requests in the current context
 function sqAdminTable() {
   const all = role() === 'T';
-  const qs = all ? sqForwarded() : S.supportQueries.filter(q => q.ctx === ctxId());
+  const qs = S.supportQueries.filter(sqAdmin);
   const topics = [...new Set(qs.map(q => q.cat || 'General'))].sort();
   return card(
     `Support requests <span class="adm-n">${qs.length}</span>`,
-    all ? 'Requests an Organization Admin forwarded because they could not solve them. Open a request to review it, respond and change its status.' : `Requests sent in ${h(ctxName(ctxId()))}. Open a request to review it, respond and change its status.`,
+    all ? 'Requests Organization Admins sent, and members’ requests they forwarded because they could not solve them. Open a request to review it, respond and change its status.' : `Requests members sent in ${h(ctxName(ctxId()))}. Requests from Organization Admins go to the Platform Administrator. Open a request to review it, respond and change its status.`,
     dataView('adm:support', {
       label: 'support requests',
       items: qs,
@@ -364,10 +373,12 @@ function sqAdminTable() {
       searchLabel: 'Search by ID, name or text',
       quick: { label: 'Status', options: SQ_STATES.map(v => [v, v]), test: (q, v) => q.status === v },
       filters: [
+        all && { key: 'via', label: 'Received as', options: [['admin', 'From an Organization Admin'], ['fwd', 'Forwarded']], test: (q, v) => (v === 'admin') === (q.to === 'platform') },
+        all && { key: 'org', label: 'Organization', options: [...new Set(qs.map(q => q.ctx))].map(c => [c, ctxName(c)]), test: (q, v) => q.ctx === v },
         { key: 'topic', label: 'Topic', options: topics.map(v => [v, v]), test: (q, v) => (q.cat || 'General') === v },
         { key: 'files', label: 'Attachments', options: [['yes', 'With attachments'], ['no', 'Without attachments']], test: (q, v) => (v === 'yes') === !!(q.files || []).length },
         { key: 'reply', label: 'Response', options: [['none', 'No response yet'], ['some', 'Responded']], test: (q, v) => (v === 'some') === !!sqLatestReply(q) },
-      ],
+      ].filter(Boolean),
       sorts: [
         ['at', 'Submitted', (a, b) => String(a.at).localeCompare(String(b.at))],
         ['upd', 'Last updated', (a, b) => sqLast(a).localeCompare(sqLast(b))],
@@ -382,7 +393,7 @@ function sqAdminTable() {
         { label: 'Request ID', sort: 'ref', cell: q => `<span class="mono">${h(q.ref)}</span>` },
         { label: 'Submitted by', sort: 'from', cell: q => `<span class="row sq-nw" style="gap:8px"><span class="av">${ini(q.by)}</span>${nm(q.by)}</span>` },
         all && { label: 'Organization', cell: q => h(ctxName(q.ctx)) },
-        all && { label: 'Forwarded by', cell: q => `${nm(q.fwd.by)}<div class="cap">${fmt(q.fwd.at)}</div>` },
+        all && { label: 'Received as', cell: q => (q.to === 'platform' ? pill('From Organization Admin', 'p-navy') : `Forwarded by ${nm(q.fwd.by)}<div class="cap">${fmt(q.fwd.at)}</div>`) },
         { label: 'Subject', cell: q => `<b>${h(q.cat || 'General')}</b><div class="cap sq-sum">${h(q.t)}</div>` },
         { label: 'Submitted', sort: 'at', cell: q => `<span class="sq-nw">${fmt(q.at)}</span>`, hideSm: true },
         { label: 'Status', sort: 'st', cell: q => pill(q.status) },
@@ -390,7 +401,7 @@ function sqAdminTable() {
         { label: '', cell: q => B('Details', 'go', { r: sqHome()[0], ...sqHome({ sq: q.id })[1] }, 'btn-s btn-sm') },
       ].filter(Boolean),
       bulk: [{ label: 'Mark in progress', icon: 'refresh', run: ids => ids.forEach(id => byId('supportQueries', id)?.status === 'New' && A.sqProg({ id })) }],
-      empty: ['question', 'No forwarded requests', all ? 'Organization Admins forward a request here when they cannot solve it themselves.' : 'Requests people send from Help & support in this context appear here.', ''],
+      empty: ['question', 'No support requests', all ? 'Requests Organization Admins send, or forward when they cannot solve them, appear here.' : 'Requests members send from Help & support in this context appear here.', ''],
     }),
     '',
     'adm-panel',
@@ -491,6 +502,8 @@ function sqMigrate() {
     q.files = q.files || [];
     q.at = q.at || today();
     q.log = q.log || [{ at: q.at, by: q.by, k: 'submitted' }];
+    // sent before routing existed: an Organization Admin's own request goes to the Platform Administrator
+    if (!q.to) q.to = S.assign.some(a => a.pid === q.by && a.ctx === q.ctx && roleBase(a.role) === 'A' && a.status === 'Active') ? 'platform' : 'tenant';
   });
 }
 
@@ -513,54 +526,56 @@ route('inbox', 'any', () => {
 // Visible Wins. Sponsors' projects (created under an alias, challenges.js) are listed with the Opportunities and are
 // visible to every role in the programme. Every item keeps its source audience; nothing is ranked, liked or commented on.
 UI.boardF = UI.boardF || 'all';
+// who: the post's source shown as its author line; src: provenance and audience; d: optional body text.
 function boardItems() {
   const out = [];
   S.cards
     .filter(c => inCtx(c) && c.status === 'Active' && cardVisible(c))
-    .forEach(c => out.push({ k: 'opp', at: c.created || c.expires, t: c.title, s: `${h(c.kind)} · ${h(c.cat || '')} · open until ${fmt(c.expires)}`, src: 'Opportunity Card · ' + h(c.vis || 'Programme'), act: L('View card', 'card', { id: c.id }) }));
+    .forEach(c => out.push({ k: 'opp', at: c.created || c.expires, t: c.title, d: c.desc || '', s: `${h(c.kind)} · ${h(c.cat || '')} · open until ${fmt(c.expires)}`, who: 'Opportunity Card', src: h(c.vis || 'Programme') + ' audience', act: L('View card', 'card', { id: c.id }) }));
   (S.announcements || [])
     .filter(a => a.ctx === ctxId())
-    .forEach(a => out.push({ k: 'ann', at: a.at, t: a.t, s: a.kind || 'Programme announcement', src: 'Organization Admin · ' + h(ctxShort(a.ctx)) + ' programme audience', act: '' }));
+    .forEach(a => out.push({ k: 'ann', at: a.at, t: a.t, s: h(a.kind || 'Programme announcement'), who: 'Organization Admin', src: h(ctxShort(a.ctx)) + ' programme audience', act: '' }));
   S.rooms
     .filter(x => inCtx(x))
-    .forEach(x => (x.wins || []).filter(w => w.status === 'Approved' && w.release === 'Programme').forEach(w => out.push({ k: 'win', at: w.at, t: w.t, s: h(x.name), src: 'Visible Win released to the programme audience', act: memberOf(x) ? L('Open ' + WL(), 'room', { id: x.id }) : '' })));
+    .forEach(x => (x.wins || []).filter(w => w.status === 'Approved' && w.release === 'Programme').forEach(w => out.push({ k: 'win', at: w.at, t: w.t, s: 'Approved win', who: h(x.name), src: 'Released to the programme audience', act: memberOf(x) ? L('Open ' + WL(), 'room', { id: x.id }) : '' })));
   (S.challenges || [])
     .filter(c => inCtx(c) && c.status !== 'Archived')
-    .forEach(c => out.push({ k: 'opp', kl: 'Opportunity · Sponsor project', at: c.at, t: c.title, s: chBoardSub(c), src: 'Created by ' + h(c.alias) + ' · sponsor’s name not shown', act: L(chAccepting(c) && chCanApply(c) ? 'View and apply' : 'View project', 'challenge', { id: c.id }) }));
+    .forEach(c => out.push({ k: 'opp', kl: 'Sponsor project', at: c.at, t: c.title, s: chBoardSub(c), who: h(c.alias), src: 'Sponsor’s name not shown', act: L(chAccepting(c) && chCanApply(c) ? 'View and apply' : 'View project', 'challenge', { id: c.id }) }));
   return out.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+}
+const BOARD_KIND = { opp: ['Opportunity', 'megaphone', 't-purple', 'p-purple'], ann: ['Announcement', 'bell', 't-navy', 'p-navy'], win: ['Visible Win', 'flag', 't-teal', 'p-teal'] };
+// One feed post. The Sponsor's preview in challenges.js renders through this too, so both read the same.
+// Deliberately no reaction or comment bar: the board has no likes, comments or ranking (BF-15).
+function boardPost(x) {
+  const [kl, ki, kt, kp] = BOARD_KIND[x.k];
+  const at = String(x.at || '').slice(0, 10);
+  return `<article class="board-post"><header class="bp-h"><span class="tile ${kt}" aria-hidden="true">${ic(ki, 20)}</span><div class="bp-who"><b>${x.who}</b><span class="cap bp-meta">${at ? `<time datetime="${h(at)}">${fmt(at)}</time><span aria-hidden="true">·</span>` : ''}<span class="bp-aud">${ic('lock', 12)}${x.src}</span></span></div>${pill(x.kl || kl, kp)}</header><div class="bp-body"><h3 class="bp-t">${h(x.t)}</h3>${x.d ? `<p class="bp-d">${h(x.d)}</p>` : ''}<p class="cap bp-s">${x.s}</p></div>${x.act ? `<footer class="bp-f">${x.act}</footer>` : ''}</article>`;
 }
 route('board', 'any', () => {
   const all = boardItems();
-  const KIND = { opp: ['Opportunity', 'megaphone', 't-purple'], ann: ['Announcement / event', 'bell', 't-navy'], win: ['Visible Win', 'flag', 't-teal'] };
-  if (!KIND[UI.boardF]) UI.boardF = 'all';
+  if (!BOARD_KIND[UI.boardF]) UI.boardF = 'all';
   const list = UI.boardF === 'all' ? all : all.filter(x => x.k === UI.boardF);
-  const f = (v, l) => `<button type="button" class="${UI.boardF === v ? 'on' : ''}" data-a="boardF" data-v="${v}" aria-pressed="${UI.boardF === v}">${l}<span class="cnt">${v === 'all' ? all.length : all.filter(x => x.k === v).length}</span></button>`;
+  const f = (v, l) => `<button type="button" role="tab" aria-selected="${UI.boardF === v}" aria-controls="board-feed" class="tab ${UI.boardF === v ? 'on' : ''}" data-a="boardF" data-v="${v}">${l}<span class="cnt">${v === 'all' ? all.length : all.filter(x => x.k === v).length}</span></button>`;
   const howRows = [
     ['Opportunity', 'Publish an Opportunity Card with status Active and an audience you are allowed to see (usually Programme).', role() === 'P' || role() === 'C' || role() === 'A' ? L('Post a card', 'newcard', {}, 'btn btn-s btn-sm') : ''],
-    ['Announcement', 'Organization Admin → Notifications → Send an announcement (same context).', role() === 'A' ? L('Send announcement', 'admin', { tab: 'notify' }, 'btn btn-s btn-sm') : ''],
     ['Visible Win', 'In an Action Workspace → record a win → steward/lead Approves it (auto-releases to Programme).', myRooms().length ? L('Open a ' + WL(), 'rooms', {}, 'btn btn-s btn-sm') : ''],
-    ['Sponsor project', 'A Sponsor creates a project under an alias. It is listed with the Opportunities for everyone; Participants and Partners ask to take part and talk in its chat room.', role() === 'S' ? B(ic('plus', 14) + 'Create project', 'chNew', {}, 'btn-s btn-sm') : ''],
+    ['Sponsor project', 'A Sponsor creates a project under an alias. It is listed with the Opportunities for everyone; Participants and Collaborators ask to take part and talk in its chat room.', role() === 'S' ? B(ic('plus', 14) + 'Create project', 'chNew', {}, 'btn-s btn-sm') : ''],
   ];
-  return (
-    head('Explore board', `What is happening in ${h(ctxName(ctxId()))}: approved opportunities and sponsors’ projects, programme announcements and released wins.`) +
+  const feed =
+    `<div class="tabs board-f" role="tablist" aria-label="Show">${f('all', 'All')}${f('opp', 'Opportunities')}${f('ann', 'Announcements')}${f('win', 'Visible Wins')}</div>` +
+    `<div class="board-list" id="board-feed" role="tabpanel">${list.map(boardPost).join('') || empty('grid', 'Nothing on the board yet', 'Approved cards, sponsors’ projects, announcements and released wins appear here.')}</div>`;
+  const rail =
     card(
       'How items get onto this board',
       'Bulletin Board Lite (BF-15) — no new feed. Items appear only when the source record is approved and released to an audience you can already see.',
-      table(['Type', 'How to add', ''], howRows.map(([a, b, c]) => [`<b>${a}</b>`, b, c || '—'])),
+      `<ul class="board-how-l">${howRows.map(([a, b, c]) => `<li><b>${a}</b><span class="cap">${b}</span>${c ? `<span class="board-how-a">${c}</span>` : ''}</li>`).join('')}</ul>`,
       '',
       'board-how',
     ) +
-    `<div class="section-gap"></div>` +
-    `<div class="seg board-f" role="group" aria-label="Show">${f('all', 'All')}${f('opp', 'Opportunities')}${f('ann', 'Announcements')}${f('win', 'Visible Wins')}</div>` +
-    `<div class="board-list">${
-      list
-        .map(x => {
-          const [kl, ki, kt] = KIND[x.k];
-          return `<article class="card board-i"><span class="tile ${kt}" aria-hidden="true">${ic(ki, 18)}</span><div class="col board-b"><span class="over">${x.kl || kl}</span><b>${h(x.t)}</b><span class="cap">${x.s}</span><span class="cap board-src">${ic('lock', 12)}${x.src}</span></div>${x.act ? `<div class="board-a">${x.act}</div>` : ''}</article>`;
-        })
-        .join('') || empty('grid', 'Nothing on the board yet', 'Approved cards, sponsors’ projects, announcements and released wins appear here.')
-    }</div>` +
-    `<p class="cap board-n">${ic('info', 13)} Composed only from records you are already allowed to see. No likes, followers, rankings, reputation or public comments. Private notes and unreleased evidence never appear.</p>`
+    `<p class="cap board-n">${ic('info', 13)} Composed only from records you are already allowed to see. No likes, followers, rankings, reputation or public comments. Private notes and unreleased evidence never appear.</p>`;
+  return (
+    head('Explore board', `What is happening in ${h(ctxName(ctxId()))}: approved opportunities and sponsors’ projects, programme announcements and released wins.`) +
+    `<div class="board-wrap"><div class="board-feed">${feed}</div><aside class="board-rail" aria-label="About this board">${rail}</aside></div>`
   );
 });
 A.boardF = d => {
@@ -878,7 +893,7 @@ function relMigrate() {
     flags: [],
     members: [
       { pid: 'p10', role: 'Project owner', status: 'Active' },
-      { pid: 'p4', role: 'Partner', status: 'Active', label: 'GreenGrid' },
+      { pid: 'p4', role: 'Collaborator', status: 'Active', label: 'GreenGrid' },
       { pid: 'p5', role: 'Member', status: 'Active' },
       { pid: 'p2', role: 'Facilitator', status: 'Active' },
     ],
@@ -921,33 +936,6 @@ route('mandate', 'any', () => {
   );
 });
 
-// ---- AI Owner: approved AI use cases, source registry and evaluation. AI advises; it never decides (BF-09).
-const AI_USES = [
-  ['Ask PHOENIX — private assist (Class A)', 'Answers from approved sources, with sources and uncertainty.', 'Needs the person’s AI processing permission'],
-  ['Draft summaries (Circle, project sections, Harvest)', 'Drafts only; a person edits and accepts or rejects every draft.', 'Needs AI processing permission'],
-  ['Proposal source check (Circles)', 'Flags claims that lack sources or contradict each other, and suggests questions.', 'Advisory: cannot pass or fail a vote'],
-  ['Match Brief draft', 'Drafts “Why suggested” and “What is missing” from fields the person allowed for matching.', 'A steward reviews; both parties consent'],
-];
-route('aiadmin', 'any', () => {
-  if (!hasB('AI Owner')) return deniedView('ai');
-  return (
-    head('AI Owner: sources & evaluation', 'Approved AI use cases, the source registry and evaluation records for this programme.') +
-    banner('ai', 'AI advises, drafts and fact-checks only', 'It never passes or fails a vote, approves evidence, releases content, imposes a sanction or creates authority. Every AI output is labelled “AI draft / advisory”.') +
-    card('Approved AI use cases', '', table(['Use case', 'What it does', 'Boundary'], AI_USES.map(([a, b, c]) => [`<b>${h(a)}</b>`, h(b), h(c)]))) +
-    '<div class="section-gap"></div>' +
-    card('Source registry', 'Only approved sources are used to answer questions.', table(['Source', 'Status', ''], S.aiSources.map(x => [h(x.title), pill(x.status === 'Approved' ? 'Approved' : 'Not approved'), B(x.status === 'Approved' ? 'Withdraw approval' : 'Approve', 'srcToggle', { id: x.id }, x.status === 'Approved' ? 'btn-s btn-sm' : 'btn-p btn-sm')]))) +
-    '<div class="section-gap"></div>' +
-    card('Evaluation log', 'Recent AI outputs and their human decisions.', table(['Output', 'Requested by', 'Status'], S.ai.slice(0, 8).map(j => [h(j.kind || j.t || j.id), nm(j.by), pill(j.status)]), 'No AI outputs yet.'))
-  );
-});
-A.srcToggle = d => {
-  const x = byId('aiSources', d.id);
-  if (!x) return;
-  x.status = x.status === 'Approved' ? 'Not approved' : 'Approved';
-  audit('AI source ' + (x.status === 'Approved' ? 'approved' : 'withdrawn'), x.id, x.title);
-  toast(x.title + ': ' + x.status);
-  ok();
-};
 // Attachments and receipts download as a small placeholder file (prototype: no real file storage).
 A.fakeDl = d => {
   try {

@@ -45,8 +45,8 @@ const COMPASS = [
 ];
 // ---- Purpose Compass Baseline: Purpose plus six question sets, the starting point of the journey.
 // Answers live in S.compass[pid] beside PC1–PC12; PC keys keep their meaning, the other keys hold the extra sub-questions.
-// [key, question, required, help] — the seeded questions. At run time the questions live in S.compassQs and are
-// managed by the Platform Administrator (Purpose Compass screen); answers stay in S.compass[pid] under each question id.
+// [key, question, required, help] — the fixed questions every person sees. They are not configurable by any
+// administrator; answers stay in S.compass[pid] under each question id.
 const BL_SEED = [
   {
     id: 'B1',
@@ -79,12 +79,6 @@ const BL_VIS = {
 };
 const blVisSeed = k => (COMPASS.find(c => c[0] === k) || [])[3] || BL_VIS[k] || 'Private';
 const COMPASS_LATER = 'Asked later, in context (optional)';
-const COMPASS_VIS = ['Private', 'Private · share with chosen support roles', 'Contextual', 'High-restriction · private by default', 'High-restriction · explicit sharing only', 'Only me until I change it in Profile'];
-const COMPASS_TYPES = [
-  ['textarea', 'Long answer'],
-  ['text', 'Short answer'],
-  ['hours', 'Hours per week or month'],
-];
 function seedCompassQs() {
   const out = [];
   BL_SEED.forEach(s =>
@@ -97,7 +91,9 @@ function seedCompassQs() {
   );
   return out.map((q, i) => ({ ...q, order: i + 1 }));
 }
-const compassQs = () => (S.compassQs || []).filter(q => !q.deleted).sort((a, b) => a.order - b.order);
+// The questions are fixed and the same for everyone; nothing at run time adds, edits, reorders or removes them.
+let COMPASS_FIXED = null;
+const compassQs = () => (COMPASS_FIXED = COMPASS_FIXED || seedCompassQs());
 // Questions grouped by their set, in order. onbOnly: only the questions asked at onboarding.
 function blSets(onbOnly = true) {
   const groups = [];
@@ -168,14 +164,11 @@ const claimVals = (pid, field) =>
     .filter(c => c.pid === pid && c.field === field && c.state === 'Current')
     .map(c => c.value)
     .join(', ');
-// Role assignments with their expiry, as shown in the baseline: one line per role.
+// Role assignments as shown in the baseline: one line per role. Roles have no expiry date.
 function blRoles(pid) {
   const list = roleChoices(pid);
   return list
-    .map(a => {
-      const exp = a.until ? (a.status === 'Expired' ? pill('Expired ' + fmt(a.until), 'p-red') : pill('Expires ' + fmt(a.until), a.until <= addDays(today(), 30) ? 'p-amber' : 'p-grey')) : '<span class="cap">No expiry set</span>';
-      return `<div class="row wrap onb-role"><b>${h(roleName(a.role, a.ctx) || a.role)}</b><span class="row wrap onb-pills">${a.status !== 'Active' && a.status !== 'Expired' ? pill(a.status) : ''}${exp}</span></div>`;
-    })
+    .map(a => `<div class="row wrap onb-role"><b>${h(roleName(a.role, a.ctx) || a.role)}</b>${a.status !== 'Active' ? `<span class="row wrap onb-pills">${pill(a.status)}</span>` : ''}</div>`)
     .join('');
 }
 function blSummary(pid) {
@@ -337,7 +330,7 @@ function ONB() {
     const f = 'agr';
     body = `<div class="col onb-h"><p class="over">Step 2 of ${steps.length}</p><h1 class="h1">Review your agreement</h1><p class="sub">This agreement applies to your role in ${h(ctxName(a.ctx))}. Optional uses of your information are separate choices on the next step.</p></div>
   <section class="card col onb-card"><div class="kv onb-meta"><div class="col"><span class="cap">Agreement</span><b>${h(g.type)}</b></div><div class="col"><span class="cap">Version</span><b>v${g.ver}</b></div><div class="col"><span class="cap">Effective</span><b>${fmt(g.effective)}</b></div></div>
-  <div class="scrollbox" tabindex="0" aria-label="Agreement text"><div class="col onb-pol">${polBody(g)}<p class="cap">Published by the Trust/Data Steward for this programme.</p></div></div>
+  <div class="scrollbox" tabindex="0" aria-label="Agreement text"><div class="col onb-pol">${polBody(g)}<p class="cap">Published by the Platform Administrator for this programme.</p></div></div>
   <div class="row wrap onb-tools">${B(ic('download', 16) + 'Download policy', 'polDownload', { id: g.id })}</div>
   <form data-f="agr" class="col onb-agr" id="agrf" novalidate>${fi(f, 'a1', `I have read and accept <b>${h(g.type)} v${g.ver}</b>.`, { type: 'checkbox', req: true })}${fi(f, 'a2', 'I accept the PHOENIX service terms.', { type: 'checkbox', req: true })}<input type="hidden" name="g" value="${g.id}"><span class="help">A dated receipt of your acceptance is stored in Privacy & agreements.</span>
   <div class="actions"><button class="btn btn-p" type="submit">Accept and continue</button></div></form></section>`;
@@ -373,7 +366,7 @@ function ONB() {
   <div class="col onb-prog"><div class="row onb-prog-h"><span class="lbl">Set ${st + 1} of ${n}</span><span class="cap">${Math.round((st / n) * 100)}% complete</span></div><div class="progress"><span class="bar" style="width:${(st / n) * 100}%"></span></div></div>
   ${errSum(f)}<form data-f="pc" class="card col onb-card" novalidate><input type="hidden" name="set" value="${st}"><div class="col onb-h"><span class="over">Question set ${st + 1}</span><h2 class="h2">${h(set.n)}</h2>${set.d ? `<p class="cap">${h(set.d)}</p>` : ''}</div>
   ${set.q.map(q => blField(f, q, ans)).join('')}
-  ${st === 0 ? `<div class="col onb-have"><span class="lbl">Already in your profile</span>${dl([['Interests', h(claimVals(myId(), 'Interests') || '—')], ['Role assignments', `<div class="col onb-roles">${blRoles(myId())}</div>`]])}<span class="help">Role assignments and their expiry are set by your administrator.</span></div>` : ''}
+  ${st === 0 ? `<div class="col onb-have"><span class="lbl">Already in your profile</span>${dl([['Interests', h(claimVals(myId(), 'Interests') || '—')], ['Role assignments', `<div class="col onb-roles">${blRoles(myId())}</div>`]])}<span class="help">Role assignments are set by your administrator.</span></div>` : ''}
   ${st === n - 1 ? banner('ok', '', 'Your answers appear on My PHOENIX as “My purpose / current direction”, self-declared. Strengths, learning interests, support needs and opportunity preferences are asked later, only when they help. Change anything in Profile → Purpose Compass.') : ''}
   <div class="actions">${st ? B(ic('chevl', 16) + 'Previous', 'pcPrev', {}, 'btn-g') : B(ic('chevl', 16) + 'Back', 'onbBack', { s: 'profile' }, 'btn-g')}<button class="btn btn-p" type="submit">${st === n - 1 ? 'Finish and go to My PHOENIX' : 'Next'}</button></div></form>`;
   }

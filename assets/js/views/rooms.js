@@ -158,7 +158,7 @@ A.newRoom = (d) => {
  ${msel("nr", "inv", "Invite people (optional)", nrInvitable(v), [], { help: "Linking adds no one. Members of the origin are not added automatically; each person you choose is invited and must accept." })}
  ${d.via ? banner("info", "Origin metadata only", "This " + WL() + " records the introduction as its origin: who was introduced, when, and from which opportunity. The Match Brief’s fit notes, gaps and source records are not copied, and the other person joins only if they accept the invitation.") : ""}
  ${cp && !canCreateRoom() ? banner("info", "", "You lead this " + WL() + " as project owner. Your project’s Steward joins as facilitator to validate milestones.") : ""}
- ${!creator ? banner("info", "Proposal", "An authorised Faculty/Steward, Project Lead, Partner or Organization Admin activates it.") : ""}
+ ${!creator ? banner("info", "Proposal", "An authorised Faculty/Steward, Project Lead, Collaborator or Organization Admin activates it.") : ""}
  <div class="actions"><span></span><button class="btn btn-p" type="submit" ${opts.length ? "" : "disabled"}>${creator ? "Create" : "Propose"}</button></div></form>`;
     },
   );
@@ -241,7 +241,7 @@ F.nr = (d, form) => {
     pr.pendingCollab.forEach((pc) => {
       if (pc.match) introVias.push("mb:" + pc.match);
       if (!x.members.some((m) => m.pid === pc.pid))
-        x.members.push({ pid: pc.pid, role: "Partner", label: pc.req, status: "Invited", req: pc.req, contrib: pc.contrib, match: pc.match });
+        x.members.push({ pid: pc.pid, role: "Collaborator", label: pc.req, status: "Invited", req: pc.req, contrib: pc.contrib, match: pc.match });
     });
     pr.pendingCollab = [];
   }
@@ -642,7 +642,7 @@ route("room", "rooms", () => {
     );
   if (t.cur === "about")
     body = `<div class="g12">${card("Charter", "", dl([["Purpose / charter", h(x.charter)], ["Expected outcome", h(x.outcome || "—")], ["Lead", nm(x.lead)], ["State", pill(x.state)], x.flags.length && ["Approval flags", x.flags.map(h).join(", ")], ["Primary origin", primaryLink(x.id) ? OBJ_LABEL(primaryLink(x.id).target_type) + " · " + relLink(primaryLink(x.id).target_id) : originLink(x)], x.mandate && ["Mandate", h(x.mandate)], ["Related objects (linked by reference)", linksOf(x.id).filter((l) => !l.primary || l.source_id !== x.id).map((l) => relLink(linkOther(l, x.id)) + ' <span class="cap">' + h(l.source_id === x.id ? linkTypeLabel(l.link_type) : LINK_INVERSE[l.link_type]) + "</span>").join("<br>") || "—"], ["Sponsors", "Never members because of funding"], ["Linked learning activities and records", x.links.map((l) => pill(l.type, "p-grey") + " " + h(l.label)).join("<br>") || "—"]]), !ro && isM ? B(ic("link", 14) + "Link by reference", "roomLink", { r: x.id }) : "", "c7")}
- ${card("Lifecycle", "Draft · Proposed · Pending approval · Active · Closed", `<div class="col" style="gap:8px">${x.state === "Proposed" && canCreateRoom() ? B("Activate", "roomState", { r: x.id, v: x.flags.length ? "Pending approval" : "Active" }, "btn-p btn-sm") + B("Decline (back to Draft)", "roomDecline", { r: x.id }) : ""}${x.state === "Proposed" && !canCreateRoom() ? '<p class="cap">Proposed. An authorised Faculty/Steward, Project Lead, Partner or Organization Admin activates it.</p>' : ""}${x.state === "Pending approval" && (r === "F" || r === "A") ? B("Approve activation", "roomState", { r: x.id, v: "Active" }, "btn-p btn-sm") + B("Decline (back to Draft)", "roomDecline", { r: x.id }) : ""}${x.state === "Draft" && isM ? B("Re-propose", "roomState", { r: x.id, v: "Proposed" }) : ""}${x.declineReason ? banner("warn", "Approval declined", h(x.declineReason)) : ""}${!ro && isM ? B(ic("sparkle", 14) + "Start a Learning Harvest", "newHarvest", { scope: x.id }) : ""}${x.state === "Active" && lead ? B(ic("refresh", 14) + "Continue to a new cycle", "roomContinue", { r: x.id }) : ""}${x.state === "Active" && lead && !pr ? B("Close " + WL(), "roomClose", { r: x.id }) : ""}<p class="cap">Closing or continuing starts a Learning Harvest for this cycle. A person completes it; nothing is harvested automatically.</p>${pr ? `<p class="cap">Final deliverables are submitted from the Overview tab or the ${L("project", "project", { id: pr.id })}. Backward movement is on the Overview tab.</p>` : ""}</div>`, "", "c5")}
+ ${card("Lifecycle", "Draft · Proposed · Pending approval · Active · Closed", `<div class="col" style="gap:8px">${x.state === "Proposed" && canCreateRoom() ? B("Activate", "roomState", { r: x.id, v: x.flags.length ? "Pending approval" : "Active" }, "btn-p btn-sm") + B("Decline (back to Draft)", "roomDecline", { r: x.id }) : ""}${x.state === "Proposed" && !canCreateRoom() ? '<p class="cap">Proposed. An authorised Faculty/Steward, Project Lead, Collaborator or Organization Admin activates it.</p>' : ""}${x.state === "Pending approval" && (r === "F" || r === "A") ? B("Approve activation", "roomState", { r: x.id, v: "Active" }, "btn-p btn-sm") + B("Decline (back to Draft)", "roomDecline", { r: x.id }) : ""}${x.state === "Draft" && isM ? B("Re-propose", "roomState", { r: x.id, v: "Proposed" }) : ""}${x.declineReason ? banner("warn", "Approval declined", h(x.declineReason)) : ""}${!ro && isM ? B(ic("sparkle", 14) + "Start a Learning Harvest", "newHarvest", { scope: x.id }) : ""}${x.state === "Active" && lead ? B(ic("refresh", 14) + "Continue to a new cycle", "roomContinue", { r: x.id }) : ""}${x.state === "Active" && lead && !pr ? B("Close " + WL(), "roomClose", { r: x.id }) : ""}<p class="cap">Closing or continuing starts a Learning Harvest for this cycle. A person completes it; nothing is harvested automatically.</p>${pr ? `<p class="cap">Final deliverables are submitted from the Overview tab or the ${L("project", "project", { id: pr.id })}. Backward movement is on the Overview tab.</p>` : ""}</div>`, "", "c5")}
  ${returnsCard(x) ? `<div class="c12">${returnsCard(x)}</div>` : ""}</div>`;
   const acts =
     spaceEditBtn("rooms", x) +
@@ -711,7 +711,7 @@ route("room", "rooms", () => {
                 ) +
                 B("Decline (back to Draft)", "roomDecline", { r: x.id }) +
                 "</span>"
-            : "An authorised Faculty/Steward, Project Lead, Partner or Organization Admin activates it.",
+            : "An authorised Faculty/Steward, Project Lead, Collaborator or Organization Admin activates it.",
         )
       : "") +
     withSubnav(t, body)
@@ -747,7 +747,7 @@ A.roomItem = (d) => {
       wins: "Record a visible win",
     }[k],
     () =>
-      `<form data-f="ri" class="col" style="gap:14px" novalidate><input type="hidden" name="r" value="${x.id}"><input type="hidden" name="k" value="${k}"><input type="hidden" name="st" value="${d.st || ""}">${fi("ri", "t", k === "deps" ? "Dependent activity / resource" : "Title", { req: true })}${["tasks", "decisions", "risks"].includes(k) ? fi("ri", "owner", k === "tasks" ? "Assignee" : "Owner", { type: "select", req: true, opts: mem, value: d.owner || myId(), help: k === "tasks" ? "Any active member of this " + WL() + "." : "" }) : ""}${["tasks", "milestones"].includes(k) ? fi("ri", "due", "Due date", { type: "date", req: true }) : ""}${k === "tasks" ? fi("ri", "prio", "Priority", { type: "select", opts: TASK_PRIOS, value: "Medium" }) + fi("ri", "desc", "Description", { type: "textarea", rows: 3 }) + msel("ri", "partners", "Partners / contributors", roomActive(x).map((m) => ({ pid: m.pid, sub: spaceRole("rooms", x, m.pid) || "" })), [], { help: "People who contribute to this deliverable besides the assignee." }) + fi("ri", "req", "Required deliverable — must be done before evidence upload and the Learning Harvest", { type: "checkbox", value: "yes" }) : ""}${k === "deps" ? fi("ri", "on", "Depends on (party)", { req: true }) : ""}${k === "resources" ? fi("ri", "from", "Provided by", { req: true }) : ""}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save</button></div></form>`,
+      `<form data-f="ri" class="col" style="gap:14px" novalidate><input type="hidden" name="r" value="${x.id}"><input type="hidden" name="k" value="${k}"><input type="hidden" name="st" value="${d.st || ""}">${fi("ri", "t", k === "deps" ? "Dependent activity / resource" : "Title", { req: true })}${["tasks", "decisions", "risks"].includes(k) ? fi("ri", "owner", k === "tasks" ? "Assignee" : "Owner", { type: "select", req: true, opts: mem, value: d.owner || myId(), help: k === "tasks" ? "Any active member of this " + WL() + "." : "" }) : ""}${["tasks", "milestones"].includes(k) ? fi("ri", "due", "Due date", { type: "date", req: true }) : ""}${k === "tasks" ? fi("ri", "prio", "Priority", { type: "select", opts: TASK_PRIOS, value: "Medium" }) + fi("ri", "desc", "Description", { type: "textarea", rows: 3 }) + msel("ri", "partners", "Collaborators / contributors", roomActive(x).map((m) => ({ pid: m.pid, sub: spaceRole("rooms", x, m.pid) || "" })), [], { help: "People who contribute to this deliverable besides the assignee." }) + fi("ri", "req", "Required deliverable — must be done before evidence upload and the Learning Harvest", { type: "checkbox", value: "yes" }) : ""}${k === "deps" ? fi("ri", "on", "Depends on (party)", { req: true }) : ""}${k === "resources" ? fi("ri", "from", "Provided by", { req: true }) : ""}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save</button></div></form>`,
   );
 };
 F.ri = (d) => {
@@ -1286,7 +1286,7 @@ A.joinDecide = (d) => {
       role:
         normRole(j.kind) === "Member"
           ? /Finance|External|Institutional/.test(j.kind)
-            ? "Partner"
+            ? "Collaborator"
             : "Member"
           : normRole(j.kind),
       label: j.kind,
@@ -1564,7 +1564,7 @@ function roomContribs(x, lead, ro) {
   const rev = sCan("rooms", x, "review") || role() === "A";
   return card(
     "Contributions",
-    "Partners and collaborators submit work against their defined responsibility. A Faculty/Steward accepts it, requests changes or asks for more evidence. Accepted contributions join the project record.",
+    "Collaborators submit work against their defined responsibility. A Faculty/Steward accepts it, requests changes or asks for more evidence. Accepted contributions join the project record.",
     x.contribs
       .slice()
       .reverse()
@@ -1576,7 +1576,7 @@ function roomContribs(x, lead, ro) {
       empty(
         "award",
         "No contributions yet",
-        "Partners submit contributions here once they have a defined responsibility.",
+        "Collaborators submit contributions here once they have a defined responsibility.",
       ),
     !ro && sCan("rooms", x, "contribute")
       ? B(

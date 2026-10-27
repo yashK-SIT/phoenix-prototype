@@ -146,10 +146,8 @@ function seed() {
         org: 'o1',
       },
       { id: 'p13', name: 'Kofi Mensah', display: 'Kofi', email: 'kofi@demo.phoenix', verified: true, status: 'Active' },
-      { id: 'p14', name: 'Nadia Hassan', display: 'Nadia', email: 'nadia@demo.phoenix', verified: true, status: 'Active' },
-      { id: 'p15', name: 'Omar Farouk', display: 'Omar', email: 'omar@demo.phoenix', verified: true, status: 'Active' },
-      { id: 'p16', name: 'Lin Chen', display: 'Lin', email: 'lin@demo.phoenix', verified: true, status: 'Active' },
-      { id: 'p17', name: 'Rosa Diaz', display: 'Rosa', email: 'rosa@demo.phoenix', verified: true, status: 'Active' },
+      // Organization Admin of a second tenant: proves an admin manages only their own tenant's members and invitations
+      { id: 'p18', name: 'Zainab Bello', display: 'Zainab', email: 'zainab@demo.phoenix', verified: true, status: 'Active', org: 'o3' },
     ],
     pw: {},
     assign: [
@@ -158,15 +156,6 @@ function seed() {
         pid: 'p1',
         role: 'P',
         ctx: 'c1',
-        status: 'Active',
-        bundles: [],
-        onb: { agreement: true, consents: true, profile: true, compass: true },
-      },
-      {
-        id: 'a1b',
-        pid: 'p1',
-        role: 'P',
-        ctx: 'c2',
         status: 'Active',
         bundles: [],
         onb: { agreement: true, consents: true, profile: true, compass: true },
@@ -185,15 +174,6 @@ function seed() {
         pid: 'p3',
         role: 'M',
         ctx: 'c1',
-        status: 'Active',
-        bundles: [],
-        onb: { agreement: true, consents: true, profile: true, compass: true },
-      },
-      {
-        id: 'a3b',
-        pid: 'p3',
-        role: 'P',
-        ctx: 'c2',
         status: 'Active',
         bundles: [],
         onb: { agreement: true, consents: true, profile: true, compass: true },
@@ -284,11 +264,7 @@ function seed() {
       },
       // plain Facilitator (no Reviewer bundle): proves a Facilitator does not inherit evidence approval
       { id: 'a13', pid: 'p13', role: 'F', ctx: 'c1', status: 'Active', bundles: [], onb: { agreement: true, consents: true, profile: true, compass: true } },
-      // specialist capability bundles, each held by a separate person so authority can be tested independently
-      { id: 'a14', pid: 'p14', role: 'A', ctx: 'c1', status: 'Active', bundles: ['Trust/Data Steward'], onb: { agreement: true, consents: true, profile: true, compass: true } },
-      { id: 'a15', pid: 'p15', role: 'A', ctx: 'c1', status: 'Active', bundles: ['Finance Owner'], onb: { agreement: true, consents: true, profile: true, compass: true } },
-      { id: 'a16', pid: 'p16', role: 'A', ctx: 'c1', status: 'Active', bundles: ['AI Owner'], onb: { agreement: true, consents: true, profile: true, compass: true } },
-      { id: 'a17', pid: 'p17', role: 'A', ctx: 'c1', status: 'Active', bundles: ['Incident/Safety Owner'], onb: { agreement: true, consents: true, profile: true, compass: true } },
+      { id: 'a18', pid: 'p18', role: 'A', ctx: 'c3', status: 'Active', bundles: [], onb: { agreement: true, consents: true, profile: true, compass: true } },
     ],
     invites: [
       {
@@ -357,6 +333,11 @@ function seed() {
         by: 'p5',
         sent: '2026-09-30',
       },
+      // Member invitations: a tenant asks an already registered person to join. No link or token; the person accepts
+      // or rejects in Tenant invitations, and accepting adds one membership without touching their others.
+      { id: 'ti1', kind: 'member', pid: 'p3', email: 'samuel@demo.phoenix', role: 'M', ctx: 'c3', status: 'Pending', expires: '2026-11-20', by: 'p18', sent: '2026-10-22' },
+      { id: 'ti2', kind: 'member', pid: 'p1', email: 'mary@demo.phoenix', role: 'P', ctx: 'c3', status: 'Pending', expires: '2026-11-24', by: 'p18', sent: '2026-10-26' },
+      { id: 'ti3', kind: 'member', pid: 'p18', email: 'zainab@demo.phoenix', role: 'F', ctx: 'c1', status: 'Rejected', expires: '2026-10-30', by: 'p7', sent: '2026-10-16', decided: '2026-10-18' },
     ],
     agreements: [
       {
@@ -399,7 +380,7 @@ function seed() {
       },
       {
         id: 'g4',
-        type: 'Partner Agreement',
+        type: 'Collaborator Agreement',
         ctx: 'c1',
         ver: 1,
         status: 'Active',
@@ -444,7 +425,7 @@ function seed() {
       },
       {
         id: 'g10',
-        type: 'Partner Agreement',
+        type: 'Collaborator Agreement',
         ctx: 'c3',
         ver: 1,
         status: 'Active',
@@ -1331,7 +1312,7 @@ function seed() {
         members: [
           { pid: 'p10', role: 'Project owner', status: 'Active' },
           { pid: 'p1', role: 'Member', status: 'Active' },
-          { pid: 'p4', role: 'Partner', status: 'Active', label: 'GreenGrid' },
+          { pid: 'p4', role: 'Collaborator', status: 'Active', label: 'GreenGrid' },
           { pid: 'p2', role: 'Facilitator', status: 'Active' },
         ],
         joinReqs: [
@@ -1424,7 +1405,7 @@ function seed() {
         members: [
           { pid: 'p10', role: 'Project owner', status: 'Active' },
           { pid: 'p1', role: 'Member', status: 'Active' },
-          { pid: 'p4', role: 'Partner', status: 'Active', label: 'GreenGrid' },
+          { pid: 'p4', role: 'Collaborator', status: 'Active', label: 'GreenGrid' },
           { pid: 'p2', role: 'Facilitator', status: 'Active' },
         ],
         joinReqs: [],
@@ -1572,7 +1553,7 @@ function seed() {
           'Purpose relevance': 'Both linked to urban heat projects in this programme.',
           'Context relevance': 'Both in Excelsior University.',
         },
-        gaps: ['Partner has not stated availability in October.', 'No prior collaboration record.'],
+        gaps: ['Collaborator has not stated availability in October.', 'No prior collaboration record.'],
         uncertainty: 'Moderate — capability is self-declared.',
         questions: ['What GIS outputs does the project need?', 'Who owns the resulting map data?'],
         next: 'Both parties consent before contact details are shared.',
@@ -1756,15 +1737,15 @@ function seed() {
         conf: 'Programme',
         release: 'Cleared: Funder report; Organisation report',
         cleared: [
-          { aud: 'Funder report', at: '2026-09-04', by: 'p14', conf: 'Programme' },
-          { aud: 'Organisation report', at: '2026-09-04', by: 'p14', conf: 'Programme' },
+          { aud: 'Funder report', at: '2026-09-04', by: 'p7', conf: 'Programme' },
+          { aud: 'Organisation report', at: '2026-09-04', by: 'p7', conf: 'Programme' },
         ],
         history: [
           { at: '2026-08-28', t: 'Submitted' },
           { at: '2026-08-30', t: 'Review: Submitted → Approved' },
           { at: '2026-08-30', t: 'Evidence Support: E0 → E4' },
-          { at: '2026-09-02', t: 'Release: owner authorised Funder report and Organisation report — awaiting Trust/Data Steward disclosure review' },
-          { at: '2026-09-04', t: 'Release: Not cleared → Cleared: Funder report; Organisation report — disclosure review by Nadia' },
+          { at: '2026-09-02', t: 'Release: owner authorised Funder report and Organisation report — awaiting Organization Admin disclosure review' },
+          { at: '2026-09-04', t: 'Release: Not cleared → Cleared: Funder report; Organisation report — disclosure review by Priya' },
         ],
       },
       // BF-04 example: approved and well supported, yet restricted and not cleared for any outside audience
@@ -2228,7 +2209,7 @@ function seed() {
         state: 'Under review',
         owner: 'p7',
         paused: false,
-        conf: 'Restricted to Incident/Safety Owner',
+        conf: 'Restricted to Organization Admin',
         timeline: [
           { at: '2026-09-30', t: 'Reported' },
           { at: '2026-09-30', t: 'Triaged — moderate, no emergency pause' },
@@ -2327,7 +2308,7 @@ function seed() {
         name: 'Consent completeness',
         cat: 'Trust & governance',
         def: 'Active people with every optional purpose explicitly set',
-        owner: 'Trust/Data Steward',
+        owner: 'Organization Admin',
         gate: 'Aggregate only',
         status: 'Active',
       },
@@ -2336,7 +2317,7 @@ function seed() {
         name: 'AI review compliance',
         cat: 'Trust & governance',
         def: 'Class B/C AI outputs reviewed before release',
-        owner: 'AI Owner',
+        owner: 'Platform Administrator',
         gate: 'None',
         status: 'Active',
       },
@@ -2345,7 +2326,7 @@ function seed() {
         name: 'Sponsor-seat utilisation',
         cat: 'Access & sustainability',
         def: 'Assigned seats ÷ total seats',
-        owner: 'Finance Owner',
+        owner: 'Platform Administrator',
         gate: 'Aggregate only',
         status: 'Active',
       },
@@ -2374,10 +2355,6 @@ function seed() {
     bundles: [
       { name: 'Reviewer', desc: 'Approve evidence, evidence-linked milestones and custom or AI-drafted pathways where assigned.', limit: 'Not general programme authority.', approval: 'Programme/Org Admin' },
       { name: 'Project Lead', desc: 'Assign and approve tasks and milestones in a workspace; complete Learning Harvests.', limit: 'Only inside the workspace it is granted for.', approval: 'Circle/Workspace Owner within delegated limits' },
-      { name: 'Trust/Data Steward', desc: 'Define approved consent, agreement and data policy and protected governance rules; release disclosure review.', limit: 'Not technical operations or participant ownership.', approval: 'Governance' },
-      { name: 'Finance Owner', desc: 'Approve products, pricing and financial operations in scope; reconcile payments.', limit: 'Payment never grants governance or content rights.', approval: 'Governance' },
-      { name: 'AI Owner', desc: 'Manage approved AI use cases, the source registry and evaluation.', limit: 'Cannot make user or governance decisions.', approval: 'Governance' },
-      { name: 'Incident/Safety Owner', desc: 'Triage, pause, remedy and route appeals.', limit: 'No automated sanctions.', approval: 'Governance' },
     ],
     supportQueries: [
       { id: 'sq1', ref: 'SR-0001', by: 'p11', t: 'How do I finish my Purpose Compass?', cat: 'Onboarding or agreement', ctx: 'c1', at: '2026-10-13T09:14:00.000Z', status: 'New', files: [], log: [{ at: '2026-10-13T09:14:00.000Z', by: 'p11', k: 'submitted' }] },
@@ -2410,7 +2387,7 @@ function seed() {
     ],
   };
   S.people.forEach(p => (S.pw[p.id] = 'demo1234'));
-  ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10', 'p11', 'p13', 'p14', 'p15', 'p16', 'p17'].forEach(pid => {
+  ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10', 'p11', 'p13'].forEach(pid => {
     S.consents[pid] = {
       ai: 'Granted',
       matching: 'Granted',
@@ -2553,8 +2530,6 @@ function seed() {
     }
   });
   S.notifs.unshift(
-    { id: 'n12', pid: 'p3', t: 'Riverside Seva Trust: your Seva Circle meets on Saturday at 10:00', r: 'circles', p: {}, read: false, at: '2026-10-02', aid: 'a3b', ctx: 'c2' },
-    { id: 'n13', pid: 'p1', t: 'Riverside Seva Trust: Participant Agreement v2 is in force — review it to continue there', r: 'home', p: {}, read: false, at: '2026-10-10', aid: 'a1b', ctx: 'c2' },
   );
   S.audit = [
     {

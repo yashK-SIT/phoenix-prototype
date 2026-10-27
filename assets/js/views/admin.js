@@ -60,7 +60,13 @@ function inviteTable(scopeCtx) {
       lead: `<span class="av adm-inv-av" aria-hidden="true">${ic("mail", 14)}</span>`,
       title: `<span class="adm-em">${h(i.email)}</span>`,
       sub: `${roleName(i.role, i.ctx)} · ${h(cn(i))}`,
-      meta: [`Valid until ${fmt(i.expires)}`, `Invited by ${nm(i.by)}`],
+      meta: [
+        `Sent ${fmt(i.sent)}`,
+        i.decided
+          ? `${i.status} ${fmt(i.decided)}`
+          : `Valid until ${fmt(i.expires)}`,
+        `Invited by ${nm(i.by)}`,
+      ],
       badges: pill(i.status),
       primary: canResend(i)
         ? B("Resend", "invAct", { id: i.id, v: "Resent" })
@@ -72,7 +78,7 @@ function inviteTable(scopeCtx) {
             { id: i.id, v: "Revoked" },
             "Revoke the invitation for " +
               i.email +
-              "? The link stops working immediately.",
+              "? It can no longer be accepted.",
             "menu-i danger",
             "Revoke",
           )
@@ -93,7 +99,7 @@ function inviteTable(scopeCtx) {
         icon: "x",
         danger: true,
         confirm:
-          "Revoke the selected pending invitations? Their links stop working immediately. Accepted, expired and already revoked invitations are left as they are.",
+          "Revoke the selected pending invitations? They can no longer be accepted. Accepted, rejected, expired and already revoked invitations are left as they are.",
         run: (ids) =>
           ids
             .map((id) => byId("invites", id))
@@ -104,7 +110,7 @@ function inviteTable(scopeCtx) {
     empty: [
       "mail",
       "No invitations yet",
-      "Invite people to give them a role in this context.",
+      "Invite people to give them a role in this tenant.",
       "",
     ],
   });
@@ -116,7 +122,8 @@ A.invAct = (d) => {
     const e = new Date();
     e.setDate(e.getDate() + S.settings.inviteValidityDays);
     i.expires = e.toISOString().slice(0, 10);
-    i.token = "TKN-" + uid("R");
+    if (i.kind === "member") tinvNotify(i);
+    else i.token = "TKN-" + uid("R");
   }
   audit("Invitation " + d.v, i.id, i.email);
   toast("Invitation " + d.v.toLowerCase() + ".");
@@ -128,7 +135,7 @@ A.invNew = (d) => {
   modal(
     "Create invitations",
     () =>
-      `<form data-f="inv" class="col adm-form" novalidate>${fi("inv", "emails", "Email addresses (one per line, or paste a CSV column — up to 1,000)", { type: "textarea", rows: 5, req: true })}<div class="f2">${fi("inv", "role", "Nominated role", { type: "select", req: true, opts: invitableRoles(allowed).map((r) => [r.id, r.name + (r.system ? "" : " (custom)")]) })}${fi("inv", "days", "Valid for (days)", { type: "number", req: true, min: 1, value: S.settings.inviteValidityDays })}</div>${fi("inv", "until", "Role assignment expires (optional)", { type: "date", help: "After this date the role stops working until an administrator renews it. Leave empty for no expiry." })}${fi("inv", "ctx", "Context", { type: "select", req: true, opts: S.contexts.filter((c) => c.kind !== "Platform" && true).map((c) => [c.id, c.name]), value: ctxId() })}${banner("info", "", "Single-use links are sent by transactional email. Sensitive roles need approval after registration. An existing PHOENIX email gets the role added to their record.")}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send invitations</button></div></form>`,
+      `<form data-f="inv" class="col adm-form" novalidate>${fi("inv", "emails", "Email addresses (one per line, or paste a CSV column — up to 1,000)", { type: "textarea", rows: 5, req: true })}<div class="f2">${fi("inv", "role", "Nominated role", { type: "select", req: true, opts: invitableRoles(allowed).map((r) => [r.id, r.name + (r.system ? "" : " (custom)")]) })}${fi("inv", "days", "Valid for (days)", { type: "number", req: true, min: 1, value: S.settings.inviteValidityDays })}</div>${fi("inv", "ctx", "Tenant", { type: "select", req: true, opts: [[ctxId(), ctxName(ctxId())]], value: ctxId(), help: "You invite people into the tenant you are working in. Switch tenant to invite into another one you administer." })}${banner("info", "", "Enter exact email addresses. A person who already has a PHOENIX account gets a join request to accept or reject in the app; anyone else gets a single-use email link. Existing members of this tenant are skipped. Sensitive roles need approval after acceptance.")}<div class="actions"><span></span><button class="btn btn-p" type="submit">Send invitations</button></div></form>`,
   );
 };
 F.inv = (d) => {
@@ -141,10 +148,6 @@ F.inv = (d) => {
     })
   )
     return render();
-  if (d.until && d.until <= today()) {
-    UI.err.inv = { until: "Choose a date after today, or leave it empty." };
-    return render();
-  }
   const list = d.emails
     .split(/[\n,;]+/)
     .map((s) => s.trim())
@@ -163,22 +166,37 @@ F.inv = (d) => {
   }
   const e = new Date();
   e.setDate(e.getDate() + +d.days);
-  let dup = 0;
-  list.forEach((em) => {
+  let dup = 0,
+    mem = 0;
+  [...new Set(list.map((em) => em.toLowerCase()))].forEach((em) => {
+    const p = personByEmail(em);
+    // one membership per person and tenant: existing members are not invited again
+    if (
+      p &&
+      S.assign.some(
+        (a) => a.pid === p.id && a.ctx === d.ctx && a.status !== "Declined",
+      )
+    ) {
+      mem++;
+      return;
+    }
+    // one open invitation per person and tenant
     if (
       S.invites.some(
         (i) =>
-          i.email === em &&
+          (i.email.toLowerCase() === em || (p && i.pid === p.id)) &&
           i.ctx === d.ctx &&
-          ["Pending", "Resent"].includes(i.status),
+          ["Pending", "Resent"].includes(i.status) &&
+          i.expires >= today(),
       )
     ) {
       dup++;
       return;
     }
-    S.invites.push({
+    // A registered person gets an in-app join request; anyone else a single-use email link. The admin sees the
+    // same result either way, so the form cannot be used to find out who has an account.
+    const iv = {
       id: uid("i"),
-      token: "TKN-" + uid(""),
       email: em,
       role: d.role,
       ctx: d.ctx,
@@ -186,17 +204,242 @@ F.inv = (d) => {
       expires: e.toISOString().slice(0, 10),
       by: myId(),
       sent: today(),
-      ...(d.until ? { until: d.until } : {}),
-    });
+      ...(p ? { kind: "member", pid: p.id } : { token: "TKN-" + uid("") }),
+    };
+    S.invites.push(iv);
+    if (p) tinvNotify(iv);
   });
-  audit("Invitations created", d.ctx, list.length - dup + " × " + ROLE[d.role]);
+  const sent = new Set(list.map((em) => em.toLowerCase())).size - dup - mem;
+  audit("Invitations created", d.ctx, sent + " × " + ROLE[d.role]);
   UI.modal = null;
   clearF("inv");
   toast(
-    `${list.length - dup} invitation(s) sent${dup ? ", " + dup + " duplicate(s) skipped" : ""}.`,
+    `${sent} invitation(s) sent${dup ? ", " + dup + " already pending" : ""}${mem ? ", " + mem + " already member(s) of this tenant" : ""}.`,
+    sent ? "ok" : "warn",
   );
   ok();
 };
+// ---------- TENANT INVITATIONS (a tenant asks a registered person to join) ----------
+// An invitation is addressed to the person, not to one of their roles, so its notice shows in every tenant.
+function notifyPerson(pid, t, r, p) {
+  notify(pid, t, r, p);
+  Object.assign(S.notifs[0], { aid: null, ctx: null });
+}
+const tinvNotify = (i) =>
+  notifyPerson(
+    i.pid,
+    `${ctxName(i.ctx)} invited you to join as ${roleName(i.role, i.ctx)}`,
+    "myinvites",
+  );
+const tinvLive = (i) =>
+  ["Pending", "Resent"].includes(i.status) && i.expires >= today();
+function myTenantInvites(pendingOnly) {
+  return S.invites.filter(
+    (i) =>
+      i.kind === "member" && i.pid === myId() && (!pendingOnly || tinvLive(i)),
+  );
+}
+// The inviting admin's assignment in the inviting tenant: their notices about the reply belong there.
+const tinvAdminAid = (i) =>
+  (S.assign.find((a) => a.pid === i.by && a.ctx === i.ctx) || {}).id;
+route("myinvites", "any", () => {
+  const all = myTenantInvites().sort((a, b) => b.sent.localeCompare(a.sent));
+  all.forEach((i) => {
+    if (["Pending", "Resent"].includes(i.status) && i.expires < today())
+      i.status = "Expired";
+  });
+  const open = all.filter(tinvLive);
+  const past = all.filter((i) => !tinvLive(i));
+  const orgType = (i) => {
+    const c = S.contexts.find((x) => x.id === i.ctx) || {};
+    return (S.orgs.find((o) => o.id === c.org) || {}).type || c.kind || "";
+  };
+  const inviter = (i) => {
+    const a = S.assign.find((x) => x.id === tinvAdminAid(i));
+    return nm(i.by) + (a ? ` · ${h(roleName(a.role, a.ctx))}` : "");
+  };
+  const pendCard = (i) =>
+    card(
+      h(ctxName(i.ctx)),
+      h(orgType(i)),
+      dl([
+        ["Role offered", pill(roleName(i.role, i.ctx), "p-purple")],
+        ["Invited by", inviter(i)],
+        ["Invitation date", fmt(i.sent)],
+        ["Valid until", fmt(i.expires)],
+      ]) +
+        (roleNeedsApproval(roleBase(i.role))
+          ? banner(
+              "warn",
+              "This role needs approval",
+              "After you accept, an approver in " +
+                h(ctxName(i.ctx)) +
+                " must approve it before you can work in it.",
+            )
+          : "") +
+        `<div class="actions">${CB("Reject", "tinvReject", { id: i.id }, "Reject the invitation to join " + ctxName(i.ctx) + "? No membership is created, and " + P(i.by).name + " is told you declined.", "btn-s", "Reject")}${B(ic("check", 16) + "Accept", "tinvAccept", { id: i.id }, "btn-p")}</div>`,
+      pill("Pending"),
+    );
+  const pastRow = (i) => {
+    const a =
+      i.status === "Accepted" &&
+      S.assign.find((x) => x.pid === myId() && x.ctx === i.ctx);
+    return [
+      `<b>${h(ctxName(i.ctx))}</b>`,
+      h(roleName(i.role, i.ctx)),
+      inviter(i),
+      fmt(i.sent),
+      pill(i.status) +
+        (i.decided ? ` <span class="cap">${fmt(i.decided)}</span>` : ""),
+      a && asgUsable(a) && a.id !== S.session.aid
+        ? B("Switch to this tenant", "doSwitch", { id: a.id })
+        : a && !asgUsable(a)
+          ? pill(a.status)
+          : "",
+    ];
+  };
+  return (
+    head(
+      "Tenant invitations",
+      `Organizations that have asked you to join them. Accepting adds a membership in that tenant. Your primary organization (${h(asgLabel(primaryAsg()))}) and your other memberships stay as they are.`,
+    ) +
+    `<div class="col" style="gap:16px">${
+      open.length
+        ? open.map(pendCard).join("")
+        : card(
+            "",
+            "",
+            empty(
+              "mail",
+              "No invitations waiting",
+              "When a Tenant Admin invites you to their organization, the request appears here and in your notifications.",
+            ),
+          )
+    }${
+      past.length
+        ? card(
+            "Earlier invitations",
+            "Answered, expired or withdrawn by the tenant.",
+            table(
+              ["Tenant", "Role", "Invited by", "Invitation date", "Status", ""],
+              past.map(pastRow),
+            ),
+          )
+        : ""
+    }</div>`
+  );
+});
+A.tinvAccept = (d) => {
+  const i = byId("invites", d.id);
+  const p = me();
+  // fix the primary membership before adding another, so accepting never changes it
+  if (!p.primary) p.primary = primaryAsg().id;
+  i.status = "Accepted";
+  i.decided = today();
+  const have = S.assign.find(
+    (a) => a.pid === p.id && a.ctx === i.ctx && a.status !== "Declined",
+  );
+  if (have) {
+    audit("Tenant invitation accepted — already a member", i.id, asgLabel(have));
+    toast(
+      `You are already a member of ${ctxName(i.ctx)}. No second membership was added.`,
+      "warn",
+    );
+    return ok();
+  }
+  const na = {
+    id: uid("a"),
+    pid: p.id,
+    role: i.role,
+    ctx: i.ctx,
+    status: roleNeedsApproval(roleBase(i.role))
+      ? "Pending role approval"
+      : "Active",
+    bundles: [],
+    onb: {
+      agreement: false,
+      consents: false,
+      profile: true,
+      compass: roleBase(i.role) !== "P",
+    },
+    inv: i.id,
+  };
+  S.assign.push(na);
+  notify(
+    i.by,
+    `${p.name} accepted the invitation to join ${ctxName(i.ctx)} as ${roleName(i.role, i.ctx)}`,
+    "admin",
+    { tab: "invites" },
+    tinvAdminAid(i),
+  );
+  if (na.status !== "Active") {
+    na.approval = [
+      { at: now(), by: "system", note: "Sensitive role — approval requested" },
+    ];
+    // only the approvers of the tenant the person joined are asked
+    S.assign
+      .filter(
+        (x) =>
+          roleBase(x.role) === "A" && x.ctx === i.ctx && x.status === "Active",
+      )
+      .forEach((x) =>
+        notify(
+          x.pid,
+          `Role approval requested: ${p.name} — ${roleName(i.role, i.ctx)}`,
+          "admin",
+          { tab: "requests" },
+          x.id,
+        ),
+      );
+  }
+  audit("Tenant invitation accepted", i.id, asgLabel(na));
+  toast(
+    na.status === "Active"
+      ? `You joined ${ctxName(i.ctx)} as ${roleName(i.role, i.ctx)}. Switch to it from the tenant menu at the top left.`
+      : `You joined ${ctxName(i.ctx)}. The ${roleName(i.role, i.ctx)} role is awaiting approval.`,
+  );
+  ok();
+};
+A.tinvReject = (d) => {
+  const i = byId("invites", d.id);
+  i.status = "Rejected";
+  i.decided = today();
+  notify(
+    i.by,
+    `${me().name} declined the invitation to join ${ctxName(i.ctx)}`,
+    "admin",
+    { tab: "invites" },
+    tinvAdminAid(i),
+  );
+  audit("Tenant invitation rejected", i.id, ctxName(i.ctx));
+  toast("Invitation rejected. No membership was created.");
+  ok();
+};
+// Demo data stored before tenant invitations: drop the old seeded second memberships (a person now gains another
+// tenant only by accepting a tenant invitation), add the second tenant's admin and the sample invitations, and fix
+// everyone's primary membership to the one they already treat as home.
+function tenantMigrate() {
+  const sd = seed();
+  const gone = ["a1b", "a3b"];
+  S.assign = S.assign.filter((a) => !gone.includes(a.id));
+  S.notifs = S.notifs.filter((n) => !gone.includes(n.aid));
+  S.people.forEach((p) => {
+    if (gone.includes(p.primary)) delete p.primary;
+    if (gone.includes(p.lastAid)) delete p.lastAid;
+  });
+  ["people", "assign", "invites"].forEach((k) =>
+    sd[k]
+      .filter(
+        (x) =>
+          ["p18", "a18", "ti1", "ti2", "ti3"].includes(x.id) && !byId(k, x.id),
+      )
+      .forEach((x) => S[k].push(x)),
+  );
+  S.people.forEach((p) => {
+    const a = !p.primary && primaryAsg(p.id);
+    if (a) p.primary = a.id;
+  });
+}
 // crud: the Organization Admin can also add, view, edit and delete the account itself.
 function usersTable(ctxFilter, canEdit, crud) {
   const as = S.assign
@@ -283,13 +526,6 @@ function usersTable(ctxFilter, canEdit, crud) {
                 ? "Mandate to " + fmt(a.mandate.until)
                 : "Mandate expired",
               a.mandate.valid ? "p-teal" : "p-red",
-            )
-          : "") +
-        (a.until
-          ? pill(
-              (a.status === "Expired" ? "Role expired " : "Role expires ") +
-                fmt(a.until),
-              a.status === "Expired" ? "p-red" : "p-grey",
             )
           : ""),
       primary: crud
@@ -394,12 +630,11 @@ A.userView = (d) => {
       ["Email verified", p.verified ? "Yes" : "No"],
       ["Account status", pill(p.status || "Active")],
     ])}<div><h3 class="h3" style="margin-bottom:8px">Roles</h3>${table(
-      ["Role", "Context", "Status", "Expires"],
+      ["Role", "Context", "Status"],
       roles.map((x) => [
         h(roleName(x.role, x.ctx)),
         h((S.contexts.find((c) => c.id === x.ctx) || {}).name || x.ctx),
         pill(x.status),
-        x.until ? fmt(x.until) : "—",
       ]),
     )}</div><div class="actions">${B("Close", "closeM")}${userEditable(p.id) ? B(ic("edit", 14) + "Edit", "userEdit", { id: a.id }, "btn-p btn-sm") : ""}</div></div>`,
     true,
@@ -549,25 +784,15 @@ A.userManage = (d) => {
         ["Role", roleName(a.role, a.ctx)],
         ["Context", h(S.contexts.find((c) => c.id === a.ctx).name)],
         ["Status", pill(a.status)],
-        ["Assignment expires", a.until ? fmt(a.until) : "No expiry set"],
       ],
     )}
  <section class="adm-sec"><h3 class="adm-sec-t">Access</h3><div class="row wrap adm-sec-a">${a.status === "Pending role approval" ? B("Approve role", "roleDecide", { id: a.id, v: "Active" }, "btn-p btn-sm") + B("Decline role", "roleDecide", { id: a.id, v: "Role not activated" }) : a.status === "Active" ? CB("Deactivate", "userStatus", { id: a.id, v: "Deactivated" }, "Deactivate this " + roleName(a.role, a.ctx) + " access? The person keeps their account, consent, correction and export rights.", "btn-d btn-sm") : B("Activate", "userStatus", { id: a.id, v: "Active" }, "btn-p btn-sm")}</div></section>
- ${a.pid !== myId() ? `<form data-f="aexp" class="adm-sec" novalidate><input type="hidden" name="id" value="${a.id}">${fi("aexp", "until", "Role assignment expires", { type: "date", value: a.until || "", help: "Leave empty for no expiry. On the day after this date the role stops working until it is renewed." })}<div class="actions"><span></span><button class="btn btn-s btn-sm" type="submit">Save expiry</button></div></form>` : ""}
  <form data-f="bund" class="adm-sec"><input type="hidden" name="id" value="${a.id}"><span class="lbl adm-sec-t">Specialist permission bundles</span><div class="adm-chks">${S.bundles.map((b) => `<label class="adm-chk"><input class="chk" type="checkbox" name="b" value="${b.name}" ${a.bundles.includes(b.name) ? "checked" : ""}><span class="adm-chk-t">${b.name}</span><span class="cap">· ${h(b.approval)}</span></label>`).join("")}</div><span class="help">Higher-trust bundles need Programme/Organization Administrator approval and are not delegated at workspace level.</span><div class="actions"><span></span><button class="btn btn-s btn-sm" type="submit">Save bundles</button></div></form>
  ${["A", "C"].includes(roleBase(a.role)) ? `<form data-f="mand" class="adm-sec"><input type="hidden" name="id" value="${a.id}"><span class="lbl adm-sec-t">Mandate (authority to bind the organization)</span><div class="f2">${fi("mand", "scope", "Scope", { value: a.mandate?.scope, req: true })}${fi("mand", "until", "Valid until", { type: "date", req: true, value: a.mandate?.until })}</div><div class="actions">${a.mandate ? CB("Revoke mandate", "mandRevoke", { id: a.id }, "Revoke this mandate? Elevated access is removed; ordinary access continues.", "btn-d btn-sm") : "<span></span>"}<button class="btn btn-s btn-sm" type="submit">Grant / update mandate</button></div></form>` : ""}</div>`,
   );
 };
 A.userStatus = (d) => {
   const a = byId("assign", d.id);
-  if (d.v === "Active" && a.until && a.until < today()) {
-    audit(
-      "Role assignment expiry cleared on reactivation",
-      a.id,
-      "was " + a.until,
-    );
-    delete a.until;
-  }
   a.status = d.v;
   notify(
     a.pid,
@@ -576,34 +801,6 @@ A.userStatus = (d) => {
   );
   audit("User " + d.v, a.id, "");
   UI.modal = null;
-  ok();
-};
-F.aexp = (d) => {
-  const a = byId("assign", d.id);
-  if (d.until && d.until < today()) {
-    UI.err.aexp = { until: "Choose today or a later date, or leave it empty." };
-    return render();
-  }
-  const was = a.until || "none";
-  if (d.until) a.until = d.until;
-  else delete a.until;
-  if (a.status === "Expired" && (!a.until || a.until >= today()))
-    a.status = "Active";
-  notify(
-    a.pid,
-    "Your " +
-      roleName(a.role, a.ctx) +
-      " assignment " +
-      (a.until
-        ? "now expires on " + fmt(a.until)
-        : "no longer has an expiry date"),
-    "profile",
-    { tab: "compass" },
-  );
-  audit("Role assignment expiry set", a.id, was + " → " + (a.until || "none"));
-  UI.modal = null;
-  clearF("aexp");
-  toast("Expiry saved.");
   ok();
 };
 F.bund = (d) => {
@@ -746,7 +943,6 @@ A.packCfg = (d) => {
     () => `<form data-f="pkc" class="col adm-form" novalidate><input type="hidden" name="id" value="${p.id}">
     <div class="g3">${fi("pkc", "workspace", "Label shown for Action Workspaces", { value: p.labels.workspace, req: true, help: "The system concept stays “Action Workspace”." })}${fi("pkc", "circle", "Label for Circles", { value: p.labels.circle, req: true })}${fi("pkc", "rope", "Label for Rope Teams", { value: p.labels.rope, req: true })}</div>
     ${fi("pkc", "evidenceTypes", "Evidence types", { value: p.evidenceTypes, req: true })}
-    ${fi("pkc", "compassOpt", "Ask optional Purpose Compass questions (PC7–PC12) later, in context", { type: "checkbox", value: p.compassOptional ? "yes" : "" })}
     <div class="adm-locked"><span class="adm-locked-ic" aria-hidden="true">${ic("lock", 16)}</span><div><b>Same for every pack (locked)</b><p class="cap">Identity · consent and optional purposes · role authority · matching rules · evidence states · Harvest and profile controls · audit</p></div></div>
     <div class="actions"><span class="help">Saved as configuration. No code fork, database change or vendor script.</span><button class="btn btn-p" type="submit">Save pack</button></div></form>`,
     true,
@@ -769,7 +965,6 @@ F.pkc = (d) => {
     rope: d.rope.trim(),
   };
   p.evidenceTypes = d.evidenceTypes.trim();
-  p.compassOptional = d.compassOpt === "yes";
   audit("Pack configured", p.id, JSON.stringify(p.labels));
   UI.modal = null;
   clearF("pkc");
@@ -789,7 +984,6 @@ const cfgSnap = () =>
     JSON.stringify({
       packs: S.packs,
       voting: S.settings.voting,
-      compassQs: S.compassQs,
       templates: S.templates,
       participantCanProposeWorkspace: S.settings.participantCanProposeWorkspace,
     }),
@@ -798,7 +992,7 @@ function versionsView() {
   const vs = S.configVersions;
   return card(
     "Configuration versions " + `<span class="adm-n">${vs.length}</span>`,
-    "Restoring a version changes configuration only (packs, labels, templates, Purpose Compass wording, voting parameters). Participant records, consent choices and rights are kept as they are.",
+    "Restoring a version changes configuration only (packs, labels, templates, voting parameters). Participant records, consent choices and rights are kept as they are.",
     table(
       ["Version", "Saved", "By", "Note", ""],
       vs.map((v, i) => [
@@ -863,7 +1057,6 @@ A.cfgRestore = (d) => {
       });
   });
   S.settings.voting = s.voting;
-  S.compassQs = s.compassQs;
   S.templates = s.templates;
   S.settings.participantCanProposeWorkspace = s.participantCanProposeWorkspace;
   audit("Configuration restored", v.id, v.note);
@@ -968,34 +1161,19 @@ function routedCard() {
       "Reviewer bundle",
     ],
     [
-      "Release / disclosure review",
-      S.releases.filter((x) => /disclosure/i.test(x.status)).length,
-      "Trust/Data Steward",
-    ],
-    [
       "Policy and consent wording",
       S.agreements.filter((g) => g.ctx === c && g.status === "Draft").length,
-      "Trust/Data Steward",
+      "Platform Administrator",
     ],
     [
       "Products, prices and payments",
       S.products.filter((p) => /draft|review/i.test(p.status || "")).length,
-      "Finance Owner",
-    ],
-    [
-      "AI sources and evaluation",
-      S.aiSources.filter((x) => x.status !== "Approved").length,
-      "AI Owner",
-    ],
-    [
-      "Incidents and appeals",
-      S.incidents.filter((i) => i.state !== "Closed").length,
-      "Incident/Safety Owner",
+      "Platform Administrator",
     ],
   ];
   return card(
     "Routed to specialist owners",
-    "You are not the fallback approver for these. They go to the person holding the matching bundle.",
+    "You are not the fallback approver for these. Evidence goes to Reviewer bundle holders; policies and products & payments go to the Platform Administrator.",
     table(
       ["Decision", "Waiting", "Decided by"],
       rows.map(([a, n, b]) => [h(a), String(n), pill(b, "p-grey")]),
@@ -1011,7 +1189,7 @@ function cfgForm(isOrg) {
       ? "Configure within the pack envelope"
       : "Use-case pack: " + h(pk.name),
     "Platform-controlled items cannot be changed by a tenant.",
-    `<form data-f="cfg" class="col adm-form" novalidate><div class="g3">${fi("cfg", "workspace", "Label shown for Action Workspaces", { value: pk.labels.workspace, ro: true, help: "Set by the Organization Admin in Pack configuration." })}${fi("cfg", "circle", "Label for Circles", { value: pk.labels.circle, req: true })}${fi("cfg", "rope", "Label for Rope Teams", { value: pk.labels.rope, req: true })}</div>${fi("cfg", "compassOpt", "Ask optional Purpose Compass questions PC7–PC12 in context", { type: "checkbox", value: pk.compassOptional ? "yes" : "" })}${fi("cfg", "propose", "Participants may propose a " + pk.labels.workspace, { type: "checkbox", value: S.settings.participantCanProposeWorkspace ? "yes" : "" })}
+    `<form data-f="cfg" class="col adm-form" novalidate><div class="g3">${fi("cfg", "workspace", "Label shown for Action Workspaces", { value: pk.labels.workspace, ro: true, help: "Set by the Organization Admin in Pack configuration." })}${fi("cfg", "circle", "Label for Circles", { value: pk.labels.circle, req: true })}${fi("cfg", "rope", "Label for Rope Teams", { value: pk.labels.rope, req: true })}</div>${fi("cfg", "propose", "Participants may propose a " + pk.labels.workspace, { type: "checkbox", value: S.settings.participantCanProposeWorkspace ? "yes" : "" })}
  <div class="adm-locked"><span class="adm-locked-ic" aria-hidden="true">${ic("lock", 16)}</span><div><b>Platform-controlled (locked)</b><p class="cap">Consent framework · trust controls · security rules · audit model · core data semantics · Evidence Support Level definitions</p></div></div><div class="actions"><span></span><button class="btn btn-p" type="submit">Save configuration</button></div></form>`,
   );
 }
@@ -1023,7 +1201,6 @@ F.cfg = (d) => {
     circle: d.circle,
     rope: d.rope,
   };
-  pk.compassOptional = d.compassOpt === "yes";
   S.settings.participantCanProposeWorkspace = d.propose === "yes";
   audit("Pack configuration changed", pk.id, JSON.stringify(pk.labels));
   clearF("cfg");
@@ -1314,7 +1491,7 @@ function admItems() {
       });
     });
   S.assign
-    .filter((a) => a.status === "Pending role approval")
+    .filter((a) => a.status === "Pending role approval" && a.ctx === ctxId())
     .forEach((a) => {
       // A sensitive role waits here once the person accepts an invitation for it or registers for it.
       const p = P(a.pid);
@@ -1431,14 +1608,17 @@ function admCount(tab) {
   if (tab === "support")
     return (
       S.supportQueries.filter(
-        (q) => q.ctx === ctxId() && SQ_OPEN.includes(q.status),
+        (q) => sqAdmin(q) && SQ_OPEN.includes(q.status),
       ).length + (S.requests || []).filter((r) => r.status === "Open").length
     );
   return 0;
 }
 route("admin", "admin", () => {
   if (role() !== "A") return deniedView("admin");
-  const pend = S.assign.filter((a) => a.status === "Pending role approval");
+  // An Organization Admin sees and manages only the members and invitations of the tenant they are working in.
+  const pend = S.assign.filter(
+    (a) => a.status === "Pending role approval" && a.ctx === ctxId(),
+  );
   // Sections are chosen from the sidebar; Reports & exports lives on the metrics route.
   const t = tabs(
     "adm",
@@ -1449,16 +1629,12 @@ route("admin", "admin", () => {
       ["packs", "Pack configuration"],
       ["library", "Template library"],
       ["versions", "Configuration versions"],
-      ["notify", "Notifications"],
       ["initiatives", "Sponsor initiatives"],
       ["support", "Support & requests"],
-      ["purposes", "Optional purposes"],
     ],
     UI.p.tab,
   );
   let body = "";
-  if (t.cur === "purposes")
-    body = `<div class="adm-stack">${programmeScopesView()}</div>`;
   const n = (k) => `<span class="adm-n">${k}</span>`;
   if (t.cur === "requests") {
     const items = admItems();
@@ -1557,17 +1733,22 @@ route("admin", "admin", () => {
           ) + '<div style="height:12px"></div>'
         : "") +
       card(
-        "Users and roles " + n(S.assign.length),
-        "Add, view, edit and delete user accounts. Manage roles, bundles and mandates. No direct database work.",
-        usersTable(null, true, true),
+        "Users and roles " +
+          n(S.assign.filter((a) => a.ctx === ctxId()).length),
+        "Members of " +
+          h(ctxName(ctxId())) +
+          ". Add, view, edit and delete user accounts. Manage roles, bundles and mandates. No direct database work.",
+        usersTable(ctxId(), true, true),
         B(ic("plus", 14) + "Add user", "userNew", {}, "btn-p btn-sm"),
         "adm-panel",
       );
   if (t.cur === "invites")
     body = card(
-      "Invitations " + n(S.invites.length),
-      "",
-      inviteTable(null),
+      "Invitations " + n(S.invites.filter((i) => i.ctx === ctxId()).length),
+      "Invitations to join " +
+        h(ctxName(ctxId())) +
+        ": Pending, Accepted, Rejected, Expired or Revoked. People with an account answer in the app; others use a single-use email link.",
+      inviteTable(ctxId()),
       B(ic("plus", 14) + "Create / bulk upload", "invNew", {}, "btn-p btn-sm"),
       "adm-panel",
     );
@@ -1636,44 +1817,6 @@ route("admin", "admin", () => {
       "adm-panel",
     );
 
-  if (t.cur === "notify")
-    body = `<div class="g12">${card(
-      "Send an announcement",
-      "In-app notification to everyone in this context; transactional email follows the template.",
-      `<form data-f="ann" class="col adm-form" novalidate>${fi(
-        "ann",
-        "to",
-        "Audience",
-        {
-          type: "select",
-          opts: [
-            ["all", "Everyone in this context"],
-            ...Object.entries(ROLE)
-              .filter(([k]) => k !== "T")
-              .map(([k, v]) => [k, v + "s"]),
-          ],
-        },
-      )}${fi("ann", "t", "Message", { type: "textarea", rows: 3, req: true })}<div class="actions"><span></span><button class="btn btn-p" type="submit">${ic("send", 14)}Send</button></div></form>`,
-      "",
-      "c5",
-    )}${card(
-      "Notification events",
-      "Configured triggers",
-      table(
-        ["Event", "Channel"],
-        [
-          ["Invitation, verification", "Email"],
-          ["Consent actions, re-acceptance", "Email + in-app"],
-          ["Approval requests and outcomes", "Email + in-app"],
-          ["Circle activity, chat, votes", "In-app"],
-          ["Commitments, milestones", "In-app"],
-          ["AI review", "In-app"],
-          ["Payment / entitlement changes", "Email"],
-        ].map(([e, ch]) => [e, `<span class="adm-chan">${ch}</span>`]),
-      ),
-      "",
-      "c7 adm-panel",
-    )}</div>`;
   if (t.cur === "support")
     body = UI.p.sq
       ? sqAdminDetail(UI.p.sq)
@@ -1868,33 +2011,6 @@ F.tple = (d) => {
   clearF("tple");
   toast(
     "Version " + x.ver + " published. Accepted pathways keep their version.",
-  );
-  ok();
-};
-F.ann = (d) => {
-  if (!validate("ann", d, { t: ["req"] })) return render();
-  const ps = S.assign
-    .filter((a) => a.ctx === ctxId() && (d.to === "all" || a.role === d.to))
-    .map((a) => a.pid);
-  // kept as a programme announcement so the Explore board can show it to its audience
-  (S.announcements = S.announcements || []).unshift({
-    id: uid("an"),
-    t: d.t,
-    to: d.to,
-    ctx: ctxId(),
-    by: myId(),
-    at: today(),
-    kind: "Programme announcement",
-  });
-  [...new Set(ps)].forEach((p) =>
-    notify(p, "Announcement: " + d.t, "notifications"),
-  );
-  audit("Announcement sent", d.to, ps.length + " recipients");
-  clearF("ann");
-  toast(
-    "Sent to " +
-      ps.length +
-      " people. It also appears on Explore board for this context.",
   );
   ok();
 };

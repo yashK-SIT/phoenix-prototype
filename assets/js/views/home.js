@@ -159,7 +159,7 @@ function inboxItems() {
           { id: x.id },
         ]),
       );
-  if (r === "F" || hasB("AI Owner"))
+  if (r === "F")
     S.ai
       .filter((j) => j.status === "In review" && j.cls === "C")
       .forEach((j) =>
@@ -255,15 +255,19 @@ function inboxItems() {
           { tab: "users" },
         ]),
       );
-  if (hasB("Incident/Safety Owner"))
+  if (isSafetyOwner())
     S.incidents
-      .filter((i) => !["Closed"].includes(i.state))
+      .filter((i) => incOwnerOf(i) && !["Closed"].includes(i.state))
       .forEach((i) =>
         out.push(["Incident", i.kind, i.state, "incidents", { id: i.id }]),
       );
-  if (r === "A")
+  if (isReleaseReviewer())
     S.releases
-      .filter((x) => x.status === "Owner authorised — disclosure review")
+      .filter(
+        (x) =>
+          x.status === "Owner authorised — disclosure review" &&
+          evReviewsHere(byId("evidence", x.ev)),
+      )
       .forEach((x) =>
         out.push([
           "Disclosure review",
@@ -588,13 +592,21 @@ function nextAction() {
       ];
   }
   if (r === "T") {
-    const q = sqForwarded().find((x) => SQ_OPEN.includes(x.status));
+    const q = sqPlatform().find((x) => SQ_OPEN.includes(x.status));
     if (q)
       return [
-        "Forwarded support request waiting",
+        q.to === "platform" ? "Support request from an Organization Admin" : "Forwarded support request waiting",
         nm(q.by) + " · " + h(ctxName(q.ctx)),
         "support",
         { sq: q.id },
+      ];
+    const i = S.incidents.find((x) => incOwnerOf(x) && x.state !== "Closed");
+    if (i)
+      return [
+        "Concern from an Organization Admin",
+        h(i.kind) + " · " + h(ctxName(i.ctx)),
+        "incidents",
+        { id: i.id },
       ];
   }
   {
@@ -1027,7 +1039,7 @@ function roleJourney() {
       S.evidence.some((e) => e.owner === pid) ||
       myRooms().some((x) => (x.contribs || []).some((c) => c.by === pid));
     return journeyRail(
-      "Partner flow",
+      "Collaborator flow",
       "Your collaboration flow",
       "Mandate → opportunities → workspaces → evidence (Doc 1 §6.4)",
       [
@@ -1203,13 +1215,6 @@ function roleJourney() {
           r: "admin",
           p: { tab: "library" },
           meta: tpl ? "Approved templates" : "Approve pathway templates",
-        },
-        {
-          k: "Announce",
-          done: (S.announcements || []).some((x) => x.ctx === ctxId()),
-          r: "admin",
-          p: { tab: "notify" },
-          meta: "Send to Explore board audience",
         },
         {
           k: "Versions",
@@ -1704,7 +1709,7 @@ function homeM() {
          "alert",
          h(x.t),
          "To " +
-           (x.to === "safety" ? "Incident/Safety Owner" : "Steward") +
+           (x.to === "safety" ? "Organization Admin (safety)" : "Steward") +
            " · " +
            cName(x.rope) +
            " · " +
@@ -1985,7 +1990,7 @@ function homeA() {
       B("Approval inbox", "go", { r: "admin", tab: "requests" }, "btn-p"),
     ) +
     `<div class="hm">
- ${hmStrip([stat("s-purple", "t-purple", "inbox", S.projects.filter((p) => inCtx(p) && p.status === "Submitted" && !p.stewards.length).length + S.pathways.filter((p) => inCtx(p) && pwNeedsSteward(p)).length, "Review requests", "Projects and pathways needing a reviewer", "admin", { tab: "requests" }), stat("s-teal", "t-teal", "user", pend.length, "Role requests", "Awaiting approval", "admin", { tab: "users" }), stat("s-slate", "t-navy", "alert", S.incidents.filter((i) => i.state !== "Closed").length, "Open incidents", "", "incidents"), stat("s-mist", "t-soft", "card", S.ents.filter((e) => e.state === "Grace").length, "Payments in grace", "", "billing")], "Programme queues")}
+ ${hmStrip([stat("s-purple", "t-purple", "inbox", S.projects.filter((p) => inCtx(p) && p.status === "Submitted" && !p.stewards.length).length + S.pathways.filter((p) => inCtx(p) && pwNeedsSteward(p)).length, "Review requests", "Projects and pathways needing a reviewer", "admin", { tab: "requests" }), stat("s-teal", "t-teal", "user", pend.length, "Role requests", "Awaiting approval", "admin", { tab: "users" }), stat("s-slate", "t-navy", "alert", S.incidents.filter((i) => incOwnerOf(i) && i.state !== "Closed").length, "Open incidents", "", "incidents"), stat("s-mist", "t-soft", "card", S.ents.filter((e) => e.state === "Grace").length, "Payments in grace", "", "billing")], "Programme queues")}
  ${roleJourney()}
  ${hmCols(
    `${card(
@@ -2040,7 +2045,7 @@ function homeT() {
   const active = people.filter((p) => S.assign.some((a) => a.pid === p.id && a.status === "Active"));
   const adminsOf = (o) => S.assign.filter((a) => roleBase(a.role) === "A" && S.contexts.some((c) => c.id === a.ctx && c.org === o.id));
   const noAdmin = tenants.filter((o) => !adminsOf(o).some((a) => a.status === "Active"));
-  const openSq = sqForwarded().filter((q) => SQ_OPEN.includes(q.status));
+  const openSq = sqPlatform().filter((q) => SQ_OPEN.includes(q.status));
   const pendAdmin = S.assign.filter((a) => roleBase(a.role) === "A" && a.status === "Pending role approval");
   // Joined = first agreement accepted (the step that activates an account). Newest first.
   const joined = people
@@ -2063,7 +2068,7 @@ function homeT() {
    hmFig("t-soft", "building", tenants.length, "Organizations", noAdmin.length ? noAdmin.length + " without an active Organization Admin" : "All have an Organization Admin"),
    hmFig("t-soft", "users", people.length, "People", active.length + " active"),
    hmFig("t-soft", "shield", pendAdmin.length, "Admin roles awaiting approval", ""),
-   hmFig("t-soft", "inbox", openSq.length, "Open forwarded requests", sqForwarded().length + " forwarded in total"),
+   hmFig("t-soft", "inbox", openSq.length, "Open support requests", sqPlatform().filter((q) => q.to === "platform").length + " from Organization Admins · " + sqPlatform().filter((q) => q.fwd).length + " forwarded"),
  ])}
  ${hmCols(
    `${card(
@@ -2093,12 +2098,12 @@ function homeT() {
    "hm-list",
  )}`,
    `${card(
-     "Forwarded support requests",
+     "Support requests",
      "",
      openSq
        .slice(0, 5)
        .map((q) => hrow("inbox", h(q.cat || "General"), nm(q.by) + " · " + h(ctxName(q.ctx)) + " · " + fmt(q.at), pill(q.status)))
-       .join("") || '<p class="cap">No open forwarded requests.</p>',
+       .join("") || '<p class="cap">No open support requests.</p>',
      L("All", "support"),
      "hm-list",
    )}

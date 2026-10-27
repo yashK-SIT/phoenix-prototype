@@ -206,6 +206,7 @@ function ensurePlatformData() {
   (S.agreements || []).forEach((g) => {
     if (g.type === "Programme Administrator Terms")
       g.type = "Organization Admin Terms";
+    if (g.type === "Partner Agreement") g.type = "Collaborator Agreement";
   });
   (S.metrics || []).forEach((m) => {
     if (m.owner === "Programme Admin") m.owner = "Organization Admin";
@@ -222,6 +223,26 @@ function ensurePlatformData() {
         }
       : d;
   });
+  // One label per role: Mentor, Collaborator and Sponsor. Stored data may still carry the earlier paired names.
+  const LEGACY_ROLE_NAMES = {
+    "Mentor / Adviser": "Mentor",
+    "Mentor / Advisor": "Mentor",
+    "Partner / Collaborator": "Collaborator",
+    Partner: "Collaborator",
+    "Sponsor / Funder": "Sponsor",
+    Funder: "Sponsor",
+  };
+  S.roles.forEach((r) => {
+    if (LEGACY_ROLE_NAMES[r.name]) r.name = LEGACY_ROLE_NAMES[r.name];
+  });
+  S.packs.forEach((p) =>
+    Object.keys(p.roleNames || {}).forEach((k) => {
+      const v = LEGACY_ROLE_NAMES[p.roleNames[k]];
+      if (!v) return;
+      if (v === (roleRec(k) || {}).name) delete p.roleNames[k];
+      else p.roleNames[k] = v;
+    }),
+  );
   (S.orgs || []).forEach((o) => {
     o.pack =
       o.pack ??
@@ -1432,17 +1453,17 @@ const polAccepted = (g) =>
     S.accepts.some((x) => x.pid === a.pid && x.ag === g.id),
   );
 const ctxNameH = (id) => h(ctxName(id));
-// Policies and agreements are governed by the Trust/Data Steward bundle (doc 1 §6.8–6.9), not by the technical
-// Platform Administrator, who implements approved configuration only.
+// Trust/Data: Policies. Policies and agreements are written, versioned and published from the Platform
+// Administrator console.
 route("policies", "any", () => {
-  if (!hasB("Trust/Data Steward")) return deniedView("agreements");
+  if (!isPolicyAdmin()) return deniedView("agreements");
   const g0 = UI.p.id && byId("agreements", UI.p.id);
   if (g0) return policyPage(g0);
   const gs = polGroups();
   return (
     head(
       "Policies & agreements",
-      "Trust/Data Steward · approved wording only. A version takes effect on its effective date; a version for a future date is shown as upcoming and gates nothing early. A material change pauses only participation in that context; rights routes stay open. Optional purposes always stay separate from the required agreement.",
+      "Trust/Data · approved wording only. A version takes effect on its effective date; a version for a future date is shown as upcoming and gates nothing early. A material change pauses only participation in that context; rights routes stay open. Optional purposes always stay separate from the required agreement.",
     ) +
     card(
       `Policy groups <span class="adm-n">${gs.length}</span>`,
@@ -1700,212 +1721,4 @@ A.polCmp = (d) => {
     polDiffHtml(polPrev(g), g),
     true,
   );
-};
-
-// ---------- PURPOSE COMPASS QUESTIONS: managed by the Platform Administrator ----------
-// Add, edit, delete and reorder at any time. Deleting stops the question being asked; existing answers are kept.
-// Purpose Compass wording is configured by the Organization Admin within WSS-approved text (doc 1 §6.7).
-route("compassqs", "any", () => {
-  if (role() !== "A") return deniedView("admin");
-  const qs = compassQs();
-  const sets = [...new Set(qs.map((q) => q.set))];
-  const last = qs.length - 1;
-  return (
-    head(
-      "Purpose Compass settings",
-      "Purpose Compass questions asked at onboarding and later in context. Existing answers are kept when wording changes.",
-      B(ic("plus", 16) + "Add question", "cqNew", {}, "btn-p"),
-    ) +
-    card(
-      "Active questions",
-      qs.length +
-        " question" +
-        (qs.length === 1 ? "" : "s") +
-        " in " +
-        sets.length +
-        " set" +
-        (sets.length === 1 ? "" : "s") +
-        ". Questions in the same set appear together on one screen.",
-      dataView("plat:compass", {
-        label: "questions",
-        items: qs,
-        layout: "table",
-        pageSize: 50,
-        search: (q) => q.text + " " + (q.help || "") + " " + q.set,
-        quick: {
-          label: "Asked",
-          options: [
-            ["onb", "At onboarding"],
-            ["later", "Later, in Profile"],
-          ],
-          test: (q, v) => (v === "onb" ? !!q.onb : !q.onb),
-        },
-        filters: [
-          {
-            key: "set",
-            label: "Set",
-            options: sets.map((x) => [x, x]),
-            test: (q, v) => q.set === v,
-          },
-          {
-            key: "type",
-            label: "Answer type",
-            options: [...new Set(qs.map((q) => q.type))].map((t) => [
-              t,
-              (COMPASS_TYPES.find((x) => x[0] === t) || [, t])[1],
-            ]),
-            test: (q, v) => q.type === v,
-          },
-          {
-            key: "req",
-            label: "Required",
-            options: [
-              ["yes", "Required"],
-              ["no", "Optional"],
-            ],
-            test: (q, v) => (v === "yes" ? !!q.req : !q.req),
-          },
-        ],
-        columns: [
-          {
-            label: "#",
-            cell: (q) =>
-              `<span class="cq-n">${String(qs.indexOf(q) + 1)}</span>`,
-          },
-          {
-            label: "Question",
-            cell: (q) =>
-              `<b>${h(q.text)}</b>${q.help ? `<div class="cap">${h(q.help)}</div>` : ""}`,
-          },
-          {
-            label: "Set",
-            cell: (q) =>
-              ((i) =>
-                `<span class="cq-set${i && qs[i - 1].set === q.set ? " is-same" : ""}">${h(q.set)}</span>`)(
-                qs.indexOf(q),
-              ),
-          },
-          {
-            label: "Type",
-            hideSm: true,
-            cell: (q) =>
-              `<span class="cap">${h((COMPASS_TYPES.find((t) => t[0] === q.type) || [, q.type])[1])}</span>`,
-          },
-          {
-            label: "Required",
-            cell: (q) =>
-              q.req
-                ? pill("Required", "p-navy")
-                : '<span class="cap">Optional</span>',
-          },
-          {
-            label: "Asked",
-            hideSm: true,
-            cell: (q) =>
-              `<span class="cap">${q.onb ? "At onboarding" : "Later, in Profile"}</span>`,
-          },
-          {
-            label: "",
-            cell: (q) =>
-              ((i) =>
-                `<div class="cq-acts"><span class="cq-move" role="group" aria-label="Reorder">${B(ic("chev", 16), "cqMove", { id: q.id, dir: -1 }, "btn-s btn-sm cq-up" + (i === 0 ? " is-off" : ""), `aria-label="Move up"${i === 0 ? " disabled" : ""}`)}${B(ic("chev", 16), "cqMove", { id: q.id, dir: 1 }, "btn-s btn-sm cq-dn" + (i === last ? " is-off" : ""), `aria-label="Move down"${i === last ? " disabled" : ""}`)}</span>${B("Edit", "cqEdit", { id: q.id })}${CB("Delete", "cqDel", { id: q.id }, "Delete “" + h(q.text.slice(0, 80)) + "”? People will no longer be asked it. Answers already given are kept.", "btn-g btn-sm cq-del")}</div>`)(
-                qs.indexOf(q),
-              ),
-          },
-        ],
-        empty: [
-          "target",
-          "No active questions. People skip the Purpose Compass until you add one.",
-          "",
-          "",
-        ],
-      }),
-      "",
-      "adm-panel cq-card",
-    ) +
-    `<p class="cap cq-note">${ic("info", 14)}<span>Answers to the Purpose (PC1), Outcome (PC2) and First milestone (PC5) questions also show on the person’s North Star card. Deleting those questions leaves the card empty for new people.</span></p>`
-  );
-});
-function cqEditor(q) {
-  clearF("cq");
-  const sets = [...new Set(compassQs().map((x) => x.set))];
-  UI.form.cq = q
-    ? {
-        text: q.text,
-        set: q.set,
-        setNote: q.setNote || "",
-        help: q.help || "",
-        type: q.type,
-        req: q.req ? "yes" : "",
-        onb: q.onb ? "yes" : "",
-        vis: q.vis || "Private",
-      }
-    : {
-        type: "textarea",
-        onb: "yes",
-        vis: "Private",
-        set: sets[sets.length - 1] || "",
-      };
-  modal(
-    q ? "Edit question" : "Add a question",
-    () =>
-      `<form data-f="cq" class="col adm-form" novalidate><input type="hidden" name="id" value="${q ? q.id : ""}">${fi("cq", "text", "Question", { type: "textarea", rows: 2, req: true })}<div class="f2"><div class="field"><label class="lbl" for="cq_set">Set <span class="req">*</span></label><input id="cq_set" name="set" class="input${fe("cq", "set") ? " err" : ""}" list="cq-sets" value="${h(fv("cq", "set", ""))}" placeholder="e.g. Blockers"><datalist id="cq-sets">${sets.map((x) => `<option value="${h(x)}">`).join("")}</datalist>${fe("cq", "set") ? `<span class="emsg" role="alert">${ic("alert", 14)}${fe("cq", "set")}</span>` : ""}<span class="help">Pick an existing set or type a new one.</span></div>${fi("cq", "type", "Answer type", { type: "select", opts: COMPASS_TYPES })}</div>${fi("cq", "setNote", "Set description (optional)", { help: "Shown under the set title." })}${fi("cq", "help", "Help text (optional)")}${fi("cq", "vis", "Visibility shown to the person", { type: "select", opts: COMPASS_VIS })}${fi("cq", "req", "Required", { type: "checkbox" })}${fi("cq", "onb", "Ask at onboarding (otherwise asked later, in Profile)", { type: "checkbox" })}<div class="actions"><span></span><button class="btn btn-p" type="submit">${q ? "Save changes" : "Add question"}</button></div></form>`,
-  );
-}
-A.cqNew = () => cqEditor(null);
-A.cqEdit = (d) => cqEditor((S.compassQs || []).find((q) => q.id === d.id));
-F.cq = (d) => {
-  if (!validate("cq", d, { text: ["req", ["min", 3]], set: ["req"] }))
-    return render();
-  const fields = {
-    text: d.text.trim(),
-    set: d.set.trim(),
-    setNote: (d.setNote || "").trim(),
-    help: (d.help || "").trim(),
-    type: COMPASS_TYPES.some((t) => t[0] === d.type) ? d.type : "textarea",
-    req: d.req === "yes",
-    onb: d.onb === "yes",
-    vis: d.vis || "Private",
-  };
-  let q = d.id && (S.compassQs || []).find((x) => x.id === d.id);
-  if (q) Object.assign(q, fields);
-  else {
-    q = {
-      id: "q" + uid(""),
-      ...fields,
-      order: Math.max(0, ...compassQs().map((x) => x.order)) + 1,
-    };
-    (S.compassQs = S.compassQs || []).push(q);
-  }
-  audit(
-    d.id ? "Purpose Compass question edited" : "Purpose Compass question added",
-    q.id,
-    q.text.slice(0, 80),
-  );
-  UI.modal = null;
-  clearF("cq");
-  toast(
-    d.id
-      ? "Question updated."
-      : "Question added at the end. Move it up if needed.",
-  );
-  ok();
-};
-A.cqMove = (d) => {
-  const qs = compassQs();
-  const i = qs.findIndex((q) => q.id === d.id);
-  const j = i + +d.dir;
-  if (i < 0 || j < 0 || j >= qs.length) return;
-  [qs[i].order, qs[j].order] = [qs[j].order, qs[i].order];
-  audit("Purpose Compass question moved", d.id, +d.dir < 0 ? "up" : "down");
-  ok();
-};
-A.cqDel = (d) => {
-  const q = (S.compassQs || []).find((x) => x.id === d.id);
-  q.deleted = true;
-  q.deletedAt = now();
-  compassQs().forEach((x, i) => (x.order = i + 1));
-  audit("Purpose Compass question deleted", q.id, q.text.slice(0, 80));
-  toast("Question deleted. Existing answers are kept.");
-  ok();
 };

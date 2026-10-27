@@ -6,7 +6,7 @@ const SPACE_ROLES = [
   "Facilitator",
   "Member",
   "Mentor",
-  "Partner",
+  "Collaborator",
   "Reviewer",
   "Observer",
 ];
@@ -19,7 +19,7 @@ const SPACE_ROLE_HELP = {
     "Contributes, takes on tasks and commitments, votes where votes apply.",
   Mentor:
     "Guides the team, reviews shared work and records mentor contributions.",
-  Partner:
+  Collaborator:
     "External or institutional collaborator working against a defined responsibility.",
   Reviewer:
     "Reviews contributions, Change Objects and evidence-linked milestones.",
@@ -34,7 +34,7 @@ function normRole(r) {
   if (/^Facilitator/i.test(s)) return "Facilitator";
   if (/^Mentor/i.test(s)) return "Mentor";
   if (/^(Partner|Collaborator|External|Institutional|Finance)/i.test(s))
-    return "Partner";
+    return "Collaborator";
   if (/^(Reviewer|Restricted|Research|Public-release)/i.test(s))
     return "Reviewer";
   if (/^Observer/i.test(s)) return "Observer";
@@ -72,7 +72,7 @@ const SPACE_CAN = {
     record: ALL_BUT_OBS,
     // reference only: Circle vote eligibility is decided by voteStatusOf() in circles.js (Observers, the
     // facilitator and members set as non-voting do not vote; everyone else has exactly one vote)
-    vote: ["Project owner", "Member", "Mentor", "Partner", "Reviewer"],
+    vote: ["Project owner", "Member", "Mentor", "Collaborator", "Reviewer"],
     poll: ["Project owner", "Facilitator"],
     facilitate: ["Project owner", "Facilitator"],
     members: ["Project owner", "Facilitator"],
@@ -99,7 +99,7 @@ const SPACE_CAN = {
     post: ALL_BUT_OBS,
     lead: ["Project owner", "Facilitator"],
     propose: ALL_BUT_OBS,
-    contribute: ["Member", "Partner", "Mentor"],
+    contribute: ["Member", "Collaborator", "Mentor"],
     review: ["Reviewer", "Facilitator"],
     moderate: ["Project owner", "Facilitator"],
     members: ["Project owner", "Facilitator"],
