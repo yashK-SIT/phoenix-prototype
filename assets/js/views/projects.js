@@ -66,17 +66,32 @@ const projAnswered = p => {
 // The reviewer can accept, or ask for (further) clarification: on a submitted project, or once the owner has answered.
 const projDecidable = p => !!p && (p.status === 'Submitted' || projAnswered(p));
 // Project listing, following the Circles listing: one list in a card, phase tabs with counts, search, filters, sort.
-const PROJ_PHASES = ['Draft', 'Under review', 'Active', 'Closed', 'Rejected'];
+// A sponsor project before its owner is chosen is a listing: "Shortlisted" to the people who shortlisted it (sponsor.js).
+const PROJ_PHASES = ['Shortlisted', 'Sponsor listing', 'Draft', 'Under review', 'Active', 'Closed', 'Rejected'];
 const projPhase = p =>
-  p.status === 'Draft' ? 'Draft' : ['Submitted', 'Clarification requested'].includes(p.status) ? 'Under review' : p.status === 'Rejected' ? 'Rejected' : p.stage === 'Closed' ? 'Closed' : 'Active';
+  spListing(p)
+    ? p.status === 'Withdrawn'
+      ? 'Closed'
+      : ['P', 'C'].includes(role())
+        ? 'Shortlisted'
+        : 'Sponsor listing'
+    : p.status === 'Draft'
+      ? 'Draft'
+      : ['Submitted', 'Clarification requested'].includes(p.status)
+        ? 'Under review'
+        : p.status === 'Rejected'
+          ? 'Rejected'
+          : p.stage === 'Closed'
+            ? 'Closed'
+            : 'Active';
 route('projects', 'projects', () => {
   const r = role();
   const list = S.projects.filter(
     p =>
       inCtx(p) &&
-      !chHidden(p) &&
-      (r === 'P'
-        ? p.owner === myId()
+      !spHidden(p) &&
+      (r === 'P' || r === 'C'
+        ? p.owner === myId() || spSees(p)
         : r === 'F'
           ? stewardOf(p) || p.status !== 'Draft'
           : true),
@@ -113,17 +128,17 @@ route('projects', 'projects', () => {
         row: p => ({
           lead: `<span class="tile t-navy" aria-hidden="true">${ic('folder', 18)}</span>`,
           title: L(h(p.title), 'project', { id: p.id }, 'dv-link'),
-          sub: h(p.type) + (p.country ? ' · ' + h(p.country) : '') + (p.area ? ' · ' + h(p.area) : ''),
+          sub: (isSpP(p) ? 'Sponsor project · ' + spWho(p) + ' · ' : '') + h(p.type) + (p.country ? ' · ' + h(p.country) : '') + (p.area ? ' · ' + h(p.area) : ''),
           meta: [
-            r !== 'P' ? 'Owner <b>' + nm(p.owner) + '</b>' : '',
+            r !== 'P' ? (p.owner ? 'Owner <b>' + nm(p.owner) + '</b>' : 'Owner not chosen yet') : '',
             'Steward <b>' + (p.stewards.map(nm).join(', ') || 'not assigned') + '</b>',
             (p.tags || []).length ? `<span class="rec-tags">${p.tags.slice(0, 3).map(x => `<span class="rec-tag">${h(x)}</span>`).join('')}${p.tags.length > 3 ? `<span class="cap">+${p.tags.length - 3}</span>` : ''}</span>` : '',
             p.submitted ? 'Submitted ' + fmt(p.submitted) : '',
           ],
-          badges: pill(p.status) + (p.stage ? pill(stageLabel(p.stage), SC[p.stage]) : '') + (pubEligible(p) ? pubPill(p) : ''),
+          badges: (spListing(p) ? pill(spShort(p) ? 'Shortlisted' : spLabel(p)) : pill(p.status)) + (p.stage ? pill(stageLabel(p.stage), SC[p.stage]) : '') + (pubEligible(p) ? pubPill(p) : ''),
           primary: L('Open', 'project', { id: p.id }, 'btn btn-s btn-sm') + (projDeletable(p) ? projDeleteBtn(p) : ''),
         }),
-        empty: r === 'P' ? ['folder', 'You have no projects yet', 'Start one from an idea, need or opportunity.', B(ic('plus', 16) + 'Start a project', 'go', { r: 'newproject' }, 'btn-p btn-sm')] : ['folder', 'No projects yet', 'Submitted projects in this programme appear here.', ''],
+        empty: r === 'P' ? ['folder', 'You have no projects yet', 'Start one from an idea, need or opportunity, or shortlist a sponsor project on the Explore board.', B(ic('plus', 16) + 'Start a project', 'go', { r: 'newproject' }, 'btn-p btn-sm')] : r === 'C' ? ['folder', 'No projects yet', 'Sponsor projects you shortlist on the Explore board appear here.', L('Explore board', 'board', {}, 'btn btn-s btn-sm')] : ['folder', 'No projects yet', 'Submitted projects in this programme appear here.', ''],
       }),
     )
   );
@@ -164,7 +179,7 @@ route('newproject', 'aireq', () => {
   ${fi(f, 'title', 'Working title', { req: true, value: pr?.title, ph: 'e.g. Community cooling map for Ward 7', max: 120 })}
   ${fi(f, 'desc', 'Describe it in your own words', { type: 'textarea', rows: 6, req: true, value: pr?.desc, ph: 'What is the need or idea? Who is affected? What would be different if it worked?', help: 'At least 40 characters.' })}</div>
   <div class="np-sec"><div class="np-sh"><span class="np-n" aria-hidden="true">2</span><h2 class="h3">Who should find it</h2></div>
-  <fieldset class="np-fs col"><legend class="lbl">Areas of interest</legend><div class="np-chips">${[...PROJECT_AREAS, ...(pr?.tags || []).filter(t => !PROJECT_AREAS.includes(t))].map(a => `<label class="chipchk np-chip"><input type="checkbox" name="tags" value="${h(a)}" ${[].concat(fv(f, 'tags', pr?.tags || [])).includes(a) ? 'checked' : ''}><span>${h(a)}</span></label>`).join('')}</div><div class="field np-other"><label class="lbl" for="np_areaOther">Add your own</label><input id="np_areaOther" name="areaOther" class="input" value="${h(fv(f, 'areaOther', ''))}" placeholder="Comma-separated, e.g. Air quality, School gardens" maxlength="160"></div><span class="help">Helps stewards and collaborators find relevant projects. Sponsors never browse individual projects; they fund only teams formed from their own open challenges.</span></fieldset></div>
+  <fieldset class="np-fs col"><legend class="lbl">Areas of interest</legend><div class="np-chips">${[...PROJECT_AREAS, ...(pr?.tags || []).filter(t => !PROJECT_AREAS.includes(t))].map(a => `<label class="chipchk np-chip"><input type="checkbox" name="tags" value="${h(a)}" ${[].concat(fv(f, 'tags', pr?.tags || [])).includes(a) ? 'checked' : ''}><span>${h(a)}</span></label>`).join('')}</div><div class="field np-other"><label class="lbl" for="np_areaOther">Add your own</label><input id="np_areaOther" name="areaOther" class="input" value="${h(fv(f, 'areaOther', ''))}" placeholder="Comma-separated, e.g. Air quality, School gardens" maxlength="160"></div><span class="help">Helps stewards and collaborators find relevant projects. Sponsors never browse individual projects; they fund only their own sponsor projects.</span></fieldset></div>
   <div class="np-sec"><div class="np-sh"><span class="np-n" aria-hidden="true">3</span><h2 class="h3">Place</h2></div>
   <div class="f2">${countryField(f, { value: pr?.country, help: 'The country the project takes place in.' })}${fi(f, 'area', 'Location or programme area (optional)', { value: pr?.area, ph: 'e.g. Ward 7, Excelsior City' })}</div></div>
   <div class="actions">${L('Cancel', 'projects', {}, 'btn btn-g')}<div class="row wrap"><button class="btn btn-s" type="submit" name="go" value="save">Save draft</button><button class="btn btn-p" type="submit" name="go" value="gen">${okAI ? 'Draft sections with PHOENIX' : 'Continue to sections'}</button></div></div></form>
@@ -282,11 +297,13 @@ F.sec = d => {
 route('project', 'projects', () => {
   const p = byId('projects', UI.p.id);
   if (!p) return empty('folder', 'Project not found', '');
-  if (chHidden(p)) return chHiddenView();
+  if (spHidden(p)) return spHiddenView();
   const r = role();
   const own = p.owner === myId();
-  if (r === 'P' && !own) return deniedView('projects');
-  const steps = [
+  if ((r === 'P' || r === 'C') && !own && !spSees(p)) return deniedView('projects');
+  // A sponsor project skips submission and review: it starts once the Sponsor chooses its owner (sponsor.js).
+  const spSteps = isSpP(p) && ['Listed by sponsor', 'Owner chosen', 'Linked spaces', 'Final review', 'Closed'];
+  const steps = spSteps || [
     'Draft',
     'Submitted',
     p.status === 'Rejected' ? 'Rejected' : 'Under review',
@@ -296,8 +313,17 @@ route('project', 'projects', () => {
     'Final review',
     'Closed',
   ];
-  const ci =
-    p.stage === 'Closed'
+  const ci = spSteps
+    ? p.stage === 'Closed'
+      ? 4
+      : p.stage === 'Final review'
+        ? 3
+        : ['Room', 'Rope Team', 'Circle'].includes(p.stage)
+          ? 2
+          : spListing(p)
+            ? 0
+            : 1
+    : p.stage === 'Closed'
       ? 6
       : p.stage === 'Final review'
         ? 5
@@ -336,7 +362,7 @@ route('project', 'projects', () => {
     actions = B('Submit final deliverables', 'submitFinal', { id: p.id }, 'btn-p btn-sm');
   }
   // The reviewer is assigned once and is not changed afterwards.
-  if (r === 'A' && p.status !== 'Rejected' && !p.stewards.length) actions += B('Assign reviewer', 'assignStewards', { id: p.id }, 'btn-p btn-sm');
+  if (r === 'A' && p.status !== 'Rejected' && !spListing(p) && !p.stewards.length) actions += B('Assign reviewer', 'assignStewards', { id: p.id }, 'btn-p btn-sm');
   const lastRej = p.status === 'Rejected' && (p.thread || []).filter(m => m.kind === 'reject').slice(-1)[0];
   if (r === 'F' && stewardOf(p) && p.stage === 'Closed') actions = '';
   if (own && ownRoomProjects().includes(p))
@@ -351,7 +377,7 @@ route('project', 'projects', () => {
       ['Projects', 'projects'],
       [h(p.title)],
     ]) +
-    `<div class="shead-main prj-head"><span class="tile" aria-hidden="true">${ic('folder', 20)}</span><div class="shead-t"><div class="shead-kind">Project · ${h(p.stage ? stageLabel(p.stage) : p.status)}</div><div class="row wrap prj-ttl"><h1 class="h1">${h(p.title)}</h1>${pill(p.status)}</div><div class="shead-meta"><span>${h(p.type)}</span><span>Owner · ${nm(p.owner)}</span><span>${p.stewards.length ? 'Steward · ' + p.stewards.map(nm).join(', ') : 'No reviewer yet'}</span>${p.country ? `<span>Country · ${h(p.country)}</span>` : ''}${p.area ? `<span>${h(p.area)}</span>` : ''}</div>${(p.tags || []).length ? `<div class="rec-tags prj-tags">${p.tags.map(x => `<span class="rec-tag">${h(x)}</span>`).join('')}</div>` : ''}</div>${actions.trim() ? `<div class="shead-a">${actions}</div>` : ''}</div>` +
+    `<div class="shead-main prj-head"><span class="tile" aria-hidden="true">${ic('folder', 20)}</span><div class="shead-t"><div class="shead-kind">${isSpP(p) ? 'Sponsor project' : 'Project'} · ${h(p.stage ? stageLabel(p.stage) : spListing(p) ? spLabel(p) : p.status)}</div><div class="row wrap prj-ttl"><h1 class="h1">${h(p.title)}</h1>${spListing(p) ? pill(spShort(p) ? 'Shortlisted' : spLabel(p)) : pill(p.status)}</div><div class="shead-meta"><span>${h(p.type)}</span>${isSpP(p) ? `<span>Sponsor · ${spWho(p)}</span>` : ''}<span>${p.owner ? (spOwners(p).length > 1 ? 'Owners · ' + spOwners(p).map(nm).join(', ') : 'Owner · ' + nm(p.owner)) : 'Owner not chosen yet'}</span><span>${p.stewards.length ? 'Steward · ' + p.stewards.map(nm).join(', ') : 'No reviewer yet'}</span>${p.country ? `<span>Country · ${h(p.country)}</span>` : ''}${p.area ? `<span>${h(p.area)}</span>` : ''}</div>${(p.tags || []).length ? `<div class="rec-tags prj-tags">${p.tags.map(x => `<span class="rec-tag">${h(x)}</span>`).join('')}</div>` : ''}</div>${actions.trim() ? `<div class="shead-a">${actions}</div>` : ''}</div>` +
     tl +
     projRoomBar(p, 'projects') +
     stageTrack(p, 'projects') +
@@ -371,9 +397,10 @@ route('project', 'projects', () => {
     (p.changesNote ? banner('warn', 'Changes requested', h(p.changesNote)) : '') +
     `</div>` +
     `<div class="g12 prj-body"><div class="c8 col prj-main"><section class="card prj-summary"><div class="card-h"><div><h2 class="h2">Project summary</h2>${p.sections ? `<p class="cap">${p.sections.filter(s => ['Accepted', 'Edited'].includes(s.st)).length} of 8 sections accepted or edited</p>` : ''}</div></div>${p.sections ? `<ol class="prj-secs">${p.sections.map((s, i) => `<li class="prj-sec"><span class="sn" aria-hidden="true">${i + 1}</span><div class="prj-sec-b"><div class="prj-sec-t"><h3 class="h3">${SECTIONS[i]}</h3>${pill(s.st, { Accepted: 'p-green', Edited: 'p-teal', Rejected: 'p-red' }[s.st] || 'p-grey')}</div><p class="prj-sec-x">${h(s.text) || '<span class="cap">Empty</span>'}</p></div></li>`).join('')}</ol>` : `<p class="muted">${h(p.desc || 'No sections yet.')}</p>`}</section>
- ${projParty(p) && p.status !== 'Draft' ? card('Review conversation and activity', 'Messages between the project owner, the Organization Admin and the assigned reviewer, with every review step. Oldest first.', convoHtml('project', p), '', 'cv-card') : ''}
+ ${spBriefCard(p)}
+ ${projParty(p) && p.status !== 'Draft' && !spListing(p) ? card('Review conversation and activity', 'Messages between the project owner, the Organization Admin and the assigned reviewer, with every review step. Oldest first.', convoHtml('project', p), '', 'cv-card') : ''}
  ${projEvidenceCard(p)}
- ${projParty(p) && p.status !== 'Draft'
+ ${projParty(p) && p.status !== 'Draft' && !spListing(p)
    ? ''
    : card(
        'History',
@@ -387,8 +414,8 @@ route('project', 'projects', () => {
          : '<p class="cap">—</p>',
      )}</div>
  <aside class="c4 col prj-side">${own && ['Draft', 'Clarification requested'].includes(p.status) ? card('Before you submit', '', `<form data-f="submitProj" class="col prj-submit" novalidate><input type="hidden" name="id" value="${p.id}">${!ready ? banner('warn', '', 'All 8 sections must be accepted or edited first.') : ''}${fi('sp', 'c1', 'I have reviewed every AI-drafted section and accept responsibility for the content.', { type: 'checkbox', req: true })}${fi('sp', 'c2', 'I understand reviewers in this programme will see this project.', { type: 'checkbox', req: true })}${p.status === 'Clarification requested' ? fi('sp', 'note', 'What you changed (optional)', { type: 'textarea', rows: 3, max: 2000, help: 'Added to the review conversation.' }) : ''}<button class="btn btn-p btn-block" type="submit" ${ready ? '' : 'disabled'}>${p.status === 'Clarification requested' ? 'Resubmit for review' : 'Submit for review'}</button></form>`, '', 'accent') : ''}
- ${chProjCard(p)}
- ${p.status === 'Draft' ? '' : linkCard('projects', p)}
+ ${spProjCard(p)}
+ ${p.status === 'Draft' || spListing(p) ? '' : linkCard('projects', p)}
  ${pubCard(p)}
  ${projMovesCard(p)}
  ${card(

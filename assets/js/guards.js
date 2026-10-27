@@ -1759,264 +1759,133 @@ Object.assign(G, {
     projMover(byId("projects", d.id)) ||
     "only the project owner, its steward or an Organization Admin moves the project",
 });
-// Open challenges (views/challenges.js): the Sponsor runs the post and the selection; the Sponsor and the Circle owner
-// are the two parties to the agreement; an Organization Admin assigns an independent Steward, who decides disputes.
-const chEditable = (ch) =>
-  chMine(ch) && !ch.project && ch.status !== "Archived";
-const chMsOf = (d) => {
-  const ch = chById(d.id);
-  return [ch, ch && ch.milestones.find((m) => m.id === d.m)];
+// Sponsor projects (views/sponsor.js): the Sponsor lists the project and chooses its owner(s); Participants and
+// Collaborators apply to it. In the Action Workspace the Sponsor and the designated owner(s) are the two parties to
+// milestones, payment status and disputes; an Organization Admin assigns an independent Steward, who decides disputes.
+const spP = (d) => byId("projects", d.id);
+const spX = (d) => {
+  const x = byId("rooms", d.r);
+  return [x, x && spOfRoom(x)];
 };
-const chTeamSees = (ch) => !!ch && (chMine(ch) || chOnTeam(ch));
-const chMsEditOk = (d) => {
-  const [ch, m] = chMsOf(d);
-  return (
-    !!m &&
-    !!chSide(ch) &&
-    !dspOn(ch, "ms", m.id) &&
-    ((["Proposed", "Changes requested"].includes(m.status) &&
-      m.by === myId()) ||
-      m.status === "Agreed")
-  );
+const spMsOf = (d) => {
+  const [x, p] = spX(d);
+  const m = x && x.milestones.find((y) => y.id === d.m && y.sp);
+  return [x, p, m];
 };
-const chMsVote = (d) => {
-  const [ch, m] = chMsOf(d);
-  const s = m && chSide(ch);
-  return (
-    (!!s && m.status === "Proposed" && !m.ok[s]) ||
-    "only the other side approves a proposed milestone or asks for changes"
-  );
-};
-const chMsDoneOk = (d) => {
-  const [ch, m] = chMsOf(d);
+const spLive = (x, p) => !!x && !!p && x.state === "Active";
+const spMsNewOk = (d) => {
+  const [x, p, m] = spMsOf(d);
+  if (!spLive(x, p) || !spSide(p)) return "only the sponsor and the project owner(s) propose or revise sponsor milestones";
+  if (!d.m) return true;
   return (
     (!!m &&
-      chOwner(ch) &&
-      chLive(ch) &&
-      ["Agreed", "More information requested"].includes(m.status) &&
-      !dspOn(ch, "ms", m.id)) ||
-    "only the Circle owner marks an agreed milestone complete, once the funding commitment is confirmed"
+      !dspOn(x, "ms", m.id) &&
+      ((["Proposed", "Changes requested"].includes(m.sp.sr) && m.sp.by === myId()) || m.sp.sr === "Agreed")) ||
+    "only the proposer revises a milestone, and either side proposes a change to an agreed one"
   );
 };
-const chMsReview = (d) => {
-  const [ch, m] = chMsOf(d);
+const spMsVote = (d) => {
+  const [x, p, m] = spMsOf(d);
+  const s = spLive(x, p) && m && spSide(p);
+  return (!!s && m.sp.sr === "Proposed" && !m.sp.ok[s]) || "only the other side approves a proposed milestone or asks for changes";
+};
+const spMsDoneOk = (d) => {
+  const [x, p, m] = spMsOf(d);
   return (
-    (!!m && chMine(ch) && m.status === "Submitted" && !dspOn(ch, "ms", m.id)) ||
-    "only the sponsor reviews a milestone awaiting review"
+    (spLive(x, p) && !!m && spOwner(p) && ["Agreed", "More information requested"].includes(m.sp.sr) && !dspOn(x, "ms", m.id)) ||
+    "only a project owner marks an agreed milestone complete"
   );
 };
-const chPayConfOk = (d) => {
-  const ch = chById(d.id);
-  const p = ch && ch.payments.find((x) => x.id === d.p);
-  const s = p && chSide(ch);
-  return (
-    (!!s &&
-      !dspOn(ch, "pay", p.id) &&
-      ((p.status === "Pending verification" && !payRec(p, s)) ||
-        p.status === "Flagged for review")) ||
-    "only the other side confirms a pending payment; either side corrects a flagged one"
-  );
+const spMsReview = (d) => {
+  const [x, p, m] = spMsOf(d);
+  return (spLive(x, p) && !!m && spSponsor(p) && m.sp.sr === "Submitted" && !dspOn(x, "ms", m.id)) || "only the sponsor reviews a milestone awaiting review";
 };
-const chDspNewOk = (d) => {
-  const ch = chById(d.id);
-  if (!chParty(ch) || !ch.project)
-    return "only the sponsor or the Circle owner raises a dispute";
-  if (dspOn(ch, d.kind, d.s))
-    return "there is already an open dispute about this";
+const spMsTalk = (d) => {
+  const [x, p, m] = spMsOf(d);
+  return (spLive(x, p) && !!m && !!spSide(p)) || "only the sponsor and the project owner(s) discuss a sponsor milestone";
+};
+const spPayOk = (d) => {
+  const [x, p] = spX(d);
+  const y = d.p && x && spPays(x).find((z) => z.id === d.p);
+  if (!spLive(x, p) || !spSide(p)) return "only the sponsor and the project owner(s) record payment status";
+  if (d.p && !y) return "not permitted";
+  return !y || y.status !== "Disputed" || "a disputed payment changes only through its dispute";
+};
+const spDspNewOk = (d) => {
+  const [x, p] = spX(d);
+  if (!spLive(x, p) || !spSide(p)) return "only the sponsor or a project owner raises a dispute";
+  if (dspOn(x, d.kind, d.s)) return "there is already an open dispute about this";
   if (d.kind === "ms") {
-    const m = ch.milestones.find((x) => x.id === d.s);
+    const m = x.milestones.find((y) => y.id === d.s && y.sp);
     return (
-      (!!m && ["Submitted", "More information requested"].includes(m.status)) ||
-      "a milestone dispute is about a completion awaiting review or a request for more information"
+      (!!m && ["Proposed", "Changes requested", "Submitted", "More information requested"].includes(m.sp.sr)) ||
+      "a milestone dispute is about a milestone that is still being agreed or reviewed"
     );
   }
-  const p = ch.payments.find((x) => x.id === d.s);
-  return (
-    (d.kind === "pay" && !!p && p.status === "Flagged for review") ||
-    "a payment dispute is about a flagged payment"
-  );
+  const y = spPays(x).find((z) => z.id === d.s);
+  return (d.kind === "pay" && !!y && y.status !== "Disputed" && !(y.ms && dspOn(x, "ms", y.ms))) || "a payment dispute is about a payment record that is not already disputed";
 };
-const chDsp = (d) => byId("disputes", d.id);
+const spDsp = (d) => byId("disputes", d.id);
+const spListingOk = (p) => spSponsor(p) && spListing(p) && p.status !== "Withdrawn";
+const spaRoleOk = (d) =>
+  (spaOpen(spP(d)) && spaShort(spP(d)).some((s) => s.pid === d.pid)) || "only the sponsor gives project roles to shortlisted people, before the team is final";
+const spAdminDsp = (d) =>
+  (role() === "A" && !!spDsp(d) && inCtx(spDsp(d)) && spDsp(d).status === "Awaiting Steward assignment") ||
+  "only an Organization Admin in this programme assigns a Steward";
 Object.assign(G, {
-  chNew: (d) =>
-    (d.id ? chEditable(chById(d.id)) : role() === "S") ||
-    "only a Sponsor posts an open challenge, and edits it until the team is formed",
-  chEdit: (d) =>
-    chEditable(chById(d.id)) ||
-    "only the sponsor edits the post, until the team is formed",
-  chn: (d) =>
-    (d.id ? chEditable(chById(d.id)) : role() === "S") ||
-    "only a Sponsor posts an open challenge, and edits it until the team is formed",
-  chState: (d) => {
-    const ch = chById(d.id);
-    if (!chMine(ch) || ch.status === "Archived")
-      return "only the sponsor changes the post, until it is archived";
-    if (d.v === "Open")
-      return (
-        (!ch.project && ch.status === "Requests closed") ||
-        "applications reopen only before the team is formed"
-      );
-    return (
-      (["Requests closed", "Archived"].includes(d.v) && d.v !== ch.status) ||
-      "not permitted"
-    );
+  spsl: (d) => spCanShort(spP(d)) || "only Participants and Collaborators apply to a sponsor project, once each, while it accepts applications",
+  spUnshort: (d) => (!!spShort(spP(d)) && spListing(spP(d))) || "you can withdraw only your own application, before the owner is chosen",
+  spApp: (d) => (spSponsor(spP(d)) && spShortlist(spP(d)).some((s) => s.pid === d.pid)) || "only the sponsor sees applications to their own project",
+  spNew: (d) => (d.id ? spListingOk(spP(d)) : role() === "S") || "only a Sponsor lists a project, and edits it until the owner is chosen",
+  spEdit: (d) => spListingOk(spP(d)) || "only the sponsor edits the project, until the owner is chosen",
+  spn: (d) => (d.id ? spListingOk(spP(d)) : role() === "S") || "only a Sponsor lists a project, and edits it until the owner is chosen",
+  spState: (d) => {
+    const p = spP(d);
+    if (!spListingOk(p)) return "only the sponsor changes the listing, until the owner is chosen or it is withdrawn";
+    return (["Open", "Listing closed", "Withdrawn"].includes(d.v) && d.v !== p.status) || "not permitted";
   },
-  chApply: (d) =>
-    chCanApply(chById(d.id)) ||
-    "only Participants and Collaborators apply, while the challenge accepts applications",
-  cha: (d) =>
-    chCanApply(chById(d.id)) ||
-    "only Participants and Collaborators apply, while the challenge accepts applications",
-  chWithdraw: (d) => {
-    const ch = chById(d.id);
-    const a = ch && chApp(ch);
-    return (
-      (!!a && !ch.project && ["Submitted", "Shortlisted"].includes(a.status)) ||
-      "you can withdraw only a pending application, before the team is formed"
-    );
+  // Applications (views/applications.js): only the Sponsor decides, and only while the project is still a listing
+  spaSel: (d) => (spaOpen(spP(d)) && spShortlist(spP(d)).some((s) => s.pid === d.pid) && ["Interested", "Shortlisted", "Not selected"].includes(d.v)) || "only the sponsor reviews applications to their own project, before the team is final",
+  spaRole: spaRoleOk,
+  spar: spaRoleOk,
+  spaChatNew: (d) => (spaOpen(spP(d)) && !spaChat(spP(d)) && spaShort(spP(d)).length > 0) || "only the sponsor opens one project discussion, once someone is shortlisted",
+  spcm: (d) => {
+    const c = byId("spchats", d.id);
+    return (!!c && c.state === "Active" && spaSees(c)) || "only the sponsor and shortlisted people post, while the discussion is open";
   },
-  chAppView: (d) =>
-    (chMine(chById(d.id)) && chById(d.id).apps.some((a) => a.id === d.app)) ||
-    "only the sponsor of this challenge reviews its applications",
-  chev: (d) => {
-    const ch = chById(d.id);
-    const a = ch && ch.apps.find((x) => x.id === d.app);
-    return (
-      (chMine(ch) &&
-        !!a &&
-        !ch.project &&
-        ch.status !== "Archived" &&
-        !["Withdrawn", "Selected"].includes(a.status)) ||
-      "only the sponsor evaluates pending applications, before the team is formed"
-    );
+  spaFinal: (d) => (spaOpen(spP(d)) && spaShort(spP(d)).length > 0) || "only the sponsor finalizes the team, once, from the shortlist",
+  spaf: (d) => (spaOpen(spP(d)) && spaShort(spP(d)).length > 0) || "only the sponsor finalizes the team, once, from the shortlist",
+  spMsNew: spMsNewOk,
+  spMsEdit: spMsNewOk,
+  spms: spMsNewOk,
+  spMsAgree: spMsVote,
+  spMsChanges: spMsVote,
+  spmr: spMsVote,
+  spmc: spMsTalk,
+  spMsDone: spMsDoneOk,
+  spmd: spMsDoneOk,
+  spMsMore: spMsReview,
+  spmi: spMsReview,
+  spMsApprove: spMsReview,
+  spma: spMsReview,
+  spPayNew: spPayOk,
+  sppn: spPayOk,
+  spPayUpd: spPayOk,
+  sppu: spPayOk,
+  spDspNew: spDspNewOk,
+  spdn: spDspNewOk,
+  spDspAssign: spAdminDsp,
+  spda: spAdminDsp,
+  spDspReveal: (d) => (role() === "A" && !!spDsp(d) && inCtx(spDsp(d))) || "only an Organization Admin in this programme sees who is behind the aliases",
+  spdsa: (d) => (role() === "F" && !!spDsp(d) && spDsp(d).steward === myId() && spDsp(d).status === "Awaiting Steward acceptance") || "only the assigned Steward accepts or declines",
+  spds: (d) => {
+    const dp = spDsp(d);
+    return (!!dp && dspOpen(dp) && (!!dspMine(dp) || (role() === "F" && dp.steward === myId() && !!dp.accepted))) || "only the two sides, and the Steward once they have accepted, post here";
   },
-  chForm: (d) => {
-    const ch = chById(d.id);
-    return (
-      (chEditable(ch) && ch.apps.some((a) => a.status === "Shortlisted")) ||
-      "only the sponsor forms the team, once, from a shortlist"
-    );
-  },
-  chf: (d) => {
-    const ch = chById(d.id);
-    return (
-      (chEditable(ch) && ch.apps.some((a) => a.status === "Shortlisted")) ||
-      "only the sponsor forms the team, once, from a shortlist"
-    );
-  },
-  chCommit: (d) => {
-    const ch = chById(d.id);
-    return (
-      (chMine(ch) &&
-        !!ch.project &&
-        (!ch.commit || ch.commit.status !== "Confirmed")) ||
-      "only the sponsor records the commitment, until both sides have confirmed it"
-    );
-  },
-  chcm: (d) => {
-    const ch = chById(d.id);
-    return (
-      (chMine(ch) &&
-        !!ch.project &&
-        (!ch.commit || ch.commit.status !== "Confirmed")) ||
-      "only the sponsor records the commitment, until both sides have confirmed it"
-    );
-  },
-  chCommitConf: (d) => {
-    const ch = chById(d.id);
-    return (
-      (chOwner(ch) && !!ch.commit && ch.commit.status !== "Confirmed") ||
-      "only the Circle owner confirms the funding commitment"
-    );
-  },
-  chco: (d) => {
-    const ch = chById(d.id);
-    return (
-      (chOwner(ch) && !!ch.commit && ch.commit.status !== "Confirmed") ||
-      "only the Circle owner confirms the funding commitment"
-    );
-  },
-  chMs: (d) =>
-    (!!chMsOf(d)[1] && chTeamSees(chMsOf(d)[0])) ||
-    "only the sponsor and the project team see milestones",
-  chmc: (d) =>
-    (!!chMsOf(d)[1] && chTeamSees(chMsOf(d)[0])) ||
-    "only the sponsor and the project team discuss milestones",
-  chMsNew: (d) =>
-    (d.m ? chMsEditOk(d) : chParty(chById(d.id)) && !!chById(d.id).project) ||
-    "only the sponsor and the Circle owner propose or revise milestones",
-  chMsEdit: (d) =>
-    chMsEditOk(d) ||
-    "only the proposer revises a milestone, and either side proposes a change to an agreed one",
-  chms: (d) =>
-    (d.m ? chMsEditOk(d) : chParty(chById(d.id)) && !!chById(d.id).project) ||
-    "only the sponsor and the Circle owner propose or revise milestones",
-  chMsAgree: chMsVote,
-  chMsChanges: chMsVote,
-  chmr: chMsVote,
-  chMsDone: chMsDoneOk,
-  chmd: chMsDoneOk,
-  chMsMore: chMsReview,
-  chmi: chMsReview,
-  chMsApprove: chMsReview,
-  chma: chMsReview,
-  chPay: (d) => {
-    const ch = chById(d.id);
-    const opts = ch && chLive(ch) ? chPayFor(ch) : [];
-    return (
-      (chParty(ch) &&
-        opts.length > 0 &&
-        (!d.ms || opts.some(([v]) => v === "ms:" + d.ms))) ||
-      "the sponsor or the Circle owner records a payment once the commitment is confirmed, for initial funding or an approved milestone"
-    );
-  },
-  chp: (d) =>
-    (chParty(chById(d.id)) && chLive(chById(d.id))) ||
-    "the sponsor or the Circle owner records a payment once the commitment is confirmed",
-  chPayConf: chPayConfOk,
-  chpc: chPayConfOk,
-  chDspNew: chDspNewOk,
-  chdn: chDspNewOk,
-  chDspAssign: (d) =>
-    (role() === "A" &&
-      !!chDsp(d) &&
-      inCtx(chDsp(d)) &&
-      chDsp(d).status === "Awaiting Steward assignment") ||
-    "only an Organization Admin in this programme assigns a Steward",
-  chda: (d) =>
-    (role() === "A" &&
-      !!chDsp(d) &&
-      inCtx(chDsp(d)) &&
-      chDsp(d).status === "Awaiting Steward assignment") ||
-    "only an Organization Admin in this programme assigns a Steward",
-  chdsa: (d) =>
-    (role() === "F" &&
-      !!chDsp(d) &&
-      chDsp(d).steward === myId() &&
-      chDsp(d).status === "Awaiting Steward acceptance") ||
-    "only the assigned Steward accepts or declines",
-  chds: (d) => {
-    const dp = chDsp(d);
-    return (
-      (!!dp &&
-        dspOpen(dp) &&
-        (!!dspMine(dp) ||
-          (role() === "F" && dp.steward === myId() && !!dp.accepted))) ||
-      "only the two sides, and the Steward once they have accepted, post here"
-    );
-  },
-  chdd: (d) =>
-    (role() === "F" &&
-      !!chDsp(d) &&
-      chDsp(d).steward === myId() &&
-      chDsp(d).status === "Under review") ||
-    "only the independent Steward decides, after confirming independence",
-  chDspWithdraw: (d) => {
-    const dp = chDsp(d);
-    return (
-      (!!dp && dp.raisedBy === myId() && dspOpen(dp) && !!dspMine(dp)) ||
-      "only the side that raised the dispute withdraws it, before a decision"
-    );
+  spdd: (d) => (role() === "F" && !!spDsp(d) && spDsp(d).steward === myId() && spDsp(d).status === "Under review") || "only the independent Steward decides, after confirming independence",
+  spDspWithdraw: (d) => {
+    const dp = spDsp(d);
+    return (!!dp && dp.raisedBy === myId() && dspOpen(dp) && !!dspMine(dp)) || "only the side that raised the dispute withdraws it, before a decision";
   },
 });
 // A closed Circle, Rope Team or Action Room is read-only: any guarded action aimed at it is refused, whatever the

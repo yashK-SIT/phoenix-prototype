@@ -373,7 +373,7 @@ function migrate() {
   adaptersMigrate();
   scopeStore();
   relMigrate(); // dated claims and a past workspace for My collaborations (views/freeze.js)
-  chMigrate(); // sponsors' open challenges, their chat rooms and disputes (views/challenges.js)
+  spMigrate(); // sponsor projects: earlier Open Challenges become sponsor projects, their milestones, payments and disputes (views/sponsor.js)
   // Role approvals moved into Programme admin → Users
   S.notifs.forEach((n) => {
     if (n.r === "admin" && n.p && n.p.tab === "approvals") n.p.tab = "users";

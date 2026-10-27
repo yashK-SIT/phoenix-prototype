@@ -1,0 +1,325 @@
+/* PHOENIX screens: sponsor projects, and their milestones, payment status and disputes in the Action Workspace.
+   Built on the tokens and components in ../phoenix.css. Every rule is scoped to a class owned by this area (sp-*). */
+
+/* ---------- alias: the only name a sponsor has on a project, in its workspace and in a dispute ---------- */
+.sp-alias {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: var(--r-sm);
+  background: var(--signal-soft);
+  color: var(--signal-text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sp-alias-box {
+  display: flex;
+  gap: var(--s-3);
+  align-items: flex-start;
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+.sp-alias-box > svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--signal-text);
+}
+
+/* ---------- how it works ---------- */
+.sp-how {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: var(--s-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sp-how li {
+  display: flex;
+  gap: var(--s-2);
+  align-items: flex-start;
+}
+.sp-how-n {
+  display: inline-grid;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--signal-soft);
+  color: var(--signal-text);
+  font-weight: 700;
+  font-size: 0.8125rem;
+}
+.sp-how-card {
+  margin-bottom: var(--s-4);
+}
+.sp-body .hm-main > .card + .card,
+.sp-body .hm-main > .sp-facts + .card,
+.sp-body .hm-rail > * + * {
+  margin-top: var(--s-4);
+}
+/* the listing a person views before applying: key facts first, then the sponsor's brief */
+.sp-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: var(--s-3);
+}
+.sp-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+.sp-fact b {
+  overflow-wrap: anywhere;
+}
+.sp-lead {
+  margin: 0 0 var(--s-3);
+  line-height: 1.55;
+}
+.sp-how-v {
+  grid-template-columns: 1fr;
+}
+
+/* ---------- the sponsor requirement inside a workspace milestone ---------- */
+.sp-ms {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin: var(--s-2) 0;
+  padding: var(--s-3);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--signal-text);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+.sp-ms-p,
+.sp-ms-a {
+  gap: 6px;
+}
+.sp-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sp-task {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ---------- milestone details: submissions, reviews and discussion ---------- */
+.sp-sub {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+.sp-sub-h {
+  justify-content: space-between;
+  gap: var(--s-2);
+}
+.sp-dec {
+  padding-top: var(--s-2);
+  border-top: 1px dashed var(--line);
+}
+.sp-ms-acts {
+  position: sticky;
+  bottom: 0;
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+.sp-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sp-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.sp-file:hover {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+.sp-notes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sp-notes > li {
+  padding: var(--s-2) var(--s-3);
+  border-left: 3px solid var(--line);
+  background: var(--surface-2);
+}
+.sp-notes > li p {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+.sp-notes > li.changes,
+.sp-notes > li.question {
+  border-left-color: var(--warn);
+}
+.sp-notes > li.steward {
+  border-left-color: var(--info);
+}
+
+/* ---------- applications: steps, actions, team ---------- */
+.sp-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2) var(--s-4);
+  margin: 0 0 var(--s-4);
+  padding: 0;
+  list-style: none;
+}
+.sp-steps li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+  font-size: 0.875rem;
+}
+.sp-steps .n {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.sp-steps li.ok {
+  color: var(--text);
+}
+.sp-steps li.ok .n {
+  border-color: var(--ok);
+  background: var(--ok);
+  color: var(--surface);
+}
+.sp-acts {
+  gap: 6px;
+  justify-content: flex-end;
+}
+.sp-team {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sp-team li {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+.sp-team-n {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- project discussion: standalone, not the Circle / Rope Team / workspace chat ---------- */
+.sp-chat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  margin: 0 0 var(--s-4);
+  padding: 0;
+  list-style: none;
+}
+.sp-msg {
+  display: flex;
+  gap: var(--s-2);
+  align-items: flex-start;
+}
+.sp-msg-b {
+  flex: 1;
+  min-width: 0;
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+.sp-msg.me .sp-msg-b {
+  border-color: var(--line-strong);
+  background: var(--surface);
+}
+.sp-msg-h {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px var(--s-2);
+  align-items: baseline;
+}
+.sp-msg-b p {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+.sp-msg-sys {
+  text-align: center;
+}
+.sp-chat-f {
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--line);
+}
+
+/* ---------- payment status ---------- */
+.sp-paytbl td {
+  vertical-align: top;
+}
+
+/* ---------- disputes ---------- */
+.sp-cands {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+.sp-cand {
+  align-items: flex-start;
+}
+.sp-cand.is-off {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.sp-cand.is-off > input {
+  cursor: not-allowed;
+}
+.sp-dsp-parties .lrow .tile {
+  color: var(--signal-text);
+}
+
+@media (max-width: 640px) {
+  .sp-alias {
+    white-space: normal;
+  }
+}

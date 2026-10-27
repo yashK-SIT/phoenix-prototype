@@ -73,10 +73,10 @@ async function main() {
       }
       if (r.role === 'P') {
         await page.click('aside.side a.nav[data-r="board"]');
-        await page.waitForSelector('section.board-how', { timeout: 5000 });
-        const how = await page.locator('section.board-how').count();
-        if (!how) fails.push('P: Explore board missing “how to add” guidance');
-        else ok.push('P: Explore board howto present');
+        await page.waitForSelector('#board-feed', { timeout: 5000 });
+        const board = await page.locator('main').innerText();
+        if (/How items get onto this board|Sponsor’s name not shown/.test(board)) fails.push('P: Explore board still shows the removed guidance text');
+        else ok.push('P: Explore board clean (no guidance rail, no sponsor-name note)');
       }
     } catch (e) {
       fails.push(`${r.role} (pid ${r.pid}): ${e.message}`);

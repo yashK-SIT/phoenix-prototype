@@ -92,7 +92,7 @@ const MX = {
     T: "-",
   },
   aireq: { P: "C", F: "V", M: "-", C: "-", S: "-", A: "-", T: "-" },
-  projects: { P: "C", F: "R", M: "-", C: "-", S: "-", A: "M", T: "-" },
+  projects: { P: "C", F: "R", M: "-", C: "V", S: "-", A: "M", T: "-" },
   circles: { P: "C", F: "M", M: "C", C: "C", S: "-", A: "VM", T: "-" },
   voting: { P: "C", F: "C", M: "C", C: "C", S: "-", A: "-", T: "-" },
   ropeteams: {
@@ -1019,7 +1019,6 @@ function navItems() {
     add("opportunities", "opportunities", "Opportunities", "megaphone");
     add("matching", "matches", "Match Briefs", "link");
     add(null, "board", "Explore board", "grid");
-    add(null, "challenges", "Open challenges", "flag");
     add(null, "relations", "My collaborations", "users");
     add("evidence", "evidence", "Evidence", "award");
     add(null, "documents", "Documents", "folder");
@@ -1040,7 +1039,7 @@ function navItems() {
     // Doc 1 §6.3 / Table 28 — Circles, reviews, linked work (Match Briefs are steward work, not discovery)
     add("circles", "circles", "Circles", "users");
     add(null, "inbox", "Review inbox", "inbox");
-    // independent Steward on an open-challenge dispute (challenges.js)
+    // independent Steward on a sponsor-project dispute (sponsor.js)
     add(
       null,
       "disputes",
@@ -1078,22 +1077,22 @@ function navItems() {
       S.projects.some(
         (p) =>
           inCtx(p) &&
-          (p.owner === myId() || (p.partners || []).includes(myId())),
+          (p.owner === myId() || (p.partners || []).includes(myId()) || spSees(p)),
       ),
     );
     add("opportunities", "opportunities", "Opportunities", "megaphone");
     add("matching", "matches", "Match Briefs", "link");
     add(null, "board", "Explore board", "grid");
-    add(null, "challenges", "Open challenges", "flag");
     add(null, "relations", "My collaborations", "users");
     add("evidence", "evidence", "Evidence", "award");
     add(null, "documents", "Documents", "folder");
     add("repository", "repository", "Repository", "archive");
     add("harvest", "harvests", "Learning Harvests", "sparkle");
   } else if (r === "S") {
-    // Doc 1 §6.6 — sponsor projects (the open-challenge flow), seats & funder-safe reporting (no pitches/tranches)
+    // Doc 1 §6.6 — sponsor projects (sponsor.js), seats & funder-safe reporting (no pitches/tranches)
     items.push(
-      ["challenges", "My projects", "megaphone"],
+      ["sponsorprojects", "My projects", "megaphone"],
+      ["sponsorapps", "Applications", "inbox"],
       ["board", "Explore board", "grid"],
       ["funding:seats", "Seat utilisation", "card"],
       ["funding:initiatives", "Approved initiatives", "folder"],
@@ -1105,7 +1104,7 @@ function navItems() {
     // Doc 1 §6.7 — operational queues & config (not specialist authority)
     items.push(
       ["admin:requests", "Approval inbox", "inbox"],
-      ["disputes", "Challenge disputes", "shield"],
+      ["disputes", "Disputes", "shield"],
       ["admin:invites", "Invitations", "mail"],
       ["admin:users", "Users & roles", "users"],
       ["admin:packs", "Pack configuration", "settings"],
@@ -1130,8 +1129,11 @@ const PARENT = {
   match: "matches",
   newevidence: "evidence",
   harvest: "harvests",
-  challenge: "challenges",
-  chnew: "challenges",
+  sponsorproject: "sponsorprojects",
+  sponsornew: "sponsorprojects",
+  sproom: "sponsorprojects",
+  sponsorlisting: "board",
+  spchat: "sponsorapps",
   dispute: "disputes",
   collab: "relations",
 };
@@ -1149,7 +1151,8 @@ const GROUP = {
   opportunities: "Discover",
   matches: "Discover",
   board: "Discover",
-  challenges: "Discover",
+  sponsorprojects: "Sponsorship",
+  sponsorapps: "Sponsorship",
   relations: "Discover",
   evidence: "Records",
   documents: "Records",
@@ -1182,7 +1185,6 @@ function navGroup(rt) {
   if (rt === "inbox" && r !== "F") return "Specialist";
   if (rt === "incidents" && isSafetyOwner()) return "Administration";
   if (rt === "evidence" && r === "S") return "Sponsorship";
-  if (rt === "challenges" && r === "S") return "Sponsorship";
   if (rt === "disputes" && r === "F") return "Work";
   return GROUP[rt] || "";
 }
@@ -1214,7 +1216,9 @@ function navCount(r, tb) {
   }
   if (r === "inbox")
     return typeof inboxItems === "function" ? inboxItems().length : 0;
-  if (r === "challenges") return chTodo().length;
+  if (r === "sponsorprojects") return spTodo().filter((t) => t[2] !== "sponsorapps").length;
+  if (r === "sponsorapps")
+    return S.projects.filter((p) => spaOpen(p) && inCtx(p)).reduce((a, p) => a + spaNew(p).length, 0);
   if (r === "disputes")
     return (S.disputes || []).filter(
       (d) =>
@@ -1298,7 +1302,8 @@ const SHORT = {
   opportunities: "Offers",
   matches: "Matches",
   board: "Board",
-  challenges: "Challenges",
+  sponsorprojects: "Projects",
+  sponsorapps: "Apps",
   disputes: "Disputes",
   relations: "Links",
   evidence: "Evidence",
@@ -1352,8 +1357,12 @@ const CTX_OBJ = {
   card: "cards",
   match: "matches",
   harvest: "harvests",
-  challenge: "challenges",
-  chnew: "challenges",
+  sponsorproject: "projects",
+  sponsornew: "projects",
+  sproom: "rooms",
+  sponsorlisting: "projects",
+  sponsorapps: "projects",
+  spchat: "spchats",
   dispute: "disputes",
 };
 // The object a detail route opens, when it belongs to a different context than the active one.

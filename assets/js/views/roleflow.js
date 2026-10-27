@@ -742,49 +742,39 @@ function rfFlows() {
       ],
     },
     S: {
-      lead: "Sponsor. Posts open challenges under an alias and funds the selected team’s agreed milestones offline; buys seat pools or donates, follows aggregate seat use and sees approved, funder-safe outcomes. Identifiable stories need a separate release.",
+      lead: "Sponsor. Lists projects under an alias, chooses each project’s owner from the people who shortlist it, agrees milestones and records offline payment status in the project’s Action Workspace; buys seat pools or donates, follows aggregate seat use and sees approved, funder-safe outcomes. Identifiable stories need a separate release.",
       side: [],
       phases: [
         ["Authorize", "Access, Sponsor agreement and sign-in", rfAccess("S")],
         [
-          "Challenges",
-          "From an open challenge to confirmed milestone payments",
+          "Projects",
+          "From a listing on the Explore board to approved milestones and recorded payments",
           [
             rfA(
-              "Post an open challenge on the Explore board",
-              "Shown under an alias made for that post; name and organisation hidden.",
+              "List a project on the Explore board",
+              "Shown under an alias made for that project; name and organisation hidden.",
             ),
             rfH(
               "P",
-              "Participants and Collaborators ask to take part and join the challenge chat room",
+              "Participants and Collaborators shortlist it; it appears in their Projects",
             ),
             rfA(
-              "Evaluate, shortlist and discuss in the chat room",
-              "All selection discussion stays in the chat room.",
-            ),
-            rfA(
-              "Form the team’s Circle and start the project in a Circle, Rope Team or Action Room",
-            ),
-            rfA(
-              "Stop new applications or archive the post",
-              "The selection chat room closes and stays readable.",
-            ),
-            rfA(
-              "Commit the full agreed amount",
-              "The Circle owner confirms the same figure before execution begins.",
+              "Choose the main owner(s) from the shortlist and where the work starts",
+              "Circle, Rope Team or Action Workspace. The project is the same record throughout.",
             ),
             rfH(
               "P",
-              "Circle owner agrees milestones with you and submits completed work",
+              "Owner agrees milestones with you in the Action Workspace and assigns the work to the team",
             ),
+            rfH("P", "Owner marks a milestone complete with deliverables and evidence"),
             rfD("Is the milestone complete?", [
               rfB("Yes", [
-                rfA("Approve it, pay offline and record the payment"),
-                rfH("P", "Circle owner confirms receipt independently"),
+                rfA("Approve it; its payment becomes Due"),
+                rfA("Pay offline and record the payment as Paid Offline"),
               ]),
               rfB("Not yet", [
-                rfA("Request the missing information"),
-                rfH("P", "Circle owner resubmits"),
+                rfA("Request the missing items or corrections"),
+                rfH("P", "Owner resubmits"),
               ]),
               rfB("Cannot agree", [
                 rfH("A", "Assigns a Steward with no tie to either side"),
@@ -795,7 +785,7 @@ function rfFlows() {
               ]),
             ]),
             rfS(
-              "End: payments confirmed by both sides; continue from My PHOENIX",
+              "End: milestones approved and payment status recorded; continue from My PHOENIX",
             ),
           ],
         ],

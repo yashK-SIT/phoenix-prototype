@@ -277,7 +277,7 @@ function inboxItems() {
           { id: x.ev },
         ]),
       );
-  // open-challenge disputes: the Organization Admin assigns an independent Steward, who then decides (challenges.js)
+  // sponsor-project disputes: the Organization Admin assigns an independent Steward, who then decides (sponsor.js)
   (S.disputes || [])
     .filter(
       (d) =>
@@ -331,7 +331,7 @@ function nextAction() {
         "project",
         { id: cl.id },
       ];
-    if (chTodo().length) return chTodo()[0];
+    if (spTodo().length) return spTodo()[0];
     const rr = S.releases.find(
       (x) =>
         x.status === "Awaiting owner decision" &&
@@ -526,7 +526,7 @@ function nextAction() {
         "match",
         { id: mb.id },
       ];
-    if (chTodo().length) return chTodo()[0];
+    if (spTodo().length) return spTodo()[0];
     const iv = S.rooms.find((x) => (memberRec(x) || {}).status === "Invited");
     if (iv)
       return [
@@ -555,8 +555,8 @@ function nextAction() {
       ];
   }
   if (r === "S") {
-    // Open challenges first (applications, commitment, milestones, payments), then invoices, seats and reports.
-    if (chTodo().length) return chTodo()[0];
+    // Sponsor projects first (owner choice, milestones, payments due), then invoices, seats and reports.
+    if (spTodo().length) return spTodo()[0];
     const inv = S.payments.find(
       (p) => p.pid === pid && p.state === "Invoice due",
     );
@@ -1095,7 +1095,7 @@ function roleJourney() {
     const due = !S.payments.some(
       (p) => p.pid === pid && p.state === "Invoice due",
     );
-    const chs = S.challenges.filter((c) => inCtx(c) && c.sponsor === pid);
+    const chs = S.projects.filter((p) => isSpP(p) && inCtx(p) && p.sponsor === pid);
     return journeyRail(
       "Sponsor flow",
       "Your sponsorship flow",
@@ -1103,12 +1103,12 @@ function roleJourney() {
       [
         {
           k: "Projects",
-          done: chs.length > 0 && !chTodo().length,
-          r: "challenges",
+          done: chs.length > 0 && !spTodo().length,
+          r: "sponsorprojects",
           meta: !chs.length
             ? "Create a project"
-            : chTodo().length
-              ? chTodo().length + " waiting for you"
+            : spTodo().length
+              ? spTodo().length + " waiting for you"
               : chs.length + " created · nothing waiting",
         },
         {
@@ -1822,8 +1822,8 @@ function homeS() {
     .filter((p) => p.pid === myId() && !p.dup)
     .sort((a, b) => String(b.at).localeCompare(String(a.at)));
   const due = pays.filter((p) => p.state === "Invoice due");
-  const chs = S.challenges.filter((c) => inCtx(c) && c.sponsor === myId());
-  const todo = chTodo();
+  const chs = S.projects.filter((p) => isSpP(p) && inCtx(p) && p.sponsor === myId());
+  const todo = spTodo();
   return (
     head(
       "My PHOENIX",
@@ -1837,7 +1837,7 @@ function homeS() {
  ${hmCols(
    `${card(
      "My projects",
-     "Created under an alias and listed under Opportunities on the Explore board. Payments happen offline; PHOENIX records what both sides confirm.",
+     "Listed under an alias under Opportunities on the Explore board. Payments happen offline; PHOENIX records their status only.",
      (todo.length
        ? todo
            .slice(0, 4)
@@ -1854,14 +1854,14 @@ function homeS() {
        : "") +
        (chs.length
          ? chs
-             .filter((c) => !todo.some((t) => t[3].id === c.id))
+             .filter((c) => !todo.some((t) => t[3].id === c.id || t[3].id === c.room))
              .slice(0, 3)
              .map((c) =>
                hrow(
                  "megaphone",
                  h(c.title),
-                 h(c.alias) + " · " + h(chStateLabel(c)),
-                 L("Open", "challenge", { id: c.id }),
+                 h(c.alias) + " · " + h(spLabel(c)),
+                 L("Open", "sponsorproject", { id: c.id }),
                  "t-ember",
                ),
              )
@@ -1870,9 +1870,9 @@ function homeS() {
              "megaphone",
              "No projects yet",
              "Create a project to find people for work you want to fund.",
-             B("Create project", "chNew", {}, "btn-p btn-sm"),
+             B("Create project", "spNew", {}, "btn-p btn-sm"),
            )),
-     L("All projects", "challenges"),
+     L("All projects", "sponsorprojects"),
      "hm-list",
    )}
  ${card(
@@ -1972,7 +1972,7 @@ function homeS() {
    L("All invoices", "funding", { tab: "invoices" }),
    "hm-list",
  )}
- ${banner("info", "What sponsors never receive", "Private participant profiles, Purpose Compass responses, private discussions, mentor notes, AI conversations or unapproved evidence. Sponsors are never members of Circles, Rope Teams or Action Workspaces: for your own challenges you see applications, the chat room, milestones and payments only.")}`,
+ ${banner("info", "What sponsors never receive", "Private participant profiles, Purpose Compass responses, private discussions, mentor notes, AI conversations or unapproved evidence. Sponsors are never members of Circles, Rope Teams or Action Workspaces: for your own projects you see who shortlisted them, and their milestones, payment status and disputes only.")}`,
  )}</div>`
   );
 }

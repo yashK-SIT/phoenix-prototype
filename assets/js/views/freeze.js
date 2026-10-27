@@ -523,7 +523,7 @@ route('inbox', 'any', () => {
 });
 
 // ---- Explore board (Bulletin Board Lite, BF-15): approved Opportunity Cards, programme announcements, released
-// Visible Wins. Sponsors' projects (created under an alias, challenges.js) are listed with the Opportunities and are
+// Visible Wins. Sponsors' projects (listed under an alias, sponsor.js) are listed with the Opportunities and are
 // visible to every role in the programme. Every item keeps its source audience; nothing is ranked, liked or commented on.
 UI.boardF = UI.boardF || 'all';
 // who: the post's source shown as its author line; src: provenance and audience; d: optional body text.
@@ -538,13 +538,11 @@ function boardItems() {
   S.rooms
     .filter(x => inCtx(x))
     .forEach(x => (x.wins || []).filter(w => w.status === 'Approved' && w.release === 'Programme').forEach(w => out.push({ k: 'win', at: w.at, t: w.t, s: 'Approved win', who: h(x.name), src: 'Released to the programme audience', act: memberOf(x) ? L('Open ' + WL(), 'room', { id: x.id }) : '' })));
-  (S.challenges || [])
-    .filter(c => inCtx(c) && c.status !== 'Archived')
-    .forEach(c => out.push({ k: 'opp', kl: 'Sponsor project', at: c.at, t: c.title, s: chBoardSub(c), who: h(c.alias), src: 'Sponsor’s name not shown', act: L(chAccepting(c) && chCanApply(c) ? 'View and apply' : 'View project', 'challenge', { id: c.id }) }));
+  out.push(...spBoardItems());
   return out.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
 }
 const BOARD_KIND = { opp: ['Opportunity', 'megaphone', 't-purple', 'p-purple'], ann: ['Announcement', 'bell', 't-navy', 'p-navy'], win: ['Visible Win', 'flag', 't-teal', 'p-teal'] };
-// One feed post. The Sponsor's preview in challenges.js renders through this too, so both read the same.
+// One feed post.
 // Deliberately no reaction or comment bar: the board has no likes, comments or ranking (BF-15).
 function boardPost(x) {
   const [kl, ki, kt, kp] = BOARD_KIND[x.k];
@@ -556,26 +554,13 @@ route('board', 'any', () => {
   if (!BOARD_KIND[UI.boardF]) UI.boardF = 'all';
   const list = UI.boardF === 'all' ? all : all.filter(x => x.k === UI.boardF);
   const f = (v, l) => `<button type="button" role="tab" aria-selected="${UI.boardF === v}" aria-controls="board-feed" class="tab ${UI.boardF === v ? 'on' : ''}" data-a="boardF" data-v="${v}">${l}<span class="cnt">${v === 'all' ? all.length : all.filter(x => x.k === v).length}</span></button>`;
-  const howRows = [
-    ['Opportunity', 'Publish an Opportunity Card with status Active and an audience you are allowed to see (usually Programme).', role() === 'P' || role() === 'C' || role() === 'A' ? L('Post a card', 'newcard', {}, 'btn btn-s btn-sm') : ''],
-    ['Visible Win', 'In an Action Workspace → record a win → steward/lead Approves it (auto-releases to Programme).', myRooms().length ? L('Open a ' + WL(), 'rooms', {}, 'btn btn-s btn-sm') : ''],
-    ['Sponsor project', 'A Sponsor creates a project under an alias. It is listed with the Opportunities for everyone; Participants and Collaborators ask to take part and talk in its chat room.', role() === 'S' ? B(ic('plus', 14) + 'Create project', 'chNew', {}, 'btn-s btn-sm') : ''],
-  ];
   const feed =
     `<div class="tabs board-f" role="tablist" aria-label="Show">${f('all', 'All')}${f('opp', 'Opportunities')}${f('ann', 'Announcements')}${f('win', 'Visible Wins')}</div>` +
-    `<div class="board-list" id="board-feed" role="tabpanel">${list.map(boardPost).join('') || empty('grid', 'Nothing on the board yet', 'Approved cards, sponsors’ projects, announcements and released wins appear here.')}</div>`;
-  const rail =
-    card(
-      'How items get onto this board',
-      'Bulletin Board Lite (BF-15) — no new feed. Items appear only when the source record is approved and released to an audience you can already see.',
-      `<ul class="board-how-l">${howRows.map(([a, b, c]) => `<li><b>${a}</b><span class="cap">${b}</span>${c ? `<span class="board-how-a">${c}</span>` : ''}</li>`).join('')}</ul>`,
-      '',
-      'board-how',
-    ) +
-    `<p class="cap board-n">${ic('info', 13)} Composed only from records you are already allowed to see. No likes, followers, rankings, reputation or public comments. Private notes and unreleased evidence never appear.</p>`;
+    `<div class="board-list" id="board-feed" role="tabpanel">${list.map(boardPost).join('') || empty('grid', 'Nothing on the board yet', 'Approved cards, sponsors’ projects, announcements and released wins appear here.')}</div>` +
+    `<p class="cap board-n">${ic('info', 13)} Composed only from records you are already allowed to see. No likes, followers, rankings, reputation or public comments.</p>`;
   return (
     head('Explore board', `What is happening in ${h(ctxName(ctxId()))}: approved opportunities and sponsors’ projects, programme announcements and released wins.`) +
-    `<div class="board-wrap"><div class="board-feed">${feed}</div><aside class="board-rail" aria-label="About this board">${rail}</aside></div>`
+    `<div class="board-wrap board-solo"><div class="board-feed">${feed}</div></div>`
   );
 });
 A.boardF = d => {

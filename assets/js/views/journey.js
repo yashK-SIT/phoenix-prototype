@@ -967,7 +967,7 @@ AFTER.push((el) => {
     },
   );
 });
-// Who made a move. A move made by a sponsor's open challenge shows the post's alias, never the sponsor's name.
+// Who made a move. A move made by a sponsor shows the project's alias, never the sponsor's name.
 const moveBy = (m) => (m.byLabel ? h(m.byLabel) : nm(m.by));
 // Every move, newest first (project page).
 function projMovesCard(p) {

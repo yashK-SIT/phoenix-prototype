@@ -1,7 +1,7 @@
 // ---------- SPONSOR AREA (BF-08 · Doc 1 §6.6) ----------
 // Sponsor Alpha: seat pools and utilisation, approved initiatives, approved evidence summaries, funder-safe Harvests,
-// aggregate programme signals, invoices and receipts. Project funding happens only through the Sponsor's own open
-// challenges (views/challenges.js): offline payments recorded by mutual confirmation. Pitches, staged tranches,
+// aggregate programme signals, invoices and receipts. Project funding happens only through the Sponsor's own sponsor
+// projects (views/sponsor.js): offline payment status recorded in the project's Action Workspace. Pitches, staged tranches,
 // progress summaries, reallocation and direct sponsor ↔ owner messaging stay outside the Alpha (guards.js denies them).
 // Commercial entitlement never creates workspace membership, participant-level access or authority.
 const STAGE_ORDER = ['Circle', 'Rope Team', 'Room', 'Final review', 'Closed'];
@@ -284,7 +284,7 @@ function sponsorInvoices() {
 function sponsorshipOverview() {
   const pools = S.seatPools.filter(s => inCtx(s));
   return (
-    head('Sponsorship', 'Sponsors buy seat pools, donate and receive approved, aggregate reporting. They fund projects only through their own open challenges, with offline payments both sides confirm.') +
+    head('Sponsorship', 'Sponsors buy seat pools, donate and receive approved, aggregate reporting. They fund projects only through their own sponsor projects, paid offline with the payment status recorded in the project’s Action Workspace.') +
     `<div class="fund-stack">${card(
       'Seat pools in this programme',
       'Aggregate counts as sponsors see them.',
@@ -305,7 +305,7 @@ function sponsorshipOverview() {
         ['Identifiable-story requests open', S.releases.filter(x => x.kind === 'story' && !['Declined by owner', 'Withheld after disclosure review', 'Released'].includes(x.status)).length],
       ]),
       role() === 'A' ? L('Sponsor initiatives', 'admin', { tab: 'initiatives' }) : '',
-    )}${role() === 'A' ? card('Open challenges in this programme', 'Sponsors appear under the alias of each post. Disputes go to an independent Steward.', table(['Challenge', 'Posted by', 'Status', 'Disputes'], (S.challenges || []).filter(c => inCtx(c)).map(c => [h(c.title), h(c.alias), pill(chStateLabel(c)), chDsps(c).length ? chDsps(c).filter(dspOpen).length + ' open of ' + chDsps(c).length : '—']), 'No open challenges yet.'), L('Challenge disputes', 'disputes'), 'sp-tbl') : ''}${banner('info', 'Outside the Alpha', 'Project pitches, staged funding tranches, progress summaries, funding reallocation and direct sponsor ↔ owner messaging. Open challenges use their own chat room and offline payments both sides confirm.')}</div>`
+    )}${role() === 'A' ? card('Sponsor projects in this programme', 'Sponsors appear under the alias of each project. Disputes go to an independent Steward.', table(['Project', 'Listed by', 'Status', 'Disputes'], S.projects.filter(p => isSpP(p) && inCtx(p)).map(p => { const ds = (S.disputes || []).filter(d => d.pr === p.id); return [L(h(p.title), 'project', { id: p.id }), h(p.alias), pill(spListing(p) ? spLabel(p) : p.status), ds.length ? ds.filter(dspOpen).length + ' open of ' + ds.length : '—']; }), 'No sponsor projects yet.'), L('Disputes', 'disputes'), 'sp-tbl') : ''}${banner('info', 'Outside the Alpha', 'Project pitches, staged funding tranches, progress summaries, funding reallocation and direct sponsor ↔ owner messaging. Sponsor projects record offline payment status in their Action Workspace; PHOENIX never processes a payment.')}</div>`
   );
 }
 // ---- a sponsor asks for an identifiable story: a separate release request, decided by the participant, then the

@@ -321,6 +321,9 @@ route("room", "rooms", () => {
   x.links = x.links || [];
   x.chat = x.chat || [];
   const pendC = x.contribs.filter((c) => c.status === "Submitted").length;
+  // Sponsor projects add payment status and disputes for the project owner(s) and Organization Admins (sponsor.js)
+  const spP = spOfRoom(x);
+  const spFinH = !!spP && (spOwner(spP) || r === "A");
   const t = subnav(
     "ar_" + x.id,
     [
@@ -332,6 +335,8 @@ route("room", "rooms", () => {
       ],
       ["chat", "Threaded discussion", isM && unreadIn(x) ? unreadIn(x) : null],
       ["contribs", "Contributions", pendC || null],
+      spFinH && ["pay", "Payments", spPays(x).filter((y) => y.status === "Due").length || null],
+      spFinH && ["dsp", "Disputes", spDsps(x).filter(dspOpen).length || null],
       ["dec", "Decisions"],
       ["risk", "Risks & dependencies"],
       ["change", "Changes", x.changes.length || null],
@@ -345,7 +350,7 @@ route("room", "rooms", () => {
       icons: { overview: "grid" },
       groups: [
         ["", "", ["overview"]],
-        ["Work", "grid", ["plan", "contribs"]],
+        ["Work", "grid", ["plan", "contribs", "pay", "dsp"]],
         ["Conversation", "message", ["chat"]],
         ["Decisions & records", "layers", ["dec", "risk", "change", "ev"]],
         ["People & charter", "users", ["members", "about"]],
@@ -356,6 +361,8 @@ route("room", "rooms", () => {
   const own = (o) => o.owner === myId();
   if (t.cur === "overview") body = roomOverview(x, pr, lead, ro);
   if (t.cur === "contribs") body = roomContribs(x, lead, ro);
+  if (t.cur === "pay") body = spPayTab(x, spP);
+  if (t.cur === "dsp") body = spDspTab(x, spP);
   if (t.cur === "chat")
     body =
       `<div class="ws-split ws-chat"><div class="ws-main"><div class="row wrap chatbar"><span class="cap">Threaded discussion for members of this ${WL()} — not real-time chat. ${isM ? L("Open in Messages", "messages", { c: x.id, k: "rooms" }) : ""}</span></div>` +
@@ -641,7 +648,7 @@ route("room", "rooms", () => {
         : "",
     );
   if (t.cur === "about")
-    body = `<div class="g12">${card("Charter", "", dl([["Purpose / charter", h(x.charter)], ["Expected outcome", h(x.outcome || "—")], ["Lead", nm(x.lead)], ["State", pill(x.state)], x.flags.length && ["Approval flags", x.flags.map(h).join(", ")], ["Primary origin", primaryLink(x.id) ? OBJ_LABEL(primaryLink(x.id).target_type) + " · " + relLink(primaryLink(x.id).target_id) : originLink(x)], x.mandate && ["Mandate", h(x.mandate)], ["Related objects (linked by reference)", linksOf(x.id).filter((l) => !l.primary || l.source_id !== x.id).map((l) => relLink(linkOther(l, x.id)) + ' <span class="cap">' + h(l.source_id === x.id ? linkTypeLabel(l.link_type) : LINK_INVERSE[l.link_type]) + "</span>").join("<br>") || "—"], ["Sponsors", "Never members because of funding"], ["Linked learning activities and records", x.links.map((l) => pill(l.type, "p-grey") + " " + h(l.label)).join("<br>") || "—"]]), !ro && isM ? B(ic("link", 14) + "Link by reference", "roomLink", { r: x.id }) : "", "c7")}
+    body = `<div class="g12">${card("Charter", "", dl([["Purpose / charter", h(x.charter)], ["Expected outcome", h(x.outcome || "—")], ["Lead", nm(x.lead)], ["State", pill(x.state)], x.flags.length && ["Approval flags", x.flags.map(h).join(", ")], ["Primary origin", primaryLink(x.id) ? OBJ_LABEL(primaryLink(x.id).target_type) + " · " + relLink(primaryLink(x.id).target_id) : originLink(x)], x.mandate && ["Mandate", h(x.mandate)], ["Related objects (linked by reference)", linksOf(x.id).filter((l) => !l.primary || l.source_id !== x.id).map((l) => relLink(linkOther(l, x.id)) + ' <span class="cap">' + h(l.source_id === x.id ? linkTypeLabel(l.link_type) : LINK_INVERSE[l.link_type]) + "</span>").join("<br>") || "—"], ["Sponsors", spP ? spWho(spP) + " sees this " + WL() + "’s sponsor milestones, payments and disputes only; never a member" : "Never members because of funding"], ["Linked learning activities and records", x.links.map((l) => pill(l.type, "p-grey") + " " + h(l.label)).join("<br>") || "—"]]), !ro && isM ? B(ic("link", 14) + "Link by reference", "roomLink", { r: x.id }) : "", "c7")}
  ${card("Lifecycle", "Draft · Proposed · Pending approval · Active · Closed", `<div class="col" style="gap:8px">${x.state === "Proposed" && canCreateRoom() ? B("Activate", "roomState", { r: x.id, v: x.flags.length ? "Pending approval" : "Active" }, "btn-p btn-sm") + B("Decline (back to Draft)", "roomDecline", { r: x.id }) : ""}${x.state === "Proposed" && !canCreateRoom() ? '<p class="cap">Proposed. An authorised Faculty/Steward, Project Lead, Collaborator or Organization Admin activates it.</p>' : ""}${x.state === "Pending approval" && (r === "F" || r === "A") ? B("Approve activation", "roomState", { r: x.id, v: "Active" }, "btn-p btn-sm") + B("Decline (back to Draft)", "roomDecline", { r: x.id }) : ""}${x.state === "Draft" && isM ? B("Re-propose", "roomState", { r: x.id, v: "Proposed" }) : ""}${x.declineReason ? banner("warn", "Approval declined", h(x.declineReason)) : ""}${!ro && isM ? B(ic("sparkle", 14) + "Start a Learning Harvest", "newHarvest", { scope: x.id }) : ""}${x.state === "Active" && lead ? B(ic("refresh", 14) + "Continue to a new cycle", "roomContinue", { r: x.id }) : ""}${x.state === "Active" && lead && !pr ? B("Close " + WL(), "roomClose", { r: x.id }) : ""}<p class="cap">Closing or continuing starts a Learning Harvest for this cycle. A person completes it; nothing is harvested automatically.</p>${pr ? `<p class="cap">Final deliverables are submitted from the Overview tab or the ${L("project", "project", { id: pr.id })}. Backward movement is on the Overview tab.</p>` : ""}</div>`, "", "c5")}
  ${returnsCard(x) ? `<div class="c12">${returnsCard(x)}</div>` : ""}</div>`;
   const acts =
@@ -733,6 +740,7 @@ A.roomItem = (d) => {
   clearF("ri");
   mselReset("ri", "partners");
   const x = byId("rooms", d.r);
+  const msFor = k === "tasks" && d.ms ? x.milestones.find((m) => m.id === d.ms && m.sp) : null;
   const mem = x.members
     .filter((m) => m.status === "Active")
     .map((m) => [m.pid, P(m.pid).name]);
@@ -747,7 +755,7 @@ A.roomItem = (d) => {
       wins: "Record a visible win",
     }[k],
     () =>
-      `<form data-f="ri" class="col" style="gap:14px" novalidate><input type="hidden" name="r" value="${x.id}"><input type="hidden" name="k" value="${k}"><input type="hidden" name="st" value="${d.st || ""}">${fi("ri", "t", k === "deps" ? "Dependent activity / resource" : "Title", { req: true })}${["tasks", "decisions", "risks"].includes(k) ? fi("ri", "owner", k === "tasks" ? "Assignee" : "Owner", { type: "select", req: true, opts: mem, value: d.owner || myId(), help: k === "tasks" ? "Any active member of this " + WL() + "." : "" }) : ""}${["tasks", "milestones"].includes(k) ? fi("ri", "due", "Due date", { type: "date", req: true }) : ""}${k === "tasks" ? fi("ri", "prio", "Priority", { type: "select", opts: TASK_PRIOS, value: "Medium" }) + fi("ri", "desc", "Description", { type: "textarea", rows: 3 }) + msel("ri", "partners", "Collaborators / contributors", roomActive(x).map((m) => ({ pid: m.pid, sub: spaceRole("rooms", x, m.pid) || "" })), [], { help: "People who contribute to this deliverable besides the assignee." }) + fi("ri", "req", "Required deliverable — must be done before evidence upload and the Learning Harvest", { type: "checkbox", value: "yes" }) : ""}${k === "deps" ? fi("ri", "on", "Depends on (party)", { req: true }) : ""}${k === "resources" ? fi("ri", "from", "Provided by", { req: true }) : ""}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save</button></div></form>`,
+      `<form data-f="ri" class="col" style="gap:14px" novalidate><input type="hidden" name="r" value="${x.id}"><input type="hidden" name="k" value="${k}"><input type="hidden" name="st" value="${d.st || ""}"><input type="hidden" name="ms" value="${h(d.ms || "")}">${msFor ? banner("info", "For sponsor milestone " + msFor.sp.n, h(msFor.t) + " · " + h(spClip(msFor.sp.deliv, 160))) : ""}${fi("ri", "t", k === "deps" ? "Dependent activity / resource" : "Title", { req: true })}${["tasks", "decisions", "risks"].includes(k) ? fi("ri", "owner", k === "tasks" ? "Assignee" : "Owner", { type: "select", req: true, opts: mem, value: d.owner || myId(), help: k === "tasks" ? "Any active member of this " + WL() + "." : "" }) : ""}${["tasks", "milestones"].includes(k) ? fi("ri", "due", "Due date", { type: "date", req: true }) : ""}${k === "tasks" ? fi("ri", "prio", "Priority", { type: "select", opts: TASK_PRIOS, value: "Medium" }) + fi("ri", "desc", "Description", { type: "textarea", rows: 3 }) + msel("ri", "partners", "Collaborators / contributors", roomActive(x).map((m) => ({ pid: m.pid, sub: spaceRole("rooms", x, m.pid) || "" })), [], { help: "People who contribute to this deliverable besides the assignee." }) + fi("ri", "req", "Required deliverable — must be done before evidence upload and the Learning Harvest", { type: "checkbox", value: "yes" }) : ""}${k === "deps" ? fi("ri", "on", "Depends on (party)", { req: true }) : ""}${k === "resources" ? fi("ri", "from", "Provided by", { req: true }) : ""}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save</button></div></form>`,
   );
 };
 F.ri = (d) => {
@@ -774,6 +782,7 @@ F.ri = (d) => {
       ...(d.req === "yes" ? {} : { opt: true }),
       log: [{ at: now(), by: myId(), t: lead ? "Created" : "Proposed" }],
       acc: d.owner && d.owner !== myId() ? "Pending" : "Accepted",
+      ...(d.ms && x.milestones.some((m) => m.id === d.ms && m.sp) ? { ms: d.ms } : {}),
     });
   if (d.k === "tasks" && !lead)
     x.members
@@ -869,6 +878,7 @@ const msReady = (m) => msItems(m).length > 0 && msItems(m).every(msItemOk);
 const msToReview = (it) => it.st === MS_PEND || (it.st === "Approved" && !msItemOk(it));
 const msPending = (x) => x.milestones.flatMap((m) => (m.status === "Achieved" ? [] : msItems(m).filter(msToReview).map((it) => [m, it])));
 function msStep(m) {
+  if (m.sp) return spMsStep(m);
   const its = msItems(m);
   if (m.status === "Achieved") return "Validated" + (m.validatedBy ? " by " + nm(m.validatedBy) + " · " + fmt(m.validatedAt) : "") + ".";
   if (!its.length) return "Next: a member adds evidence. It goes to the Steward for review.";
@@ -908,7 +918,12 @@ function msCard(x, isM, lead, ro) {
       const its = msItems(m);
       const done = m.status === "Achieved";
       const okN = its.filter(msItemOk).length;
-      const steps = [
+      // A sponsor milestone is accepted by the Sponsor, not validated by the Steward (sponsor.js)
+      const steps = m.sp ? [
+        [SR_AGREED.includes(m.sp.sr), "Agreed with the sponsor"],
+        [["Submitted", "Approved"].includes(m.sp.sr) || m.sp.subs.length > 0, "Completed and submitted"],
+        [m.sp.sr === "Approved", "Approved by the sponsor"],
+      ] : [
         [its.length > 0, "Evidence added (" + its.length + ")"],
         [its.length > 0 && okN === its.length, "Steward approval (" + okN + " of " + its.length + ")"],
         [done, "Validated as achieved"],
@@ -925,21 +940,21 @@ function msCard(x, isM, lead, ro) {
         })
         .join("");
       const validate =
-        stw && !done && !ro
+        stw && !done && !ro && !m.sp
           ? msReady(m)
             ? CB("Validate as achieved", "msAchieve", { r: x.id, id: m.id }, "Record “" + m.t + "” as achieved? All " + its.length + " piece" + (its.length > 1 ? "s" : "") + " of evidence are approved.", "btn-p btn-sm", "Validate")
             : `<button type="button" class="btn btn-p btn-sm" disabled title="Every piece of evidence must be approved first">Validate as achieved</button>`
           : "";
-      return `<article class="ms"><header class="ms-h"><div class="col" style="min-width:0"><b>${h(m.t)}</b><span class="cap">Due ${fmt(m.due)}${dueTag(m.due, done)}</span></div><span class="row wrap" style="gap:6px">${pill(m.status)}${!ro && !done && isM ? B(ic("plus", 14) + "Add evidence", "msEvidence", { r: x.id, id: m.id }) : ""}${validate}</span></header><ol class="ms-steps">${steps.map(([ok_, t], n) => `<li class="${ok_ ? "ok" : ""}"><span class="n">${ok_ ? ic("check", 12) : n + 1}</span>${t}</li>`).join("")}</ol>${evs ? `<ul class="ms-evs">${evs}</ul>` : ""}${docFilesLine(x, m.files, { s: "ms", it: m.id })}<p class="cap">${msStep(m)}</p></article>`;
+      return `<article class="ms"><header class="ms-h"><div class="col" style="min-width:0"><b>${h(m.t)}</b><span class="cap">Due ${fmt(m.due)}${dueTag(m.due, done)}</span></div><span class="row wrap" style="gap:6px">${pill(m.status)}${!ro && !done && isM ? B(ic("plus", 14) + "Add evidence", "msEvidence", { r: x.id, id: m.id }) : ""}${validate}</span></header><ol class="ms-steps">${steps.map(([ok_, t], n) => `<li class="${ok_ ? "ok" : ""}"><span class="n">${ok_ ? ic("check", 12) : n + 1}</span>${t}</li>`).join("")}</ol>${spMsBlock(x, m)}${evs ? `<ul class="ms-evs">${evs}</ul>` : ""}${docFilesLine(x, m.files, { s: "ms", it: m.id })}<p class="cap">${msStep(m)}</p></article>`;
     })
     .join("");
   return card(
     "Milestones",
-    "1. A member adds evidence → 2. the Steward reviews and approves every piece → 3. the Steward validates the milestone as achieved." + (stewards.length ? " Steward: " + stewards.map(nm).join(", ") + "." : ""),
+    "1. A member adds evidence → 2. the Steward reviews and approves every piece → 3. the Steward validates the milestone as achieved." + (spMs(x).length ? " Sponsor requirements are agreed with the sponsor and approved by the sponsor." : "") + (stewards.length ? " Steward: " + stewards.map(nm).join(", ") + "." : ""),
     (stw && pend ? banner("warn", pend + " piece" + (pend > 1 ? "s" : "") + " of evidence waiting for your review", "Review each one below. A milestone can be validated once all of its evidence is approved.") : "") +
       (!stewards.length ? banner("warn", "No Steward for this " + WL(), "Ask the Organization Admin to assign a Steward to the project. Evidence cannot be reviewed or milestones validated without one.") : "") +
       (rows ? `<div class="col" style="gap:12px">${rows}</div>` : empty("flag", "No milestones yet", lead ? "Add a milestone, then add the evidence that shows it is done." : "The project lead adds milestones.")),
-    !ro && lead ? B(ic("plus", 14) + "Add milestone", "roomItem", { r: x.id, k: "milestones" }, "btn-p btn-sm") : "",
+    (!ro && spOwner(spOfRoom(x)) ? B(ic("plus", 14) + "Propose sponsor milestone", "spMsNew", { r: x.id }) : "") + (!ro && lead ? B(ic("plus", 14) + "Add milestone", "roomItem", { r: x.id, k: "milestones" }, "btn-p btn-sm") : ""),
   );
 }
 A.msEvidence = (d) => {
