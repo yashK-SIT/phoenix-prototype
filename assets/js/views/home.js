@@ -1087,17 +1087,17 @@ function roleJourney() {
     return journeyRail(
       "Sponsor flow",
       "Your sponsorship flow",
-      "Open challenges → seats → initiatives → safe reports → invoices (Doc 1 §6.6)",
+      "My projects → seats → initiatives → safe reports → invoices (Doc 1 §6.6)",
       [
         {
-          k: "Challenges",
+          k: "Projects",
           done: chs.length > 0 && !chTodo().length,
           r: "challenges",
           meta: !chs.length
-            ? "Post an open challenge"
+            ? "Create a project"
             : chTodo().length
               ? chTodo().length + " waiting for you"
-              : chs.length + " posted · nothing waiting",
+              : chs.length + " created · nothing waiting",
         },
         {
           k: "Seats",
@@ -1831,8 +1831,8 @@ function homeS() {
  ${roleJourney()}
  ${hmCols(
    `${card(
-     "Open challenges",
-     "Posted under an alias. Payments happen offline; PHOENIX records what both sides confirm.",
+     "My projects",
+     "Created under an alias and listed under Opportunities on the Explore board. Payments happen offline; PHOENIX records what both sides confirm.",
      (todo.length
        ? todo
            .slice(0, 4)
@@ -1863,11 +1863,11 @@ function homeS() {
              .join("")
          : empty(
              "megaphone",
-             "No open challenges yet",
-             "Post a challenge to find people for a project you want to fund.",
-             B("Post an open challenge", "chNew", {}, "btn-p btn-sm"),
+             "No projects yet",
+             "Create a project to find people for work you want to fund.",
+             B("Create project", "chNew", {}, "btn-p btn-sm"),
            )),
-     L("All challenges", "challenges"),
+     L("All projects", "challenges"),
      "hm-list",
    )}
  ${card(

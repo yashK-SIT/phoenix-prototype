@@ -999,6 +999,7 @@ function navItems() {
     add("evidence", "evidence", "Evidence comments", "award");
     add(null, "documents", "Documents", "folder", docProjects().length > 0);
     add("repository", "repository", "Repository", "archive");
+    add(null, "board", "Explore board", "grid");
   } else if (r === "F") {
     // Doc 1 §6.3 / Table 28 — Circles, reviews, linked work (Match Briefs are steward work, not discovery)
     add("circles", "circles", "Circles", "users");
@@ -1024,6 +1025,7 @@ function navItems() {
     add("ropeteams", "ropeteams", "Rope Teams", "route", inMy("ropes"));
     add("harvest", "harvests", "Learning Harvests", "sparkle");
     add(null, "documents", "Documents", "folder");
+    add(null, "board", "Explore board", "grid");
     if (hasB("Reviewer")) {
       add("evidence", "evidence", "Evidence review", "award");
       add("repository", "repository", "Repository", "archive");
@@ -1053,9 +1055,10 @@ function navItems() {
     add("repository", "repository", "Repository", "archive");
     add("harvest", "harvests", "Learning Harvests", "sparkle");
   } else if (r === "S") {
-    // Doc 1 §6.6 — open challenges, seats & funder-safe reporting (no pitches/tranches)
+    // Doc 1 §6.6 — sponsor projects (the open-challenge flow), seats & funder-safe reporting (no pitches/tranches)
     items.push(
-      ["challenges", "Open challenges", "megaphone"],
+      ["challenges", "My projects", "megaphone"],
+      ["board", "Explore board", "grid"],
       ["funding:seats", "Seat utilisation", "card"],
       ["funding:initiatives", "Approved initiatives", "folder"],
       ["funding:reports", "Funder-safe reports", "chart"],
@@ -1078,6 +1081,7 @@ function navItems() {
       ["admin:support", "Support & requests", "question"],
       ["metrics", "Reports & exports", "chart"],
       ["documents", "Project documents", "folder"],
+      ["board", "Explore board", "grid"],
     );
   }
   return always();
@@ -1094,6 +1098,7 @@ const PARENT = {
   newevidence: "evidence",
   harvest: "harvests",
   challenge: "challenges",
+  chnew: "challenges",
   dispute: "disputes",
   collab: "relations",
 };
@@ -1311,6 +1316,7 @@ const CTX_OBJ = {
   match: "matches",
   harvest: "harvests",
   challenge: "challenges",
+  chnew: "challenges",
   dispute: "disputes",
 };
 // The object a detail route opens, when it belongs to a different context than the active one.

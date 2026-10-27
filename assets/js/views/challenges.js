@@ -136,7 +136,7 @@ const chVisible = (ch) =>
   (chMine(ch) ||
     chOnTeam(ch) ||
     !!chAppAny(ch) ||
-    (["P", "C"].includes(role()) && ch.status !== "Archived"));
+    ch.status !== "Archived");
 const chCanApply = (ch) =>
   ["P", "C"].includes(role()) &&
   inCtx(ch) &&
@@ -326,12 +326,12 @@ function chTodo() {
 // ---------- LIST ----------
 const chHow = () =>
   card(
-    "How an open challenge works",
+    "How a sponsor project works",
     "",
     `<ol class="ch-how">${[
       [
-        "Post",
-        "Describe the need on the Explore board. You appear under an alias made for this post.",
+        "Create",
+        "Create the project. It is listed under Opportunities on the Explore board for everyone in the programme, under an alias made for this project.",
       ],
       [
         "Applications",
@@ -384,16 +384,16 @@ function chListSponsor() {
   const mine = S.challenges.filter((c) => inCtx(c) && c.sponsor === myId());
   return (
     head(
-      "Open challenges",
-      "Post a challenge under an alias, choose who takes part, then fund agreed milestones. Payments happen offline between you and the project owner; PHOENIX records what both sides confirm.",
-      B(ic("plus", 16) + "Post an open challenge", "chNew", {}, "btn-p"),
+      "My projects",
+      "Create a project under an alias, choose who takes part, then fund agreed milestones. Payments happen offline between you and the project owner; PHOENIX records what both sides confirm.",
+      B(ic("plus", 16) + "Create project", "chNew", {}, "btn-p"),
     ) +
     chHow() +
     card(
-      "Your challenges",
+      "Your projects",
       "",
       dataView("ch:mine", {
-        label: "challenges",
+        label: "projects",
         items: mine,
         search: (c) =>
           [c.title, c.alias, c.problem, c.needs, chStateLabel(c)].join(" "),
@@ -440,10 +440,10 @@ function chListSponsor() {
         },
         empty: [
           "megaphone",
-          "No open challenges yet",
-          "Post one to find people for a project you want to fund.",
+          "No projects yet",
+          "Create one to find people for a project you want to fund.",
           B(
-            ic("plus", 14) + "Post an open challenge",
+            ic("plus", 14) + "Create project",
             "chNew",
             {},
             "btn-p btn-sm",
@@ -556,7 +556,14 @@ function chListPeople() {
   );
 }
 
-// ---------- POST AND EDIT A CHALLENGE (point 1) ----------
+// ---------- CREATE AND EDIT A SPONSOR PROJECT (point 1) ----------
+// Laid out like Define a new project (projects.js), with the sponsor's own fields: goals, needs, budget, closing date
+// and the alias. It is still the same post underneath: applications, shortlist, chat room, team and funding follow.
+const CH_TYPES = [
+  ["Need", "Something you or a community lacks."],
+  ["Opportunity", "An opening others could take up."],
+  ["Project idea", "Something you want to build or test."],
+];
 A.chNew = (d) => {
   const ch = d.id && chById(d.id);
   clearF("chn");
@@ -564,31 +571,77 @@ A.chNew = (d) => {
   UI.form.chn = ch
     ? {
         id: ch.id,
+        type: ch.type || "Project idea",
         title: ch.title,
         problem: ch.problem,
+        tags: (ch.skills || []).slice(),
         objectives: ch.objectives,
         outcomes: ch.outcomes,
         needs: ch.needs,
-        skills: (ch.skills || []).join(", "),
         country: ch.country,
         area: ch.area || "",
         budget: ch.budget || "",
         currency: ch.currency || "USD",
         closes: ch.closes,
       }
-    : { currency: "USD", country: ctxCountry(ctxId()) };
-  modal(
-    ch ? "Edit the challenge" : "Post an open challenge",
-    () =>
-      `<form data-f="chn" class="col fgap" novalidate>${errSum("chn")}<input type="hidden" name="id" value="${ch ? ch.id : ""}"><div class="ch-alias-box">${ic("shield", 18)}<div><b>This post shows as <span class="ch-alias">${h(UI.chAlias)}</span></b><p class="cap">The alias is made for this post only. Your name, organisation and contact details never appear on the post, in its chat room or in notices to applicants.</p></div></div>${fi("chn", "title", "Challenge title", { req: true, max: 120, ph: "e.g. Low-cost shade for market stalls" })}${fi("chn", "problem", "Requirements and problem", { type: "textarea", rows: 4, req: true, max: 3000, help: "What needs solving, for whom, and any constraints. At least 40 characters." })}<div class="f2">${fi("chn", "objectives", "Objectives", { type: "textarea", rows: 3, req: true, max: 2000 })}${fi("chn", "outcomes", "Expected outcomes", { type: "textarea", rows: 3, req: true, max: 2000 })}</div>${fi("chn", "needs", "Specific needs", { type: "textarea", rows: 3, req: true, max: 2000, ph: "Skills, resources, time commitment, permissions", help: "Applicants read this to decide whether to take part." })}${fi("chn", "skills", "Areas or skills (optional)", { ph: "Comma-separated, e.g. Design, Community engagement" })}<div class="f2">${countryField("chn")}${fi("chn", "area", "Location or area (optional)", { ph: "e.g. Ward 4 market" })}</div><div class="f2">${fi("chn", "budget", "Indicative budget (optional)", { type: "number", min: 0, step: "1", help: "A guide for applicants. The full amount is agreed with the team and committed before work starts." })}${fi("chn", "currency", "Currency", { type: "select", opts: CH_CUR })}</div>${fi("chn", "closes", "Applications close on", { type: "date", req: true, help: "You can stop new applications earlier." })}${banner("info", "Payments stay offline", "PHOENIX has no payment gateway. It never processes, holds or transfers money. Payments you make to the project owner are recorded only when both of you confirm them.")}<div class="actions">${B("Cancel", "closeM")}<button class="btn btn-p" type="submit">${ch ? "Save changes" : "Post to the Explore board"}</button></div></form>`,
-    true,
-  );
+    : { type: "Project idea", currency: "USD", country: ctxCountry(ctxId()) };
+  go("chnew", ch ? { id: ch.id } : {});
 };
+// Choosing a starting point re-renders the cards without losing what was typed.
+A.chType = (d, el) => {
+  const x = {};
+  new FormData(el.closest("form")).forEach((v, k) =>
+    k === "tags" ? (x.tags = [].concat(x.tags || [], v)) : (x[k] = v),
+  );
+  UI.form.chn = x;
+  render();
+};
+route("chnew", "any", () => {
+  const f = "chn";
+  const ch = UI.p.id && chById(UI.p.id);
+  if (role() !== "S" || (UI.p.id && !chEditable(ch))) return chGone();
+  if (!UI.form.chn) UI.form.chn = { type: "Project idea", currency: "USD" };
+  if (!UI.chAlias) UI.chAlias = ch ? ch.alias : chAlias("Sponsor");
+  const type = fv(f, "type", "Project idea");
+  const tags = [].concat(fv(f, "tags", []));
+  const sec = (n, t) =>
+    `<div class="np-sh"><span class="np-n" aria-hidden="true">${n}</span><h2 class="h3">${t}</h2></div>`;
+  return (
+    head(
+      ch ? "Edit project" : "Define a new project",
+      "Start in your own words. Participants and Partners read this to decide whether to take part.",
+      "",
+      [["My projects", "challenges"], ch ? [h(ch.title), "challenge", { id: ch.id }] : null, [ch ? "Edit" : "New project"]].filter(Boolean),
+    ) +
+    `<div class="g12 np-wrap"><form data-f="chn" class="card c8 col np-form" novalidate>${errSum(f)}<input type="hidden" name="id" value="${ch ? ch.id : ""}">
+  <div class="np-sec">${sec(1, "The idea")}
+  <fieldset class="np-fs col"><legend class="lbl">What are you starting with? <span class="req">*</span></legend><div class="g3 np-choices">${CH_TYPES.map(
+    ([v, dd]) =>
+      `<label class="choice np-choice ${type === v ? "sel" : ""}"><input type="radio" name="type" value="${v}" ${type === v ? "checked" : ""} data-ch="chType"><span class="rad" aria-hidden="true"></span><span class="col np-ct"><b>${v}</b><span class="cap">${dd}</span></span></label>`,
+  ).join("")}</div></fieldset>
+  ${fi(f, "title", "Working title", { req: true, max: 120, ph: "e.g. Community cooling map for Ward 7" })}
+  ${fi(f, "problem", "Describe it in your own words", { type: "textarea", rows: 6, req: true, max: 3000, ph: "What is the need or idea? Who is affected? What would be different if it worked?", help: "At least 40 characters." })}</div>
+  <div class="np-sec">${sec(2, "Who should find it")}
+  <fieldset class="np-fs col"><legend class="lbl">Areas of interest</legend><div class="np-chips">${[...PROJECT_AREAS, ...tags.filter((t) => !PROJECT_AREAS.includes(t))].map((a) => `<label class="chipchk np-chip"><input type="checkbox" name="tags" value="${h(a)}" ${tags.includes(a) ? "checked" : ""}><span>${h(a)}</span></label>`).join("")}</div><div class="field np-other"><label class="lbl" for="chn_areaOther">Add your own</label><input id="chn_areaOther" name="areaOther" class="input" value="${h(fv(f, "areaOther", ""))}" placeholder="Comma-separated, e.g. Air quality, School gardens" maxlength="160"></div><span class="help">Helps Participants and Partners find your project under Opportunities on the Explore board.</span></fieldset></div>
+  <div class="np-sec">${sec(3, "Place")}
+  <div class="f2">${countryField(f, { help: "The country the project takes place in." })}${fi(f, "area", "Location or programme area (optional)", { ph: "e.g. Ward 7, Excelsior City" })}</div></div>
+  <div class="np-sec">${sec(4, "Goals and needs")}
+  <div class="f2">${fi(f, "objectives", "Objectives", { type: "textarea", rows: 3, req: true, max: 2000, help: "At least 20 characters." })}${fi(f, "outcomes", "Expected outcomes", { type: "textarea", rows: 3, req: true, max: 2000, help: "At least 20 characters." })}</div>
+  ${fi(f, "needs", "Specific needs", { type: "textarea", rows: 3, req: true, max: 2000, ph: "Skills, resources, time commitment, permissions", help: "Applicants read this to decide whether to take part." })}</div>
+  <div class="np-sec">${sec(5, "Budget and applications")}
+  <div class="f2">${fi(f, "budget", "Indicative budget (optional)", { type: "number", min: 0, step: "1", help: "A guide for applicants. The full amount is agreed with the team and committed before work starts." })}${fi(f, "currency", "Currency", { type: "select", opts: CH_CUR })}</div>
+  ${fi(f, "closes", "Applications close on", { type: "date", req: true, help: "You can stop new applications earlier." })}
+  ${banner("info", "Payments stay offline", "PHOENIX has no payment gateway. It never processes, holds or transfers money. Payments you make to the project owner are recorded only when both of you confirm them.")}</div>
+  <div class="actions">${L("Cancel", ch ? "challenge" : "challenges", ch ? { id: ch.id } : {}, "btn btn-g")}<button class="btn btn-p" type="submit">${ch ? "Save changes" : "Create project"}</button></div></form>
+  <aside class="c4 col np-side"><div class="ch-alias-box">${ic("shield", 18)}<div><b>This project shows as <span class="ch-alias">${h(UI.chAlias)}</span></b><p class="cap">The alias is made for this project only. Your name, organisation and contact details never appear on it, in its chat room or in notices to applicants.</p></div></div>${card("What happens next", "", "<p class=\"cap\">Your project is listed under Opportunities on the Explore board for everyone in the programme. Participants and Partners ask to take part; you shortlist, talk in the chat room, form the team, then commit funding and agree milestones.</p>", "", "quiet")}</aside></div>`
+  );
+});
 A.chEdit = (d) => A.chNew(d);
 F.chn = (d) => {
   if (
     !validate("chn", d, {
       title: ["req"],
+      type: ["req"],
       problem: ["req", ["min", 40]],
       objectives: ["req", ["min", 20]],
       outcomes: ["req", ["min", 20]],
@@ -608,6 +661,7 @@ F.chn = (d) => {
   )
     return render();
   const f = {
+    type: d.type,
     title: d.title.trim(),
     problem: d.problem.trim(),
     objectives: d.objectives.trim(),
@@ -615,8 +669,7 @@ F.chn = (d) => {
     needs: d.needs.trim(),
     skills: [
       ...new Set(
-        (d.skills || "")
-          .split(",")
+        [...[].concat(d.tags || []), ...(d.areaOther || "").split(",")]
           .map((x) => x.trim().slice(0, 40))
           .filter(Boolean),
       ),
@@ -634,9 +687,9 @@ F.chn = (d) => {
       chRoom(ch).name = "Challenge · " + ch.title;
       sysMsg(chRoom(ch), "The sponsor updated the challenge description.");
     }
-    chLog(ch, "Post edited");
-    audit("Open challenge edited", ch.id, "");
-    toast("Challenge updated.");
+    chLog(ch, "Project edited");
+    audit("Sponsor project edited", ch.id, "");
+    toast("Project updated.");
   } else {
     const alias = S.challenges.some((c) => c.alias === UI.chAlias)
       ? chAlias("Sponsor")
@@ -662,11 +715,12 @@ F.chn = (d) => {
       log: [],
     };
     S.challenges.push(ch);
-    chLog(ch, "Posted to the Explore board as " + alias);
-    audit("Open challenge posted", ch.id, alias);
-    toast("Posted to the Explore board as " + alias + ".");
+    chLog(ch, "Project created and listed on the Explore board as " + alias);
+    audit("Sponsor project created", ch.id, alias);
+    toast("Project created. It is listed under Opportunities on the Explore board as " + alias + ".");
   }
   UI.modal = null;
+  UI.chAlias = null;
   clearF("chn");
   save();
   go("challenge", { id: ch.id });
@@ -866,8 +920,8 @@ function chHead(ch) {
           : " You can apply again while applications are open."),
     );
   return (
-    crumbsHtml([["Open challenges", "challenges"], [h(ch.title)]]) +
-    `<div class="shead-main ch-head"><span class="tile t-ember" aria-hidden="true">${ic("megaphone", 20)}</span><div class="shead-t"><div class="shead-kind">Open challenge · posted by ${chMine(ch) ? "you · others see " : ""}<span class="ch-alias">${ic("shield", 12)}${chMine(ch) ? h(ch.alias) : chWho(ch)}</span></div><div class="row wrap prj-ttl"><h1 class="h1">${h(ch.title)}</h1>${pill(chStateLabel(ch))}${a && !chOnTeam(ch) ? pill(a.status === "Submitted" ? "Applied" : a.status, "p-navy") : ""}${chOnTeam(ch) ? pill(chOwner(ch) ? "You are the Circle owner" : "You are on the team", "p-green") : ""}</div><div class="shead-meta"><span>Posted ${fmtD(ch.at)}</span><span>${chAccepting(ch) ? "Applications close " + fmtD(ch.closes) : "Not accepting applications"}</span>${ch.country ? `<span>Country · ${h(ch.country)}</span>` : ""}${ch.budget ? `<span>Indicative budget · ${money(ch.currency, ch.budget)}</span>` : ""}</div></div>${acts ? `<div class="shead-a">${acts}</div>` : ""}</div>`
+    crumbsHtml([[role() === "S" ? "My projects" : "Open challenges", "challenges"], [h(ch.title)]]) +
+    `<div class="shead-main ch-head"><span class="tile t-ember" aria-hidden="true">${ic("megaphone", 20)}</span><div class="shead-t"><div class="shead-kind">Sponsor project · created by ${chMine(ch) ? "you · others see " : ""}<span class="ch-alias">${ic("shield", 12)}${chMine(ch) ? h(ch.alias) : chWho(ch)}</span></div><div class="row wrap prj-ttl"><h1 class="h1">${h(ch.title)}</h1>${pill(chStateLabel(ch))}${a && !chOnTeam(ch) ? pill(a.status === "Submitted" ? "Applied" : a.status, "p-navy") : ""}${chOnTeam(ch) ? pill(chOwner(ch) ? "You are the Circle owner" : "You are on the team", "p-green") : ""}</div><div class="shead-meta"><span>Posted ${fmtD(ch.at)}</span><span>${chAccepting(ch) ? "Applications close " + fmtD(ch.closes) : "Not accepting applications"}</span>${ch.country ? `<span>Country · ${h(ch.country)}</span>` : ""}${ch.budget ? `<span>Indicative budget · ${money(ch.currency, ch.budget)}</span>` : ""}</div></div>${acts ? `<div class="shead-a">${acts}</div>` : ""}</div>`
   );
 }
 // How the post reads on the Explore board (the board itself builds the same item in freeze.js).
@@ -882,12 +936,13 @@ function chOverview(ch) {
     "The challenge",
     "What the sponsor needs, why, and what success looks like.",
     dl([
-      ["Requirements and problem", chText(ch.problem)],
+      ch.type && ["Starting with", h(ch.type)],
+      ["Description", chText(ch.problem)],
       ["Objectives", chText(ch.objectives)],
       ["Expected outcomes", chText(ch.outcomes)],
       ["Specific needs", chText(ch.needs)],
       (ch.skills || []).length && [
-        "Areas or skills",
+        "Areas of interest",
         `<span class="rec-tags">${ch.skills.map((x) => `<span class="rec-tag">${h(x)}</span>`).join("")}</span>`,
       ],
       ["Where", h(ch.country || "—") + (ch.area ? " · " + h(ch.area) : "")],
@@ -919,8 +974,8 @@ function chIdentity(ch) {
       "On the Explore board",
       ch.status === "Archived"
         ? "Archived: no longer shown."
-        : "How Participants and Partners see your post.",
-      `<article class="board-i ch-prev"><span class="tile t-ember" aria-hidden="true">${ic("flag", 18)}</span><div class="col board-b"><span class="over">Open challenge</span><b>${h(ch.title)}</b><span class="cap">${chBoardSub(ch)}</span><span class="cap board-src">${ic("shield", 12)}Posted by ${h(ch.alias)}</span></div></article>`,
+        : "Listed under Opportunities. Everyone in the programme sees it; Participants and Partners can ask to take part.",
+      `<article class="board-i ch-prev"><span class="tile t-purple" aria-hidden="true">${ic("megaphone", 18)}</span><div class="col board-b"><span class="over">Opportunity · Sponsor project</span><b>${h(ch.title)}</b><span class="cap">${chBoardSub(ch)}</span><span class="cap board-src">${ic("shield", 12)}Posted by ${h(ch.alias)}</span></div></article>`,
     )
   );
 }
