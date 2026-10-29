@@ -157,6 +157,9 @@ A.spaSel = (d) => {
   const was = spaSel(s);
   if (d.v === "Interested") delete s.sel;
   else s.sel = d.v;
+  // when, for the application's activity on the Sponsor's project page
+  if (d.v === "Shortlisted") s.shortAt = now();
+  if (d.v === "Not selected") s.selAt = now();
   if (d.v !== "Shortlisted") delete s.prole;
   const c = spaChat(p);
   if (c && c.state === "Active") {
@@ -218,7 +221,8 @@ A.spaChatNew = (d) => {
   audit("Sponsor project discussion opened", p.id, c.id);
   toast("Discussion opened. The shortlisted people have been told.");
   save();
-  go("spchat", { id: c.id });
+  // opened from the Sponsor's project page, it stays there on the Chat room section
+  go(d.tab ? "sponsorproject" : "spchat", d.tab ? { id: p.id, tab: d.tab } : { id: c.id });
 };
 
 // ---------- PROJECT DISCUSSION: a standalone chat for the Sponsor and the shortlisted people ----------

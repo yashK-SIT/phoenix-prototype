@@ -1827,11 +1827,23 @@ const spDspNewOk = (d) => {
 };
 const spDsp = (d) => byId("disputes", d.id);
 const spListingOk = (p) => spSponsor(p) && spListing(p) && p.status !== "Withdrawn";
+// The sponsor records a payment made against a due payment (or a new advance), never against a disputed one.
+const spdPayOk = (d) => {
+  const p = spP(d);
+  const x = p && spRoom(p);
+  if (!spSponsor(p) || !spLive(x, p)) return "only the sponsor records a payment made, while the project’s workspace is active";
+  const yid = d.y || (d.for && d.for !== "new" ? d.for : null);
+  if (!yid) return true;
+  const y = spPays(x).find((z) => z.id === yid);
+  return (!!y && y.status !== "Disputed" && (["Due", "Paid Offline"].includes(y.status) || !!y.sp)) || "a payment is recorded once it is due, and a disputed payment changes only through its dispute";
+};
 const spaRoleOk = (d) =>
   (spaOpen(spP(d)) && spaShort(spP(d)).some((s) => s.pid === d.pid)) || "only the sponsor gives project roles to shortlisted people, before the team is final";
-const spAdminDsp = (d) =>
-  (role() === "A" && !!spDsp(d) && inCtx(spDsp(d)) && spDsp(d).status === "Awaiting Steward assignment") ||
-  "only an Organization Admin in this programme assigns a Steward";
+const spAdminDsp = (d) => {
+  const dp = spDsp(d);
+  if (role() !== "A" || !dp || !inCtx(dp)) return "only an Organization Admin in this programme assigns a Steward";
+  return dp.status === "Awaiting Steward assignment" || "a Steward is assigned only while the dispute awaits one";
+};
 Object.assign(G, {
   spsl: (d) => spCanShort(spP(d)) || "only Participants and Collaborators apply to a sponsor project, once each, while it accepts applications",
   spUnshort: (d) => (!!spShort(spP(d)) && spListing(spP(d))) || "you can withdraw only your own application, before the owner is chosen",
@@ -1855,6 +1867,24 @@ Object.assign(G, {
   },
   spaFinal: (d) => (spaOpen(spP(d)) && spaShort(spP(d)).length > 0) || "only the sponsor finalizes the team, once, from the shortlist",
   spaf: (d) => (spaOpen(spP(d)) && spaShort(spP(d)).length > 0) || "only the sponsor finalizes the team, once, from the shortlist",
+  // The Sponsor's project page (sponsor.js, route sponsorproject)
+  spdArchive: (d) => {
+    const p = spP(d);
+    if (!spSponsor(p)) return "only the sponsor archives their own post";
+    return (d.v === "archive" ? !p.spArchived : !!p.spArchived && !spListing(p)) || "not permitted";
+  },
+  spdApp: (d) => (spSponsor(spP(d)) && (spP(d).shortlist || []).some((s) => s.pid === d.pid)) || "only the sponsor sees applications to their own project",
+  spdev: (d) => (spaOpen(spP(d)) && spShortlist(spP(d)).some((s) => s.pid === d.pid)) || "only the sponsor evaluates applications to their own project, before the team is final",
+  spdcm: (d) => {
+    const c = byId("spchats", d.id);
+    return (!!c && c.state === "Active" && role() === "S" && c.sponsor === myId()) || "only the sponsor and shortlisted people post, while the chat room is open";
+  },
+  spdAns: (d) => {
+    const c = byId("spchats", d.c);
+    return (!!c && c.state === "Active" && role() === "S" && c.sponsor === myId() && c.msgs.some((m) => m.id === d.id && m.q)) || "not permitted";
+  },
+  spdPay: spdPayOk,
+  spdp: spdPayOk,
   spMsNew: spMsNewOk,
   spMsEdit: spMsNewOk,
   spms: spMsNewOk,

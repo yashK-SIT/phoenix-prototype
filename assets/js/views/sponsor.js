@@ -32,6 +32,10 @@ Object.assign(SC, {
   "Awaiting Steward assignment": "p-amber",
   "Awaiting Steward acceptance": "p-amber",
   Decided: "p-navy",
+  "Team formed": "p-green",
+  Selected: "p-green",
+  "Flagged for review": "p-red",
+  "Pending verification": "p-amber",
 });
 // Payment status is recorded, never processed. "Disputed" is set only by a dispute, never by hand.
 const PAY_ST = ["Pending", "Due", "Paid Offline", "On Hold", "Disputed"];
@@ -501,63 +505,631 @@ function spBriefCard(p, cls = "") {
     cls,
   );
 }
+// The Sponsor's own page for a project they listed (My projects → Open): one header, and its sections in a left
+// sub-navigation, as on a Circle. Challenge is the brief; Selection holds the applications and the chat room with the
+// shortlist; Team & delivery holds the team, milestones, payments and disputes. Milestones, payments and disputes are
+// the project's Action Workspace records, read and acted on here: the Sponsor is still never a member of the workspace.
+const spdLabel = (p) => (p.spArchived ? "Archived" : spListing(p) ? spLabel(p) : p.stage === "Closed" ? "Closed" : "Team formed");
+const spdOwnerT = (p) => (p.circle ? "Circle owner" : "Project owner");
+// An application's place in selection: New, Shortlisted or Not selected while the project is a listing; Selected or
+// Not selected once the team is final (team membership counts, for projects finalized before roles were recorded).
+const spdSt = (p, s) =>
+  s.status === "Withdrawn"
+    ? "Withdrawn"
+    : spListing(p)
+      ? { Shortlisted: "Shortlisted", "Not selected": "Not selected" }[s.sel] || "New"
+      : s.sel === "Shortlisted" || spTeam(p).includes(s.pid)
+        ? "Selected"
+        : "Not selected";
+const SPD_ST = { New: "p-navy", Shortlisted: "p-teal", Selected: "p-green", "Not selected": "p-grey", Withdrawn: "p-grey" };
+const spdPill = (p, s) => pill(spdSt(p, s), SPD_ST[spdSt(p, s)]);
+const spdKpis = (xs) => `<div class="kpis spd-kpis">${xs.map(([l, v]) => `<div class="kpi"><span class="lt">${l}</span><span class="fig">${v}</span></div>`).join("")}</div>`;
+const spdTl = (items) =>
+  `<ol class="mtl ws-tl">${items.map(([t, at]) => `<li class="done"><span class="mtl-dot">${ic("check", 12)}</span><div class="col"><b>${h(t)}</b><span class="cap">${fmtD(at)}</span></div></li>`).join("")}</ol>`;
+const spdNever = () =>
+  banner("info", "What sponsors never receive", "Private participant profiles, Purpose Compass responses, private discussions, mentor notes, AI conversations or unapproved evidence. You are never a member of the team’s Circle, Rope Team or " + WL() + ".");
+// Sponsor milestones waiting for the sponsor: a proposal to approve, or a completed milestone to review.
+const spdMsTodo = (x) => spMs(x).filter((m) => !dspOn(x, "ms", m.id) && (m.sp.sr === "Submitted" || (m.sp.sr === "Proposed" && !m.sp.ok.sponsor)));
 route("sponsorproject", "funding", () => {
   const p = byId("projects", UI.p.id);
   if (!p || !spSponsor(p)) return spGone();
   const x = spRoom(p);
-  const sl = spShortlist(p);
+  // A dispute opens inside Disputes from a link (tab + d); choosing any section from the menu drops it.
+  if (!UI.p.tab) delete UI.p.d;
+  const t = subnav(
+    "spd_" + p.id,
+    [
+      ["ov", "Challenge"],
+      ["apps", "Applications", spListing(p) ? spaNew(p).length || null : null],
+      ["chat", "Chat room"],
+      ["team", "Team & project"],
+      ["ms", "Funding & milestones", x ? spdMsTodo(x).length || null : null],
+      ["pay", "Payments", x ? spdPayable(x, p).length || null : null],
+      ["dsp", "Disputes", x ? spDsps(x).filter(dspOpen).length || null : null],
+    ],
+    UI.p.tab,
+    {
+      label: "Project sections",
+      icons: { ov: "megaphone" },
+      groups: [
+        ["", "", ["ov"]],
+        ["Selection", "users", ["apps", "chat"]],
+        ["Team & delivery", "flag", ["team", "ms", "pay", "dsp"]],
+      ],
+    },
+  );
+  const body = { ov: spdOverview, apps: spdApps, chat: spdChat, team: spdTeam, ms: spdMs, pay: spdPay, dsp: spdDsp }[t.cur](p, x);
+  return spdHead(p) + withSubnav(t, `<div class="sp-body spd-body">${body}</div>`);
+});
+function spdHead(p) {
   let acts = "";
   if (spListing(p) && p.status !== "Withdrawn") {
     acts += B(ic("edit", 14) + "Edit", "spEdit", { id: p.id });
-    acts += p.status === "Open" ? B("Stop applications", "spState", { id: p.id, v: "Listing closed" }) : B("Reopen applications", "spState", { id: p.id, v: "Open" });
-    acts += CB("Withdraw", "spState", { id: p.id, v: "Withdrawn" }, "Withdraw “" + p.title + "”? It is removed from the Explore board and the people who applied are told.");
-    acts += L(ic("inbox", 14) + "Manage applications", "sponsorapps", { id: p.id }, "btn btn-p btn-sm");
+    acts +=
+      p.status === "Open"
+        ? CB("Stop new applications", "spState", { id: p.id, v: "Listing closed" }, "Stop new applications? You can still review, shortlist and finalize the team, and you can reopen applications later.")
+        : B("Reopen applications", "spState", { id: p.id, v: "Open" });
   }
-  const shortRows = sl.map((s) => [
-    nm(s.pid) + ' <span class="cap">' + h(roleName(ctxRole(s.pid, p.ctx), p.ctx) || "") + "</span>",
-    h(spOrgOf(s.pid) || "—"),
-    fmtD(s.at),
-    s.note ? spText(spClip(s.note, 140)) : '<span class="cap">No note</span>',
-    (spOwners(p).includes(s.pid) ? pill("Project owner", "p-green") : spaPill(s)) + (s.prole ? " " + pill(s.prole, "p-navy") : "") + (s.share ? "" : ' <span class="cap">No profile shared</span>'),
-    B("View", "spApp", { id: p.id, pid: s.pid }),
-  ]);
-  const work = x
-    ? card(
-        "Milestones, payments and disputes",
-        "In the project’s " + WL() + " “" + h(x.name) + "”",
-        dl([
-          ["Milestones", spMs(x).length ? spMs(x).filter((m) => m.sp.sr === "Approved").length + " approved of " + spMs(x).length : '<span class="cap">None yet</span>'],
-          ["Paid offline", money(spCur(p), spSum(x, "Paid Offline"))],
-          ["Due", money(spCur(p), spSum(x, "Due"))],
-          ["Open disputes", String(spDsps(x).filter(dspOpen).length)],
-        ]),
-        L("Open milestones", "sproom", { id: x.id, tab: "ms" }, "btn btn-p btn-sm"),
-      )
-    : spListing(p)
-      ? ""
-      : card("Milestones, payments and disputes", "", `<p class="cap">The project owner links an ${WL()} when execution starts. Milestones, payments and disputes are managed there; you will see them here.</p>`);
+  if (!p.spArchived)
+    acts += CB(
+      ic("archive", 14) + "Archive post",
+      "spdArchive",
+      { id: p.id, v: "archive" },
+      spListing(p) && p.status !== "Withdrawn"
+        ? "Archive this post? It leaves the Explore board, the chat room closes, and the people who applied are told."
+        : "Archive this post? Its chat room stays closed and readable. The project, its milestones, payments and disputes are not affected.",
+      "btn-s btn-sm",
+      "Archive post",
+    );
+  else if (!spListing(p)) acts += B(ic("archive", 14) + "Restore post", "spdArchive", { id: p.id, v: "restore" });
   return (
-    head(h(p.title), L("Preview listing", "sponsorlisting", { id: p.id }) + " · shown to everyone else as " + `<span class="sp-alias">${ic("shield", 12)}${h(p.alias)}</span>`, pill(spLabel(p)) + acts, [["My projects", "sponsorprojects"], [h(p.title)]]) +
-    `<div class="sp-body">` +
-    hmCols(
-      (spListing(p)
-        ? card("Applications", sl.length + " " + (sl.length === 1 ? "person has" : "people have") + " expressed interest · " + spaShort(p).length + " shortlisted. Shortlist, assign roles, discuss and finalize the team in Applications.", table(["Applicant", "Organisation", "Applied", "Note", "Status", ""], shortRows, "Nobody has applied yet."), L("Manage applications", "sponsorapps", { id: p.id }, "btn btn-s btn-sm"))
-        : card(
-            "Project team",
-            "",
-            dl([
-              ["Main owner(s)", spOwners(p).map(nm).join(", ")],
-              (p.team || []).length && ["Team chosen", p.team.map((t) => nm(t.pid) + ' <span class="cap">' + h(t.role) + "</span>").join("<br>")],
-              ["Starts in", h(pathLabel(p.supportPath) || "—")],
-              ["Faculty/Steward", p.stewards.map(nm).join(", ") || '<span class="cap">Assigned by the Organization Admin</span>'],
-            ]),
-          ) + work) + spBriefCard(p),
-      card("History", "", `<ol class="timeline prj-hist">${p.history.slice().reverse().map((y) => `<li class="tl"><span class="cap">${fmtD(y.at)}</span><p>${h(y.t)}</p></li>`).join("")}</ol>`) +
-        banner("info", "What sponsors never receive", "Private participant profiles, Purpose Compass responses, private discussions, mentor notes, AI conversations or unapproved evidence. You are never a member of the team’s Circle, Rope Team or " + WL() + "."),
-    ) +
-    `</div>`
+    crumbsHtml([["My projects", "sponsorprojects"], [h(p.title)]]) +
+    `<div class="shead-main spd-head"><span class="tile t-ember" aria-hidden="true">${ic("megaphone", 20)}</span><div class="shead-t"><div class="shead-kind">Sponsor project · created by you · others see <span class="sp-alias">${ic("shield", 12)}${h(p.alias)}</span></div><div class="row wrap prj-ttl"><h1 class="h1">${h(p.title)}</h1>${pill(spdLabel(p))}</div><div class="shead-meta"><span>Posted ${fmtD(p.at)}</span><span>${spListed(p) ? "Applications close " + fmtD(p.brief.closes) : "Not accepting applications"}</span>${p.country ? `<span>Country · ${h(p.country)}</span>` : ""}${p.brief.budget ? `<span>Indicative budget · ${money(spCur(p), p.brief.budget)}</span>` : ""}</div></div>${acts ? `<div class="shead-a">${acts}</div>` : ""}</div>`
   );
-});
+}
+// Archiving a listing withdraws it (applicants are told); archiving after the team is formed only files the post away.
+A.spdArchive = (d) => {
+  const p = byId("projects", d.id);
+  if (d.v === "restore") {
+    p.spArchived = null;
+    spLog(p, "Post restored by the sponsor");
+    audit("Sponsor project restored", p.id, "");
+    toast("Post restored.");
+    return ok();
+  }
+  if (spListing(p) && p.status !== "Withdrawn") {
+    p.status = "Withdrawn";
+    spShortlist(p).forEach((s) => notify(s.pid, "The sponsor project “" + p.title + "” was withdrawn by " + p.alias, "projects", {}));
+  }
+  spaChatClose(p, "The sponsor archived the post.");
+  p.spArchived = now();
+  spLog(p, "Post archived by the sponsor");
+  audit("Sponsor project archived", p.id, "");
+  toast(spListing(p) ? "Post archived. It no longer appears on the Explore board." : "Post archived. The project carries on with the team.");
+  ok();
+};
+
+// ---- Challenge: the brief, the alias and the activity
+function spdOverview(p) {
+  const b = p.brief;
+  const main = card(
+    "The challenge",
+    "What you need, why, and what success looks like.",
+    dl([
+      ["Starting with", h(p.type)],
+      ["Description", spText(b.problem)],
+      ["Objectives", spText(b.objectives)],
+      ["Expected outcomes", spText(b.outcomes)],
+      ["Specific needs", spText(b.needs)],
+      b.eligibility && ["Who can apply", spText(b.eligibility)],
+      (p.tags || []).length && ["Areas of interest", `<span class="rec-tags">${p.tags.map((x) => `<span class="rec-tag">${h(x)}</span>`).join("")}</span>`],
+      ["Where", h(p.country || "—") + (p.area ? " · " + h(p.area) : "")],
+      b.budget && ["Indicative budget", money(spCur(p), b.budget) + '<div class="cap">A guide for the team. Milestone amounts are agreed with the project owner.</div>'],
+      b.closes && ["Applications close", fmtD(b.closes)],
+    ]),
+    spListing(p) && p.status !== "Withdrawn" ? B(ic("edit", 14) + "Edit", "spEdit", { id: p.id }) : "",
+  );
+  const id = card(
+    "Your identity on this project",
+    "",
+    `<p class="muted">Everyone else sees <span class="sp-alias">${ic("shield", 12)}${h(p.alias)}</span>. Your name, organisation and contact details are not shown on the listing, in the chat room, in the team’s spaces or in notices to applicants.</p><p class="cap">${L("Preview the listing", "sponsorlisting", { id: p.id })}</p>`,
+  );
+  const act = card(
+    "Activity",
+    "Kept with the project",
+    p.history.length
+      ? spdTl(
+          p.history
+            .slice()
+            .reverse()
+            .slice(0, 12)
+            .map((y) => [y.t, y.at]),
+        )
+      : '<p class="cap">No activity yet.</p>',
+  );
+  return hmCols(main, id + act + spdNever());
+}
+
+// ---- Applications: everyone who applied, the sponsor's private evaluation, shortlist and team
+function spdApps(p) {
+  const all = p.shortlist || [];
+  const n = (v) => all.filter((s) => spdSt(p, s) === v).length;
+  const sts = ["New", "Shortlisted", "Selected", "Not selected", "Withdrawn"].filter((v) => n(v));
+  const sl = spaShort(p);
+  const noRole = sl.filter((s) => !s.prole);
+  const owners = sl.filter((s) => s.prole === "Project owner");
+  const c = spaChat(p);
+  const next =
+    spaOpen(p) && sl.length
+      ? card(
+          "Shortlist ready",
+          sl.length + " shortlisted · " + (noRole.length ? noRole.length + " without a project role" : "every one has a project role"),
+          `<p class="cap">Give each shortlisted person a project role, talk with them in the chat room, then finalize the team. At least one Participant must be a Project owner.</p>`,
+          (c ? L(ic("message", 14) + "Open chat room", "sponsorproject", { id: p.id, tab: "chat" }, "btn btn-s btn-sm") : B(ic("message", 14) + "Open chat room", "spaChatNew", { id: p.id, tab: "chat" })) +
+            B(ic("check", 14) + "Finalize team", "spaFinal", { id: p.id }, noRole.length || !owners.length ? "btn-s btn-sm" : "btn-p btn-sm"),
+          "accent",
+        )
+      : "";
+  return (
+    next +
+    spdKpis([
+      ["New", n("New")],
+      ["Shortlisted", n("Shortlisted") + n("Selected")],
+      ["Not selected", n("Not selected")],
+      ["Withdrawn", n("Withdrawn")],
+    ]) +
+    card(
+      "Applications",
+      "Read what each person wrote and what they chose to share, rate the fit and shortlist. Your ratings and notes are visible only to you.",
+      dataView("spd:apps:" + p.id, {
+        label: "applications",
+        items: all,
+        search: (s) => [P(s.pid).name, s.note, s.exp, s.prole, spdSt(p, s)].join(" "),
+        quick: { label: "Status", options: sts.map((v) => [v, v]), test: (s, v) => spdSt(p, s) === v },
+        sorts: [
+          ["new", "Newest first", (a, b) => String(b.at).localeCompare(String(a.at))],
+          ["fit", "Best fit first", (a, b) => (b.fit || 0) - (a.fit || 0)],
+        ],
+        defaultSort: "new",
+        row: (s) => {
+          const st = spdSt(p, s);
+          return {
+            lead: `<span class="av" aria-hidden="true">${ini(s.pid)}</span>`,
+            title: nm(s.pid),
+            sub: h(spaRoleNm(p, s.pid) || "") + (spOrgOf(s.pid) ? " · " + h(spOrgOf(s.pid)) : ""),
+            meta: ["Applied " + fmtD(s.at), s.avail ? h(s.avail) : "", s.fit ? "Fit <b>" + s.fit + " of 5</b>" : "Not rated", s.share ? "Profile summary shared" : "Profile not shared", s.prole && spListing(p) ? "Project role <b>" + h(s.prole) + "</b>" : ""],
+            badges: spdPill(p, s),
+            primary: B(st === "New" ? "Review" : "Open", "spdApp", { id: p.id, pid: s.pid }, st === "New" ? "btn-p btn-sm" : "btn-s btn-sm"),
+          };
+        },
+        empty: ["users", "No applications yet", "Participants and Collaborators apply from the Explore board with “View and Apply”.", ""],
+      }),
+    )
+  );
+}
+A.spdApp = (d) => {
+  const p = byId("projects", d.id);
+  const s = (p.shortlist || []).find((x) => x.pid === d.pid);
+  if (!s) return;
+  clearF("spdev");
+  UI.form.spdev = { fit: s.fit ? String(s.fit) : "", snote: s.snote || "" };
+  modal(
+    "Application from " + nm(s.pid),
+    () => {
+      const st = spdSt(p, s);
+      const edit = spaOpen(p) && st !== "Withdrawn";
+      const log = [
+        st === "Selected" && ["Selected for the team", p.finalAt || p.submitted],
+        st === "Not selected" && (s.selAt || p.finalAt) && ["Not selected", s.selAt || p.finalAt],
+        s.shortAt && ["Shortlisted", s.shortAt],
+        ["Applied", s.at],
+      ].filter(Boolean);
+      return `<div class="col fgap">${dl([
+        ["Status", spdPill(p, s)],
+        ["Role", h(spaRoleNm(p, s.pid) || "—") + (spOrgOf(s.pid) ? " · " + h(spOrgOf(s.pid)) : "")],
+        ["Applied", fmtD(s.at)],
+        ["Availability", s.avail ? h(s.avail) : '<span class="cap">Not given</span>'],
+        ["What they would bring", spText(s.note)],
+        ["Relevant experience", spText(s.exp)],
+        s.prole && ["Project role", h(s.prole)],
+      ])}${s.share ? `<h3 class="h3">Profile summary</h3>${spProfile(s)}` : banner("info", "Profile summary not shared", "This person chose not to share a profile summary. Judge the application on what they wrote. If you shortlist them, you can ask questions once you proceed to chat.")}${
+        edit
+          ? `<form data-f="spdev" class="col fgap spd-eval" novalidate><input type="hidden" name="id" value="${p.id}"><input type="hidden" name="pid" value="${s.pid}"><h3 class="h3">Your evaluation</h3><div class="f2">${fi("spdev", "fit", "Fit with your requirements", {
+              type: "select",
+              ph: "Not rated",
+              opts: [
+                ["5", "5 · Excellent fit"],
+                ["4", "4 · Strong fit"],
+                ["3", "3 · Possible fit"],
+                ["2", "2 · Weak fit"],
+                ["1", "1 · Poor fit"],
+              ],
+            })}</div>${fi("spdev", "snote", "Your notes (only you see these)", { type: "textarea", rows: 3, max: 2000 })}<div class="actions"><button class="btn btn-s" type="submit" name="v" value="save">Save evaluation</button><div class="row wrap">${
+              st === "Shortlisted" ? B(ic("users", 14) + (s.prole ? "Change role" : "Assign role"), "spaRole", { id: p.id, pid: s.pid }) + '<button class="btn btn-s" type="submit" name="v" value="Interested">Back to new</button>' : ""
+            }${st !== "Not selected" ? '<button class="btn btn-s" type="submit" name="v" value="Not selected">Not selected</button>' : ""}${st !== "Shortlisted" ? '<button class="btn btn-p" type="submit" name="v" value="Shortlisted">Shortlist</button>' : ""}</div></div></form>`
+          : dl([
+              ["Your fit rating", s.fit ? s.fit + " of 5" : "—"],
+              ["Your notes", spText(s.snote)],
+            ])
+      }<details class="ws-done" open><summary class="cap">Activity</summary>${spdTl(log)}</details></div>`;
+    },
+    true,
+  );
+};
+// The evaluation is the sponsor's own (rating and notes); a status button also shortlists or declines, as in Applications.
+F.spdev = (d) => {
+  const p = byId("projects", d.id);
+  const s = spShortlist(p).find((x) => x.pid === d.pid);
+  s.fit = d.fit ? +d.fit : null;
+  s.snote = (d.snote || "").trim().slice(0, 2000);
+  audit("Sponsor application evaluated", p.id, s.pid);
+  UI.modal = null;
+  clearF("spdev");
+  if (["Shortlisted", "Not selected", "Interested"].includes(d.v) && d.v !== (s.sel || "Interested")) return A.spaSel({ id: p.id, pid: s.pid, v: d.v });
+  toast("Evaluation saved. Only you see it.");
+  ok();
+};
+
+// ---- Chat room: the sponsor and the shortlisted people, before the team is final (S.spchats, applications.js)
+const spdChatNm = (c, pid) => (pid === c.sponsor ? (pid === myId() ? "You" : h(c.alias)) : nm(pid));
+const spdSeen = (c, m) =>
+  c.members.filter((x) => x.status === "Active" && readMark(c.id, x.pid) >= m.at).map((x) => P(x.pid).display || P(x.pid).name);
+function spdChat(p) {
+  const c = spaChat(p);
+  if (!c)
+    return card(
+      "Chat room",
+      "",
+      empty(
+        "message",
+        "No chat room yet",
+        spaOpen(p) ? (spaShort(p).length ? "Open a chat room with the people you shortlisted. People you shortlist later join it automatically." : "Shortlist at least one person in Applications to open the chat room.") : "No chat room was opened while this project was taking applications.",
+        spaOpen(p) && spaShort(p).length ? B(ic("plus", 14) + "Open chat room", "spaChatNew", { id: p.id, tab: "chat" }, "btn-p btn-sm") : "",
+      ),
+    );
+  const live = c.state === "Active";
+  const members = [{ pid: c.sponsor }, ...c.members.filter((m) => m.status === "Active")];
+  const byM = Object.fromEntries(c.msgs.filter((m) => m.id).map((m) => [m.id, m]));
+  let day = "";
+  let prev = null;
+  const rows = c.msgs
+    .map((m) => {
+      let out = "";
+      if (String(m.at).slice(0, 10) !== day) {
+        day = String(m.at).slice(0, 10);
+        prev = null;
+        out += `<div class="mday"><span>${dayLabel(m.at)}</span></div>`;
+      }
+      if (m.sys) {
+        prev = null;
+        return out + `<div class="msys">${ic("info", 13)}<span>${h(m.t)}</span><span class="mtime">${tm(m.at)}</span></div>`;
+      }
+      const mine = m.by === myId();
+      const grouped = prev && prev.by === m.by && new Date(m.at) - new Date(prev.at) < 6e5;
+      prev = m;
+      const rp = m.reply && byM[m.reply];
+      const seen = mine ? spdSeen(c, m) : [];
+      const tools = live
+        ? (!mine ? B(ic("reply", 15), "spdReply", { c: c.id, id: m.id }, "mtool", 'aria-label="Reply" title="Reply"') : "") +
+          (m.q && !m.ans ? B(ic("check", 15), "spdAns", { c: c.id, id: m.id }, "mtool", 'aria-label="Mark answered" title="Mark answered"') : "")
+        : "";
+      return (
+        out +
+        `<div class="mrow ${mine ? "mine" : ""} ${grouped ? "grp" : ""}" id="msg-${m.id}">${!mine ? (grouped ? '<span class="mav-sp"></span>' : `<span class="av" title="${h(P(m.by).name)}">${ini(m.by)}</span>`) : ""}<div class="mcol">${!mine && !grouped ? `<div class="mwho">${spdChatNm(c, m.by)}<span class="cap"> · Applicant</span></div>` : ""}<div class="mbub bubble ${mine ? "me" : ""} ${m.q ? "q" : ""}">${rp ? `<a href="#msg-${rp.id}" class="mquote"><b>${rp.by ? spdChatNm(c, rp.by) : "System"}</b><span>${h(String(rp.t || "").slice(0, 90))}</span></a>` : ""}${m.q ? `<div class="mqtag">${ic("question", 13)}${m.ans ? "Question · answered" : "Open question"}</div>` : ""}<div class="mtext">${spText(m.t)}</div><div class="mmeta">${tm(m.at)}${mine ? `<span class="mtick ${seen.length && seen.length >= members.length - 1 ? "seen" : ""}" title="${seen.length ? "Seen by " + h(seen.join(", ")) : "Sent"}">${ic(seen.length ? "checks" : "check", 14)}</span>` : ""}</div></div></div>${tools ? `<div class="mtools">${tools}</div>` : ""}</div>`
+      );
+    })
+    .join("");
+  const newest = c.msgs.filter((m) => !m.sys).slice(-1)[0];
+  const seenLast = newest && newest.by === myId() ? spdSeen(c, newest) : [];
+  const reply = UI.spdRe && UI.spdRe.c === c.id ? byM[UI.spdRe.id] : null;
+  const asQ = UI.spdQ === c.id;
+  const avatars = members
+    .slice(0, 4)
+    .map((m) => `<span class="av" title="${h(spdChatNm(c, m.pid).replace(/<[^>]+>/g, ""))}">${ini(m.pid)}</span>`)
+    .join("");
+  return (
+    (live
+      ? banner("info", "Chat with your shortlist", "Clarifications and coordination before the team is final happen here. Only you and the shortlisted people take part; you appear as " + h(c.alias) + ". It closes when you finalize the team.")
+      : banner("info", "Chat room closed", "Selection is complete, so the room no longer takes new messages. It stays readable for the people who took part, under the programme’s data-retention rules. Project work continues in the team’s " + (p.circle ? "Circle" : "spaces") + ".")) +
+    `<section class="mthread emb spd-chat" aria-label="Chat room: ${h(p.title)}"><header class="mth-h"><span class="mav tile p t-ember" aria-hidden="true">${ic("megaphone", 18)}</span><div class="mth-t"><span class="mname">Challenge · ${h(p.title)}</span><span class="cap">Challenge chat room · ${members.length} members${live ? "" : " · Closed"}</span></div><span class="mavs hide-sm">${avatars}</span></header><div class="msgs" role="log" aria-live="polite">${rows || `<div class="mempty">${empty("message", "No messages yet", "Start the conversation. Only you and the shortlisted people see it.")}</div>`}${seenLast.length ? `<div class="mseen">Seen by ${h(seenLast.join(", "))}</div>` : ""}</div>${
+      live
+        ? `<form data-f="spdcm" class="composer ${asQ ? "asq" : ""}" novalidate><input type="hidden" name="id" value="${c.id}"><input type="hidden" name="re" value="${reply ? reply.id : ""}">${reply ? `<div class="mreplying">${ic("reply", 14)}<div class="mreplying-t"><b>Replying to ${spdChatNm(c, reply.by)}</b><span class="cap mprev">${h(String(reply.t || "").slice(0, 90))}</span></div>${B(ic("x", 14), "spdReplyX", {}, "mtool", 'aria-label="Cancel reply"')}</div>` : ""}<div class="mcomp"><textarea name="t" rows="1" class="mta" placeholder="Write a message" aria-label="Message" maxlength="2000">${h(UI.spdDraft || "")}</textarea><button type="button" class="iconbtn mqbtn ${asQ ? "on" : ""}" data-a="spdAsQ" data-id="${c.id}" aria-pressed="${asQ}" title="Send as a question">${ic("question")}</button><button class="btn btn-p msend" type="submit" aria-label="Send message" title="Send (Enter)">${ic("send", 18)}</button></div><div class="mhelp">${asQ ? "<b>Sending as a question.</b> " : ""}Enter to send · Shift+Enter for a new line · shown under ${h(c.alias)}</div></form>`
+        : `<div class="mro">${ic("lock", 16)}<span>This chat room is closed. The conversation is read-only.</span></div>`
+    }</section>`
+  );
+}
+// Reply and question mode re-render the composer; what was typed is kept.
+const spdKeep = () => (UI.spdDraft = (document.querySelector('form[data-f="spdcm"] textarea') || {}).value || "");
+A.spdReply = (d) => {
+  spdKeep();
+  UI.spdRe = { c: d.c, id: d.id };
+  render();
+};
+A.spdReplyX = () => {
+  spdKeep();
+  UI.spdRe = null;
+  render();
+};
+A.spdAsQ = (d) => {
+  spdKeep();
+  UI.spdQ = UI.spdQ === d.id ? null : d.id;
+  render();
+};
+A.spdAns = (d) => {
+  const c = byId("spchats", d.c);
+  const m = c.msgs.find((x) => x.id === d.id);
+  m.ans = true;
+  audit("Sponsor chat question marked answered", c.pr, m.id);
+  ok();
+};
+F.spdcm = (d) => {
+  const text = (d.t || "").trim();
+  if (!text) {
+    toast("Write a message first.", "warn");
+    return render();
+  }
+  const c = byId("spchats", d.id);
+  c.msgs.push({ id: uid("spm"), by: myId(), at: now(), t: text.slice(0, 2000), ...(UI.spdQ === c.id ? { q: true } : {}), ...(d.re && c.msgs.some((m) => m.id === d.re) ? { reply: d.re } : {}) });
+  c.members.filter((m) => m.status === "Active").forEach((m) => notify(m.pid, c.alias + " wrote in the discussion for “" + c.name.replace(/^Discussion · /, "") + "”", "spchat", { id: c.id }));
+  audit("Sponsor project discussion message", c.pr, "");
+  UI.spdQ = null;
+  UI.spdRe = null;
+  UI.spdDraft = "";
+  ok();
+};
+
+// ---- Team & project: who was chosen, where the work happens
+function spdTeam(p, x) {
+  if (spListing(p)) {
+    const sl = spaShort(p);
+    return hmCols(
+      card(
+        "Team so far",
+        "Every shortlisted person needs a project role. At least one Participant must be a Project owner.",
+        sl.length ? `<ul class="sp-team">${sl.map((s) => `<li><span class="av sm">${ini(s.pid)}</span><span class="sp-team-n">${nm(s.pid)}</span>${s.prole ? pill(s.prole, s.prole === "Project owner" ? "p-green" : "p-navy") : '<span class="cap">No role yet</span>'}${spaOpen(p) ? B(ic("users", 14) + (s.prole ? "Change role" : "Assign role"), "spaRole", { id: p.id, pid: s.pid }) : ""}</li>`).join("")}</ul>` : empty("users", "Shortlist people first", "Review applications and shortlist at least one person.", B("Review applications", "tab", { k: "spd_" + p.id, v: "apps" }, "btn-p btn-sm")),
+        spaOpen(p) && sl.length ? B(ic("check", 14) + "Finalize team", "spaFinal", { id: p.id }, "btn-p btn-sm") : "",
+      ),
+      card("What finalizing does", "", `<p class="cap">Applications close and the project leaves the Explore board. People not selected are told, the chat room becomes read-only, and the Project owner(s) start the work in the Circle, Rope Team or ${WL()} you choose.</p>`, "", "quiet") + spdNever(),
+    );
+  }
+  const team = (p.team || []).length
+    ? p.team
+    : spShortlist(p)
+        .filter((s) => spdSt(p, s) === "Selected")
+        .map((s) => ({ pid: s.pid, role: s.prole || (spOwners(p).includes(s.pid) ? "Project owner" : roleName(ctxRole(s.pid, p.ctx), p.ctx) || "Member") }));
+  const ci = p.circle && byId("circles", p.circle);
+  const others = team.filter((tm_) => !spOwners(p).includes(tm_.pid));
+  return hmCols(
+    card(
+      "Project team",
+      "Formed " + fmtD(p.finalAt || p.submitted),
+      dl([
+        [spOwners(p).length > 1 ? "Project owners" : spdOwnerT(p), spOwners(p).map(nm).join(", ") + '<div class="cap">Agrees milestones with you, confirms payments received and speaks for the team in a dispute.</div>'],
+        ["Team members", others.map((tm_) => nm(tm_.pid) + " " + pill(tm_.role, "p-navy")).join("<br>") || '<span class="cap">Only the owner</span>'],
+        ["Started in", h(pathLabel(p.supportPath) || "—")],
+        ["Faculty/Steward", p.stewards.map(nm).join(", ") || '<span class="cap">Assigned by the Organization Admin</span>'],
+        ["Circle", ci ? h(ci.name) : '<span class="cap">None linked</span>'],
+        [WL(), x ? h(x.name) : '<span class="cap">Not linked yet</span>'],
+        ["Where it is now", p.stage ? h(stageLabel(p.stage)) : '<span class="cap">Not started</span>'],
+      ]),
+    ),
+    card(
+      "History",
+      "",
+      p.history.length
+        ? spdTl(
+            p.history
+              .slice()
+              .reverse()
+              .map((y) => [y.t, y.at]),
+          )
+        : '<p class="cap">—</p>',
+    ) + spdNever(),
+  );
+}
+
+// ---- Funding & milestones: the sponsor requirements in the project's Action Workspace
+function spdNoWs(p, what) {
+  return card(
+    what,
+    "",
+    empty("flag", spListing(p) ? "Finalize the team first" : "Waiting for the team’s " + WL(), spListing(p) ? "Milestones, payments and disputes start once the team is final and the work has an " + WL() + "." : "The project owner links an " + WL() + " when execution starts. Milestones, payments and disputes are kept there and appear here."),
+  );
+}
+function spdMs(p, x) {
+  if (!x) return spdNoWs(p, "Funding & milestones");
+  const cur = spCur(p);
+  const sum = (ms) => ms.reduce((a, m) => a + (+m.sp.amount || 0), 0);
+  const ms = spMs(x);
+  return (
+    spdKpis([
+      ["Indicative budget", money(cur, p.brief.budget || 0)],
+      ["Agreed in milestones", money(cur, sum(ms.filter((m) => SR_AGREED.includes(m.sp.sr))))],
+      ["Approved", money(cur, sum(ms.filter((m) => m.sp.sr === "Approved")))],
+      ["Waiting for you", spdMsTodo(x).length],
+    ]) +
+    spMsList(x, p) +
+    banner("info", "Recorded, never processed", SP_OFFLINE, "coin")
+  );
+}
+
+// ---- Payments: what each side recorded. The sponsor records a payment made here; the owner's confirmation is their
+// own record, or their "Paid Offline" status update in the workspace. Neither side's figure stands in for the other's.
+function spdRec(p, y, side) {
+  const own = side === "sponsor" ? y.sp : y.ow;
+  if (own) return own;
+  const who = side === "sponsor" ? (pid) => pid === p.sponsor : (pid) => spOwners(p).includes(pid);
+  const l = (y.hist || []).filter((e) => e.to === "Paid Offline" && who(e.by)).slice(-1)[0];
+  return l ? { amount: +y.amount, date: side === "sponsor" ? y.paidOn || l.at : l.at, ref: l.ref || (side === "sponsor" ? y.offRef : ""), files: [] } : null;
+}
+const spdEq = (a, b) => Math.abs(+a - +b) < 0.005;
+function spdPayState(x, p, y) {
+  if (dspOn(x, "pay", y.id)) return "Flagged for review";
+  const s = spdRec(p, y, "sponsor");
+  const o = spdRec(p, y, "owner");
+  if (s && o) return spdEq(s.amount, o.amount) ? "Confirmed" : "Flagged for review";
+  if (s || o) return "Pending verification";
+  // a payment shown as Disputed because its milestone is disputed keeps the state it had before
+  const st = y.status === "Disputed" ? y.prev || "Pending" : y.status;
+  return st === "Paid Offline" ? "Confirmed" : st === "Due" ? "Due" : st === "On Hold" ? "On hold" : "Not due yet";
+}
+const SPD_PAY = { Confirmed: "p-green", "Pending verification": "p-amber", "Flagged for review": "p-red", Due: "p-amber", "On hold": "p-grey" };
+const spdPayPill = (st) => (st === "Not due yet" ? '<span class="cap">Not due yet</span>' : pill(st, SPD_PAY[st]));
+const spdAmt = (p, y) => +((spdRec(p, y, "sponsor") || y).amount || 0);
+// Payments the sponsor can record as made: due (an approved milestone, or an advance), with no sponsor record yet.
+const spdPayable = (x, p) => spPays(x).filter((y) => !spdRec(p, y, "sponsor") && y.status === "Due" && !dspOn(x, "pay", y.id));
+const spdPayForT = (x, y) => {
+  const m = y.ms && x.milestones.find((z) => z.id === y.ms);
+  return m ? "Milestone " + m.sp.n + " · " + m.t : y.kind || "Other payment";
+};
+function spdPayCell(p, y, side, none) {
+  const r = spdRec(p, y, side);
+  if (!r) return `<span class="cap">${none || "—"}</span>`;
+  return `<div class="spd-conf">${ic("check", 13)}<span>${side === "sponsor" ? "Paid" : "Received"} ${money(spCur(p), r.amount)}</span><span class="cap">${fmtD(r.date)}${r.ref ? " · ref " + h(r.ref) : ""}</span>${spFiles(r.files)}</div>`;
+}
+function spdPay(p, x) {
+  if (!x) return spdNoWs(p, "Payments");
+  const cur = spCur(p);
+  const ps = spPays(x);
+  const st = (y) => spdPayState(x, p, y);
+  const tot = (v) => ps.filter((y) => st(y) === v).reduce((a, y) => a + spdAmt(p, y), 0);
+  const committed = +p.brief.budget || spMsTotal(x);
+  const conf = tot("Confirmed");
+  const pend = tot("Pending verification");
+  const ownT = spdOwnerT(p);
+  const live = x.state === "Active";
+  const msRows = spMs(x)
+    .filter((m) => SR_AGREED.includes(m.sp.sr))
+    .map((m) => {
+      const y = spMsPays(x, m).slice(-1)[0];
+      const s = y ? st(y) : "Not due yet";
+      const sr = y && spdRec(p, y, "sponsor");
+      return [
+        `<b>${m.sp.n} · ${h(m.t)}</b>`,
+        money(cur, m.sp.amount),
+        pill(srLabel(m)),
+        y && s !== "Not due yet" ? h(y.ref) + (sr && sr.ref ? `<div class="cap">${h(sr.ref)}</div>` : y.offRef ? `<div class="cap">${h(y.offRef)}</div>` : "") : '<span class="cap">—</span>',
+        y ? spdPayCell(p, y, "sponsor") : '<span class="cap">—</span>',
+        y ? spdPayCell(p, y, "owner") : '<span class="cap">—</span>',
+        spdPayPill(s),
+      ];
+    });
+  const acts = (y) => {
+    const dsp = dspOn(x, "pay", y.id);
+    if (dsp) return L(ic("shield", 14) + h(dsp.ref), "sponsorproject", { id: p.id, tab: "dsp", d: dsp.id }, "btn btn-s btn-sm");
+    if (!live || y.status === "Disputed") return "";
+    const s = st(y);
+    if (s === "Flagged for review") return B("Correct my record", "spdPay", { id: p.id, y: y.id }) + B(ic("shield", 14) + "Escalate to a Steward", "spDspNew", { r: x.id, kind: "pay", s: y.id });
+    if (!spdRec(p, y, "sponsor") && y.status === "Due") return B("Record payment", "spdPay", { id: p.id, y: y.id }, "btn-p btn-sm");
+    return "";
+  };
+  const hist = ps
+    .slice()
+    .sort((a, b) => String(b.at).localeCompare(String(a.at)) || String(b.ref).localeCompare(String(a.ref)))
+    .map((y) => [
+      `<span class="mono">${h(y.ref)}</span><div class="cap">${fmtD(y.at)}</div>`,
+      h(spdPayForT(x, y)),
+      money(cur, spdAmt(p, y)),
+      spdPayCell(p, y, "sponsor", "Not recorded"),
+      spdPayCell(p, y, "owner", "Not confirmed"),
+      spdPayPill(st(y)),
+      acts(y),
+    ]);
+  return (
+    spdKpis([
+      ["Committed", money(cur, committed)],
+      ["Confirmed by both", money(cur, conf)],
+      ["Pending verification", money(cur, pend)],
+      ["Flagged for review", ps.filter((y) => st(y) === "Flagged for review").length],
+      ["Still to pay", money(cur, Math.max(0, committed - conf - pend))],
+    ]) +
+    card(
+      "Milestone payments",
+      "For each milestone: the agreed amount, its approval and the payment confirmations from both sides.",
+      table(["Milestone", "Agreed amount", "Milestone status", "Payment reference", "Sponsor", ownT, "Payment status"], msRows, "No agreed milestones yet. Agree them in Funding & milestones."),
+      "",
+      "spd-paytbl",
+    ) +
+    card(
+      "Payment history",
+      "Every payment either side recorded, with both confirmations and supporting records. Newest first.",
+      table(["Recorded", "Payment", "Amount", "Sponsor", ownT, "Status", ""], hist, "No payments recorded yet."),
+      live ? B(ic("plus", 14) + "Record a payment made", "spdPay", { id: p.id }, "btn-p btn-sm") : "",
+      "spd-paytbl",
+    ) +
+    banner("info", "Recorded, never processed", SP_OFFLINE + " If the two confirmations differ, the payment is flagged for review rather than marked complete.", "coin")
+  );
+}
+A.spdPay = (d) => {
+  const p = byId("projects", d.id);
+  const x = spRoom(p);
+  const y = d.y && spPays(x).find((z) => z.id === d.y);
+  const r = y && spdRec(p, y, "sponsor");
+  const cur = spCur(p);
+  const opts = spdPayable(x, p);
+  clearF("spdp");
+  UI.form.spdp = { for: y ? y.id : opts.length ? opts[0].id : "new", amount: String(r ? r.amount : y ? y.amount : opts.length ? opts[0].amount : ""), date: r ? String(r.date).slice(0, 10) : today(), ref: r ? r.ref || "" : (y && y.offRef) || "" };
+  modal(r ? "Correct your payment record · " + h(y.ref) : "Record a payment made", () =>
+    `<form data-f="spdp" class="col fgap" novalidate>${errSum("spdp")}<input type="hidden" name="id" value="${p.id}">${
+      y
+        ? `<input type="hidden" name="for" value="${y.id}">` + dl([["For", h(spdPayForT(x, y))], ["Reference", `<span class="mono">${h(y.ref)}</span>`], ["Amount due", money(cur, y.amount)]])
+        : fi("spdp", "for", "What the payment is for", { type: "select", req: true, opts: [...opts.map((z) => [z.id, z.ref + " · " + spdPayForT(x, z) + " · " + cur + " " + (+z.amount).toLocaleString("en-US")]), ["new", "Initial project funding or an advance (new record)"]], help: "A milestone payment can be recorded once you have approved the milestone." })
+    }<div class="f2">${fi("spdp", "amount", "Amount paid (" + h(cur) + ")", { type: "number", req: true, min: 0.01, step: "0.01" })}${fi("spdp", "date", "Date paid", { type: "date", req: true, maxv: today() })}</div>${fi("spdp", "ref", "Payment reference (optional)", { max: 80, ph: "e.g. bank transfer reference" })}<div class="field"><label class="lbl" for="spdp_files">Supporting records (optional)</label><input id="spdp_files" class="input" type="file" name="files" multiple><span class="help">For example a remittance advice. Up to ${S.settings.maxFileMB} MB each.</span></div>${fi("spdp", "note", "Note (optional)", { type: "textarea", rows: 2, max: 1000 })}${banner("info", "Independent confirmation", "The " + spdOwnerT(p).toLowerCase() + " confirms what they received separately. If the two figures differ, the payment is flagged for review. " + SP_OFFLINE)}<div class="actions">${B("Cancel", "closeM")}<button class="btn btn-p" type="submit">Record payment</button></div></form>`,
+  );
+};
+F.spdp = (d, form) => {
+  if (
+    !validate("spdp", d, {
+      for: ["req"],
+      amount: ["req", "num", ["fn", { f: (v) => +v > 0, m: "Enter an amount above 0." }]],
+      date: ["req", ["fn", { f: (v) => /^\d{4}-\d{2}-\d{2}$/.test(v) && v <= today(), m: "Enter the date it was paid (today or earlier)." }]],
+    })
+  )
+    return render();
+  const files = spTakeFiles(form);
+  if (!files) return render();
+  const p = byId("projects", d.id);
+  const x = spRoom(p);
+  const note = (d.note || "").trim();
+  let y = d.for !== "new" && spPays(x).find((z) => z.id === d.for);
+  if (!y) y = spPayAdd(x, { ms: null, kind: "Advance", amount: +d.amount, due: "", status: "Due", note }, "Recorded by the sponsor as a payment made");
+  const had = !!y.sp;
+  y.sp = { amount: +d.amount, date: d.date, ref: (d.ref || "").trim(), files: files.length ? files : (y.sp && y.sp.files) || [], note, by: myId(), at: now() };
+  if (!y.offRef && y.sp.ref) y.offRef = y.sp.ref;
+  y.hist.push({ at: now(), by: myId(), from: y.status, to: y.status, amount: +d.amount, ref: y.sp.ref || undefined, note: (had ? "Sponsor corrected their record of the payment made" : "Sponsor recorded a payment made") + " on " + fmtD(d.date) + (note ? ": " + note : "") });
+  spTell(p, x, spOwners(p), p.alias + " recorded a payment made for “" + p.title + "”: " + y.ref + ", " + spCur(p) + " " + (+d.amount).toLocaleString("en-US") + ". Confirm what you received.", "pay");
+  audit("Sponsor recorded a payment made", x.id, y.id + " · " + d.amount);
+  UI.modal = null;
+  clearF("spdp");
+  toast("Payment recorded. Nothing was paid through PHOENIX; the " + spdOwnerT(p).toLowerCase() + " confirms what they received.");
+  ok();
+};
+
+// ---- Disputes: the list, and one dispute opened in place
+function spdDsp(p, x) {
+  const intro = banner("info", "Independent Steward", "If you cannot agree on a milestone’s completion or acceptance, or on a payment, escalate it from the milestone or the payment. A human Steward with no tie to either side reviews the evidence and decides. Both sides appear under aliases.", "shield");
+  if (!x) return intro + spdNoWs(p, "Disputes");
+  const dp = UI.p.tab === "dsp" && UI.p.d && byId("disputes", UI.p.d);
+  if (dp && dp.room === x.id && dspSees(dp)) {
+    const v = dspView(dp);
+    return `<p class="cap">${L(ic("chevl", 14) + "All disputes", "sponsorproject", { id: p.id, tab: "dsp" })}</p>` + head("Dispute " + h(dp.ref), "About " + h(dspSubject(dp)) + " · raised " + fmtD(dp.at), pill(dp.status)) + hmCols(v.main, v.rail);
+  }
+  return (
+    intro +
+    card(
+      "Disputes",
+      "",
+      table(
+        ["Reference", "About", "Raised by", "Raised", "Status", ""],
+        spDsps(x)
+          .slice()
+          .reverse()
+          .map((d_) => [`<span class="mono">${h(d_.ref)}</span>`, h(dspSubject(d_)), d_.side === "sponsor" ? "Your side" : DSP_SIDE[d_.side], fmtD(d_.at), pill(d_.status), L("Open", "sponsorproject", { id: p.id, tab: "dsp", d: d_.id }, "btn btn-s btn-sm")]),
+        "No disputes. They are raised from a milestone under review or a payment record.",
+      ),
+    )
+  );
+}
 // ---------- PROJECT PAGE: sponsor summary in the existing Project module ----------
 function spProjCard(p) {
   if (!isSpP(p)) return "";
@@ -719,7 +1291,9 @@ function spMsActs(x, p, m) {
   if (dsp) out.push(spDspLink(x, p, dsp));
   return out.join("");
 }
-const spDspLink = (x, p, dp) => L(ic("shield", 14) + "Open dispute " + h(dp.ref), spSponsor(p) ? "sproom" : "room", { id: x.id, tab: "dsp", d: dp.id }, "btn btn-s btn-sm");
+// The Sponsor opens a dispute inside their project page; everyone else inside the workspace.
+const spDspLink = (x, p, dp) =>
+  spSponsor(p) ? L(ic("shield", 14) + "Open dispute " + h(dp.ref), "sponsorproject", { id: p.id, tab: "dsp", d: dp.id }, "btn btn-s btn-sm") : L(ic("shield", 14) + "Open dispute " + h(dp.ref), "room", { id: x.id, tab: "dsp", d: dp.id }, "btn btn-s btn-sm");
 // View only: the two sides, workspace members and Organization Admins see a sponsor milestone in full.
 A.spMs = (d) => {
   const x = byId("rooms", d.r);
@@ -1122,7 +1696,8 @@ F.spdn = (d, form) => {
   S.disputes = S.disputes || [];
   const dp = {
     id: uid("dsp"),
-    ref: "DSP-" + String(S.disputes.length + 1).padStart(4, "0"),
+    // next number after the highest ref in use, so a removed dispute never lets a ref repeat
+    ref: "DSP-" + String(S.disputes.reduce((n, o) => Math.max(n, +String(o.ref || "").replace(/\D/g, "") || 0), 0) + 1).padStart(4, "0"),
     pr: p.id,
     room: x.id,
     ctx: p.ctx,
@@ -1610,7 +2185,10 @@ function spMigrate() {
   }
   delete S.chrooms;
   (S.disputes || []).forEach((d) => delete d.ch);
-  if (S.spSeeded) return;
+  // Browsers seeded twice hold two disputes per id; byId() then finds the wrong copy. Keep the first of each.
+  const seen = new Set();
+  S.disputes = S.disputes.filter((d) => !seen.has(d.id) && seen.add(d.id));
+  if (S.spSeeded) return spdSeed();
   S.spSeeded = true;
   allLinks();
   const t = (d, h_ = "09:00") => d + "T" + h_;
@@ -1811,7 +2389,7 @@ function spMigrate() {
   L_("rooms", "arc2", "originated-from", false);
   // a disputed payment already with an independent Steward (Kofi Mensah has no tie to either side), and a milestone
   // dispute waiting for the Organization Admin to assign one
-  S.disputes.push(
+  const seedDsp = [
     {
       id: "dsp1",
       ref: "DSP-0001",
@@ -1860,10 +2438,58 @@ function spMigrate() {
       thread: [{ id: "dm3", by: "p1", at: t("2026-10-19"), kind: "statement", t: "All five stallholders put up their shades alone, and the start and end photos show it took under five minutes. Re-running a timed test would cost another market day. We believe the acceptance criteria are met.\n\nOutcome sought: Accept milestone 2 as complete.", files: [] }],
       log: [{ at: t("2026-10-19"), t: "Raised by the team side (Team side · Meadow Fern 71)" }],
     },
-  );
+  ];
+  S.disputes.push(...seedDsp.filter((o) => !byId("disputes", o.id)));
   // milestone 2's payment shows as Disputed while DSP-0002 is open
   const y3 = S.rooms.find((x) => x.id === "arc2").payments.find((y) => y.id === "cpy3");
   y3.prev = "Pending";
   y3.status = "Disputed";
   y3.hist.push(H(t("2026-10-19"), "p1", "Pending", "Disputed", undefined, "Automatic: dispute DSP-0002 raised"));
+  spdSeed();
+}
+// Detail for the Sponsor's project page on the seeded funded project, added once (also to browsers seeded earlier):
+// what each applicant wrote about availability and experience, the sponsor's private fit ratings, the closed chat room
+// with the shortlist, and each side's own record of the two payments made so far.
+function spdSeed() {
+  if (S.spdSeeded) return;
+  S.spdSeeded = true;
+  const p = byId("projects", "prc2");
+  const x = byId("rooms", "arc2");
+  if (!p || !x || p.sponsor !== "p6") return;
+  const t = (d, h_ = "09:00") => d + "T" + h_;
+  const APP = {
+    p1: { avail: "1–2 days a week", exp: "Leads the Ward 7 cooling map; measures street temperatures with a borrowed sensor kit.", fit: 5, share: true, shortAt: t("2026-09-05") },
+    p9: { avail: "1–2 days a week", exp: "Builds and repairs market stall frames; ran Saturday installs for the Ward 7 survey.", fit: 4, share: true, shortAt: t("2026-09-05") },
+    p10: { avail: "A few hours a week", exp: "Ward newsletter writing.", fit: 4, shortAt: t("2026-09-05") },
+  };
+  (p.shortlist || []).forEach((s) => APP[s.pid] && s.fit == null && Object.assign(s, APP[s.pid]));
+  S.spchats = S.spchats || [];
+  if (!S.spchats.some((c) => c.pr === p.id)) {
+    S.spchats.push({
+      id: "spc2",
+      pr: p.id,
+      ctx: p.ctx,
+      sponsor: p.sponsor,
+      alias: p.alias,
+      name: "Discussion · " + p.title,
+      state: "Closed",
+      at: t("2026-09-05"),
+      closedAt: t("2026-09-12", "10:05"),
+      members: ["p1", "p9", "p10"].map((pid) => ({ pid, status: "Active", at: t("2026-09-05") })),
+      msgs: [
+        { id: "spm201", sys: true, at: t("2026-09-05"), t: "Chat room for the open challenge “" + p.title + "”. Only the sponsor and shortlisted applicants take part. The sponsor appears as " + p.alias + "." },
+        { id: "spm202", by: "p1", at: t("2026-09-05", "11:00"), t: "Would you fund an advance for materials, or is everything paid per milestone?", q: true, ans: true },
+        { id: "spm203", by: p.sponsor, at: t("2026-09-05", "15:20"), t: "An advance of USD 2,000 for materials is fine, the rest per approved milestone.", reply: "spm202" },
+        { id: "spm204", sys: true, at: t("2026-09-12", "10:00"), t: "The team has been formed. Project work continues in the team’s own Circle." },
+        { id: "spm205", sys: true, at: t("2026-09-12", "10:05"), t: "Selection is complete. This chat room is closed for further discussion. It stays readable for the people who took part, under the programme’s data-retention rules." },
+      ],
+    });
+    S.chatRead = S.chatRead || {};
+    (S.chatRead.p1 = S.chatRead.p1 || {}).spc2 = t("2026-09-12", "10:05");
+  }
+  const y1 = spPays(x).find((y) => y.id === "cpy1");
+  const y2 = spPays(x).find((y) => y.id === "cpy2");
+  if (y1 && !y1.sp) y1.sp = { amount: 2000, date: "2026-09-16", ref: "HWF-TRF-0916", files: [], by: p.sponsor, at: t("2026-09-16") };
+  if (y2 && !y2.sp) y2.sp = { amount: 3000, date: "2026-10-06", ref: "HWF-TRF-1006", files: [{ n: "remittance-1006.pdf", mb: 0.1 }], by: p.sponsor, at: t("2026-10-06") };
+  if (y2 && !y2.ow) y2.ow = { amount: 2700, date: "2026-10-08", ref: "", files: [{ n: "bank-statement-oct.pdf", mb: 0.2 }], by: "p1", at: t("2026-10-08") };
 }

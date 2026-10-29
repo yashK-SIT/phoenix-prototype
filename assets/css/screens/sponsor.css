@@ -323,3 +323,53 @@
     white-space: normal;
   }
 }
+
+/* ---------- the Sponsor's project page (route sponsorproject): header, sections, payments, chat room ---------- */
+.spd-head {
+  margin-bottom: var(--s-2);
+}
+.spd-head .shead-kind .sp-alias {
+  margin-left: 2px;
+}
+.spd-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  min-width: 0;
+}
+.spd-body > .hm-cols .hm-main > .card + .card,
+.spd-body > .hm-cols .hm-rail > * + * {
+  margin-top: 0;
+}
+.spd-kpis .fig {
+  font-size: 1.25rem;
+}
+.spd-paytbl td {
+  vertical-align: top;
+}
+.spd-conf {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.spd-conf > svg {
+  color: var(--ok);
+}
+.spd-conf .sp-files {
+  margin-top: 4px;
+}
+.spd-eval {
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--line);
+}
+.spd-chat {
+  height: auto;
+  min-height: 0;
+}
+.spd-chat .msgs {
+  max-height: 640px;
+}
+.spd-chat .mname {
+  font-weight: 700;
+}
