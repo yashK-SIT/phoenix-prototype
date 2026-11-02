@@ -31,8 +31,30 @@ const objKind = id => (id ? OBJ_KINDS.find(k => byId(k, id)) || null : null);
 const objOf = id => byId(objKind(id), id) || null;
 const objName = id => {
   const o = objOf(id);
+  if (o && objKind(id) === 'ropes' && !ropeExists(o)) return ROPE_HIDDEN;
   if (o && objKind(id) === 'matches') return 'Introduction · ' + P(o.a).name + ' ↔ ' + P(o.b).name;
   return o ? o.name || o.title || id : id;
+};
+// ---------- JF-32 Rope Team privacy gate ----------
+// OWNER DECISION (WSS product owner): which Rope Team fields may be deliberately shared, for mentoring, with people
+// outside the team. Allowed values: 'name', 'charter', 'mentor', 'circle'. They are shown only to members of the
+// Circle the Rope Team is linked to (the people it could support), on the Rope Teams list and its locked page, and
+// only when 'name' is included. Until WSS decides the list is empty: outside the team a Rope Team does not exist —
+// no name, charter, mentor, participants or count in link panels, lineage, the project journey, Documents folders,
+// listings, search boxes, issue/report targets or Workspace origins. Server-side enforcement is a production item.
+const ROPE_SHARED = [];
+// Inside the boundary: its members (active, invited, or asking to join), and the people who form and staff it — the
+// project owner and the assigned Faculty/Steward (ropeInviter, views/ropeteams.js). Organization Admins and platform
+// roles are outside unless they are members.
+const ropeInside = o =>
+  !!o && (memberOf(o) || ['Invited', 'Requested'].includes((memberRec(o) || {}).status) || ropeInviter(o));
+const ropeShareTo = o => !!o && ROPE_SHARED.includes('name') && !!o.circle && memberOf(byId('circles', o.circle) || {});
+const ropeExists = o => ropeInside(o) || ropeShareTo(o);
+// One neutral text, used whether or not a Rope Team exists, so it never confirms one.
+const ROPE_HIDDEN = 'Not shown to you';
+const ropeHiddenId = id => {
+  const o = byId('ropes', id);
+  return !!o && !ropeExists(o);
 };
 const objState = (k, o) => (k === 'projects' ? (o.stage === 'Closed' ? 'Closed' : o.status) : o.state || o.status || '');
 
@@ -100,6 +122,8 @@ const objOpenable = (k, o) => {
   if (k === 'projects') return o.owner === myId() || role() !== 'P';
   // a Match Brief opens only for its two parties, its steward and the Organization Admin
   if (k === 'matches') return [o.a, o.b, o.steward].includes(myId()) || role() === 'A';
+  // an Opportunity Card opens only for its audience, its owner and, once closed, the people involved (JF-39)
+  if (k === 'cards') return cardReadable(o);
   return true;
 };
 // Authority to link or create from this object: its owner/lead/facilitator (or mentor, for a Rope Team).
@@ -128,7 +152,7 @@ function linkRow(o, l) {
   const oid = linkOther(l, o.id);
   const k = objKind(oid);
   const t = byId(k, oid);
-  if (!t) return '';
+  if (!t || (k === 'ropes' && !ropeExists(t))) return '';
   const out = l.source_id === o.id;
   const rel = out ? linkTypeLabel(l.link_type) : LINK_INVERSE[l.link_type] || linkTypeLabel(l.link_type);
   const open = objOpenable(k, t);
@@ -139,10 +163,10 @@ function linkRow(o, l) {
 }
 function linkCard(k, o) {
   if (!o) return '';
-  const ls = linksOf(o.id);
+  const ls = linksOf(o.id).filter(l => !ropeHiddenId(linkOther(l, o.id)));
   const prim = ls.find(l => l.source_id === o.id && l.primary);
   const others = ls.filter(l => l !== prim);
-  const originNote = !prim && o.origin && o.origin.type ? lrow('flag', h(o.origin.type), (o.origin.basis || o.mandate ? 'Basis: ' + h(o.origin.basis || o.mandate) : 'Direct entry') + (o.origin.by ? ' · ' + nm(o.origin.by) : ''), '', 't-soft') : '';
+  const originNote = !prim && o.origin && o.origin.type && !ropeHiddenId(o.origin.id) ? lrow('flag', h(o.origin.type), (o.origin.basis || o.mandate ? 'Basis: ' + h(o.origin.basis || o.mandate) : 'Direct entry') + (o.origin.by ? ' · ' + nm(o.origin.by) : ''), '', 't-soft') : '';
   const acts = [];
   const make = (m, icon, lbl) => canMake(k, o, m) && acts.push(B(ic(icon, 14) + lbl, 'linkMake', { k, id: o.id, make: m }, 'btn-s btn-sm'));
   make('circles', 'users', 'Create linked Circle');
@@ -150,7 +174,7 @@ function linkCard(k, o) {
   make('rooms', 'room', (linkAuth(k, o) || canCreateRoom() ? 'Create' : 'Propose') + ' linked ' + WL());
   if (linkAuth(k, o)) acts.push(B(ic('link', 14) + 'Link existing', 'linkExisting', { k, id: o.id }, 'btn-s btn-sm'));
   const body =
-    `<div class="col" style="gap:4px"><span class="over">Primary origin</span>${prim ? linkRow(o, prim) : originNote || '<p class="cap">None recorded — created directly.</p>'}</div>` +
+    `<div class="col" style="gap:4px"><span class="over">Primary origin</span>${prim ? linkRow(o, prim) : originNote || '<p class="cap">None recorded, or none you can see.</p>'}</div>` +
     `<div class="col" style="gap:4px;margin-top:12px"><span class="over">Related objects</span>${others.map(l => linkRow(o, l)).join('') || '<p class="cap">Nothing linked yet.</p>'}</div>` +
     `<p class="cap" style="margin-top:12px">A link is a reference. It never copies content, members, roles or permissions${k === 'ropes' ? '. This Rope Team’s notes, support details, check-ins and chat are <b>' + ROPE_ONLY + '</b> and never appear in linked spaces' : ''}.</p>` +
     (acts.length ? `<div class="row wrap gate-act">${acts.join('')}</div>` : '') +
@@ -162,8 +186,9 @@ function linkStrip(k, o) {
   // a room that belongs to a project shows where the project is now, and lets its owner or steward move it here
   const pj = SPACE_KINDS.includes(k) ? projOf(k, o) || linkedObjs(o.id, 'projects')[0] : null;
   const bar = pj ? projRoomBar(pj, k) : '';
-  const ls = linksOf(o.id);
-  if (!ls.length && !(o.origin && o.origin.type)) return bar;
+  const ls = linksOf(o.id).filter(l => !ropeHiddenId(linkOther(l, o.id)));
+  const ownOrigin = o.origin && o.origin.type && !ropeHiddenId(o.origin.id);
+  if (!ls.length && !ownOrigin) return bar;
   const prim = ls.find(l => l.source_id === o.id && l.primary);
   const step = (kk, t, lbl, here) =>
     `<li class="jstep is-done${here ? ' is-here' : ''}"${here ? ' aria-current="step"' : ''}><span class="tile ${OBJ_TILE[kk] || 't-soft'}">${ic(OBJ_ICON[kk] || 'flag', 16)}</span><div class="jbody"><span class="jlabel">${lbl}${here ? ' <span class="jhere">You are here</span>' : ''}</span><span class="jname">${t}</span></div></li>`;
@@ -174,7 +199,7 @@ function linkStrip(k, o) {
   };
   const items = [];
   if (prim) items.push(step(objKind(prim.target_id), ref(prim.target_id), 'Primary origin · ' + OBJ_LABEL(objKind(prim.target_id))));
-  else if (o.origin && o.origin.type) items.push(step('', h(o.origin.type), 'Primary origin'));
+  else if (ownOrigin) items.push(step('', h(o.origin.type), 'Primary origin'));
   items.push(step(k, h(o.name || o.title), OBJ_LABEL(k), true));
   ls.filter(l => l !== prim).forEach(l => {
     const id = linkOther(l, o.id);

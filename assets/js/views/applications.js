@@ -5,7 +5,8 @@
 // close, the project leaves the Explore board, the discussion becomes read-only and the Project-owner role holders
 // become the project's owners (the existing Project module flow continues from there).
 // The project discussion (S.spchats) is its own small store and view. It is not a Circle, Rope Team or Action
-// Workspace chat and is not listed in Messages. Project roles are team-formation labels: they grant no platform
+// Workspace chat. Shortlisted members also see it in Messages as a project group (category "Projects", named after
+// the project); it is the same record, so messages are shared with the Sponsor's Chat room. Project roles are team-formation labels: they grant no platform
 // permissions; authority still comes from each person's role in the programme.
 const SPA_ROLES = ["Project owner", "Participant", "Steward", "Mentor", "Collaborator"];
 const SPA_PILL = { Interested: "p-grey", Shortlisted: "p-teal", "Not selected": "p-grey" };

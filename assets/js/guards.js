@@ -28,10 +28,67 @@ const tinvMine = (d) => {
   const i = byId("invites", d.id);
   return !!i && i.kind === "member" && i.pid === myId() && tinvLive(i);
 };
+// JF-10 own-context checks for user management
+const ownAsg = (id) => {
+  const a = byId("assign", id);
+  return !!a && role() === "A" && a.ctx === ctxId();
+};
+const ownMember = (pid) =>
+  role() === "A" &&
+  pid !== myId() &&
+  userEditable(pid) &&
+  S.assign.some((a) => a.pid === pid && a.ctx === ctxId());
 const roomLead = (id) => {
   const x = byId("rooms", id);
   return !!x && (isLead(x) || role() === "A");
 };
+// JF-39: actions that need an Active card the person can see (Route B, steward nominations). A card the person cannot
+// read is reported as not found; a Paused or closed one says why it is unavailable.
+const cardOpenFor = (id, what, steward) => {
+  const c = byId("cards", id);
+  if (!c || !cardReadable(c)) return "card not found";
+  if (steward && (role() !== "F" || (c.from && cardSteward(c) !== myId())))
+    return "only the card's steward can nominate a match";
+  return (
+    c.status === "Active" ||
+    "this card is " + c.status.toLowerCase() + ", so " + what + " closed"
+  );
+};
+// JF-53: a new version — the person who first shared the file or a project manager, from a place they can open, while
+// its space is active; never evidence (it has its own review)
+const docReplaceGuard = (d) => {
+  const p = byId("projects", d.id);
+  const x = p && docCanOpen(p) && docFind(p, d.k);
+  return (x && docCanReplace(p, x)) || "only the person who shared this file or a project manager uploads a new version, while its space is active";
+};
+// JF-53: filing a file in another folder by reference — never evidence or Rope Team content; a Private file only by
+// the person who shared it or a project manager; and only into folders the person may add to
+const docRefGuard = (d) => {
+  const p = byId("projects", d.id);
+  const x = p && docCanOpen(p) && docFind(p, d.k);
+  if (!(x && docCanRef(p, x))) return "this file cannot be filed elsewhere by you";
+  return !d.to || docRefTargets(p, x.fid).some(([v]) => v === d.to) || "you cannot add files to that folder";
+};
+// JF-56: who may declare a conflict on evidence that is still under review
+const evRecuseOk = (d) => {
+  const e = byId("evidence", d.id);
+  if (!e || !evPending(e) || e.owner === myId()) return "there is nothing for you to recuse from";
+  if ((e.recusals || []).some((r) => r.pid === myId())) return "you have already recused from this evidence";
+  const revr = evRevAuth(myId(), evCtx(e)) && (!e.assignee || e.assignee === myId());
+  const ms = S.rooms.some((x) => (x.milestones || []).some((m) => msItems(m).some((it) => it.ev === e.id && msToReview(it) && (msStewards(x).includes(myId()) || it.alt === myId()))));
+  return revr || ms || "only the reviewer of this evidence can recuse from it";
+};
+// JF-59: one rule for both Harvest forms (see views/evidence.js hvDecideWhy)
+const hvActGuard = (x, act) => {
+  if (!x) return "Learning Harvest not found";
+  if (!["Draft", "Review"].includes(x.state)) return "this Learning Harvest can no longer be edited";
+  if (["approve", "reject"].includes(act)) return hvDecideWhy(x) || true;
+  if (act === "review" && x.state !== "Draft") return "this Learning Harvest is already in review";
+  return x.by === myId() || hvCompleter(x) || "only the person who started the Harvest, or an authorised completer, edits it";
+};
+const hvContribGuard = (x) =>
+  (!!x && ["Draft", "Review"].includes(x.state) && hvMember(x)) ||
+  "only the people of this space contribute, while the Harvest is open";
 const G = {
   // projects
   // Accepting or asking again needs the project submitted, or the owner's reply to the last clarification request.
@@ -95,9 +152,47 @@ const G = {
     (role() === "A" && byId("projects", d.id)?.stewards.length === 0) ||
     "only an Organization Admin assigns the reviewer, and only while the project has none",
   // circles
-  circleState: (d) =>
-    isFac(d.id) || "only the facilitator can change the Circle lifecycle",
-  pauseCircle: (d) => isFac(d.id) || "only the facilitator can pause a Circle",
+  // JF-31: pause and resume only; approval, return and closure have their own actions and authority.
+  circleState: (d) => {
+    const c = byId("circles", d.id);
+    return (
+      (c &&
+        isFac(d.id) &&
+        ((d.v === "Paused/Repair" && c.state === "Active") ||
+          (d.v === "Active" && c.state === "Paused/Repair"))) ||
+      "only the facilitator pauses an active Circle or resumes a paused one"
+    );
+  },
+  pauseCircle: (d) =>
+    (isFac(d.id) && byId("circles", d.id)?.state === "Active") ||
+    "only the facilitator can pause an active Circle",
+  circleSubmit: (d) =>
+    circleSubmitter(byId("circles", d.id)) ||
+    "only the person who proposed this draft Circle submits it",
+  circleApprove: (d) =>
+    circleReviewer(byId("circles", d.id)) ||
+    "only the facilitator or an Organization Admin approves a proposed Circle — never the person who proposed it",
+  circleReturn: (d) =>
+    circleReviewer(byId("circles", d.id)) ||
+    "only the facilitator or an Organization Admin returns a proposed Circle — never the person who proposed it",
+  cret: (d) => G.circleReturn(d),
+  circleComplete: (d) =>
+    (byId("circles", d.id)?.state === "Active" &&
+      circleCloser(byId("circles", d.id))) ||
+    "only the facilitator or an Organization Admin completes an active Circle",
+  ccomp: (d) => G.circleComplete(d),
+  circleArchive: (d) =>
+    (["Completed", "Paused/Repair"].includes(byId("circles", d.id)?.state) &&
+      circleCloser(byId("circles", d.id))) ||
+    "only the facilitator or an Organization Admin archives a completed or paused Circle",
+  carc: (d) => G.circleArchive(d),
+  circleInvite: (d) => {
+    const c = byId("circles", d.id);
+    return (
+      (c && c.state === "Active" && memberRec(c)?.status === "Invited") ||
+      "there is no open invitation to this Circle"
+    );
+  },
   memSet: (d) =>
     d.kind && d.kind !== "circles"
       ? true
@@ -281,29 +376,48 @@ const G = {
   },
   roomDecline: () =>
     ["F", "A"].includes(role()) || canCreateRoom() || "not permitted",
-  joinDecide: () =>
-    ["F", "A"].includes(role()) ||
-    "only a Faculty/Steward or Organization Admin approves elevated joins",
+  // joinDecide: see further down (JF-46 explicit approval)
   roomMem: (d) =>
     roomLead(d.r) || "only the project lead can change membership",
   roomInviteNew: (d) => roomLead(d.r) || "only the project lead can invite",
+  rin: (d) => roomLead(d.r) || "only the project lead can invite",
   roomClose: (d) =>
     roomLead(d.r) || "only the project lead can close the workspace",
   // opportunities & matching
-  cardState: (d) =>
-    byId("cards", d.id)?.owner === myId() ||
-    "only the card owner can change its status",
-  nominate: () => role() === "F" || "only a steward can nominate a match",
+  // JF-39: the card state machine lives here, not only on screen. Owner only, along CARD_FLOW (views/opportunities.js):
+  // closed cards (Fulfilled/Closed, Withdrawn, Expired) are never republished, and nothing resumes past its expiry date.
+  cardState: (d) => {
+    const c = byId("cards", d.id);
+    if (!c || c.owner !== myId())
+      return "only the card owner can change its status";
+    if (!(CARD_FLOW[c.status] || []).includes(d.v))
+      return CARD_CLOSED.includes(c.status)
+        ? "this card is " + c.status.toLowerCase() + " — a closed card cannot be republished or changed"
+        : "a " + c.status.toLowerCase() + " card cannot move to " + d.v;
+    if (d.v === "Active" && c.expires < today())
+      return "the expiry date has passed — edit the card first";
+    return true;
+  },
+  nominate: (d) => cardOpenFor(d.id, "nominations are", true),
+  nom: (d) => cardOpenFor(d.id, "nominations are", true),
   interest: (d) => {
     const c = byId("cards", d.id);
+    if (c && c.status !== "Active" && cardReadable(c))
+      return "this card is " + c.status.toLowerCase() + ", so it is not taking interest";
     return (
       (c &&
         c.status === "Active" &&
+        cardVisible(c) &&
         c.owner !== myId() &&
         !c.interest.includes(myId())) ||
       "you cannot express interest in this card"
     );
   },
+  // Route B only on an Active card the person can see
+  routeB: (d) =>
+    ["P", "C", "F", "M"].includes(role())
+      ? cardOpenFor(d.id, "direct collaboration is")
+      : "direct collaboration is proposed by a programme member from an opportunity",
   mbState: (d) => {
     const m = byId("matches", d.id);
     return (
@@ -369,24 +483,39 @@ const G = {
     );
   },
   rb: (d) =>
-    (["P", "C", "F", "M"].includes(role()) && !!byId("cards", d.id)) ||
-    "direct collaboration is proposed by a programme member from an opportunity",
+    ["P", "C", "F", "M"].includes(role())
+      ? cardOpenFor(d.id, "direct collaboration is")
+      : "direct collaboration is proposed by a programme member from an opportunity",
+  // the invited person may always decline; accepting needs the card to be Active (JF-39)
   rbDecide: (d) => {
     const c = byId("cards", d.c);
     const p = c && (c.proposals || []).find((x) => x.id === d.id);
+    if (!p || p.to !== myId() || p.status !== "Awaiting consent" || !["Accepted", "Declined"].includes(d.v))
+      return "only the invited party can respond";
     return (
-      (p && p.to === myId() && p.status === "Awaiting consent") ||
-      "only the invited party can respond"
+      d.v === "Declined" ||
+      c.status === "Active" ||
+      "this card is " + c.status.toLowerCase() + ", so direct collaboration cannot be accepted"
     );
   },
   // evidence
+  // JF-56: an active Evidence Review Authority (Reviewer bundle inside its dates), with no conflict, to whom the
+  // item is assigned (or who picks up an unassigned one)
   evr: (d) => {
     const e = byId("evidence", d.id);
+    if (!e) return "evidence not found";
+    if (!evRevAuth(myId(), evCtx(e)))
+      return "only an active Evidence Review Authority (the Reviewer bundle, inside its active dates) reviews evidence";
+    const c = evConflict(e, myId());
+    if (c) return "you " + c + ", so you cannot review it — it goes to another eligible reviewer";
     return (
-      (e && e.owner !== myId() && hasB("Reviewer")) ||
-      "only a person holding the Reviewer bundle, who is not the submitter, can review evidence"
+      !e.assignee || e.assignee === myId() ||
+      "this evidence is assigned to " + P(e.assignee).name + " for review"
     );
   },
+  // recusal: the assigned (or eligible) reviewer, or a Steward / routed reviewer of a milestone it is waiting on
+  evRecuse: (d) => evRecuseOk(d),
+  evrc: (d) => evRecuseOk(d),
   evResub: (d) =>
     byId("evidence", d.id)?.owner === myId() ||
     "only the submitter can resubmit",
@@ -439,20 +568,32 @@ const G = {
     d.v === "Released"
       ? (isReleaseReviewer() && hvCtx(byId("harvests", d.id) || {}) === ctxId()) ||
         "only an Organization Admin of this context authorises a public or funder release"
-      : canComplete() ||
-        "only an authorised Facilitator, Reviewer or Project Lead can request release",
-  hvCand: () =>
-    canComplete() ||
-    "only an authorised Facilitator, Reviewer or Project Lead can offer candidates",
+      : (hvDone(byId("harvests", d.id)) && hvCompleter(byId("harvests", d.id))) ||
+        "only an authorised Facilitator, Reviewer or Project Lead can request release, after approval",
+  hvCand: (d) =>
+    (hvDone(byId("harvests", d.id)) && hvCompleter(byId("harvests", d.id))) ||
+    "only an authorised Facilitator, Reviewer or Project Lead can offer candidates, after approval",
+  // JF-59: the general Harvest form — edits by the creator or an authorised completer while Draft or Review;
+  // send for review from Draft; approve / reject by an authorised completer who is not the creator, once in Review
+  hve: (d) => hvActGuard(byId("harvests", d.id), d.act),
+  // contributions (dissent included) from the people of the space while the Harvest is open
+  hvContrib: (d) => hvContribGuard(byId("harvests", d.id)),
+  hc: (d) => hvContribGuard(byId("harvests", d.id)),
   // pathway & profile
-  pwReview: () =>
-    hasB("Reviewer") ||
-    "only an authorised Reviewer approves custom or AI-drafted pathways",
-  // Recommend Pathways: only the participant activates a recommendation; recommenders never activate it
-  pwAccept: (d) =>
-    (byId("pathways", d.id)?.pid === myId() &&
-      byId("pathways", d.id).state === PW_REC) ||
-    "only the participant accepts a pathway recommended to them",
+  // Same rule as pwDec: an authorised Reviewer in the context, never the author or the participant.
+  pwReview: (d) => G.pwDec(d),
+  pwr: (d) => G.pwDec(d),
+  // Recommend Pathways: only the participant activates a recommendation; recommenders never activate it. A custom or
+  // out-of-rules pathway also needs a recorded Reviewer approval, whoever recommended it (JF-23).
+  pwAccept: (d) => {
+    const p = byId("pathways", d.id);
+    if (!(p && p.pid === myId() && p.state === PW_REC))
+      return "only the participant accepts a pathway recommended to them";
+    return (
+      pwApprovedOk(p) ||
+      "this pathway needs an authorised Reviewer's approval before it can be accepted"
+    );
+  },
   pwChange: (d) =>
     (byId("pathways", d.id)?.pid === myId() &&
       byId("pathways", d.id).state === PW_REC) ||
@@ -542,41 +683,48 @@ const G = {
     role() === "A" ||
     "only the programme or institution changes seats; sponsors see seat counts only",
   // administration
-  roleDecide: (d) => {
-    const a = byId("assign", d.id);
-    return (a && role() === "A") || "only an Organization Admin approves roles";
-  },
-  userManage: (d) => {
-    const a = byId("assign", d.id);
-    return (
-      (a && role() === "A") || "you can manage users only in your own context"
-    );
-  },
-  userStatus: (d) => {
-    const a = byId("assign", d.id);
-    return (a && a.pid !== myId() && role() === "A") || "not permitted";
-  },
+  // JF-10: an Organization Admin acts only on role assignments in the context they are working in. Another
+  // context's assignment is reported as not found, never as forbidden (same rule as invitations).
+  userManage: (d) =>
+    ownAsg(d.id) || "user not found in this organization",
+  userStatus: (d) =>
+    (ownAsg(d.id) && byId("assign", d.id).pid !== myId()) ||
+    "user not found in this organization",
+  // membership in this context: suspend or lift, never your own, never a Platform Administrator
+  memberSuspend: (d) =>
+    ownMember(d.pid) || "user not found in this organization",
+  msus: (d) => ownMember(d.pid) || "user not found in this organization",
+  memberLift: (d) =>
+    (ownMember(d.pid) && !!ctxSusp(d.pid, ctxId())) ||
+    "there is no suspension to lift in this organization",
   // user accounts: Organization Admin only; never their own or a Platform Administrator's account
   userNew: () => role() === "A" || "only an Organization Admin adds users",
   userView: (d) =>
-    (role() === "A" && !!byId("assign", d.id)) ||
-    "only an Organization Admin views user accounts",
+    ownAsg(d.id) || "user not found in this organization",
   userEdit: (d) =>
-    (role() === "A" &&
-      !!byId("assign", d.id) &&
-      userEditable(byId("assign", d.id).pid)) ||
+    (ownAsg(d.id) && userEditable(byId("assign", d.id).pid)) ||
     "you cannot edit this account",
   usr: (d) =>
     (role() === "A" &&
       (!d.aid ||
-        (!!byId("assign", d.aid) &&
-          userEditable(byId("assign", d.aid).pid)))) ||
+        (ownAsg(d.aid) && userEditable(byId("assign", d.aid).pid)))) ||
     "you cannot edit this account",
+  // Deleting closes the whole identity, so an Organization Admin may do it only when every role the person holds is
+  // in this context. Someone who also belongs elsewhere is suspended here instead (JF-10).
   userDel: (d) =>
     (role() === "A" &&
-      S.people.some((p) => p.id === d.pid) &&
-      userEditable(d.pid)) ||
+      S.people.some((p) => p.id === d.pid && p.status !== "Deleted") &&
+      userEditable(d.pid) &&
+      S.assign.some((a) => a.pid === d.pid && a.ctx === ctxId()) &&
+      (S.assign.every((a) => a.pid !== d.pid || a.ctx === ctxId()) ||
+        "this person also belongs to another organization: suspend their access here instead; only the Platform Administrator can close the whole account")) ||
     "you cannot delete this account",
+  // account state (global identity): Platform Administrator only, never their own account
+  acctStatus: (d) =>
+    (role() === "T" &&
+      d.pid !== myId() &&
+      S.people.some((p) => p.id === d.pid && p.status !== "Deleted")) ||
+    "only the Platform Administrator changes the state of a whole account",
   invNew: () => role() === "A" || "only administrators create invitations",
   // An Organization Admin invites only into, and manages only the invitations of, the tenant they are working in.
   // Another tenant's invitation is reported as not found, never as forbidden.
@@ -591,6 +739,9 @@ const G = {
   tinvAccept: (d) => tinvMine(d) || "there is no invitation to respond to",
   tinvReject: (d) => tinvMine(d) || "there is no invitation to respond to",
   cfg: () => role() === "A" || "only administrators change configuration",
+  // JF-90 layer 4: outcome indicators are recorded by the Organization Admin of the context, never derived.
+  ocNew: () => role() === "A" || "only an Organization Admin records outcome indicators",
+  oc: () => role() === "A" || "only an Organization Admin records outcome indicators",
   vote: (d) =>
     d.c
       ? true
@@ -602,6 +753,9 @@ const G = {
   packCfg: () =>
     role() === "A" || "only an Organization Admin configures packs",
   pkc: () => role() === "A" || "only an Organization Admin configures packs",
+  // JF-52: the programme's upload policy (size limit, approved types, share-link expiry)
+  uplcfg: () =>
+    role() === "A" || "only an Organization Admin sets the upload policy",
   votecfg: () =>
     role() === "A" ||
     "only an Organization Admin changes voting parameters (vote weight is frozen)",
@@ -658,8 +812,10 @@ const G = {
   roleDecide: (d) => {
     const a = byId("assign", d.id);
     return (
-      (a && a.pid !== myId() && role() === "A") ||
-      "only an Organization Admin approves roles — never their own"
+      (ownAsg(d.id) && a.pid !== myId()) ||
+      (a && a.ctx !== ctxId()
+        ? "user not found in this organization"
+        : "only an Organization Admin of this organization approves roles — never their own")
     );
   },
   aiRev: () =>
@@ -930,9 +1086,18 @@ Object.assign(G, {
   memSet: (d) =>
     spaceMgr(d.kind || "circles", d.c) ||
     "only the facilitator or project owner manages membership here",
-  memRole: (d) =>
-    spaceMgr(d.kind || "circles", d.c) ||
-    "only the facilitator or project owner assigns roles here",
+  memRole: (d, el) => {
+    if (!spaceMgr(d.kind || "circles", d.c))
+      return "only the facilitator or project owner assigns roles here";
+    // JF-46: in a workspace the facilitator role reviews and validates work, so a person without a Faculty/Steward
+    // platform role gets it only through an approved Reviewer / approver join, not by a role change
+    const x = d.kind === "rooms" && byId("rooms", d.c);
+    const m = x && x.members[d.i];
+    const to = el && el.value;
+    if (m && to === "Facilitator" && normRole(m.role) !== "Facilitator" && roleBase(ctxRole(m.pid, x.ctx) || "") !== "F")
+      return "the facilitator role here is an elevated role — it needs an approved Reviewer / approver join";
+    return true;
+  },
   inviteMem: (d) =>
     d.kind === "ropes"
       ? ropeInviter(byId("ropes", d.c)) ||
@@ -1175,19 +1340,21 @@ Object.assign(G, {
     sCan("rooms", byId("rooms", d.r), "review") ||
     hasB("Reviewer") ||
     "only a Reviewer can validate an evidence-linked milestone",
-  joinDecide: (d) =>
-    ["F", "A"].includes(role()) ||
-    roomLead(d.r) ||
-    "only a Faculty/Steward, Organization Admin or the project owner approves elevated joins",
-  // opportunity cards from a Circle
-  card: (d) => {
-    if (!d.from) return true;
-    const c = byId("circles", d.from);
+  // JF-46: an elevated join is approved explicitly by a Faculty/Steward or Organization Admin, never by the person
+  // who asked for it (the project lead or whoever invited), so no one grants elevated access on their own say-so
+  joinDecide: (d) => {
+    const x = byId("rooms", d.r);
+    const j = x && (x.joinReqs || []).find((y) => y.id === d.id);
+    if (!j || j.status !== "Pending" || !["Approved", "Declined"].includes(d.v))
+      return "there is no pending join request to decide";
+    if (!["F", "A"].includes(role()))
+      return "only a Faculty/Steward or Organization Admin approves elevated joins";
     return (
-      (c && (sCan("circles", c, "card") || isFac(c.id))) ||
-      "only contributing members of that Circle can create cards from it"
+      j.by !== myId() ||
+      "you asked for this join, so another Faculty/Steward or Organization Admin approves it"
     );
   },
+  // opportunity cards: see `card` further down (create from a Circle, edit by the owner, lifecycle rules)
   // pathway
   // step rules (FR-F04): a Blocked step (prerequisite still open) cannot be completed — see pwStepGuard in views/profile.js
   pwStep: (d) => pwStepGuard(d),
@@ -1467,11 +1634,18 @@ Object.assign(G, {
   eve: (d) =>
     evEditable(byId("evidence", d.id)) ||
     "only the owner edits evidence, while it is under review",
+  // JF-39: only the owner edits; a closed card is read-only; only a new card or a draft is published from the form
+  // (a Paused card is resumed with cardState, never republished by saving the form)
   card: (d) => {
-    if (d.id)
-      return (
-        byId("cards", d.id)?.owner === myId() || "only the card owner edits it"
-      );
+    if (d.id) {
+      const k = byId("cards", d.id);
+      if (!k || k.owner !== myId()) return "only the card owner edits it";
+      if (CARD_CLOSED.includes(k.status))
+        return "this card is " + k.status.toLowerCase() + " — a closed card cannot be edited or republished";
+      if (d.pub === "yes" && k.status !== "Draft")
+        return "only a draft is published from the form — use Resume on the card page";
+      return true;
+    }
     if (!d.from) return true;
     const c = byId("circles", d.from);
     return (
@@ -1503,12 +1677,8 @@ Object.assign(G, {
   msUnlink: (d) =>
     msOpen(d, (x) => activeMember("rooms", x.id) || msIsSteward(x)) ||
     "only members or the Steward remove evidence from an open milestone",
-  msRev: (d) =>
-    msRevOk(d) ||
-    "only the Steward reviews milestone evidence, and not their own",
-  msr: (d) =>
-    msRevOk(d) ||
-    "only the Steward reviews milestone evidence, and not their own",
+  msRev: (d) => msRevOk(d) || msRevWhy(d),
+  msr: (d) => msRevOk(d) || msRevWhy(d),
   msAchieve: (d) =>
     msOpen(d, msIsSteward) || "only the Steward validates a milestone",
 });
@@ -1523,7 +1693,18 @@ function msRevOk(d) {
   const m = x && x.milestones.find((y) => y.id === d.id);
   const it = m && msItems(m)[+d.i];
   const e = it && byId("evidence", it.ev);
-  return !!e && msOpen(d, msIsSteward) && e.owner !== myId() && msToReview(it);
+  // JF-56: a non-conflicted Steward of the project, or the reviewer it was routed to when every Steward is conflicted
+  return !!e && msOpen(d, (x) => msCanReview(x, it)) && msToReview(it);
+}
+function msRevWhy(d) {
+  const x = byId("rooms", d.r);
+  const m = x && x.milestones.find((y) => y.id === d.id);
+  const it = m && msItems(m)[+d.i];
+  const e = it && byId("evidence", it.ev);
+  const c = e && evConflict(e, myId());
+  return c && (msStewards(x).includes(myId()) || it.alt === myId())
+    ? "you " + c + ", so you cannot review it — it goes to another eligible reviewer"
+    : "only a Steward of the project with no conflict reviews milestone evidence";
 }
 // ---- deliverables → evidence → Learning Harvest → profile evolution
 Object.assign(G, {
@@ -1537,23 +1718,7 @@ Object.assign(G, {
   hv2: (d) => {
     const x = byId("harvests", d.id);
     if (!x || x.tpl !== 2) return "Learning Harvest not found";
-    if (!["Draft", "Review"].includes(x.state))
-      return "this Learning Harvest can no longer be edited";
-    const o = byId("rooms", x.scope);
-    const comp = canComplete() && ((o && memberOf(o)) || role() === "F");
-    if (["approve", "reject"].includes(d.act)) {
-      if (x.subject === myId())
-        return "a Learning Harvest is approved or rejected by someone other than the person it is about";
-      return (
-        comp ||
-        "only an authorised Faculty/Steward, Reviewer or Project Lead approves or rejects a Learning Harvest"
-      );
-    }
-    return (
-      x.by === myId() ||
-      comp ||
-      "only the person the Harvest is for, or an authorised reviewer, edits it"
-    );
+    return hvActGuard(x, d.act);
   },
   evoDecide: (d) =>
     byId("evolution", d.id)?.pid === myId() ||
@@ -1668,8 +1833,21 @@ Object.assign(G, {
   docDl: (d) => {
     const p = byId("projects", d.id);
     const x = docCanOpen(p) && docFind(p, d.k);
-    return (x && docSees(p, x)) || "this file is Private to its space";
+    if (!(x && docSees(p, x))) return "this file is Private to its space";
+    // JF-53: an earlier version is downloaded through a place the person can open, and must exist
+    const fl = d.v && fileGet(x.fid);
+    return !d.v || (!!fl && fl.versions.some((v) => v.ver === +d.v)) || "that version does not exist";
   },
+  // JF-53: versions and references are governed by the place the file is opened from
+  docHist: (d) => {
+    const p = byId("projects", d.id);
+    const x = docCanOpen(p) && docFind(p, d.k);
+    return (x && x.fid && docSees(p, x)) || "this file is Private to its space";
+  },
+  docVer: (d) => docReplaceGuard(d),
+  docNv: (d) => docReplaceGuard(d),
+  docRef: (d) => docRefGuard(d),
+  docRf: (d) => docRefGuard(d),
   docShare: (d) => {
     const p = byId("projects", d.id);
     const x = docCanOpen(p) && docFind(p, d.k);
@@ -1825,6 +2003,20 @@ const spDspNewOk = (d) => {
   const y = spPays(x).find((z) => z.id === d.s);
   return (d.kind === "pay" && !!y && y.status !== "Disputed" && !(y.ms && dspOn(x, "ms", y.ms))) || "a payment dispute is about a payment record that is not already disputed";
 };
+// Evidence attached to a sponsor milestone, viewed read-only by the two sides, workspace members and Organization Admins.
+const spEvOk = (d) => {
+  const [x, p, m] = spMsOf(d);
+  if (!m || !(spSide(p) || memberOf(x) || (role() === "A" && inCtx(p)))) return "only the sponsor, the project team and Organization Admins see a sponsor milestone’s evidence";
+  return spMsEvs(x, m).some((v) => v.e.id === d.e) || "this evidence is not attached to the milestone";
+};
+// The project owner confirms a payment received: one the sponsor marked Sent, or one that is Due; never a disputed one.
+const spPayRecvOk = (d) => {
+  const [x, p] = spX(d);
+  const y = x && spPays(x).find((z) => z.id === d.p);
+  if (!spLive(x, p) || !spOwner(p) || !y) return "only a project owner confirms a payment received, while the workspace is active";
+  if (y.status === "Disputed" || dspOn(x, "pay", y.id) || (y.ms && dspOn(x, "ms", y.ms))) return "a disputed payment changes only through its dispute";
+  return !!spdRec(p, y, "sponsor") || y.status === "Due" || !!y.ow || "a payment is confirmed once the sponsor marks it sent or it is due";
+};
 const spDsp = (d) => byId("disputes", d.id);
 const spListingOk = (p) => spSponsor(p) && spListing(p) && p.status !== "Withdrawn";
 // The sponsor records a payment made against a due payment (or a new advance), never against a disputed one.
@@ -1865,6 +2057,16 @@ Object.assign(G, {
     const c = byId("spchats", d.id);
     return (!!c && c.state === "Active" && spaSees(c)) || "only the sponsor and shortlisted people post, while the discussion is open";
   },
+  // the same project discussion, posted to from a shortlisted member's Messages (views/messages.js)
+  spmsg: (d) => {
+    const c = byId("spchats", d.id);
+    return (!!c && c.state === "Active" && spaMember(c)) || "only the sponsor and shortlisted people post, while the discussion is open";
+  },
+  spmReply: (d) => {
+    const c = byId("spchats", d.c);
+    const m = c && c.msgs.find((x) => x.id === d.id);
+    return (!!m && !m.sys && m.by !== myId() && c.state === "Active" && spaMember(c)) || "you reply to other people’s messages";
+  },
   spaFinal: (d) => (spaOpen(spP(d)) && spaShort(spP(d)).length > 0) || "only the sponsor finalizes the team, once, from the shortlist",
   spaf: (d) => (spaOpen(spP(d)) && spaShort(spP(d)).length > 0) || "only the sponsor finalizes the team, once, from the shortlist",
   // The Sponsor's project page (sponsor.js, route sponsorproject)
@@ -1898,6 +2100,9 @@ Object.assign(G, {
   spmi: spMsReview,
   spMsApprove: spMsReview,
   spma: spMsReview,
+  spEv: spEvOk,
+  spPayRecv: spPayRecvOk,
+  sppr: spPayRecvOk,
   spPayNew: spPayOk,
   sppn: spPayOk,
   spPayUpd: spPayOk,
@@ -1930,6 +2135,15 @@ const closedRoomIn = (d) => {
   }
   return null;
 };
+// JF-31: a Draft or Pending Review Circle cannot operate. Only the proposal actions (and editing it) are allowed.
+const CIRCLE_PRE_OK = ["circleSubmit", "circleApprove", "circleReturn", "cret", "spaceEdit", "spe", "docDl", "docZip", "fakeDl"];
+const unapprovedCircleIn = (d) => {
+  for (const v of [d.c, d.r, d.x, d.id]) {
+    const o = v && byId("circles", v);
+    if (o && circleUnapproved(o)) return o;
+  }
+  return null;
+};
 // Wrap handlers. Same key may exist in A (click) and F (form submit); both are guarded.
 Object.keys(G).forEach((k) => {
   [A, F].forEach((T) => {
@@ -1940,9 +2154,12 @@ Object.keys(G).forEach((k) => {
         let r;
         try {
           const cl = !RO_OK.includes(k) && closedRoomIn(d || {});
+          const un = !CIRCLE_PRE_OK.includes(k) && unapprovedCircleIn(d || {});
           r = cl
             ? "this " + OBJ_LABEL(cl[0]) + " is closed, so it is read-only"
-            : G[k](d || {});
+            : un
+              ? "this Circle is not approved yet, so it cannot be used"
+              : G[k](d || {}, ...rest); // rest: the changed element or submitted form, when a rule needs it
         } catch (e) {
           r = "not permitted";
         }

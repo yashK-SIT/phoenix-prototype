@@ -1214,3 +1214,28 @@ div.adm-id {
 .adm-link code {
   overflow-wrap: anywhere;
 }
+
+/* ---------- JF-90: metric layers and outcome indicators ---------- */
+.adm-layers {
+  gap: var(--grid-gap);
+  min-width: 0;
+}
+.adm-layer .adm-val {
+  white-space: normal;
+}
+.adm-layer .tbl td:last-child {
+  max-width: 260px;
+}
+.adm-oc {
+  padding: var(--s-3) 0;
+  border-top: 1px solid var(--line-soft);
+}
+.adm-oc:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.adm-oc-h {
+  gap: 8px;
+  align-items: center;
+  margin-bottom: var(--s-2);
+}

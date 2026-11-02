@@ -71,6 +71,47 @@ async function main() {
         const jlabels = await page.locator('section.journey .jlabel').allTextContents();
         ok.push(`${r.role} journey: ${jlabels.map((x) => x.trim()).filter(Boolean).join(' → ')}`);
       }
+      // JF-90: four labelled metric layers, no composite score, outcome indicators complete, pilot-learning label.
+      if (r.role === 'A') {
+        const pilot = 'Pilot learning, not impact proof';
+        const homeTxt = await page.locator('main').innerText();
+        if (!homeTxt.includes(pilot)) fails.push('A: home metrics card missing the pilot-learning label');
+        const reg = await page.evaluate(() => ({
+          live: metricRegistryProblems(),
+          unlayered: S.metrics.filter((m) => !['workflow', 'evidence', 'outputs'].includes(m.layer)).map((m) => m.name),
+          composite: metricRegistryProblems([{ name: 'Programme coherence', layer: 'workflow', def: 'Weighted blend of all metrics' }]).length,
+          combined: metricRegistryProblems([{ name: 'Blend', layer: 'workflow', def: 'x', combines: ['m1', 'm7'] }]).length,
+          derivedOutcome: metricRegistryProblems([{ name: 'Outcome from activity', layer: 'outcomes', def: 'x' }]).length,
+          incomplete: outcomeMissing({ name: 'x', def: 'y' }).length,
+        }));
+        if (reg.live.length) fails.push('A: metric registry breaks the no-composite rule: ' + reg.live.join('; '));
+        if (reg.unlayered.length) fails.push('A: metrics without a derived layer: ' + reg.unlayered.join(', '));
+        if (!reg.composite || !reg.combined || !reg.derivedOutcome) fails.push('A: no-composite check did not reject a composite, combined or activity-derived outcome metric');
+        if (reg.incomplete !== 7) fails.push('A: outcome completeness check expected 7 missing fields, got ' + reg.incomplete);
+        await page.click('aside.side a.nav[data-r="metrics"]');
+        await page.waitForSelector('.adm-report', { timeout: 5000 });
+        const rep = await page.locator('main').innerText();
+        const layers = ['1 · Workflow activity', '2 · Evidence confidence and review', '3 · Project outputs and visible wins', '4 · Real-world outcomes'];
+        const miss = layers.filter((l) => !rep.includes(l));
+        if (miss.length) fails.push('A: reports missing layers ' + miss.join(', '));
+        if (!rep.includes(pilot)) fails.push('A: reports missing the pilot-learning label');
+        if (/composite score:|coherence score:|impact score:/i.test(rep)) fails.push('A: reports show a composite score');
+        // the outcome form refuses an indicator with missing fields
+        const before = await page.evaluate(() => S.outcomes.length);
+        await page.click('[data-a="ocNew"]');
+        await page.click('form[data-f="oc"] button[type="submit"]');
+        const errs = await page.locator('form[data-f="oc"] .emsg').count();
+        const after = await page.evaluate(() => S.outcomes.length);
+        if (errs < 9 || after !== before) fails.push(`A: outcome form accepted an incomplete indicator (errors ${errs}, saved ${after - before})`);
+        else ok.push('A: four metric layers shown, pilot label present, no composite score, incomplete outcome refused');
+      }
+      if (r.role === 'S') {
+        await page.click('aside.side a.nav:has-text("Funder-safe reports")');
+        await page.waitForSelector('main .sp-tbl', { timeout: 5000 });
+        const txt = await page.locator('main').innerText();
+        if (!txt.includes('Pilot learning, not impact proof')) fails.push('S: funder-safe reports missing the pilot-learning label');
+        else ok.push('S: funder-safe reports labelled pilot learning, each signal with its layer');
+      }
       if (r.role === 'P') {
         await page.click('aside.side a.nav[data-r="board"]');
         await page.waitForSelector('#board-feed', { timeout: 5000 });

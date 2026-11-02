@@ -67,8 +67,10 @@ const canOpenSpace = (kind, o) =>
 // no mandatory sequence, and no space is ever converted into another.
 function stageTrack(p, hereKind) {
   if (!p) return "";
-  const steps = stageSteps(p);
-  const rets = openReturns(p);
+  const steps = stageSteps(p).map((s) =>
+    s.kind === "ropes" && ropeOutsider(p, s.o) ? { ...s, o: null, hidden: true } : s,
+  );
+  const rets = openReturns(p).filter((r) => !ropeHiddenId(r.to));
   const closed = p.stage === "Closed";
   return `<section class="journey" aria-label="Linked spaces"><div class="jhead"><span class="jtitle">${ic("link", 15)}Linked spaces</span><span class="cap jsum">${L(h(p.title), "project", { id: p.id }, "lnk")} · separate spaces · the project moves between them in any order · never converted</span></div><ol class="jsteps jsteps-free">${steps
     .map((s) => {
@@ -76,7 +78,8 @@ function stageTrack(p, hereKind) {
       const route_ = { circles: "circle", ropes: "rope", rooms: "room" }[
         s.kind
       ];
-      const name = s.o ? h(s.o.name) : "Not linked";
+      const hide = s.kind === "ropes" && ropeOutsider(p, s.o);
+      const name = hide ? h(ROPE_HIDDEN) : s.o ? h(s.o.name) : "Not linked";
       const link =
         s.o && canOpenSpace(s.kind, s.o) && !here
           ? L(name, route_, { id: s.o.id }, "lnk")
@@ -157,12 +160,16 @@ function stageGate(p, kind, o) {
     "gate-card",
   );
 }
+// JF-32: on a project's journey a person outside its Rope Team sees one neutral text for the Rope Team step, whether
+// or not one exists. The project owner and its Faculty/Steward are inside (they form and staff it).
+const ropeOutsider = (p, o) =>
+  o ? !ropeExists(o) : !(p.owner === myId() || (p.stewards || []).includes(myId()));
 // Send an issue to a linked Circle or Rope Team. Only the issue text crosses; the target keeps its own privacy.
 function backActions(kind, o) {
   if (!o || o.state !== "Active" || !memberOf(o)) return "";
   const tg = [
     ...linkedObjs(o.id, "circles"),
-    ...linkedObjs(o.id, "ropes"),
+    ...linkedObjs(o.id, "ropes").filter(ropeExists),
   ].filter((t) => t.state === "Active");
   const btns = tg.map((t) =>
     B(ic("refresh", 14) + "Send an issue to " + h(t.name), "returnTo", {
@@ -189,7 +196,7 @@ const reportAuthor = (kind, o) =>
       : sCan("rooms", o, "lead");
 const reportTargets = (o) =>
   SPACE_KINDS.flatMap((k) => linkedObjs(o.id, k)).filter(
-    (t) => t.state === "Active",
+    (t) => t.state === "Active" && !ropeHiddenId(t.id),
   );
 function reportsCard(p, kind, o) {
   if (!o) return "";
@@ -936,6 +943,9 @@ const RO_OK = [
   "pmv",
   "pmvConfirm",
   "fakeDl",
+  // JF-31: a Completed Circle can still be archived / closed by its closure authority
+  "circleArchive",
+  "carc",
 ];
 const RO_ROUTE = { circle: "circles", rope: "ropes", room: "rooms" };
 const roRoom = () => {

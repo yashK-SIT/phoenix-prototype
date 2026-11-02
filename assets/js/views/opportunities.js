@@ -1,4 +1,23 @@
 // ---------- OPPORTUNITY CARDS (E05) ----------
+// JF-39: card lifecycle. The owner moves a card only along these edges; guards.js enforces them (cardState, card).
+// Fulfilled/Closed, Withdrawn and Expired are terminal: never republished or edited, and read-only where still readable.
+const CARD_FLOW = {
+  Draft: ['Active'],
+  Active: ['Paused', 'Fulfilled/Closed', 'Withdrawn'],
+  Paused: ['Active', 'Withdrawn'],
+  'Fulfilled/Closed': [],
+  Withdrawn: [],
+  Expired: [],
+};
+const CARD_CLOSED = ['Fulfilled/Closed', 'Withdrawn', 'Expired'];
+const cardClosed = c => CARD_CLOSED.includes(c.status);
+// Owner-selected audience (JF-39). Drafts are seen by the owner only, whatever audience is chosen.
+const CARD_AUDIENCES = ['Circle members', 'Programme', 'Named users'];
+// Card geography (JF-39 / JF-40): country (required), continent (required), region (optional free text).
+const CONTINENTS = ['Africa', 'Asia', 'Europe', 'North America', 'South America', 'Oceania', 'Antarctica'];
+// Continent suggested for countries used in the sample data; anything else is chosen by the owner.
+const CONTINENT_HINT = { 'United Kingdom': 'Europe', 'United States': 'North America', India: 'Asia' };
+const cardPlace = c => [c.region, c.country, c.continent].filter(Boolean).map(h).join(' · ');
 // Audience rules. A card created from a Circle defaults to that Circle's members; the creator can widen it
 // to the whole programme or to named people.
 const cardVisible = c =>
@@ -26,16 +45,53 @@ const cardSteward = card => {
   const ci = card.from && byId('circles', card.from);
   return (ci && ci.facilitator) || (S.assign.find(x => x.ctx === card.ctx && roleBase(x.role) === 'F' && x.status === 'Active') || {}).pid;
 };
+// People already involved with a card: interest, a Match Brief (party or steward), a Route B record, or its steward.
+const cardInvolved = c =>
+  (c.interest || []).includes(myId()) ||
+  (c.proposals || []).some(pp => pp.from === myId() || pp.to === myId()) ||
+  S.matches.some(m => m.card === c.id && [m.a, m.b, m.steward].includes(myId())) ||
+  cardSteward(c) === myId();
+// Who may open a card. Drafts: the owner only. Active/Paused: the owner's chosen audience. Closed cards: the owner and
+// the people involved with it. Faculty/Stewards and Organization Admins read every non-draft card in the context
+// (WSS product owner to confirm this is acceptable — JF-39).
+const cardReadable = c =>
+  !!c &&
+  (c.owner === myId() ||
+    (inCtx(c) &&
+      c.status !== 'Draft' &&
+      (['A', 'F'].includes(role()) || (cardClosed(c) ? cardInvolved(c) : cardVisible(c)))));
+// People a published card is announced to (a programme-wide card is discoverable but not pushed to everyone).
+const cardAudience = c => {
+  const ci = c.from && byId('circles', c.from);
+  return c.vis === 'Named users' ? [...(c.named || [])] : c.vis === 'Circle members' && ci ? ci.members.filter(m => m.status === 'Active').map(m => m.pid) : [];
+};
+// A card that closes ends what is still pending on it: Match Briefs before introduction and Route B invitations
+// awaiting consent. Introductions already made and accepted collaborations are kept.
+function endCardFlows(c, how) {
+  const st = how === 'expired' ? 'Expired' : 'Withdrawn';
+  S.matches
+    .filter(m => m.card === c.id && m.status !== 'Introduced' && !MB_ENDED.includes(m.status))
+    .forEach(m => {
+      m.status = st;
+      m.outcome = 'Proposal ended — card ' + how + ' before mutual consent';
+    });
+  (c.proposals || [])
+    .filter(pp => pp.status === 'Awaiting consent')
+    .forEach(pp => {
+      pp.status = st;
+      pp.outcome = 'Direct collaboration ended — card ' + how + ' before the invited person responded';
+      [pp.from, pp.to].forEach(p => notify(p, 'Direct collaboration on “' + c.title + '” ended: the card is ' + how, 'card', { id: c.id }));
+      audit('Route B ended', c.id, pp.from + '→' + pp.to + ' · card ' + how);
+    });
+}
 function expireCards() {
   S.cards.forEach(c => {
-    if (c.status === 'Active' && c.expires < today()) {
+    // a paused card also expires: it can no longer be resumed after its expiry date
+    if (['Active', 'Paused'].includes(c.status) && c.expires < today()) {
+      const from = c.status;
       c.status = 'Expired';
-      S.matches
-        .filter(m => m.card === c.id && m.status !== 'Introduced' && !MB_ENDED.includes(m.status))
-        .forEach(m => {
-          m.status = 'Expired';
-          m.outcome = 'Proposal ended — card expired before mutual consent';
-        });
+      endCardFlows(c, 'expired');
+      audit('Card state', c.id, from + ' → Expired · expiry date ' + c.expires + ' passed');
     }
   });
   // a consent request nobody completed in time ends the proposal (no introduction, nothing released)
@@ -54,7 +110,8 @@ const oppKind = k => `<span class="opp-k opp-k-${(OPP_KIND[k] || [])[1] || 'opp'
 route('opportunities', 'opportunities', () => {
   expireCards();
   const r = role();
-  const list = S.cards.filter(c => inCtx(c) && (cardVisible(c) || r === 'A' || r === 'F'));
+  // other people's drafts are never listed, not even for Faculty/Stewards or Admins
+  const list = S.cards.filter(c => inCtx(c) && (cardVisible(c) || (['A', 'F'].includes(r) && c.status !== 'Draft')));
   const t = tabs('opps', [
     ['discover', 'Discover'],
     ['mine', 'My cards', S.cards.filter(c => c.owner === myId()).length],
@@ -73,10 +130,12 @@ route('opportunities', 'opportunities', () => {
     card(t.cur === 'mine' ? 'Your cards' : 'Cards you can discover', '', dataView('opps:' + t.cur, {
       label: 'cards',
       items: f,
-      search: c => c.title + ' ' + c.desc + ' ' + c.cat + ' ' + (c.country || '') + ' ' + P(c.owner).name,
+      search: c => [c.title, c.desc, c.cat, c.country, c.region, c.continent, P(c.owner).name].filter(Boolean).join(' '),
       searchLabel: 'Search cards',
       quick: { label: 'Type', options: ['Need', 'Offer', 'Asset', 'Opportunity'].map(k => [k, k]), test: (c, v) => c.kind === v },
       filters: [
+        // continent options come only from the cards this person can see in this list
+        ...(dvOpts(f, c => c.continent).length > 1 ? [{ key: 'continent', label: 'Continent', options: dvOpts(f, c => c.continent), test: (c, v) => c.continent === v }] : []),
         ...(dvOpts(S.cards, c => c.country).length > 1 ? [{ key: 'country', label: 'Country', options: dvOpts(S.cards, c => c.country), test: (c, v) => c.country === v }] : []),
         { key: 'cat', label: 'Category', options: dvOpts(S.cards, c => c.cat), test: (c, v) => c.cat === v },
         { key: 'status', label: 'Status', options: ['Draft', 'Active', 'Paused', 'Fulfilled/Closed', 'Withdrawn', 'Expired'].map(s => [s, s]), test: (c, v) => c.status === v },
@@ -90,7 +149,7 @@ route('opportunities', 'opportunities', () => {
         lead: `<span class="tile opp-tile-${(OPP_KIND[c.kind] || [])[1] || 'opp'}" aria-hidden="true">${ic((OPP_KIND[c.kind] || [])[0] || 'megaphone', 18)}</span>`,
         title: h(c.title),
         sub: `<span class="opp-desc">${h(c.desc)}</span>`,
-        meta: [h(c.cat), c.country ? h(c.country) : '', nm(c.owner) + (c.ownerOrg ? ' · ' + h(S.orgs.find(o => o.id === c.ownerOrg).name) : ''), audienceText(c), c.from ? `From ${L(cName(c.from), 'circle', { id: c.from })}` : '', 'Expires ' + fmt(c.expires)],
+        meta: [h(c.cat), cardPlace(c), nm(c.owner) + (c.ownerOrg ? ' · ' + h(S.orgs.find(o => o.id === c.ownerOrg).name) : ''), audienceText(c), c.from ? `From ${L(cName(c.from), 'circle', { id: c.from })}` : '', 'Expires ' + fmt(c.expires)],
         badges: oppKind(c.kind) + pill(c.status),
         primary: L('Open', 'card', { id: c.id }, 'btn btn-s btn-sm'),
       }),
@@ -123,14 +182,25 @@ route('newcard', 'opportunities', () => {
   if (src && !memberOf(src) && !isFac(src.id)) return deniedView('circles');
   // only the card owner edits it
   if (e && e.owner !== myId()) return deniedView('opportunities');
-  if (e && !UI.form.card) UI.form.card = { ...e };
-  if (!e && src && !UI.form.card) UI.form.card = { vis: 'Circle members', project: src.project && byId('projects', src.project)?.owner === myId() ? src.project : '' };
+  // a closed card is read-only (JF-39): no edit form, and the guard refuses a save
+  if (e && cardClosed(e))
+    return empty('megaphone', 'This card is ' + e.status.toLowerCase(), 'A closed card cannot be edited or republished. Create a new card if the need or offer comes back.', L('Back to the card', 'card', { id: e.id }, 'btn btn-s btn-sm'));
+  if (!UI.form.card) {
+    mselReset('card', 'named');
+    UI.form.card = e ? { ...e } : src ? { vis: 'Circle members', project: src.project && byId('projects', src.project)?.owner === myId() ? src.project : '' } : { vis: 'Programme' };
+  }
   const vis = fv('card', 'vis', src ? 'Circle members' : 'Programme');
+  const namedPool = eligiblePeople([myId()], ['P', 'F', 'M', 'C', 'O']);
   const myP = userProjects();
-  if (!UI.form.card) UI.form.card = {};
   if (!UI.form.card.project && myP.length) UI.form.card.project = (src && src.project && myP.some(p => p.id === src.project) ? src.project : myP[0].id);
   // a new card starts with its project’s country; it stays required and can be changed
   if (!e && UI.form.card.country == null) UI.form.card.country = (byId('projects', UI.form.card.project) || {}).country || '';
+  if (UI.form.card.continent == null) UI.form.card.continent = CONTINENT_HINT[UI.form.card.country] || '';
+  // a published (Active or Paused) card is edited in place; its status changes only from the card page
+  const live = e && e.status !== 'Draft';
+  const btns = live
+    ? `<span class="cap">Status stays ${h(e.status)}. Change it from the card page.</span><button class="btn btn-p" type="submit" name="pub" value="keep">Save changes</button>`
+    : `<button class="btn btn-s" type="submit" name="pub" value="no" ${myP.length ? '' : 'disabled'}>Save draft</button><button class="btn btn-p" type="submit" name="pub" value="yes" ${myP.length ? '' : 'disabled'}>Publish</button>`;
   return (
     head(
       e ? 'Edit card' : 'New Opportunity Card',
@@ -143,11 +213,15 @@ route('newcard', 'opportunities', () => {
  <div class="f2">${fi(f, 'kind', 'Card type', { type: 'select', req: true, ph: 'Select', opts: ['Need', 'Asset', 'Offer', 'Opportunity'] })}${fi(f, 'cat', 'Category', { type: 'select', req: true, ph: 'Select', opts: ['Volunteering', 'Expertise', 'Equipment', 'Skills', 'Livelihood', 'Funding', 'Learning', 'Community action'] })}</div>
  ${fi(f, 'title', 'Title', { req: true, max: 100 })}${fi(f, 'desc', 'Description — what is needed or offered, and availability conditions', { type: 'textarea', rows: 4, req: true })}
  <div class="np-sh"><span class="np-n" aria-hidden="true">2</span><h2 class="h3">Timing, place and project</h2></div>
- <div class="f2">${fi(f, 'expires', 'Expiry date', { type: 'date', req: true })}${countryField(f, { help: 'Where it is needed or offered. Filled in from the linked project; change it if it differs.' })}</div>
+ <div class="f2">${fi(f, 'expires', 'Expiry date', { type: 'date', req: true, help: 'On this date the card expires: it leaves discovery and cannot be resumed.' })}${countryField(f, { help: 'Where it is needed or offered. Filled in from the linked project; change it if it differs.' })}</div>
+ <div class="f2">${fi(f, 'continent', 'Continent', { type: 'select', req: true, ph: 'Select a continent', opts: CONTINENTS })}${fi(f, 'region', 'Region (optional)', { max: 80, ph: 'State, province, district or area', help: 'Narrows where it applies within the country.' })}</div>
  ${myP.length ? fi(f, 'project', 'Link to a project', { type: 'select', req: true, opts: myP.map(p => [p.id, p.title]) }) : ''}
  ${myP.length ? '' : banner('warn', 'No project to link', 'A card is linked to one of your projects. You can create one once you own, steward or belong to a project.')}
+ <div class="np-sh"><span class="np-n" aria-hidden="true">3</span><h2 class="h3">Who can discover it</h2></div>
+ ${fi(f, 'vis', 'Audience', { type: 'select', req: true, ch: 'reRender', opts: [['Circle members', src ? 'Members of ' + src.name + ' (default)' : 'Members of Circles I share'], ['Programme', 'Everyone in this programme'], ['Named users', 'Named people only']], help: 'Only this audience can discover the card or express interest in it. A draft is visible to you only.' + (src ? ' Cards from a Circle start with that Circle’s members; you can widen the audience.' : '') })}
+ ${vis === 'Named users' ? msel(f, 'named', 'Named people who can discover it', namedPool, (e && e.named) || [], { req: true, help: 'Only these people (and you) see the card.' }) : ''}
  ${src ? banner('info', 'Created from ' + h(src.name), 'The Circle stays intact and the card links back to it. Match Briefs from this card are reviewed by the Circle’s facilitator, ' + nm(src.facilitator) + '.') : ''}
- <div class="actions">${L('Cancel', 'opportunities', {}, 'btn btn-g')}<div class="row"><button class="btn btn-s" type="submit" name="pub" value="no" ${myP.length ? '' : 'disabled'}>Save draft</button><button class="btn btn-p" type="submit" name="pub" value="yes" ${myP.length ? '' : 'disabled'}>Publish</button></div></div></form>`
+ <div class="actions">${L('Cancel', e ? 'card' : 'opportunities', e ? { id: e.id } : {}, 'btn btn-g')}<div class="row">${btns}</div></div></form>`
   );
 });
 F.card = d => {
@@ -159,14 +233,22 @@ F.card = d => {
       desc: ['req', ['min', 20]],
       expires: ['req', 'date'],
       country: countryRules(),
+      continent: [['req', 'Choose the continent.'], ['fn', { f: v => CONTINENTS.includes(v), m: 'Choose a continent from the list.' }]],
+      vis: [['req', 'Choose who can discover the card.'], ['fn', { f: v => CARD_AUDIENCES.includes(v), m: 'Choose an audience from the list.' }]],
+      named: [['fn', { f: (v, x) => x.vis !== 'Named users' || [].concat(x.named || []).filter(Boolean).length > 0, m: 'Choose at least one person.' }]],
       project: [['req', 'Choose the project this card is for.'], ['fn', { f: v => userProjects().some(p => p.id === v), m: 'Choose one of your projects.' }]],
     })
   )
     return render();
   if (d.from && !byId('circles', d.from)) d.from = '';
   let c = d.id && byId('cards', d.id);
+  const was = c ? c.status : null;
+  // who already had it in their audience, so an edit to a live card notifies only people newly added
+  const before = was === 'Active' ? cardAudience(c) : [];
+  const audLabel = x => x.vis + (x.vis === 'Named users' ? ' (' + (x.named || []).length + ')' : '');
+  const prevVis = c ? audLabel(c) : '';
   if (!c) {
-    c = { id: uid('oc'), owner: myId(), ownerOrg: me().org || null, ctx: ctxId(), interest: [] };
+    c = { id: uid('oc'), owner: myId(), ownerOrg: me().org || null, ctx: ctxId(), interest: [], created: today() };
     S.cards.push(c);
   }
   Object.assign(c, {
@@ -174,56 +256,74 @@ F.card = d => {
     cat: d.cat,
     title: d.title,
     desc: d.desc,
-    // the audience is no longer chosen: a card from a Circle reaches that Circle's members, otherwise the programme
-    vis: c.vis || (d.from || c.from ? 'Circle members' : 'Programme'),
+    // the owner chooses the audience (JF-39)
+    vis: d.vis,
+    named: d.vis === 'Named users' ? [].concat(d.named || []).filter(Boolean) : [],
     expires: d.expires,
     country: d.country,
+    continent: d.continent,
+    region: (d.region || '').trim(),
     project: d.project,
     from: d.from || c.from || null,
-    named: c.named || [],
-    status: d.pub === 'yes' ? 'Active' : 'Draft',
+    // only a new card or a draft is published from the form; a live card keeps its status (guards.js: card)
+    status: !was || was === 'Draft' ? (d.pub === 'yes' ? 'Active' : 'Draft') : was,
   });
-  audit('Opportunity Card ' + (c.status === 'Active' ? 'published' : 'saved'), c.id, c.title + ' · audience: ' + c.vis);
+  const nowVis = audLabel(c);
+  const published = c.status === 'Active' && was !== 'Active';
+  audit(
+    'Opportunity Card ' + (published ? 'published' : was && was !== 'Draft' ? 'edited' : 'saved'),
+    c.id,
+    c.title + ' · audience: ' + nowVis + (prevVis && prevVis !== nowVis && was !== 'Draft' ? ' (was: ' + prevVis + ')' : '') + ' · ' + [c.region, c.country, c.continent].filter(Boolean).join(', '),
+  );
   if (c.status === 'Active') {
+    cardAudience(c)
+      .filter(p => p !== myId() && !before.includes(p))
+      .forEach(p => notify(p, 'New ' + c.kind.toLowerCase() + ' for you: ' + c.title, 'card', { id: c.id }));
     const ci = c.from && byId('circles', c.from);
-    const aud =
-      c.vis === 'Named users'
-        ? c.named
-        : c.vis === 'Circle members' && ci
-          ? ci.members.filter(m => m.status === 'Active').map(m => m.pid)
-          : [];
-    aud.filter(p => p !== myId()).forEach(p => notify(p, 'New ' + c.kind.toLowerCase() + ' for you: ' + c.title, 'card', { id: c.id }));
-    if (ci) sysMsg(ci, me().name + ' published an Opportunity Card from this Circle: ' + c.title);
+    // the Circle chat hears about it only when its members are in the audience
+    if (ci && published && c.vis !== 'Named users') sysMsg(ci, me().name + ' published an Opportunity Card from this Circle: ' + c.title);
   }
   clearF('card');
   mselReset('card', 'named');
   save();
   go('card', { id: c.id });
-  toast(c.status === 'Active' ? 'Published.' : 'Saved as draft.');
+  toast(published ? 'Published.' : c.status === 'Draft' ? 'Saved as draft.' : 'Changes saved.');
 };
 route('card', 'opportunities', () => {
   expireCards();
   const c = byId('cards', UI.p.id);
   if (!c) return empty('megaphone', 'Not found', '');
-  if (!cardVisible(c) && !['A', 'F'].includes(role())) return deniedView('opportunities');
+  // JF-39: drafts are the owner's only; closed cards stay readable only for the owner and people involved with them
+  if (!cardReadable(c)) return deniedView('opportunities');
   const own = c.owner === myId();
   const r = role();
-  const st =
-    {
-      Draft: ['Active'],
-      Active: ['Paused', 'Fulfilled/Closed', 'Withdrawn'],
-      Paused: ['Active', 'Withdrawn'],
-      'Fulfilled/Closed': [],
-      Withdrawn: [],
-      Expired: [],
-    }[c.status] || [];
+  const st = CARD_FLOW[c.status] || [];
+  const closed = cardClosed(c);
+  const isActive = c.status === 'Active';
+  // why an action is unavailable on a card that is not Active
+  const why = c.status === 'Paused' ? 'The owner has paused this card. It reopens when the owner resumes it.' : c.status === 'Draft' ? 'This card is not published yet.' : 'This card is ' + c.status.toLowerCase() + ', so it is read-only.';
+  const offBtn = label => `<button class="btn btn-s btn-sm btn-block" type="button" disabled>${label}</button><p class="cap opp-note">${why}</p>`;
+  const stBtn = s =>
+    s === 'Withdrawn'
+      ? CB('Withdraw', 'cardState', { id: c.id, v: s }, 'Withdraw this card? It leaves discovery and cannot be republished. Pending Match Briefs and direct-collaboration invitations close.')
+      : s === 'Fulfilled/Closed'
+        ? CB('Mark fulfilled / closed', 'cardState', { id: c.id, v: s }, 'Mark this card fulfilled/closed? It leaves discovery and cannot be republished. Pending Match Briefs and direct-collaboration invitations close.')
+        : B(s === 'Active' ? (c.status === 'Paused' ? 'Resume' : 'Publish') : s === 'Paused' ? 'Pause' : s, 'cardState', { id: c.id, v: s }, s === 'Active' ? 'btn-p btn-sm' : 'btn-s btn-sm');
+  const stateNote = closed
+    ? banner('info', 'This card is ' + h(c.status.toLowerCase()), (c.status === 'Expired' ? 'It expired on ' + fmt(c.expires) + '. ' : '') + 'It no longer appears in discovery and is read-only: it cannot be edited or republished, and interest, nominations and direct collaboration are closed. Introductions already made are kept.')
+    : c.status === 'Paused'
+      ? banner('warn', 'Paused', 'The owner has paused this card. It cannot receive interest, nominations or direct collaboration until it is resumed. It still expires on ' + fmt(c.expires) + '.')
+      : c.status === 'Draft'
+        ? banner('info', 'Draft', 'Only you can see this card. Publish it to make it discoverable by its audience.')
+        : '';
   return (
     crumbsHtml([['Opportunities', 'opportunities'], [h(c.title)]]) +
-    `<div class="shead-main opp-head"><span class="tile opp-tile-${(OPP_KIND[c.kind] || [])[1] || 'opp'}" aria-hidden="true">${ic((OPP_KIND[c.kind] || [])[0] || 'megaphone', 20)}</span><div class="shead-t"><div class="shead-kind">${h(c.kind)} · ${h(c.cat)}</div><div class="row wrap opp-ttl"><h1 class="h1">${h(c.title)}</h1>${pill(c.status)}</div><div class="shead-meta"><span>${nm(c.owner)}</span><span>Expires ${fmt(c.expires)}</span></div>${c.from ? `<div class="row wrap opp-src"><span class="srole opp-srole">${ic('users', 13)}From Circle: <b>${cName(c.from)}</b></span><span class="srole opp-srole">${ic('eye', 13)}${audienceText(c)}</span></div>` : ''}</div></div>` +
-    `<div class="g12">${card('Details', '', dl([['Description', h(c.desc)], ['Owner', nm(c.owner) + (c.ownerOrg ? ' · ' + h(S.orgs.find(o => o.id === c.ownerOrg).name) : '')], ['Audience', audienceText(c)], ['Country', h(c.country || '—')], ['Expires', fmt(c.expires)], ['Linked project', c.project ? cName(c.project) : '—'], ['Created from', c.from ? (memberOf(byId('circles', c.from) || {}) || ['A', 'O', 'F'].includes(r) || byId('circles', c.from)?.visibility === 'Programme' ? L(cName(c.from), 'circle', { id: c.from }) : cName(c.from)) + ' <span class="cap">(Circle)</span>' : '—'], c.from && ['Steward for introductions', nm(cardSteward(c))], own && ['Expressions of interest', c.interest.map(nm).join(', ') || 'None yet']]), '', 'c8')}
- <aside class="c4 col opp-side">${own ? card('Manage', '', `<div class="col opp-stack">${B(ic('edit', 14) + 'Edit', 'go', { r: 'newcard', edit: c.id })}${st.map(s => (s === 'Withdrawn' ? CB('Withdraw', 'cardState', { id: c.id, v: s }, 'Withdraw this card? It leaves discovery and any pending Match Briefs close.') : B(s === 'Active' ? 'Publish / resume' : s, 'cardState', { id: c.id, v: s }))).join('')}</div>`) : ''}
- ${!own && c.status === 'Active' && r !== 'F' ? card('Interested?', '', c.interest.includes(myId()) ? banner('ok', 'You expressed interest', 'A steward reviews any introduction. Your contact details are not shared.') : B('Express interest', 'interest', { id: c.id }, 'btn-p btn-block') + `<p class="cap opp-note">This does not introduce you. A steward reviews a Match Brief and both sides consent first.</p>`) : ''}
- ${r === 'F' && c.status === 'Active' && (!c.from || cardSteward(c) === myId()) ? card('Steward', c.from ? 'You review introductions for this Circle’s cards.' : '', B('Nominate a match', 'nominate', { id: c.id }, 'btn-p btn-block')) : ''}
+    `<div class="shead-main opp-head"><span class="tile opp-tile-${(OPP_KIND[c.kind] || [])[1] || 'opp'}" aria-hidden="true">${ic((OPP_KIND[c.kind] || [])[0] || 'megaphone', 20)}</span><div class="shead-t"><div class="shead-kind">${h(c.kind)} · ${h(c.cat)}</div><div class="row wrap opp-ttl"><h1 class="h1">${h(c.title)}</h1>${pill(c.status)}</div><div class="shead-meta"><span>${nm(c.owner)}</span>${cardPlace(c) ? `<span>${cardPlace(c)}</span>` : ''}<span>${c.status === 'Expired' ? 'Expired' : 'Expires'} ${fmt(c.expires)}</span></div>${c.from ? `<div class="row wrap opp-src"><span class="srole opp-srole">${ic('users', 13)}From Circle: <b>${cName(c.from)}</b></span><span class="srole opp-srole">${ic('eye', 13)}${audienceText(c)}</span></div>` : ''}</div></div>` +
+    stateNote +
+    `<div class="g12">${card('Details', '', dl([['Description', h(c.desc)], ['Owner', nm(c.owner) + (c.ownerOrg ? ' · ' + h(S.orgs.find(o => o.id === c.ownerOrg).name) : '')], ['Audience', audienceText(c)], ['Country', h(c.country || '—')], ['Region', h(c.region || '—')], ['Continent', h(c.continent || '—')], ['Expires', fmt(c.expires)], ['Linked project', c.project ? cName(c.project) : '—'], ['Created from', c.from ? (memberOf(byId('circles', c.from) || {}) || ['A', 'O', 'F'].includes(r) || byId('circles', c.from)?.visibility === 'Programme' ? L(cName(c.from), 'circle', { id: c.from }) : cName(c.from)) + ' <span class="cap">(Circle)</span>' : '—'], c.from && ['Steward for introductions', nm(cardSteward(c))], own && ['Expressions of interest', c.interest.map(nm).join(', ') || 'None yet']]), '', 'c8')}
+ <aside class="c4 col opp-side">${own ? card('Manage', '', `<div class="col opp-stack">${closed ? offBtn(ic('edit', 14) + 'Edit') : B(ic('edit', 14) + 'Edit', 'go', { r: 'newcard', edit: c.id }) + st.map(stBtn).join('')}</div>`) : ''}
+ ${!own && r !== 'F' && c.status !== 'Draft' ? card('Interested?', '', c.interest.includes(myId()) ? banner('ok', 'You expressed interest', 'A steward reviews any introduction. Your contact details are not shared.' + (closed ? ' The card is now ' + h(c.status.toLowerCase()) + ', so anything still pending on it has ended.' : '')) : isActive ? B('Express interest', 'interest', { id: c.id }, 'btn-p btn-block') + `<p class="cap opp-note">This does not introduce you. A steward reviews a Match Brief and both sides consent first.</p>` : offBtn('Express interest')) : ''}
+ ${r === 'F' && c.status !== 'Draft' && (!c.from || cardSteward(c) === myId()) ? card('Steward', c.from ? 'You review introductions for this Circle’s cards.' : '', isActive ? B('Nominate a match', 'nominate', { id: c.id }, 'btn-p btn-block') : offBtn('Nominate a match')) : ''}
  ${(c.proposals || [])
    .filter(pp => pp.to === myId() || pp.from === myId())
    .map(pp =>
@@ -232,27 +332,22 @@ route('card', 'opportunities', () => {
        'No Match Brief. Recorded for audit: who, context, authority, consent and the resulting workspace.',
        rbRecord(c, pp) +
          (pp.to === myId() && pp.status === 'Awaiting consent'
-           ? `<div class="row opp-dr">${B('Decline', 'rbDecide', { c: c.id, id: pp.id, v: 'Declined' })}${B('Accept', 'rbDecide', { c: c.id, id: pp.id, v: 'Accepted' }, 'btn-p btn-sm')}</div>`
+           ? `<div class="row opp-dr">${B('Decline', 'rbDecide', { c: c.id, id: pp.id, v: 'Declined' })}${isActive ? B('Accept', 'rbDecide', { c: c.id, id: pp.id, v: 'Accepted' }, 'btn-p btn-sm') : `<button class="btn btn-s btn-sm" type="button" disabled>Accept</button>`}</div>${isActive ? '' : `<p class="cap opp-note">${why}</p>`}`
            : ''),
      ) + (pp.status === 'Accepted' ? introCard(viaOf('pp:' + c.id + ':' + pp.id)) : ''),
    )
    .join('')}
- ${r === 'P' || r === 'C' ? card('Direct collaboration (Route B)', 'Only with an already-known authorised collaborator.', B('Propose direct collaboration', 'routeB', { id: c.id })) : ''}</aside></div>`
+ ${(r === 'P' || r === 'C') && c.status !== 'Draft' ? card('Direct collaboration (Route B)', 'Only with an already-known authorised collaborator, and only while the card is active.', isActive ? B('Propose direct collaboration', 'routeB', { id: c.id }) : offBtn('Propose direct collaboration')) : ''}</aside></div>`
   );
 });
+// The transition itself is checked in guards.js (cardState): owner only, along CARD_FLOW, never past the expiry date.
 A.cardState = d => {
   const c = byId('cards', d.id);
   const from = c.status;
-  if (d.v === 'Active' && c.expires < today()) return deny('expiry date is in the past — edit the card first');
   c.status = d.v;
-  if (['Withdrawn', 'Fulfilled/Closed'].includes(d.v))
-    S.matches
-      .filter(m => m.card === c.id && m.status !== 'Introduced' && !MB_ENDED.includes(m.status))
-      .forEach(m => {
-        m.status = 'Withdrawn';
-        m.outcome = 'Proposal ended — card ' + d.v.toLowerCase() + ' before mutual consent';
-      });
+  if (CARD_CLOSED.includes(d.v)) endCardFlows(c, d.v.toLowerCase());
   audit('Card state', c.id, from + ' → ' + d.v);
+  toast(d.v === 'Active' ? (from === 'Paused' ? 'Resumed.' : 'Published.') : d.v === 'Paused' ? 'Paused. It cannot receive interest until you resume it.' : 'Card ' + d.v.toLowerCase() + '. It is now read-only.');
   ok();
 };
 // ---- Match Brief layout (Build-Freeze review §5.1): Why suggested → source fields → missing information →

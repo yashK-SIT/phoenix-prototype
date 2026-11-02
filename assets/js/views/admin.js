@@ -1,10 +1,7 @@
 // ---------- INVITATIONS & USERS (shared by Org Rep and Organization Admin) ----------
 function inviteTable(scopeCtx) {
   const inv = S.invites.filter((i) => !scopeCtx || i.ctx === scopeCtx);
-  inv.forEach((i) => {
-    if (["Pending", "Resent"].includes(i.status) && i.expires < today())
-      i.status = "Expired";
-  });
+  inv.forEach(invSweep); // Pending and Resent both expire (views/public.js)
   const cn = (i) => S.contexts.find((c) => c.id === i.ctx).name;
   const uniq = (xs) => [...new Set(xs)].filter(Boolean);
   const canResend = (i) => ["Pending", "Resent", "Expired"].includes(i.status);
@@ -66,8 +63,13 @@ function inviteTable(scopeCtx) {
           ? `${i.status} ${fmt(i.decided)}`
           : `Valid until ${fmt(i.expires)}`,
         `Invited by ${nm(i.by)}`,
+        ...(i.renew
+          ? [
+              `New invitation requested ${fmt(i.renew.at)} by ${h(i.renew.email)}${i.renew.msg ? ": “" + h(i.renew.msg) + "”" : ""}`,
+            ]
+          : []),
       ],
-      badges: pill(i.status),
+      badges: pill(i.status) + (i.renew ? pill("New invitation requested", "p-amber") : ""),
       primary: canResend(i)
         ? B("Resend", "invAct", { id: i.id, v: "Resent" })
         : "",
@@ -123,8 +125,10 @@ A.invAct = (d) => {
     e.setDate(e.getDate() + S.settings.inviteValidityDays);
     i.expires = e.toISOString().slice(0, 10);
     if (i.kind === "member") tinvNotify(i);
-    else i.token = "TKN-" + uid("R");
+    else i.token = "TKN-" + uid("R"); // the old link stops working
+    delete i.renew;
   }
+  if (d.v === "Revoked") delete i.renew;
   audit("Invitation " + d.v, i.id, i.email);
   toast("Invitation " + d.v.toLowerCase() + ".");
   ok();
@@ -465,10 +469,11 @@ function usersTable(ctxFilter, canEdit, crud) {
       cn(a) +
       " " +
       a.bundles.join(" "),
+    // the state that decides access (account, membership, context, then role), so a suspended person is not "Active"
     quick: {
       label: "Status",
-      options: uniq(as.map((a) => a.status)).map((x) => [x, x]),
-      test: (a, v) => a.status === v,
+      options: uniq(as.map(asgState)).map((x) => [x, x]),
+      test: (a, v) => asgState(a) === v,
     },
     filters: [
       {
@@ -518,8 +523,9 @@ function usersTable(ctxFilter, canEdit, crud) {
         h(cn(a)),
       ],
       badges:
-        pill(a.status) +
-        a.bundles.map((b) => pill(b, "p-grey")).join("") +
+        pill(asgState(a)) +
+        (asgState(a) !== a.status ? pill("Role: " + a.status, "p-grey") : "") +
+        a.bundles.map((b) => (b === "Reviewer" ? pill("Reviewer · " + (bundleState(a, b) === "Active" && bundleWin(a, b) && bundleWin(a, b).until ? "until " + fmt(bundleWin(a, b).until) : bundleState(a, b)), bundleState(a, b) === "Active" ? "p-grey" : "p-amber") : pill(b, "p-grey"))).join("") +
         (a.mandate
           ? pill(
               a.mandate.valid
@@ -533,15 +539,17 @@ function usersTable(ctxFilter, canEdit, crud) {
           (userEditable(a.pid)
             ? B(ic("edit", 14) + "Edit", "userEdit", { id: a.id }) +
               B("Manage", "userManage", { id: a.id }) +
-              CB(
-                "Delete",
-                "userDel",
-                { pid: a.pid },
-                "Delete the account of " +
-                  P(a.pid).name +
-                  "? All of their roles are removed and they can no longer sign in. Their past contributions stay on record under their name.",
-                "btn-d btn-sm",
-              )
+              (onlyHere(a.pid)
+                ? CB(
+                    "Delete",
+                    "userDel",
+                    { pid: a.pid },
+                    "Delete the account of " +
+                      P(a.pid).name +
+                      "? They can no longer sign in. Their roles are ended and kept as history, and their past contributions stay on record under their name.",
+                    "btn-d btn-sm",
+                  )
+                : "")
             : "")
         : canEdit && a.pid !== myId()
           ? B("Manage", "userManage", { id: a.id })
@@ -557,6 +565,33 @@ function usersTable(ctxFilter, canEdit, crud) {
 }
 // ---- user accounts (Organization Admin): create, read, update, delete
 // Not your own account, and never a Platform Administrator's account.
+// JF-10: roles ended by account deletion, kept as history for the context they were held in (null: every context).
+function roleHistoryCard(cx) {
+  const hs = (S.assignHist || []).filter((a) => !cx || a.ctx === cx);
+  if (!hs.length) return "";
+  return card(
+    "Role history " + `<span class="adm-n">${hs.length}</span>`,
+    "Roles ended when the account was deleted. Kept as a record; they cannot be used or reactivated.",
+    table(
+      ["Person", "Role", "Context", "Status before", "Ended", "By"],
+      hs.map((a) => [
+        nm(a.pid),
+        h(roleName(a.role, a.ctx)),
+        h(ctxName(a.ctx)),
+        pill(a.prevStatus || "—"),
+        fmt(a.endedAt),
+        nm(a.endedBy),
+      ]),
+    ),
+    "",
+    "adm-panel",
+  );
+}
+// Every role the person holds is in the context the admin is working in (JF-10: only then may that admin close the
+// whole account; otherwise they suspend the person's access here).
+const onlyHere = (pid) =>
+  S.assign.some((a) => a.pid === pid && a.ctx === ctxId()) &&
+  S.assign.every((a) => a.pid !== pid || a.ctx === ctxId());
 const userEditable = (pid) =>
   pid !== myId() &&
   !S.assign.some((a) => a.pid === pid && roleBase(a.role) === "T");
@@ -634,7 +669,7 @@ A.userView = (d) => {
       roles.map((x) => [
         h(roleName(x.role, x.ctx)),
         h((S.contexts.find((c) => c.id === x.ctx) || {}).name || x.ctx),
-        pill(x.status),
+        pill(asgState(x)),
       ]),
     )}</div><div class="actions">${B("Close", "closeM")}${userEditable(p.id) ? B(ic("edit", 14) + "Edit", "userEdit", { id: a.id }, "btn-p btn-sm") : ""}</div></div>`,
     true,
@@ -764,14 +799,31 @@ F.usr = (d) => {
   ok();
 };
 // Soft delete: the person record stays so names on past records still resolve; roles and sign-in are removed.
+// JF-10: the ended assignments are kept as history (S.assignHist), not erased, so who held which role, where and
+// until when stays answerable. They leave the live list so no screen offers them for work.
 A.userDel = (d) => {
   const p = P(d.pid);
-  const n = S.assign.filter((a) => a.pid === p.id).length;
+  const gone = S.assign.filter((a) => a.pid === p.id);
+  const n = gone.length;
+  S.assignHist = S.assignHist || [];
+  gone.forEach((a) =>
+    S.assignHist.push({
+      ...a,
+      prevStatus: a.status,
+      status: "Ended — account deleted",
+      endedAt: now(),
+      endedBy: myId(),
+    }),
+  );
+  (S.membership || []).forEach((m) => {
+    if (m.pid === p.id && !m.ended)
+      Object.assign(m, { ended: now(), endedBy: myId(), endNote: "Account deleted" });
+  });
   S.assign = S.assign.filter((a) => a.pid !== p.id);
   delete S.pw[p.id];
   p.status = "Deleted";
   p.deletedAt = now();
-  audit("User deleted", p.id, p.email + " · " + n + " role(s) removed");
+  audit("User deleted", p.id, p.email + " · " + n + " role(s) ended and kept as history");
   toast(p.name + "’s account was deleted.");
   ok();
 };
@@ -783,30 +835,141 @@ A.userManage = (d) => {
       [
         ["Role", roleName(a.role, a.ctx)],
         ["Context", h(S.contexts.find((c) => c.id === a.ctx).name)],
-        ["Status", pill(a.status)],
+        ["Role status", pill(a.status)],
       ],
     )}
- <section class="adm-sec"><h3 class="adm-sec-t">Access</h3><div class="row wrap adm-sec-a">${a.status === "Pending role approval" ? B("Approve role", "roleDecide", { id: a.id, v: "Active" }, "btn-p btn-sm") + B("Decline role", "roleDecide", { id: a.id, v: "Role not activated" }) : a.status === "Active" ? CB("Deactivate", "userStatus", { id: a.id, v: "Deactivated" }, "Deactivate this " + roleName(a.role, a.ctx) + " access? The person keeps their account, consent, correction and export rights.", "btn-d btn-sm") : B("Activate", "userStatus", { id: a.id, v: "Active" }, "btn-p btn-sm")}</div></section>
- <form data-f="bund" class="adm-sec"><input type="hidden" name="id" value="${a.id}"><span class="lbl adm-sec-t">Specialist permission bundles</span><div class="adm-chks">${S.bundles.map((b) => `<label class="adm-chk"><input class="chk" type="checkbox" name="b" value="${b.name}" ${a.bundles.includes(b.name) ? "checked" : ""}><span class="adm-chk-t">${b.name}</span><span class="cap">· ${h(b.approval)}</span></label>`).join("")}</div><span class="help">Higher-trust bundles need Programme/Organization Administrator approval and are not delegated at workspace level.</span><div class="actions"><span></span><button class="btn btn-s btn-sm" type="submit">Save bundles</button></div></form>
+ ${manageStates(a)}
+ <form data-f="bund" class="adm-sec"><input type="hidden" name="id" value="${a.id}"><span class="lbl adm-sec-t">Specialist permission bundles</span><div class="adm-chks">${S.bundles.map((b) => `<label class="adm-chk"><input class="chk" type="checkbox" name="b" value="${b.name}" ${a.bundles.includes(b.name) ? "checked" : ""}><span class="adm-chk-t">${b.name}</span><span class="cap">· ${h(b.approval)}</span></label>`).join("")}</div><div class="f2">${fi("bund", "rvFrom", "Evidence Review Authority — active from", { type: "date", value: (bundleWin(a, "Reviewer") || {}).from || "", help: "Needed with the Reviewer bundle." })}${fi("bund", "rvUntil", "Evidence Review Authority — expires", { type: "date", value: (bundleWin(a, "Reviewer") || {}).until || "", help: a.bundles.includes("Reviewer") ? "Now: " + bundleState(a, "Reviewer") + "." : "Outside these dates the Reviewer bundle grants nothing." })}</div><span class="help">Higher-trust bundles need Programme/Organization Administrator approval and are not delegated at workspace level.</span><div class="actions"><span></span><button class="btn btn-s btn-sm" type="submit">Save bundles</button></div></form>
  ${["A", "C"].includes(roleBase(a.role)) ? `<form data-f="mand" class="adm-sec"><input type="hidden" name="id" value="${a.id}"><span class="lbl adm-sec-t">Mandate (authority to bind the organization)</span><div class="f2">${fi("mand", "scope", "Scope", { value: a.mandate?.scope, req: true })}${fi("mand", "until", "Valid until", { type: "date", req: true, value: a.mandate?.until })}</div><div class="actions">${a.mandate ? CB("Revoke mandate", "mandRevoke", { id: a.id }, "Revoke this mandate? Elevated access is removed; ordinary access continues.", "btn-d btn-sm") : "<span></span>"}<button class="btn btn-s btn-sm" type="submit">Grant / update mandate</button></div></form>` : ""}</div>`,
   );
 };
+// JF-10: role, membership and account are shown and changed separately. The Organization Admin changes the first
+// two, in their own context only; the account is the Platform Administrator's.
+function manageStates(a) {
+  const c = ctxName(a.ctx);
+  const sus = ctxSusp(a.pid, a.ctx);
+  const others = [
+    ...new Set(S.assign.filter((x) => x.pid === a.pid && x.ctx !== a.ctx).map((x) => x.ctx)),
+  ];
+  const roleAct =
+    a.status === "Pending role approval"
+      ? B("Approve role", "roleDecide", { id: a.id, v: "Active" }, "btn-p btn-sm") +
+        B("Decline role", "roleDecide", { id: a.id, v: "Role not activated" })
+      : a.status === "Active"
+        ? CB(
+            "Deactivate this role",
+            "userStatus",
+            { id: a.id, v: "Deactivated" },
+            "Deactivate the " + roleName(a.role, a.ctx) + " role in " + c +
+              "? Only this role is affected. The person keeps their account, their other roles and their consent, correction and export rights.",
+            "btn-d btn-sm",
+            "Deactivate",
+          )
+        : B("Activate this role", "userStatus", { id: a.id, v: "Active" }, "btn-p btn-sm");
+  const memAct = sus
+    ? CB(
+        "Lift suspension",
+        "memberLift",
+        { pid: a.pid },
+        "Lift the suspension in " + c + "? Each of their roles here returns to its own status.",
+        "btn-p btn-sm",
+        "Lift",
+      )
+    : B("Suspend access in " + h(c), "memberSuspend", { pid: a.pid }, "btn-d btn-sm");
+  const susNote = sus
+    ? "Suspended since " + fmt(sus.at) + " by " + nm(sus.by) + (sus.reason ? ": “" + h(sus.reason) + "”" : "") + ". "
+    : "";
+  const otherNote = others.length
+    ? "their " + others.length + " other organization" + (others.length > 1 ? "s" : "") + ", "
+    : "";
+  return `<section class="adm-sec"><h3 class="adm-sec-t">Role in ${h(c)}</h3><p class="cap">This one role only.</p><div class="row wrap adm-sec-a">${roleAct}</div></section>
+ <section class="adm-sec"><h3 class="adm-sec-t">Membership of ${h(c)}</h3><p class="cap">${susNote}Suspension ends every role this person holds in ${h(c)} and nothing else: their account, ${otherNote}and their personal records stay available.</p><div class="row wrap adm-sec-a">${pill(sus ? "Suspended" : "Active")}${memAct}</div></section>
+ <section class="adm-sec"><h3 class="adm-sec-t">Account</h3><p class="cap">The account is the person's identity across every organization. Only the Platform Administrator can deactivate or reactivate it.</p><div class="row wrap adm-sec-a">${pill(acctActive(a.pid) ? "Active" : "Account deactivated")}</div></section>`;
+}
 A.userStatus = (d) => {
   const a = byId("assign", d.id);
   a.status = d.v;
   notify(
     a.pid,
-    "Your " + roleName(a.role, a.ctx) + " access is now " + d.v,
+    "Your " + roleName(a.role, a.ctx) + " role in " + ctxName(a.ctx) + " is now " + d.v.toLowerCase() + ". Your other roles are not affected.",
+    "home",
+    {},
+    a.id,
+  );
+  audit("Role " + d.v.toLowerCase(), a.id, roleName(a.role, a.ctx) + " · " + ctxName(a.ctx));
+  UI.modal = null;
+  ok();
+};
+// Membership suspension (one person, one context). The notice is addressed to the person, not to the suspended
+// role, so they can read it from any organization.
+A.memberSuspend = (d) => {
+  clearF("msus");
+  modal(
+    "Suspend access in " + ctxName(ctxId()),
+    () =>
+      `<form data-f="msus" class="col" style="gap:14px" novalidate><input type="hidden" name="pid" value="${h(d.pid)}">${banner("warn", "", "Ends every role " + nm(d.pid) + " holds in " + h(ctxName(ctxId())) + ". Their account, any other organization they belong to, and their personal records are not affected. You can lift it at any time.")}${fi("msus", "reason", "Reason (recorded in the audit log and shown to the person)", { type: "textarea", rows: 3, req: true, max: 300 })}<div class="actions">${B("Cancel", "closeM")}<button class="btn btn-d" type="submit">Suspend access</button></div></form>`,
+  );
+};
+F.msus = (d) => {
+  if (!validate("msus", d, { reason: ["req"] })) return render();
+  const c = ctxId();
+  UI.modal = null;
+  if (ctxSusp(d.pid, c)) {
+    toast("Already suspended in this organization.", "warn");
+    return render();
+  }
+  S.membership = S.membership || [];
+  S.membership.push({
+    id: uid("ms"),
+    pid: d.pid,
+    ctx: c,
+    state: "Suspended",
+    at: now(),
+    by: myId(),
+    reason: d.reason.trim(),
+  });
+  notifyPerson(
+    d.pid,
+    "Your access to " + ctxName(c) + " is suspended: " + d.reason.trim() + ". Your other organizations and your personal records are not affected.",
     "home",
   );
-  audit("User " + d.v, a.id, "");
+  audit("Membership suspended", d.pid, ctxName(c) + " · " + d.reason.trim());
+  clearF("msus");
+  toast(nm(d.pid) + "’s access to " + ctxName(c) + " is suspended.");
+  ok();
+};
+A.memberLift = (d) => {
+  const c = ctxId();
+  const m = ctxSusp(d.pid, c);
+  Object.assign(m, { ended: now(), endedBy: myId() });
+  notifyPerson(d.pid, "Your access to " + ctxName(c) + " is restored.", "home");
+  audit("Membership suspension lifted", d.pid, ctxName(c));
   UI.modal = null;
+  toast("Suspension lifted. Each role returns to its own status.");
   ok();
 };
 F.bund = (d) => {
   const a = byId("assign", d.id);
   const nb = [].concat(d.b || []);
+  // JF-56: the Evidence Review Authority (Reviewer bundle) has an active window
+  if (nb.includes("Reviewer")) {
+    const e = {};
+    if (!d.rvFrom) e.rvFrom = "Enter the date the authority starts.";
+    if (!d.rvUntil) e.rvUntil = "Enter the date the authority expires.";
+    else if (d.rvFrom && d.rvUntil < d.rvFrom) e.rvUntil = "The expiry must be on or after the start date.";
+    if (Object.keys(e).length) {
+      UI.err.bund = e;
+      UI.form.bund = d;
+      return render();
+    }
+    const was = bundleWin(a, "Reviewer");
+    a.bundleDates = { ...(a.bundleDates || {}), Reviewer: { from: d.rvFrom, until: d.rvUntil, by: myId(), at: now() } };
+    if (!was || was.from !== d.rvFrom || was.until !== d.rvUntil)
+      audit("Evidence Review Authority dates set", a.id, P(a.pid).name + " · " + d.rvFrom + " → " + d.rvUntil);
+  } else if (a.bundleDates) delete a.bundleDates.Reviewer;
   a.bundles = nb;
+  // evidence assigned to someone who no longer holds active authority goes to another eligible reviewer
+  S.evidence.filter((e) => e.assignee === a.pid && evPending(e)).forEach(evConflictCheck);
   audit("Bundles changed", a.id, nb.join(", "));
   UI.modal = null;
   toast("Bundles updated.");
@@ -885,6 +1048,49 @@ F.votecfg = (d) => {
 function decisionsCard() {
   return "";
 }
+// ---- JF-52: the programme's upload policy, set by its Organization Admin (core.js: uploadCheck applies it on every
+// upload path). The platform ceiling is the most any programme can allow; programs and scripts are never accepted.
+function uploadCard() {
+  const c = ctxId();
+  const cfg = uploadCfg(c);
+  const types = uploadTypes(c);
+  const q = S.records.filter((r) => r.state === "Quarantined" && (!r.ctx || r.ctx === c));
+  const f = "uplcfg";
+  return card(
+    "File uploads",
+    "Applies to every upload in " + h(ctxName(c)) + ": documents, evidence, repository, chat, contributions, pathway steps, support and sponsor records.",
+    `<form data-f="${f}" class="col adm-form" novalidate>
+    <div class="g3">${fi(f, "maxMB", "Size limit per file (MB)", { type: "number", min: 1, maxv: uploadCeiling(), value: fv(f, "maxMB", uploadMaxMB(c)), req: true, help: "At most " + uploadCeiling() + " MB, the platform ceiling." })}${fi(f, "linkHours", "Share links expire after (hours)", { type: "number", min: 1, maxv: 168, value: fv(f, "linkHours", linkHours(c)), req: true, help: "Up to 7 days. Access is checked again on every download." })}</div>
+    <fieldset class="col" style="gap:6px;border:0;padding:0;margin:0"><legend class="lbl">Approved file types <span class="req">*</span></legend>${Object.keys(UPLOAD_TYPES)
+      .map((k) => `<label class="row" style="gap:8px;align-items:flex-start"><input type="checkbox" class="chk" name="types" value="${k}"${types.includes(k) ? " checked" : ""}><span><b>${h(UPLOAD_TYPES[k][0])}</b> <span class="cap">${UPLOAD_TYPES[k][1].map((e) => "." + e).join(" ")}</span></span></label>`)
+      .join("")}${fe(f, "types") ? `<span class="emsg" role="alert">${ic("alert", 14)}${fe(f, "types")}</span>` : ""}<span class="help">Programs and scripts (.exe, .bat, .js, .msi and similar) are never accepted. Evidence and chat link video instead of uploading it.</span></fieldset>
+    <div class="actions"><span class="help">${cfg.at ? "Last changed " + fmt(cfg.at.slice(0, 10)) + " by " + nm(cfg.by) + "." : "Using the default policy."} Every file is scanned; a file that fails is quarantined and never linked.</span><button class="btn btn-p btn-sm" type="submit">Save upload policy</button></div></form>
+    <h3 class="h3 ws-subh">Quarantined files ${`<span class="adm-n">${q.length}</span>`}</h3>${table(
+      ["File", "Uploaded by", "Where", "When"],
+      q.map((r) => [h(r.title) + " " + pill("Quarantined"), nm(r.owner), h((/\((.*)\)$/.exec(r.note || "") || [])[1] || r.kind || "—"), fmt(r.date)]),
+      "No quarantined files.",
+    )}<p class="cap">Simulated scan in this prototype. A production build runs a real malware scanner on every upload before the file can be opened.</p>`,
+    "",
+    "adm-panel",
+  );
+}
+F.uplcfg = (d) => {
+  const types = [].concat(d.types || []).filter((k) => UPLOAD_TYPES[k]);
+  const okv = validate("uplcfg", d, {
+    maxMB: [["req", "Enter a size limit."], ["fn", { f: (v) => /^\d+$/.test(v) && +v >= 1 && +v <= uploadCeiling(), m: "Enter a whole number from 1 to " + uploadCeiling() + "." }]],
+    linkHours: [["req", "Enter how long share links last."], ["fn", { f: (v) => /^\d+$/.test(v) && +v >= 1 && +v <= 168, m: "Enter a whole number of hours from 1 to 168." }]],
+  });
+  if (!types.length) UI.err.uplcfg = { ...(UI.err.uplcfg || {}), types: "Approve at least one file type." };
+  if (!okv || !types.length) return render();
+  const c = ctxId();
+  const before = uploadMaxMB(c) + " MB · " + uploadTypes(c).join(", ") + " · links " + linkHours(c) + " h";
+  S.settings.uploads = S.settings.uploads || {};
+  S.settings.uploads[c] = { maxMB: +d.maxMB, types, linkHours: +d.linkHours, by: myId(), at: now() };
+  audit("Upload policy changed", "settings.uploads." + c, before + " → " + d.maxMB + " MB · " + types.join(", ") + " · links " + d.linkHours + " h");
+  clearF("uplcfg");
+  toast("Upload policy saved. It applies to uploads from now on.");
+  ok();
+};
 // Packs differ by labels, onboarding questions, templates, enabled flows, evidence types and metrics — never code.
 function packsView() {
   const cur = pack();
@@ -922,7 +1128,7 @@ function packsView() {
     `<div class="adm-link"><code class="adm-mono">${h(applyLink(cur.id))}</code>${B(ic("link", 14) + "Copy link", "copyApplyLink", { id: cur.id })}</div>`,
     "",
     "adm-panel",
-  )}${votingCard()}</div>`;
+  )}${votingCard()}${uploadCard()}</div>`;
 }
 A.copyApplyLink = (d) => {
   const u = applyLink(d.id);
@@ -1223,64 +1429,96 @@ function reportsView(isOrg) {
           "Full configuration",
         ]),
   ];
-  return `<div class="adm-report"><dl class="adm-rmeta"><div><dt>Context</dt><dd>${h(ctx().name)}</dd></div><div><dt>Period</dt><dd>Programme to date · as of ${fmt(today())}</dd></div><div><dt>Metrics shown</dt><dd>${rows.length}</dd></div><div><dt>Exports</dt><dd>${xs.length} authorised</dd></div></dl><div class="g12">${card(
-    `Starter metrics <span class="adm-n">${rows.length}</span>`,
-    "Aggregate only. Metrics never determine trustworthiness, deservingness or fundability.",
-    dataView("rep:metrics:" + (isOrg ? "agg" : "all"), {
-      label: "metrics",
-      items: rows,
-      layout: "table",
-      search: (m) => m.name + " " + (m.def || "") + " " + m.cat,
-      filters: [
-        {
-          key: "cat",
-          label: "Category",
-          options: [...new Set(rows.map((m) => m.cat))].map((v) => [v, v]),
-          test: (m, v) => m.cat === v,
-        },
-        {
-          key: "gate",
-          label: "Gate",
-          options: [...new Set(rows.map((m) => m.gate))].map((v) => [v, v]),
-          test: (m, v) => m.gate === v,
-        },
-      ],
-      sorts: [
-        ["name", "Metric", (a, b) => a.name.localeCompare(b.name)],
-        ["cat", "Category", (a, b) => a.cat.localeCompare(b.cat)],
-      ],
-      columns: [
-        {
-          label: "Metric",
-          sort: "name",
-          cell: (m) =>
-            `<b>${h(m.name)}</b>${m.def ? `<div class="cap adm-def">${h(m.def)}</div>` : ""}`,
-        },
-        { label: "Category", sort: "cat", cell: (m) => h(m.cat) },
-        {
-          label: "Gate",
-          cell: (m) =>
-            m.gate === "None" ? '<span class="cap">None</span>' : h(m.gate),
-        },
-        {
-          label: "Value",
-          num: true,
-          cell: (m) => '<b class="adm-val">' + metric(m.id) + "</b>",
-        },
-      ],
-      pageSize: 25,
-      empty: [
+  const probs = metricRegistryProblems(rows);
+  const ocs = ctxOutcomes();
+  const layerCard = (l) => {
+    const ms = rows.filter((m) => m.layer === l.id);
+    return card(
+      `${h(l.n)} <span class="adm-n">${ms.length}</span>`,
+      h(l.what) + ` <b>${h(l.not)}</b>`,
+      table(
+        ["Metric", "Gate", "Value"],
+        ms.map((m) => [
+          `<b>${h(m.name)}</b>${m.def ? `<div class="cap adm-def">${h(m.def)}</div>` : ""}`,
+          m.gate === "None" ? '<span class="cap">None</span>' : h(m.gate),
+          '<b class="adm-val">' + metric(m.id) + "</b>",
+        ]),
+        "No metrics in this layer.",
+      ),
+      "",
+      "adm-panel adm-metrics adm-layer",
+    );
+  };
+  const ocCard = card(
+    `${h(METRIC_LAYERS[3].n)} <span class="adm-n">${ocs.length}</span>`,
+    h(METRIC_LAYERS[3].what) + ` <b>${h(METRIC_LAYERS[3].not)}</b>`,
+    ocs.map(outcomeBlock).join("") ||
+      empty(
         "chart",
-        "No metrics are visible",
-        "An Organization Admin chooses which metrics are shown.",
-        "",
-      ],
-    }),
-    "",
-    "c8 adm-panel adm-metrics",
-  )}
- ${card("Authorised exports", "Machine-readable; relationships and governance metadata kept. Small groups are suppressed.", `<div class="adm-xlist">${xs.map((x) => B(`<span class="adm-x-ic" aria-hidden="true">${ic("file", 16)}</span><span class="adm-x-t">${x}</span><span class="adm-x-f">JSON</span>${ic("download", 16)}`, "doExport", { n: x }, "adm-x")).join("")}</div>`, "", "c4 adm-panel adm-exports")}</div></div>`;
+        "No outcome indicators recorded",
+        "An outcome indicator is recorded by a person from an outside source. Platform activity never becomes an outcome on its own.",
+      ),
+    role() === "A" ? B("Record outcome indicator", "ocNew", {}, "btn-p btn-sm") : "",
+    "adm-panel adm-layer",
+  );
+  return `<div class="adm-report"><dl class="adm-rmeta"><div><dt>Context</dt><dd>${h(ctx().name)}</dd></div><div><dt>Period</dt><dd>Programme to date · as of ${fmt(today())}</dd></div><div><dt>Metrics shown</dt><dd>${rows.length} in 3 layers · ${ocs.length} outcome indicator${ocs.length === 1 ? "" : "s"}</dd></div><div><dt>Exports</dt><dd>${xs.length} authorised</dd></div></dl>${pilotNote()}${
+    probs.length
+      ? banner("err", "Metric registry breaks the no-composite rule", probs.map(h).join("<br>"))
+      : ""
+  }<div class="g12"><div class="c8 col adm-layers">${METRIC_LAYERS.filter((l) => l.id !== "outcomes").map(layerCard).join("")}${ocCard}</div>
+ ${card("Authorised exports", "Machine-readable; relationships and governance metadata kept. Small groups are suppressed. Every export carries its layer and the label “" + PILOT_LABEL + "”.", `<div class="adm-xlist">${xs.map((x) => B(`<span class="adm-x-ic" aria-hidden="true">${ic("file", 16)}</span><span class="adm-x-t">${x}</span><span class="adm-x-f">JSON</span>${ic("download", 16)}`, "doExport", { n: x }, "adm-x")).join("")}</div>`, "", "c4 adm-panel adm-exports")}</div></div>`;
 }
+// One outcome indicator, every field shown. An incomplete one says what is missing and is not counted as an outcome.
+function outcomeBlock(o) {
+  const miss = outcomeMissing(o);
+  const p = o.project && byId("projects", o.project);
+  const e = o.ev && byId("evidence", o.ev);
+  return `<div class="adm-oc"><div class="row wrap adm-oc-h"><b>${h(o.name || "Untitled indicator")}</b>${miss.length ? pill("Incomplete — not shown as an outcome", "p-red") : pill("Confidence: " + h(o.conf), "p-grey")}${pilotPill()}</div>${
+    miss.length ? `<p class="cap">Missing: ${h(miss.join(", "))}</p>` : ""
+  }${dl([
+    ...OUTCOME_FIELDS.filter(([k]) => k !== "name" && o[k]).map(([k, l]) => [l, h(k === "at" ? fmt(o.at) : o[k])]),
+    ...(p ? [["Project", h(p.title)]] : []),
+    ...(e ? [["Supporting evidence", h(e.title) + (e.level ? " · Support level " + h(e.level) : "")]] : []),
+    ["Recorded", nm(o.by) + " · " + fmt(o.rec)],
+  ])}</div>`;
+}
+A.ocNew = () =>
+  modal(
+    "Record an outcome indicator",
+    () => {
+      const f = "oc";
+      const projects = S.projects.filter((p) => inCtx(p) && p.status === "Accepted");
+      const evs = evAggregate().filter((e) => e.review === "Approved");
+      return `<form data-f="oc" class="col" style="gap:12px" novalidate>${banner("info", "Real-world outcome, not platform activity", "Record a change observed outside PHOENIX, from a source someone else could check. Every field is required. Confidence here is your confidence in this assessment, not an Evidence Support Level.")}
+${fi(f, "name", "Indicator", { req: true, ph: "What changed, in plain words" })}
+${fi(f, "def", "Definition", { type: "textarea", rows: 2, req: true, help: "What is measured, where, and how it is counted." })}
+<div class="f2">${fi(f, "unit", "Native unit", { req: true, ph: "e.g. calls per week, °C, households" })}${fi(f, "at", "Assessment date", { type: "date", req: true, help: "When the result was assessed. Not in the future." })}</div>
+<div class="f2">${fi(f, "baseline", "Baseline or comparator", { req: true, help: "The starting point or comparison, in the same unit." })}${fi(f, "value", "Observed result", { req: true, help: "In the native unit." })}</div>
+${fi(f, "source", "Source", { req: true, help: "Who observed it and where the record is held." })}
+${fi(f, "conf", "Confidence in this assessment", { type: "select", req: true, ph: "Choose", opts: OUTCOME_CONF })}
+${fi(f, "attrib", "Attribution note", { type: "textarea", rows: 2, req: true, help: "What else could explain the change, and how much (if anything) this programme contributed." })}
+<div class="f2">${fi(f, "project", "Project (optional)", { type: "select", ph: "None", opts: projects.map((p) => [p.id, p.title]) })}${fi(f, "ev", "Supporting evidence (optional)", { type: "select", ph: "None", opts: evs.map((e) => [e.id, e.title + (e.level ? " · " + e.level : "")]) })}</div>
+<div class="actions"><button class="btn btn-s" type="button" data-a="closeM">Cancel</button><button class="btn btn-p" type="submit">Record indicator</button></div></form>`;
+    },
+    true,
+  );
+F.oc = (d) => {
+  const rules = {};
+  OUTCOME_FIELDS.forEach(([k]) => (rules[k] = ["req"]));
+  rules.at = ["req", ["fn", { f: (v) => v <= today(), m: "An assessment date cannot be in the future." }]];
+  rules.conf = ["req", ["fn", { f: (v) => OUTCOME_CONF.some(([x]) => x === v), m: "Choose a confidence." }]];
+  if (!validate("oc", d, rules)) return render();
+  const o = { id: uid("oc"), ctx: ctxId(), by: myId(), rec: today() };
+  OUTCOME_FIELDS.forEach(([k]) => (o[k] = String(d[k]).trim()));
+  if (d.project && byId("projects", d.project)) o.project = d.project;
+  if (d.ev && byId("evidence", d.ev)) o.ev = d.ev;
+  (S.outcomes = S.outcomes || []).push(o);
+  audit("Outcome indicator recorded", o.id, o.name + " · confidence " + o.conf);
+  clearF("oc");
+  UI.modal = null;
+  toast("Outcome indicator recorded. It is shown with its confidence and attribution note, as pilot learning.");
+  ok();
+};
 // RESEARCH_USE: only participants for whom research use is authorised at every level (organization, programme,
 // person) are included, de-identified; everyone else is left out and only counted.
 const RESEARCH_EXPORT = "Research dataset (de-identified, consented only)";
@@ -1359,7 +1597,18 @@ A.doExport = (d) => {
     export: d.n,
     context: ctx().name,
     generated: now(),
-    metrics: S.metrics.map((m) => ({ name: m.name, value: metric(m.id) })),
+    label: PILOT_LABEL,
+    rule: "Each metric belongs to one layer and is read on its own. There is no composite coherence or impact score.",
+    metrics: S.metrics
+      .filter((m) => m.status === "Active")
+      .map((m) => ({ name: m.name, layer: (metricLayer(m) || {}).n || "No layer", definition: m.def, value: metric(m.id) })),
+    outcomeIndicators: ctxOutcomes()
+      .filter((o) => !outcomeMissing(o).length)
+      .map((o) => {
+        const r = { layer: METRIC_LAYERS[3].n };
+        OUTCOME_FIELDS.forEach(([k, l]) => (r[l] = o[k]));
+        return r;
+      }),
   };
   try {
     const a = document.createElement("a");
@@ -1741,7 +1990,7 @@ route("admin", "admin", () => {
         usersTable(ctxId(), true, true),
         B(ic("plus", 14) + "Add user", "userNew", {}, "btn-p btn-sm"),
         "adm-panel",
-      );
+      ) + roleHistoryCard(ctxId());
   if (t.cur === "invites")
     body = card(
       "Invitations " + n(S.invites.filter((i) => i.ctx === ctxId()).length),
@@ -2232,12 +2481,12 @@ route("platform", "platform", () => {
             S.evidence.reduce((a, x) => a + x.sizeMB, 0).toFixed(1) +
             " MB",
         ],
-        ["Default file limit", S.settings.maxFileMB + " MB"],
+        ["Platform file ceiling", S.settings.maxFileMB + " MB (each programme sets its own limit within it)"],
         [
           "Quarantined files",
           S.records.filter((r) => r.state === "Quarantined").length,
         ],
-        ["Signed URLs", "Enabled"],
+        ["Download links", "Access checked on every download; share links expire (set per programme). Prototype: files stay in this browser"],
       ]),
       "",
       "c5",

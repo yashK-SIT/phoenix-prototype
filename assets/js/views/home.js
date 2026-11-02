@@ -1,6 +1,8 @@
 // ---------- shared selectors ----------
 const cName = (id) =>
-  h(
+  byId("ropes", id) && !ropeExists(byId("ropes", id))
+    ? h(ROPE_HIDDEN)
+    : h(
     (
       byId("circles", id) ||
       byId("ropes", id) ||
@@ -712,8 +714,140 @@ function metric(id) {
         u = sp.reduce((a, s) => a + (s.assignedCount ?? s.assigned.length), 0);
       return t ? Math.round((u / t) * 100) + "%" : "No data yet";
     }
+    // Layer 2 keeps review status and Support Level apart: two separate counts, never one figure.
+    case "m11": {
+      const ev = evAggregate();
+      const parts = (typeof REVIEW !== "undefined" ? REVIEW : [])
+        .map((s) => [s, ev.filter((e) => e.review === s).length])
+        .filter(([, n]) => n);
+      return parts.length
+        ? parts.map(([s, n]) => s.replace(/ /g, " ") + " " + n).join(" · ")
+        : "No data yet";
+    }
+    case "m12": {
+      const ev = evAggregate().filter((e) => e.review === "Approved");
+      return ev.length
+        ? ["E0", "E1", "E2", "E3", "E4"]
+            .map((l) => l + " " + ev.filter((e) => e.level === l).length)
+            .join(" · ")
+        : "No data yet";
+    }
   }
   return "—";
+}
+// Evidence that may be counted in a programme aggregate: active, in this context, and not Confidential unless the
+// Organization Admin cleared it for organisation reports (evidence.js CONF rules).
+const evAggregate = () =>
+  S.evidence.filter(
+    (e) =>
+      inCtx(e) &&
+      (e.lifecycle || "Active") === "Active" &&
+      (e.conf !== "Confidential" ||
+        (typeof evClear === "function" && !!evClear(e, "Organisation report"))),
+  );
+// ---- JF-90 / BF-48: metric layers. Every metric belongs to exactly one of four labelled layers, and each layer is
+// read on its own. There is no composite coherence, impact or "overall" score anywhere, and no figure that combines
+// layers. Assumed layer definitions below; the WSS product owner confirms them.
+const METRIC_LAYERS = [
+  {
+    id: "workflow",
+    n: "1 · Workflow activity",
+    what: "How the platform is being used: onboarding, participation, matching, governance housekeeping.",
+    not: "High activity is not impact and says nothing about quality or results.",
+  },
+  {
+    id: "evidence",
+    n: "2 · Evidence confidence and review",
+    what: "Review status and Evidence Support Level (E0–E4), shown as separate counts.",
+    not: "Support levels describe how well one claim is supported. They are not scores of a person, project or programme.",
+  },
+  {
+    id: "outputs",
+    n: "3 · Project outputs and visible wins",
+    what: "What projects have delivered: achieved milestones and other visible results.",
+    not: "An output is something done, not a change in the world.",
+  },
+  {
+    id: "outcomes",
+    n: "4 · Real-world outcomes",
+    what: "Changes observed outside the platform, each recorded by a person with definition, native unit, baseline or comparator, assessment date, source, confidence and attribution note.",
+    not: "Never calculated from platform activity. Shown as recorded, with its stated confidence and attribution limits.",
+  },
+];
+const metricLayer = (m) => METRIC_LAYERS.find((l) => l.id === (m && m.layer));
+const layerPill = (id) => {
+  const l = METRIC_LAYERS.find((x) => x.id === id);
+  return l ? pill(l.n, "p-grey") : pill("No layer", "p-red");
+};
+// Layer 4 is outcome indicators only; metrics derived from platform records may not claim it.
+const METRIC_DERIVED_LAYERS = ["workflow", "evidence", "outputs"];
+// Words that would present a figure as a combined rating of people, projects or the programme.
+const COMPOSITE_RE = /\b(composite|coherence|overall|index|impact score|health score|rating|ranking)\b/i;
+// Registry rule check (also run by scripts/smoke-roles.mjs). Returns one line per problem; empty means the rule holds.
+function metricRegistryProblems(list = S.metrics) {
+  const out = [];
+  (list || []).forEach((m) => {
+    if (!METRIC_DERIVED_LAYERS.includes(m.layer))
+      out.push(
+        m.name +
+          ": " +
+          (m.layer === "outcomes"
+            ? "real-world outcomes are recorded as outcome indicators, not derived metrics"
+            : "must belong to exactly one of the workflow, evidence or outputs layers"),
+      );
+    if (m.combines || m.composite || Array.isArray(m.layer))
+      out.push(m.name + ": combines other measures (no composite score is allowed)");
+    if (COMPOSITE_RE.test(m.name + " " + (m.def || "")))
+      out.push(m.name + ": reads as a composite or rating");
+  });
+  return out;
+}
+// Layer 4 records: every field below is required before an indicator is shown as an outcome.
+const OUTCOME_FIELDS = [
+  ["name", "Indicator"],
+  ["def", "Definition"],
+  ["unit", "Native unit"],
+  ["baseline", "Baseline or comparator"],
+  ["value", "Observed result"],
+  ["at", "Assessment date"],
+  ["source", "Source"],
+  ["conf", "Confidence in this assessment"],
+  ["attrib", "Attribution note"],
+];
+const OUTCOME_CONF = [
+  ["Low", "Low — few observations or an indirect source"],
+  ["Medium", "Medium — repeated observations from a credible source"],
+  ["High", "High — independently verified, with a sound comparator"],
+];
+const outcomeMissing = (o) =>
+  OUTCOME_FIELDS.filter(([k]) => !String((o && o[k]) || "").trim()).map(([, l]) => l);
+const ctxOutcomes = () => (S.outcomes || []).filter((o) => o.ctx === ctxId());
+// The label every Alpha dashboard carries (JF-79, JF-90, BF-48).
+const PILOT_LABEL = "Pilot learning, not impact proof";
+const pilotNote = () =>
+  banner(
+    "info",
+    PILOT_LABEL,
+    "Alpha measures show how the pilot is used and what it is learning. Each figure belongs to one labelled layer and is read on its own: there is no combined coherence or impact score, and no figure rates a person, project or programme.",
+  );
+const pilotPill = () => pill(PILOT_LABEL, "p-amber");
+// Stored data from before the layers: every metric takes its layer from the seed; new seed metrics and outcome
+// indicators are added once. Called from migrate() (views/support.js).
+function metricsMigrate() {
+  const sd = seed();
+  S.metrics = S.metrics || [];
+  S.metrics.forEach((m) => {
+    const d = sd.metrics.find((x) => x.id === m.id);
+    if (d) {
+      m.layer = d.layer;
+      if (d.name !== m.name && /^m1[12]$/.test(m.id)) m.name = d.name;
+    }
+    delete m.cat;
+  });
+  sd.metrics.forEach((d) => {
+    if (!S.metrics.some((m) => m.id === d.id)) S.metrics.push(d);
+  });
+  if (!S.outcomes) S.outcomes = sd.outcomes || [];
 }
 // One figure in the summary strip (.kpis). Linked figures open the place where the work is.
 const stat = (cls, tile, icon, num, title, sub, r, p) =>
@@ -1950,6 +2084,7 @@ function homeS() {
        ["Approved evidence summaries", sup(ev.length)],
        ["Funder-safe Harvests", sup(hv.length)],
        ["Programme signals", "Aggregate, small numbers suppressed"],
+       ["How to read them", PILOT_LABEL + ". Each signal is labelled with its layer; there is no combined score."],
      ]),
      L("Open reports", "funding", { tab: "reports" }),
      "hm-list hm-kvs",
@@ -1995,18 +2130,21 @@ function homeA() {
  ${hmCols(
    `${card(
      "Programme metrics",
-     "Starter registry",
-     table(
-       ["Metric", "Category", "Value", "Governance gate"],
-       S.metrics
-         .filter((m) => m.status === "Active")
-         .map((m) => [
-           h(m.name),
-           h(m.cat),
-           "<b>" + metric(m.id) + "</b>",
-           h(m.gate),
-         ]),
-     ),
+     PILOT_LABEL + ". Each layer is read on its own; there is no combined score.",
+     METRIC_LAYERS.filter((l) => l.id !== "outcomes")
+       .map(
+         (l) =>
+           `<h3 class="h3 hm-layer">${h(l.n)}</h3>` +
+           table(
+             ["Metric", "Value", "Governance gate"],
+             S.metrics
+               .filter((m) => m.status === "Active" && m.layer === l.id)
+               .map((m) => [h(m.name), "<b>" + metric(m.id) + "</b>", h(m.gate)]),
+             "No metrics in this layer.",
+           ),
+       )
+       .join("") +
+       `<h3 class="h3 hm-layer">${h(METRIC_LAYERS[3].n)}</h3><p class="cap">${ctxOutcomes().filter((o) => !outcomeMissing(o).length).length} recorded outcome indicator(s), each with its own confidence and attribution note. Open Reports &amp; exports to read them.</p>`,
      L("All metrics", "metrics"),
      "hm-tbl",
    )}`,

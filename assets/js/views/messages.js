@@ -6,14 +6,15 @@ const CHAT_KINDS = {
   pathways: 'Pathway',
   ropes: 'Rope Team',
   dms: 'Direct message',
+  spchats: 'Project',
   get rooms() {
     return WL();
   },
 };
 const CHAT_ROUTE = { circles: 'circle', ropes: 'rope', rooms: 'room' };
-const CHAT_IC = { circles: 'users', ropes: 'route', rooms: 'room', dms: 'message', pathways: 'route' };
+const CHAT_IC = { circles: 'users', ropes: 'route', rooms: 'room', dms: 'message', pathways: 'route', spchats: 'megaphone' };
 // Tile colour per conversation kind (list and thread header).
-const CHAT_TILE = { circles: 'c t-purple', rooms: 'a t-navy', dms: 'd t-soft', ropes: 'r t-teal', pathways: 'p t-ember' };
+const CHAT_TILE = { circles: 'c t-purple', rooms: 'a t-navy', dms: 'd t-soft', ropes: 'r t-teal', pathways: 'p t-ember', spchats: 'p t-ember' };
 const IMG_RE = /\.(png|jpe?g|gif|webp|heic)$/i;
 const chatSpaces = (pid = myId()) => [
   ...S.circles.filter(c => inCtx(c) && memberOf(c, pid)).map(o => ({ kind: 'circles', o })),
@@ -21,7 +22,16 @@ const chatSpaces = (pid = myId()) => [
   ...S.rooms.filter(r => inCtx(r) && memberOf(r, pid) && r.state !== 'Draft').map(o => ({ kind: 'rooms', o })),
   ...(S.dms || []).filter(r => memberOf(r, pid)).map(o => ({ kind: 'dms', o })),
   ...pwConvos(pid).map(o => ({ kind: 'pathways', o })),
+  ...spConvos(pid).map(o => ({ kind: 'spchats', o })),
 ];
+// ---- sponsor project group chats (S.spchats, applications.js): the sponsor and the people they shortlisted.
+// The same store the Sponsor uses in their project's Chat room, so every message is shared both ways. Listed here
+// for the shortlisted members (active in the group); the Sponsor keeps working from their project page.
+const spConvos = (pid = myId()) => (S.spchats || []).filter(c => inCtx(c) && (c.members || []).some(m => m.pid === pid && m.status === 'Active'));
+const isSpConvo = o => (S.spchats || []).includes(o);
+// The group is named after the project (live title, so a renamed project shows its new name).
+const spProj = c => byId('projects', c.pr);
+const chatName = o => (isSpConvo(o) ? (spProj(o) || {}).title || String(o.name || '').replace(/^Discussion · /, '') : o.name);
 // ---- pathway review conversations: the pathway owner, the Organization Admin and the Reviewer.
 // Messages shows the same thread (p.thread) and activity log as the pathway's "Conversation & activity" dialog.
 const PW_REVIEW = ['Awaiting reviewer', 'In review', 'Clarification requested'];
@@ -39,7 +49,7 @@ const cvAnon = (o, pid) => !!o.alias && pid === o.sponsor && pid !== myId();
 const cvNm = (o, pid) => (cvAnon(o, pid) ? h(o.alias) : nm(pid));
 const cvIni = (o, pid) => (cvAnon(o, pid) ? 'S' : ini(pid));
 const cvDisp = (o, pid) => (cvAnon(o, pid) ? o.alias : P(pid).display);
-const chatMsgs = o => (isPwConvo(o) ? pwChat(o) : o.chat || []);
+const chatMsgs = o => (isPwConvo(o) ? pwChat(o) : isSpConvo(o) ? o.msgs || [] : o.chat || []);
 const hasChats = () => !!S && !!S.session && chatSpaces().length > 0;
 const readMark = (id, pid = myId()) => ((S.chatRead || {})[pid] || {})[id] || '';
 const unreadIn = (o, pid = myId()) => {
@@ -54,7 +64,7 @@ function markRead(o) {
   const mine = (S.chatRead[myId()] = S.chatRead[myId()] || {});
   if ((mine[o.id] || '') < last.at) {
     mine[o.id] = last.at;
-    S.notifs.filter(n => n.pid === myId() && !n.read && n.chat === o.id).forEach(n => (n.read = true));
+    S.notifs.filter(n => n.pid === myId() && !n.read && (n.chat === o.id || (n.r === 'spchat' && n.p && n.p.id === o.id))).forEach(n => (n.read = true));
     save();
   }
 }
@@ -115,16 +125,16 @@ function convList(sel) {
   let list = chatSpaces()
     .map(x => ({ ...x, last: (chatMsgs(x.o).slice(-1)[0] || {}).at || '', un: unreadIn(x.o) }))
     .filter(x => f === 'all' || (f === 'unread' ? x.un > 0 : x.kind === f))
-    .filter(x => !q || (x.o.name + ' ' + chatMsgs(x.o).map(m => m.t).join(' ')).toLowerCase().includes(q));
+    .filter(x => !q || (chatName(x.o) + ' ' + chatMsgs(x.o).map(m => m.t).join(' ')).toLowerCase().includes(q));
   list.sort((a, b) => b.last.localeCompare(a.last));
   const unAll = unreadTotal();
   const chip = (k, l) =>
     `<button type="button" class="fchip ${f === k ? 'on' : ''}" data-a="chatFilter" data-v="${k}" aria-pressed="${f === k}">${l}</button>`;
-  return `<div class="mlist-h"><div class="mlist-t"><h1 class="h2">Messages</h1>${unAll ? `<span class="mun">${unAll} unread</span>` : ''}</div><p class="cap">Circles, Rope Teams, ${WL()}s and pathway reviews you take part in</p><div class="msearch-w">${ic('search', 16)}<input class="input msearch" placeholder="Search conversations" value="${h(UI.chat.q || '')}" data-ch="chatSearch" aria-label="Search conversations"></div><div class="mfilters" role="group" aria-label="Show">${chip('all', 'All')}${chip('unread', 'Unread')}${chip('circles', 'Circles')}${chip('ropes', 'Rope Teams')}${chip('rooms', WL() + 's')}${(S.dms || []).some(x => memberOf(x)) ? chip('dms', 'Direct') : ''}${pwConvos().length ? chip('pathways', 'Pathways') : ''}</div></div><div class="mlist" role="list">${
+  return `<div class="mlist-h"><div class="mlist-t"><h1 class="h2">Messages</h1>${unAll ? `<span class="mun">${unAll} unread</span>` : ''}</div><p class="cap">Circles, Rope Teams, ${WL()}s and pathway reviews you take part in</p><div class="msearch-w">${ic('search', 16)}<input class="input msearch" placeholder="Search conversations" value="${h(UI.chat.q || '')}" data-ch="chatSearch" aria-label="Search conversations"></div><div class="mfilters" role="group" aria-label="Show">${chip('all', 'All')}${chip('unread', 'Unread')}${chip('circles', 'Circles')}${chip('ropes', 'Rope Teams')}${chip('rooms', WL() + 's')}${(S.dms || []).some(x => memberOf(x)) ? chip('dms', 'Direct') : ''}${pwConvos().length ? chip('pathways', 'Pathways') : ''}${spConvos().length ? chip('spchats', 'Projects') : ''}</div></div><div class="mlist" role="list">${
     list
       .map(({ kind, o, last, un }) => {
         const on = sel && sel.o.id === o.id;
-        return `<button type="button" role="listitem" class="mconv ${on ? 'on' : ''} ${un ? 'un' : ''}" data-a="chatOpen" data-id="${o.id}" data-k="${kind}" ${on ? 'aria-current="true"' : ''}><span class="mav tile ${CHAT_TILE[kind]}" aria-hidden="true">${ic(CHAT_IC[kind], 18)}</span><span class="mconv-b"><span class="mconv-r"><b class="mname">${h(o.name)}</b><span class="mtime">${shortWhen(last)}</span></span><span class="mconv-r"><span class="mprev"><span class="sr">${CHAT_KINDS[kind]}. </span>${chatPreview(o)}</span>${un ? `<span class="mbadge" aria-label="${un} unread">${un}</span>` : o.state !== 'Active' && kind !== 'pathways' ? `<span class="mstate">${h(o.state)}</span>` : ''}</span></span></button>`;
+        return `<button type="button" role="listitem" class="mconv ${on ? 'on' : ''} ${un ? 'un' : ''}" data-a="chatOpen" data-id="${o.id}" data-k="${kind}" ${on ? 'aria-current="true"' : ''}><span class="mav tile ${CHAT_TILE[kind]}" aria-hidden="true">${ic(CHAT_IC[kind], 18)}</span><span class="mconv-b"><span class="mconv-r"><b class="mname">${h(chatName(o))}</b><span class="mtime">${shortWhen(last)}</span></span><span class="mconv-r"><span class="mprev"><span class="sr">${CHAT_KINDS[kind]}. </span>${chatPreview(o)}</span>${un ? `<span class="mbadge" aria-label="${un} unread">${un}</span>` : o.state !== 'Active' && kind !== 'pathways' ? `<span class="mstate">${h(o.state)}</span>` : ''}</span></span></button>`;
       })
       .join('') || `<div class="mlist-empty">${empty('message', f === 'unread' ? 'No unread messages' : 'No conversations', f === 'unread' ? 'You are all caught up.' : 'You join a conversation when you become a member of a Circle, Rope Team or ' + WL() + ', or take part in a pathway review.')}</div>`
   }</div>`;
@@ -176,8 +186,65 @@ function pwThread(p) {
     !pm
       ? `<div class="mro">${ic('lock', 16)}<span>View only. Only the pathway owner, the Organization Admin and the Reviewer post here.</span></div>`
       : `<form data-f="pwchat" class="composer" novalidate><input type="hidden" name="id" value="${p.id}"><div class="mpend" hidden>${ic('clip', 14)}<span class="fname"></span>${B(ic('x', 14), 'clearFile', {}, 'mtool', 'aria-label="Remove attachment"')}</div>
-  <div class="mcomp"><label class="iconbtn mattach" title="Attach a file (up to ${S.settings.maxFileMB} MB)">${ic('clip')}<input type="file" name="f" data-chatfile="1" aria-label="Attach a file" class="sr"></label><textarea name="t" rows="1" class="mta" placeholder="${h(pm.label)}" aria-label="${h(pm.label)}" data-draft="${p.id}">${h(draft)}</textarea><button class="btn btn-p msend" type="submit" aria-label="Send message" title="Send (Enter)">${ic('send', 18)}</button></div>
+  <div class="mcomp"><label class="iconbtn mattach" title="Attach a file (up to ${uploadMaxMB()} MB)">${ic('clip')}<input type="file" name="f" data-chatfile="1" accept="${uploadAccept({ except: ['video'] })}" aria-label="Attach a file" class="sr"></label><textarea name="t" rows="1" class="mta" placeholder="${h(pm.label)}" aria-label="${h(pm.label)}" data-draft="${p.id}">${h(draft)}</textarea><button class="btn btn-p msend" type="submit" aria-label="Send message" title="Send (Enter)">${ic('send', 18)}</button></div>
   <div class="mhelp">${pm.kind === 'reply' ? '<b>Replying to the clarification request.</b> ' : ''}Enter to send · Shift+Enter for a new line · kept with the pathway's full history and shown in Pathway details</div></form>`
+  }</section>`;
+}
+// ---- sponsor project group chat (right pane): reads and writes the same S.spchats record as the Sponsor's Chat room,
+// so the Sponsor and every shortlisted member see one shared conversation. The Sponsor shows under the project alias.
+function spThread(c) {
+  const p = spProj(c);
+  const live = c.state === 'Active';
+  const title = chatName(c);
+  const members = [{ pid: c.sponsor }, ...c.members.filter(m => m.status === 'Active')];
+  const msgs = c.msgs || [];
+  const byM = Object.fromEntries(msgs.filter(m => m.id).map(m => [m.id, m]));
+  const role_ = pid => (pid === c.sponsor ? 'Sponsor' : ((p && spShortlist(p).find(s => s.pid === pid)) || {}).prole || 'Shortlisted');
+  markRead(c);
+  let lastDay = '',
+    prev = null;
+  const rows = msgs
+    .map(m => {
+      let out = '';
+      const day = String(m.at).slice(0, 10);
+      if (day !== lastDay) {
+        out += `<div class="mday"><span>${dayLabel(m.at)}</span></div>`;
+        lastDay = day;
+        prev = null;
+      }
+      if (m.sys) {
+        prev = null;
+        return out + `<div class="msys">${ic('info', 13)}<span>${h(m.t)}</span><span class="mtime">${tm(m.at)}</span></div>`;
+      }
+      const mine = m.by === myId();
+      const grouped = prev && prev.by === m.by && new Date(m.at) - new Date(prev.at) < 10 * 60000;
+      prev = m;
+      const rp = m.reply && byM[m.reply];
+      const seen = mine ? members.filter(x => x.pid !== myId() && readMark(c.id, x.pid) >= m.at).map(x => cvDisp(c, x.pid)) : [];
+      const allSeen = mine && seen.length && seen.length >= members.length - 1;
+      const tools = live && !mine ? B(ic('reply', 15), 'spmReply', { c: c.id, id: m.id }, 'mtool', 'aria-label="Reply" title="Reply"') : '';
+      return (
+        out +
+        `<div class="mrow ${mine ? 'mine' : ''} ${grouped ? 'grp' : ''}" id="msg-${m.id}">${!mine ? (grouped ? '<span class="mav-sp"></span>' : `<span class="av" title="${cvNm(c, m.by)}">${cvIni(c, m.by)}</span>`) : ''}<div class="mcol">${!mine && !grouped ? `<div class="mwho">${cvNm(c, m.by)}<span class="cap"> · ${h(role_(m.by))}</span></div>` : ''}<div class="mbub bubble ${mine ? 'me' : ''} ${m.q ? 'q' : ''}">${rp ? `<a href="#msg-${rp.id}" class="mquote"><b>${rp.by ? cvNm(c, rp.by) : 'System'}</b><span>${h(String(rp.t || '').slice(0, 90))}</span></a>` : ''}${m.q ? `<div class="mqtag">${ic('question', 13)}${m.ans ? 'Question · answered' : 'Open question'}</div>` : ''}<div class="mtext">${h(m.t || '').replace(/\n/g, '<br>')}</div><div class="mmeta">${tm(m.at)}${mine ? `<span class="mtick ${allSeen ? 'seen' : ''}" title="${seen.length ? 'Seen by ' + h(seen.join(', ')) : 'Sent'}">${ic(seen.length ? 'checks' : 'check', 14)}</span>` : ''}</div></div></div>${tools ? `<div class="mtools">${tools}</div>` : ''}</div>`
+      );
+    })
+    .join('');
+  const reply = UI.chat.reply && UI.chat.reply.c === c.id ? byM[UI.chat.reply.id] : null;
+  const draft = (UI.chat.drafts || {})[c.id] || '';
+  const asQ = UI.chat.asQ === c.id;
+  const avatars = members
+    .slice(0, 4)
+    .map(m => `<span class="av" title="${cvNm(c, m.pid)}">${cvIni(c, m.pid)}</span>`)
+    .join('');
+  return `<section class="mthread" aria-label="Project group: ${h(title)}">
+  <header class="mth-h"><button type="button" class="iconbtn mback-btn" data-a="chatBack" aria-label="Back to conversations">${ic('chevl')}</button><span class="mav tile ${CHAT_TILE.spchats}" aria-hidden="true">${ic(CHAT_IC.spchats, 18)}</span><div class="mth-t"><b class="mname">${h(title)}</b><span class="cap">Project group · ${members.length} members${live ? '' : ' · Closed'}</span></div><span class="mavs hide-sm">${avatars}</span>${L(ic('arrow', 14) + '<span class="mth-bl">Open discussion</span>', 'spchat', { id: c.id }, 'btn btn-s btn-sm')}</header>
+  <div class="msgs" data-scroll="${c.id}" role="log" aria-live="polite">${rows || `<div class="mempty">${empty('message', 'No messages yet', 'Start the conversation. Only the sponsor and the shortlisted people see it.')}</div>`}</div>
+  ${
+    !live
+      ? `<div class="mro">${ic('lock', 16)}<span>This project group is closed. The conversation is read-only.</span></div>`
+      : `<form data-f="spmsg" class="composer ${asQ ? 'asq' : ''}" novalidate><input type="hidden" name="id" value="${c.id}">${reply ? `<div class="mreplying">${ic('reply', 14)}<div class="mreplying-t"><b>Replying to ${reply.by ? cvNm(c, reply.by) : 'system'}</b><span class="cap mprev">${h(String(reply.t || '').slice(0, 90))}</span></div>${B(ic('x', 14), 'msgReplyX', {}, 'mtool', 'aria-label="Cancel reply"')}</div>` : ''}
+  <div class="mcomp"><textarea name="t" rows="1" class="mta" placeholder="Write a message" aria-label="Message" maxlength="2000" data-draft="${c.id}">${h(draft)}</textarea><button type="button" class="iconbtn mqbtn ${asQ ? 'on' : ''}" data-a="chatAsQ" data-id="${c.id}" aria-pressed="${asQ}" title="Send as a question">${ic('question')}</button><button class="btn btn-p msend" type="submit" aria-label="Send message" title="Send (Enter)">${ic('send', 18)}</button></div>
+  <div class="mhelp">${asQ ? '<b>Sending as a question.</b> ' : ''}Enter to send · Shift+Enter for a new line · the sponsor and every shortlisted member see this</div></form>`
   }</section>`;
 }
 // ---- conversation thread (right pane / embedded)
@@ -247,8 +314,8 @@ function chatThread(kind, o, opts = {}) {
     acc.ro
       ? `<div class="mro">${ic('lock', 16)}<span>${h(acc.ro)}</span></div>`
       : `<form data-f="chat" class="composer ${asQ ? 'asq' : ''}" novalidate><input type="hidden" name="c" value="${o.id}"><input type="hidden" name="kind" value="${kind}">${reply ? `<div class="mreplying">${ic('reply', 14)}<div class="mreplying-t"><b>Replying to ${reply.by ? cvNm(o, reply.by) : 'system'}</b><span class="cap mprev">${h((reply.t || attOf(reply)?.n || '').slice(0, 90))}</span></div>${B(ic('x', 14), 'msgReplyX', {}, 'mtool', 'aria-label="Cancel reply"')}</div>` : ''}<div class="mpend" hidden>${ic('clip', 14)}<span class="fname"></span>${B(ic('x', 14), 'clearFile', {}, 'mtool', 'aria-label="Remove attachment"')}</div>
-  <div class="mcomp"><label class="iconbtn mattach" title="Attach a file (up to ${S.settings.maxFileMB} MB)">${ic('clip')}<input type="file" name="f" data-chatfile="1" aria-label="Attach a file" class="sr"></label><textarea name="t" rows="1" class="mta" placeholder="Write a message" aria-label="Message" data-draft="${o.id}">${h(draft)}</textarea><button type="button" class="iconbtn mpollbtn" data-a="chatPoll" data-c="${o.id}" data-k="${kind}" aria-label="Create poll" title="Create poll">${ic('vote')}</button><button type="button" class="iconbtn mqbtn ${asQ ? 'on' : ''}" data-a="chatAsQ" data-id="${o.id}" aria-pressed="${asQ}" title="Send as a question">${ic('question')}</button><button class="btn btn-p msend" type="submit" aria-label="Send message" title="Send (Enter)">${ic('send', 18)}</button></div>
-  <div class="mhelp">${asQ ? '<b>Sending as a question.</b> ' : ''}Enter to send · Shift+Enter for a new line · files up to ${S.settings.maxFileMB} MB, video by link · members only</div></form>`
+  <div class="mcomp"><label class="iconbtn mattach" title="Attach a file (up to ${uploadMaxMB()} MB)">${ic('clip')}<input type="file" name="f" data-chatfile="1" accept="${uploadAccept({ except: ['video'] })}" aria-label="Attach a file" class="sr"></label><textarea name="t" rows="1" class="mta" placeholder="Write a message" aria-label="Message" data-draft="${o.id}">${h(draft)}</textarea><button type="button" class="iconbtn mpollbtn" data-a="chatPoll" data-c="${o.id}" data-k="${kind}" aria-label="Create poll" title="Create poll">${ic('vote')}</button><button type="button" class="iconbtn mqbtn ${asQ ? 'on' : ''}" data-a="chatAsQ" data-id="${o.id}" aria-pressed="${asQ}" title="Send as a question">${ic('question')}</button><button class="btn btn-p msend" type="submit" aria-label="Send message" title="Send (Enter)">${ic('send', 18)}</button></div>
+  <div class="mhelp">${asQ ? '<b>Sending as a question.</b> ' : ''}Enter to send · Shift+Enter for a new line · files up to ${uploadMaxMB()} MB (approved types, scanned), video by link · members only</div></form>`
   }</section>`;
 }
 const roleIn = (o, pid) => {
@@ -266,7 +333,7 @@ route('messages', 'any', () => {
   }
   const sel = UI.chat.open && sp.find(x => x.o.id === UI.chat.open.id);
   if (sel) markRead(sel.o);
-  return `<div class="msgshell ${UI.chat.open && sel ? 'has-sel' : ''}"><aside class="mside">${convList(sel)}</aside><div class="mmain">${sel ? (sel.kind === 'pathways' ? pwThread(sel.o) : chatThread(sel.kind, sel.o)) : `<div class="mnone">${empty('message', sp.length ? 'Choose a conversation' : 'No conversations yet', sp.length ? 'Threaded discussions with your Circles, Rope Teams and ' + WL() + 's. Messages, files, questions and coordination in one place.' : 'You join a conversation when you become a member of a Circle, Rope Team or ' + WL() + '.')}</div>`}</div></div>`;
+  return `<div class="msgshell ${UI.chat.open && sel ? 'has-sel' : ''}"><aside class="mside">${convList(sel)}</aside><div class="mmain">${sel ? (sel.kind === 'pathways' ? pwThread(sel.o) : sel.kind === 'spchats' ? spThread(sel.o) : chatThread(sel.kind, sel.o)) : `<div class="mnone">${empty('message', sp.length ? 'Choose a conversation' : 'No conversations yet', sp.length ? 'Threaded discussions with your Circles, Rope Teams and ' + WL() + 's. Messages, files, questions and coordination in one place.' : 'You join a conversation when you become a member of a Circle, Rope Team or ' + WL() + '.')}</div>`}</div></div>`;
 });
 // Clicking a conversation's name lists everyone in it, with their role in that space.
 A.chatMembers = d => {
@@ -408,13 +475,11 @@ F.chat = (d, form) => {
     toast('Write a message or attach a file.', 'warn');
     return render();
   }
-  if (file && file.size > S.settings.maxFileMB * 1048576) {
-    toast(`That file is over ${S.settings.maxFileMB} MB. Link video or large media externally instead.`, 'err');
-    return render();
-  }
-  if (file && /\.(exe|bat|cmd|sh|msi)$/i.test(file.name)) {
-    toast('This file type is not supported in chat.', 'err');
-    return render();
+  // JF-52: approved types (video by link), the programme's size limit and the malware scan
+  const chk = file && uploadCheck([file], { where: 'Chat attachment', except: ['video'], typeMsg: (f, t) => (t === 'video' ? 'Video is shared by link in chat, not uploaded.' : '') });
+  if (chk && !chk.pass) {
+    toast(chk.msg, 'err');
+    return chk.quarantined.length ? ok() : render();
   }
   const o = byId(d.kind, d.c);
   const m = { id: uid('m'), by: myId(), at: now(), t: text };
@@ -534,6 +599,51 @@ A.chatPollClose = d => {
   toast('Poll closed. Results stay visible.');
   ok();
 };
+// Posting in a sponsor project group: the same message record the Sponsor's Chat room writes (sponsor.js F.spdcm),
+// so it shows there and in every member's Messages. The Sponsor is told as with the standalone discussion; members
+// get one folded Messages notification per group.
+F.spmsg = d => {
+  const text = (d.t || '').trim();
+  if (!text) {
+    toast('Write a message first.', 'warn');
+    return render();
+  }
+  const c = byId('spchats', d.id);
+  let id = uid('spm');
+  while (c.msgs.some(x => x.id === id)) id = uid('spm'); // never reuse an id already in this discussion
+  const m = { id, by: myId(), at: now(), t: text.slice(0, 2000) };
+  if (UI.chat.reply && UI.chat.reply.c === c.id && c.msgs.some(x => x.id === UI.chat.reply.id)) m.reply = UI.chat.reply.id;
+  if (UI.chat.asQ === c.id) m.q = true;
+  c.msgs.push(m);
+  const title = chatName(c);
+  if (c.sponsor !== myId()) notify(c.sponsor, me().name + ' wrote in the discussion for “' + title + '”', 'spchat', { id: c.id });
+  c.members
+    .filter(x => x.status === 'Active' && x.pid !== myId())
+    .forEach(x => {
+      const ex = S.notifs.find(n => n.pid === x.pid && !n.read && n.chat === c.id);
+      if (ex) {
+        ex.cnt = (ex.cnt || 1) + 1;
+        ex.t = `${ex.cnt} new messages in ${title}`;
+        ex.at = today();
+      } else {
+        notify(x.pid, `${me().display || me().name} in ${title}: ${text.slice(0, 60)}`, 'messages', { c: c.id, k: 'spchats' });
+        S.notifs[0].chat = c.id;
+      }
+    });
+  UI.chat.reply = null;
+  UI.chat.asQ = null;
+  if (UI.chat.drafts) delete UI.chat.drafts[c.id];
+  markRead(c);
+  audit('Sponsor project discussion message', c.pr, m.q ? 'question' : '');
+  ok();
+  focusComposer();
+};
+A.spmReply = d => {
+  saveDraft();
+  UI.chat.reply = { c: d.c, id: d.id };
+  render();
+  focusComposer();
+};
 // Posting in a pathway conversation: same rules as the pathway dialog (CONVO.pathway), plus an optional file.
 F.pwchat = (d, form) => {
   const p = byId('pathways', d.id);
@@ -546,13 +656,11 @@ F.pwchat = (d, form) => {
     toast('Write a message or attach a file.', 'warn');
     return render();
   }
-  if (file && file.size > S.settings.maxFileMB * 1048576) {
-    toast(`That file is over ${S.settings.maxFileMB} MB. Link video or large media externally instead.`, 'err');
-    return render();
-  }
-  if (file && /\.(exe|bat|cmd|sh|msi)$/i.test(file.name)) {
-    toast('This file type is not supported in chat.', 'err');
-    return render();
+  // JF-52: approved types (video by link), the programme's size limit and the malware scan
+  const chk = file && uploadCheck([file], { where: 'Chat attachment', except: ['video'], typeMsg: (f, t) => (t === 'video' ? 'Video is shared by link in chat, not uploaded.' : '') });
+  if (chk && !chk.pass) {
+    toast(chk.msg, 'err');
+    return chk.quarantined.length ? ok() : render();
   }
   convoAdd(p, pm.kind, text);
   if (file) p.thread[p.thread.length - 1].att = { n: file.name, mb: +(file.size / 1048576).toFixed(2) };

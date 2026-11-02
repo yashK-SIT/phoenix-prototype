@@ -186,22 +186,25 @@ function sponsorReports() {
   const max = Math.max(1, ...buckets.map(b => b[1]));
   const reqs = myStoryReqs();
   const mdef = id => h((S.metrics.find(m => m.id === id) || {}).def || '');
+  // JF-90: each signal carries its layer and is read on its own; nothing here is combined into a score.
+  const lay = id => layerPill(id);
   return (
+    pilotNote() +
     card(
       'Programme signals',
-      'Aggregate only, for ' + h(ctxNameOf(c)) + '. Counts below 5 are shown as “Fewer than 5” in tables, totals and charts.',
+      'Aggregate only, for ' + h(ctxNameOf(c)) + '. Counts below 5 are shown as “Fewer than 5” in tables, totals and charts. ' + PILOT_LABEL + '.',
       table(
-        ['Signal', 'Value', 'How it is counted'],
+        ['Signal', 'Layer', 'Value', 'How it is counted'],
         [
-          ['Participants in the programme', sup(parts.length), 'Active participant roles in this programme'],
-          ['Circle participation', supPct(inCircle, parts.length), mdef('m2')],
-          ['Milestones achieved', sup(ach), mdef('m6')],
-          ['Action-to-evidence coverage', isSupp(ach) ? SUPP : typeof metric === 'function' ? h(String(metric('m7'))) : '—', mdef('m7')],
-          ['Approved evidence summaries', sup(ev.length), 'Approved evidence cleared for funder reports'],
-          ['Funder-safe Harvests', sup(hv.length), 'Learning Harvests released to funders'],
+          ['Participants in the programme', lay('workflow'), sup(parts.length), 'Active participant roles in this programme'],
+          ['Circle participation', lay('workflow'), supPct(inCircle, parts.length), mdef('m2')],
+          ['Action-to-evidence coverage', lay('evidence'), isSupp(ach) ? SUPP : typeof metric === 'function' ? h(String(metric('m7'))) : '—', mdef('m7')],
+          ['Approved evidence summaries', lay('evidence'), sup(ev.length), 'Approved evidence cleared for funder reports. Support levels are shown per summary, never combined.'],
+          ['Milestones achieved', lay('outputs'), sup(ach), mdef('m6')],
+          ['Funder-safe Harvests', lay('outputs'), sup(hv.length), 'Learning Harvests released to funders'],
         ],
       ),
-      '',
+      pilotPill(),
       'sp-tbl',
     ) +
     card('Approved projects by stage', 'Each bar is a count of approved projects. Small buckets show no bar.', buckets.map(([l, n]) => supBar(h(l), n, max)).join(''), '', 'sp-bars') +

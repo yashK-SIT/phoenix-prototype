@@ -95,9 +95,95 @@ const evDocLock = (e) =>
 const docVisOf = (d) => (d.lock ? "Private" : d.h.docVis || d.def || "Private");
 const SPACE_KIND = { circle: "circles", rope: "ropes", room: "rooms" };
 
+// ---------- JF-53: single storage, many governed references ----------
+// Every file is stored once in S.files, with one ID, a version number and its history. The places it appears — a
+// space's documents or chat, a contribution or work review, a milestone, task or decision folder, an evidence record —
+// hold a reference to it (fid). Each reference keeps its own visibility, so who can open the file is still decided by
+// the folder it sits in. Replacing a file adds a version, and every folder that references it shows the new version.
+// File contents (this browser's IndexedDB) are keyed per version; a production build keeps them server-side.
+const fileGet = (fid) => !!fid && byId("files", fid);
+const fileProjOf = (kind, sp) =>
+  !sp ? null : kind === "rooms" ? roomProject(sp) : byId("projects", sp.project) || null;
+// Every place in the data that holds a file reference:
+// { h (the reference), kind, sp (space), where, by, at, sub ('ms' | 'tk' | 'dc'), o (milestone, task or decision) }.
+function fileHolders() {
+  const out = [];
+  const add = (h, kind, sp, where, by, at, extra) =>
+    h && typeof h === "object" && out.push({ h, kind, sp, where, by: h.by || by, at: h.at || at, ...(extra || {}) });
+  const chat = (kind, sp, where) =>
+    (sp.chat || []).forEach((m) => {
+      if (m.att && typeof m.att === "string") m.att = { n: m.att, mb: null };
+      if (m.att) add(m.att, kind, sp, where, m.by, m.at);
+    });
+  S.circles.forEach((c) => {
+    (c.docs || []).forEach((y) => add(y, "circles", c, "Circle documents"));
+    chat("circles", c, "Circle chat");
+  });
+  S.ropes.forEach((x) => {
+    (x.docs || []).forEach((y) => add(y, "ropes", x, "Rope Team documents"));
+    chat("ropes", x, "Rope Team chat");
+    (x.reviews || []).forEach((v) => v.att && add(v.att, "ropes", x, "Work review", v.by, v.at));
+  });
+  S.rooms.forEach((x) => {
+    (x.docs || []).forEach((y) => add(y, "rooms", x, DOC_ROOM + " documents"));
+    chat("rooms", x, DOC_ROOM + " chat");
+    (x.contribs || []).forEach((c) => c.att && add(c.att, "rooms", x, "Contribution", c.by, c.at));
+    (x.milestones || []).forEach((m) => (m.files || []).forEach((y) => add(y, "rooms", x, "Milestone “" + m.t + "”", null, null, { sub: "ms", o: m })));
+    (x.tasks || []).forEach((k) => (k.files || []).forEach((y) => add(y, "rooms", x, "Task “" + k.t + "”", null, null, { sub: "tk", o: k })));
+    (x.decisions || []).forEach((k) => (k.files || []).forEach((y) => add(y, "rooms", x, "Decision “" + k.t + "”", null, null, { sub: "dc", o: k })));
+  });
+  return out;
+}
+function fileCreate(m) {
+  const f = {
+    id: uid("fl"),
+    ctx: m.ctx || null,
+    project: m.project || null,
+    n: m.n,
+    mb: m.mb == null ? null : m.mb,
+    ver: 1,
+    by: m.by || null,
+    at: m.at || now(),
+    versions: [{ ver: 1, n: m.n, mb: m.mb == null ? null : m.mb, by: m.by || null, at: m.at || now(), note: "Original", blob: m.blob || null }],
+  };
+  S.files.push(f);
+  return f;
+}
+// Gives every holder without one its stored file and ID (idempotent: runs at boot and before every save). A holder
+// whose contents were kept in this browser (blob) keeps that stored copy as version 1.
+function filesEnsure() {
+  S.files = S.files || [];
+  fileHolders().forEach((r) => {
+    if (fileGet(r.h.fid)) return;
+    const pr = fileProjOf(r.kind, r.sp);
+    r.h.fid = fileCreate({ ctx: r.sp.ctx, project: pr ? pr.id : null, n: r.h.n, mb: r.h.mb, by: r.by, at: r.at, blob: r.h.blob && r.h.id ? r.h.id : null }).id;
+  });
+  (S.evidence || []).forEach((e) => {
+    if (!e.file || fileGet(e.fid)) return;
+    e.fid = fileCreate({ ctx: e.ctx, project: e.project, n: e.file, mb: e.sizeMB, by: e.owner, at: (e.history && e.history[0] && e.history[0].at) || "" }).id;
+  });
+}
+// Every reference to a file, wherever it is (evidence included).
+const fileRefs = (fid) => [
+  ...fileHolders().filter((r) => r.h.fid === fid),
+  ...(S.evidence || []).filter((e) => e.fid === fid).map((e) => ({ h: e, kind: "evidence", ev: e, where: "Evidence “" + e.title + "”", by: e.owner })),
+];
+// Adds a version to the stored file and shows it through every reference (they all point at the same ID).
+function fileAddVersion(fl, m) {
+  const v = { ver: fl.ver + 1, n: m.n, mb: m.mb, by: myId(), at: now(), note: m.note, blob: m.blob || null };
+  fl.versions.push(v);
+  Object.assign(fl, { ver: v.ver, n: v.n, mb: v.mb });
+  fileRefs(fl.id).forEach((r) => {
+    if (r.kind === "evidence") Object.assign(r.h, { file: v.n, sizeMB: v.mb });
+    else Object.assign(r.h, { n: v.n, mb: v.mb });
+  });
+  return v;
+}
+
 // Every file of a project, as rows: { key, f (folder), sub ('ms' | 'tk'), it (milestone or task id), sp (space),
 // n, mb, by, at, src, h (the record holding visibility), ev (evidence id), lock (why it must stay Private) }.
 function docIndex(p) {
+  filesEnsure();
   const { circles, ropes, rooms } = docSpaces(p);
   const out = [];
   const chat = (f, sp, ab) =>
@@ -222,6 +308,10 @@ function docIndex(p) {
           );
       });
     });
+    // JF-53: a decision has a folder of its own, like a milestone or task
+    (x.decisions || []).forEach((k) =>
+      docs("room", x, "dd", k.files, { sub: "dc", it: k.id, src: "Decision file" }),
+    );
   });
   S.evidence
     .filter((e) => evProjects(e).includes(p))
@@ -241,6 +331,9 @@ function docIndex(p) {
     });
   out.forEach((d) => {
     if (d.f === "rope") d.lock = DOC_ROPE_LOCK;
+    // JF-53: every row resolves to its stored file: one ID and its current version, wherever it is shown
+    const fl = fileGet(d.h && d.h.fid);
+    if (fl) Object.assign(d, { fid: fl.id, ver: fl.ver, n: d.ev ? d.n : fl.n, mb: fl.mb });
   });
   return out;
 }
@@ -280,8 +373,10 @@ const docSize = (mb) =>
 const docIcon = (n) => (IMG_RE.test(n) ? "image" : "file");
 const docVisPill = (v) =>
   `<span class="pill doc-vis ${v === "Public" ? "p-green" : "p-grey"}">${ic(v === "Public" ? "globe" : "lock", 12)}${v}</span>`;
+const DOC_SUB = { ms: "Milestones", tk: "Tasks", dc: "Decisions" };
 const docItemName = (p, d) => {
   const x = d.sp;
+  if (d.sub === "dc") return ((x.decisions || []).find((k) => k.id === d.it) || {}).t || "Decision";
   if (d.sub === "ms")
     return (
       ((x.milestones || []).find((m) => m.id === d.it) || {}).t || "Milestone"
@@ -339,11 +434,16 @@ const docPlaceholder = (p, d) =>
     { type: "text/plain;charset=utf-8" },
   );
 // The real file when one was uploaded in Documents, else a placeholder: [blob, file name].
-const docBlob = (p, d) =>
-  (d.file && d.file.blob
-    ? docTx("readonly", (st) => st.get(d.file.id)).catch(() => null)
-    : Promise.resolve(null)
-  ).then((b) => (b ? [b, d.n] : [docPlaceholder(p, d), d.n + ".txt"]));
+// JF-53: contents come from the stored file's version (the current one unless a version is asked for).
+const docBlob = (p, d, ver) => {
+  const fl = fileGet(d.fid);
+  const v = fl && fl.versions.find((x) => x.ver === (+ver || fl.ver));
+  const key = v ? v.blob : d.file && d.file.blob ? d.file.id : null;
+  const name = v ? v.n : d.n;
+  return (key ? docTx("readonly", (st) => st.get(key)).catch(() => null) : Promise.resolve(null)).then((b) =>
+    b ? [b, name] : [docPlaceholder(p, { ...d, n: name + (v && fl.versions.length > 1 ? " (version " + v.ver + ")" : "") }), name + ".txt"],
+  );
+};
 const docSave = (blob, name) => {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -435,8 +535,7 @@ function docPath(p, d) {
   }[d.f];
   const path = [docFolder(d.f)[1]];
   if (many && d.sp) path.push(d.sp.name);
-  if (d.sub)
-    path.push(d.sub === "ms" ? "Milestones" : "Tasks", docItemName(p, d));
+  if (d.sub) path.push(DOC_SUB[d.sub], docItemName(p, d));
   return path;
 }
 
@@ -609,9 +708,10 @@ function docHead(p, title, trail) {
 function docProjectView(p) {
   const f = UI.p.f;
   if (f && docFolder(f)) return docFolderView(p, f);
-  const all = docList(p);
+  const all = docList(p).filter((d) => d.f !== "rope" || ropeExists(d.sp));
   const sp = docSpaces(p);
-  const spaces = { circle: sp.circles, rope: sp.ropes, room: sp.rooms };
+  // JF-32: a Rope Team the viewer is outside of is not named, counted or locked here — the folder simply looks empty
+  const spaces = { circle: sp.circles, rope: sp.ropes.filter(ropeExists), room: sp.rooms };
   const tiles = docFolders()
     .map(([k, label, icon, tile, desc]) => {
       const fs = all.filter((d) => d.f === k);
@@ -642,6 +742,9 @@ function docProjectView(p) {
 }
 // The rows of one folder (or of all of them) as a Data View.
 function docFilesView(p, list, k, withFolder) {
+  // JF-53: how many places the viewer can open hold each stored file (counted once for the whole list)
+  const placeN = {};
+  docList(p).forEach((r) => r.fid && (placeN[r.fid] = (placeN[r.fid] || 0) + 1));
   return dataView(k, {
     label: "files",
     items: list,
@@ -693,6 +796,7 @@ function docFilesView(p, list, k, withFolder) {
     dense: true,
     row: (d) => {
       const v = docVisOf(d);
+      const places = placeN[d.fid] || 0;
       const sw = docCanVis(p, d)
         ? v === "Public"
           ? B(
@@ -739,6 +843,9 @@ function docFilesView(p, list, k, withFolder) {
               ? " · " + h(d.sp.name)
               : ""),
         meta: [
+          d.fid ? `<span class="doc-ver" title="File ${h(d.fid)}">v${d.ver}</span>` : "",
+          places > 1 ? `<span class="cap" title="The same file and version, filed by reference">${ic("link", 12)} In ${places} places you can open</span>` : "",
+          d.h && d.h.ref ? `<span class="cap">Filed here by reference</span>` : "",
           docSize(d.mb),
           "Shared by " + nm(d.by),
           d.at ? fmt(d.at) : "",
@@ -758,7 +865,7 @@ function docFilesView(p, list, k, withFolder) {
             "btn-s btn-sm",
             'aria-label="Download ' + h(d.n) + '"',
           ),
-        menu: sw,
+        menu: sw + docFileMenu(p, d),
       };
     },
     empty: [
@@ -771,10 +878,10 @@ function docFilesView(p, list, k, withFolder) {
 }
 function docFolderView(p, f) {
   const [, label, icon, tile, desc] = docFolder(f);
-  const all = docList(p).filter((d) => d.f === f);
+  const all = docList(p).filter((d) => d.f === f && (d.f !== "rope" || ropeExists(d.sp)));
   const sp = docSpaces(p);
   const spaces =
-    { circle: sp.circles, rope: sp.ropes, room: sp.rooms }[f] || [];
+    { circle: sp.circles, rope: sp.ropes.filter(ropeExists), room: sp.rooms }[f] || [];
   const trail = [[h(p.title), "documents", { id: p.id }]];
   const s = UI.p.s;
   const it = UI.p.it;
@@ -809,11 +916,12 @@ function docFolderView(p, f) {
       )
     );
   // Action Room: Milestones and Tasks are folders of their own
-  if (f === "room" && (s === "ms" || s === "tk")) {
+  if (f === "room" && DOC_SUB[s]) {
     const isMs = s === "ms";
-    const subL = isMs ? "Milestones" : "Tasks";
+    const isDc = s === "dc";
+    const subL = DOC_SUB[s];
     const items = spaces.flatMap((x) =>
-      (isMs ? x.milestones || [] : x.tasks || []).map((o) => ({ x, o })),
+      (isMs ? x.milestones || [] : isDc ? x.decisions || [] : x.tasks || []).map((o) => ({ x, o })),
     );
     const ftrail = [...trail, [h(label), "documents", { id: p.id, f }]];
     if (it) {
@@ -827,11 +935,13 @@ function docFolderView(p, f) {
             empty("folder", "Not found", "It may have been removed."),
           )
         );
-      const name = isMs ? hit.o.t : taskKey(hit.x, hit.o) + " " + hit.o.t;
+      const name = isMs || isDc ? hit.o.t : taskKey(hit.x, hit.o) + " " + hit.o.t;
       const files = all.filter((d) => d.sub === s && d.it === it);
       const info = isMs
         ? pill(hit.o.status) + `<span class="cap">Due ${fmt(hit.o.due)}</span>`
-        : pill(hit.o.status) +
+        : isDc
+          ? pill(hit.o.state) + `<span class="cap">Owner ${nm(hit.o.owner)}</span>`
+          : pill(hit.o.status) +
           `<span class="cap">Assigned to ${nm(hit.o.owner)}${hit.o.due ? " · due " + fmt(hit.o.due) : ""}</span>`;
       return (
         docHead(p, h(name), [
@@ -845,9 +955,9 @@ function docFolderView(p, f) {
           docFilesView(p, files, "docs:" + s + ":" + it, false),
           docUpBtn(p, f, hit.x, { s, it }) +
             L(
-              ic(isMs ? "flag" : "checks", 14) + "Open in " + DOC_ROOM,
+              ic(isMs ? "flag" : isDc ? "check" : "checks", 14) + "Open in " + DOC_ROOM,
               "room",
-              { id: hit.x.id, tab: "plan" },
+              { id: hit.x.id, tab: isDc ? "dec" : "plan" },
               "btn btn-g btn-sm",
             ),
           "rec-list",
@@ -858,8 +968,8 @@ function docFolderView(p, f) {
       .map(({ x, o }) => {
         const n = all.filter((d) => d.sub === s && d.it === o.id);
         const pub = n.filter((d) => docVisOf(d) === "Public").length;
-        const name = isMs ? o.t : taskKey(x, o) + " " + o.t;
-        return `<li><button type="button" class="doc-sub" data-a="go" data-r="documents" data-id="${p.id}" data-f="${f}" data-s="${s}" data-it="${o.id}"><span class="tile t-soft" aria-hidden="true">${ic("folder", 16)}</span><span class="doc-sub-t"><b>${h(name)}</b><span class="cap">${spaces.length > 1 ? h(x.name) + " · " : ""}${isMs ? "Due " + fmt(o.due) : nm(o.owner)}</span></span>${pill(o.status)}<span class="cap doc-sub-n">${n.length} file${n.length === 1 ? "" : "s"} · ${pub} public</span>${ic("chevr", 16)}</button></li>`;
+        const name = isMs || isDc ? o.t : taskKey(x, o) + " " + o.t;
+        return `<li><button type="button" class="doc-sub" data-a="go" data-r="documents" data-id="${p.id}" data-f="${f}" data-s="${s}" data-it="${o.id}"><span class="tile t-soft" aria-hidden="true">${ic("folder", 16)}</span><span class="doc-sub-t"><b>${h(name)}</b><span class="cap">${spaces.length > 1 ? h(x.name) + " · " : ""}${isMs ? "Due " + fmt(o.due) : nm(o.owner)}</span></span>${pill(isDc ? o.state : o.status)}<span class="cap doc-sub-n">${n.length} file${n.length === 1 ? "" : "s"} · ${pub} public</span>${ic("chevr", 16)}</button></li>`;
       })
       .join("");
     return (
@@ -868,7 +978,9 @@ function docFolderView(p, f) {
         subL,
         isMs
           ? "A folder for each milestone: its evidence and the files uploaded for it."
-          : "A folder for each task: the evidence attached to it and the files uploaded for it.",
+          : isDc
+            ? "A folder for each decision: the files it relies on. A file already elsewhere in the project can be filed here by reference — the same file and version, not a copy."
+            : "A folder for each task: the evidence attached to it and the files uploaded for it.",
         rows
           ? `<ul class="doc-subs" role="list">${rows}</ul>`
           : empty(
@@ -885,14 +997,16 @@ function docFolderView(p, f) {
   if (f === "room") {
     const ms = all.filter((d) => d.sub === "ms");
     const tk = all.filter((d) => d.sub === "tk");
+    const dc = all.filter((d) => d.sub === "dc");
     const nMs = spaces.reduce((a, x) => a + (x.milestones || []).length, 0);
     const nTk = spaces.reduce((a, x) => a + (x.tasks || []).length, 0);
+    const nDc = spaces.reduce((a, x) => a + (x.decisions || []).length, 0);
     const sub = (k, l, ic_, n, files) =>
       `<li><button type="button" class="doc-sub" data-a="go" data-r="documents" data-id="${p.id}" data-f="room" data-s="${k}"><span class="tile t-navy" aria-hidden="true">${ic(ic_, 16)}</span><span class="doc-sub-t"><b>${l}</b><span class="cap">${n} folder${n === 1 ? "" : "s"}</span></span><span class="cap doc-sub-n">${files.length} file${files.length === 1 ? "" : "s"} · ${files.filter((d) => docVisOf(d) === "Public").length} public</span>${ic("chevr", 16)}</button></li>`;
     top = card(
       "Folders",
       "",
-      `<ul class="doc-subs" role="list">${sub("ms", "Milestones", "flag", nMs, ms)}${sub("tk", "Tasks", "checks", nTk, tk)}</ul>`,
+      `<ul class="doc-subs" role="list">${sub("ms", "Milestones", "flag", nMs, ms)}${sub("tk", "Tasks", "checks", nTk, tk)}${sub("dc", "Decisions", "check", nDc, dc)}</ul>`,
       "",
       "rec-list",
     );
@@ -964,9 +1078,7 @@ A.docUpOpen = (d) => {
   clearF("docup");
   UI.form.docup = { x: d.x || (where[0] || {}).id || "", vis: "Private" };
   const target = d.it
-    ? d.s === "ms"
-      ? "milestone"
-      : "task"
+    ? { ms: "milestone", tk: "task", dc: "decision" }[d.s] || "task"
     : docFolder(d.f)[1];
   modal(
     "Upload files",
@@ -990,7 +1102,7 @@ A.docUpOpen = (d) => {
           help: "You can change it later from the file’s menu.",
         })
   }
-  <div class="field"><label class="lbl" for="docup_f">Files <span class="req">*</span></label><input id="docup_f" type="file" name="files" class="input${fe("docup", "files") ? " err" : ""}" style="padding:8px" multiple aria-invalid="${!!fe("docup", "files")}">${fe("docup", "files") ? `<span class="emsg" role="alert">${ic("alert", 14)}${fe("docup", "files")}</span>` : ""}<span class="help">Up to ${S.settings.maxFileMB} MB each. They go into this ${h(target)} folder and are shown to the people who can open it.</span></div>
+  <div class="field"><label class="lbl" for="docup_f">Files <span class="req">*</span></label><input id="docup_f" type="file" name="files" accept="${uploadAccept()}" class="input${fe("docup", "files") ? " err" : ""}" style="padding:8px" multiple aria-invalid="${!!fe("docup", "files")}">${fe("docup", "files") ? `<span class="emsg" role="alert">${ic("alert", 14)}${fe("docup", "files")}</span>` : ""}<span class="help">${uploadRuleText()}. They go into this ${h(target)} folder and are shown to the people who can open it.</span></div>
   <div class="actions">${B("Cancel", "closeM")}<button class="btn btn-p" type="submit">${ic("upload", 14)}Upload</button></div></form>`,
   );
 };
@@ -999,21 +1111,16 @@ const docUpTarget = (d) => {
   const x = byId(SPACE_KIND[d.f], d.x);
   if (!x) return null;
   if (!d.it) return { x, list: (x.docs = x.docs || []) };
-  const o = ((d.s === "ms" ? x.milestones : x.tasks) || []).find(
+  const o = ((d.s === "ms" ? x.milestones : d.s === "dc" ? x.decisions : x.tasks) || []).find(
     (y) => y.id === d.it,
   );
   return o ? { x, o, list: (o.files = o.files || []) } : null;
 };
 F.docUp = (d, form) => {
   const files = [...(form.querySelector("input[type=file]")?.files || [])];
-  const big = files.find((f) => f.size > S.settings.maxFileMB * 1048576);
-  const bad = !files.length
-    ? "Choose at least one file."
-    : big
-      ? big.name + " is over " + S.settings.maxFileMB + " MB."
-      : files.find((f) => !f.size)
-        ? files.find((f) => !f.size).name + " is empty."
-        : "";
+  // JF-52: approved types, the programme's size limit and the malware scan
+  const chk = files.length ? uploadCheck(files, { where: "Documents" }) : null;
+  const bad = !files.length ? "Choose at least one file." : chk.pass ? "" : chk.msg;
   if (bad) {
     UI.err.docup = { files: bad };
     UI.form.docup = { ...(UI.form.docup || {}), x: d.x, vis: d.vis };
@@ -1034,9 +1141,7 @@ F.docUp = (d, form) => {
   }));
   recs.forEach((r) => t.list.push(r));
   const where = t.o
-    ? d.s === "ms"
-      ? "milestone “" + t.o.t + "”"
-      : "task “" + t.o.t + "”"
+    ? ({ ms: "milestone", tk: "task", dc: "decision" }[d.s] || "task") + " “" + t.o.t + "”"
     : "Documents";
   sysMsg(
     t.x,
@@ -1096,15 +1201,181 @@ A.docVis = (d) => {
   ok();
 };
 
+// ---------- JF-53: versions and references ----------
+// The rows, in this project, that resolve to one stored file and that the viewer can open.
+const docPlaces = (p, fid) => docList(p).filter((d) => d.fid === fid);
+// Replace with a new version: the person who first shared the file or a project manager, while its space is active.
+// Evidence keeps its own review process, so its file is not replaced from Documents.
+const docCanReplace = (p, d) => {
+  const fl = d && fileGet(d.fid);
+  return !!fl && !d.ev && docSees(p, d) && !!d.sp && d.sp.state === "Active" && (fl.by === myId() || docMgr(p));
+};
+// File by reference: any file but evidence and Rope Team content (which stays in its Rope Team). Sharing it into
+// another folder is a disclosure, so a Private file is filed elsewhere only by the person who shared it or a manager.
+const docCanRef = (p, d) => {
+  const fl = d && fileGet(d.fid);
+  return !!fl && !d.ev && d.f !== "rope" && docSees(p, d) && (docVisOf(d) === "Public" || fl.by === myId() || docMgr(p));
+};
+// Folders this person may add to (the space folder, or a milestone, task or decision of an Action Room) that do not
+// hold this file yet. Value: "f|space|sub|item".
+function docRefTargets(p, fid) {
+  const out = [];
+  const has = (list) => (list || []).some((y) => y.fid === fid);
+  [["circle", docSpaces(p).circles], ["rope", docSpaces(p).ropes.filter(ropeExists)], ["room", docSpaces(p).rooms]].forEach(([f, xs]) =>
+    xs.filter((x) => docUpOk(f, x)).forEach((x) => {
+      const lab = docFolder(f)[1] + (xs.length > 1 ? " · " + x.name : "");
+      if (!has(x.docs)) out.push([[f, x.id, "", ""].join("|"), lab]);
+      if (f !== "room") return;
+      (x.milestones || []).forEach((m) => !has(m.files) && out.push([[f, x.id, "ms", m.id].join("|"), lab + " / Milestones / " + m.t]));
+      (x.tasks || []).forEach((k) => !has(k.files) && out.push([[f, x.id, "tk", k.id].join("|"), lab + " / Tasks / " + taskKey(x, k) + " " + k.t]));
+      (x.decisions || []).forEach((k) => !has(k.files) && out.push([[f, x.id, "dc", k.id].join("|"), lab + " / Decisions / " + k.t]));
+    }),
+  );
+  return out;
+}
+function docFileMenu(p, d) {
+  if (!d.fid) return "";
+  return (
+    B(ic("clock", 16) + menuT("Versions and places", "One file ID, its versions and where it is filed"), "docHist", { id: p.id, k: d.key }, "menu-i", 'role="menuitem"') +
+    (docCanReplace(p, d) ? B(ic("upload", 16) + menuT("Upload a new version", "Every folder that has this file shows it"), "docVer", { id: p.id, k: d.key }, "menu-i", 'role="menuitem"') : "") +
+    (docCanRef(p, d) && docRefTargets(p, d.fid).length ? B(ic("link", 16) + menuT("Also file in…", "The same file, not a copy"), "docRef", { id: p.id, k: d.key }, "menu-i", 'role="menuitem"') : "")
+  );
+}
+A.docHist = (d) => {
+  const p = byId("projects", d.id);
+  const x = docFind(p, d.k);
+  const fl = x && fileGet(x.fid);
+  if (!fl) return;
+  UI.dvMenu = null;
+  modal(
+    h(fl.n),
+    () =>
+      `<div class="col" style="gap:12px">${dl([
+        ["File ID", `<code class="adm-mono">${h(fl.id)}</code>`],
+        ["Current version", "v" + fl.ver + " · " + docSize(fl.mb)],
+        ["Project", h(p.title)],
+      ])}<h3 class="h3">Versions</h3>${table(
+        ["Version", "Name", "Size", "By", "When", "Note", ""],
+        fl.versions
+          .slice()
+          .reverse()
+          .map((v) => [
+            "v" + v.ver + (v.ver === fl.ver ? " " + pill("Current", "p-teal") : ""),
+            h(v.n),
+            docSize(v.mb),
+            v.by ? nm(v.by) : "—",
+            v.at ? fmt(v.at) : "—",
+            h(v.note || ""),
+            B(ic("download", 14) + "Download", "docDl", { id: p.id, k: x.key, v: v.ver }, "btn-s btn-sm"),
+          ]),
+      )}<h3 class="h3">Filed in</h3><ul class="col" style="gap:4px;margin:0;padding-left:18px">${docPlaces(p, fl.id)
+        .map((r) => `<li>${h(docPath(p, r).join(" / "))} ${docVisPill(docVisOf(r))}${r.h && r.h.ref ? ' <span class="cap">by reference</span>' : ""}</li>`)
+        .join("")}</ul><p class="cap">Every place shows the same file and its current version. Each keeps its own visibility, so you see only the places you can open.</p><div class="actions">${B("Close", "closeM")}</div></div>`,
+    true,
+  );
+};
+A.docVer = (d) => {
+  const p = byId("projects", d.id);
+  const x = docFind(p, d.k);
+  UI.dvMenu = null;
+  clearF("docnv");
+  modal("Upload a new version", () => {
+    const fl = fileGet(x.fid);
+    const n = docPlaces(p, fl.id).length;
+    return `<form data-f="docNv" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${p.id}"><input type="hidden" name="k" value="${h(x.key)}">${banner("info", h(fl.n) + " · v" + fl.ver, "The new file becomes v" + (fl.ver + 1) + " of the same file. " + (n > 1 ? "It is filed in " + n + " places you can open, and every place that has it" : "Every place that has it") + " shows the new version. Earlier versions stay in its history.")}
+  <div class="field"><label class="lbl" for="docnv_f">File <span class="req">*</span></label><input id="docnv_f" type="file" name="file" accept="${uploadAccept()}" class="input${fe("docnv", "file") ? " err" : ""}" style="padding:8px">${fe("docnv", "file") ? `<span class="emsg" role="alert">${ic("alert", 14)}${fe("docnv", "file")}</span>` : ""}<span class="help">${uploadRuleText()}.</span></div>
+  ${fi("docnv", "note", "What changed", { req: true, max: 200, ph: "e.g. Added the October scores" })}
+  <div class="actions">${B("Cancel", "closeM")}<button class="btn btn-p" type="submit">${ic("upload", 14)}Save as v${fl.ver + 1}</button></div></form>`;
+  });
+};
+F.docNv = (d, form) => {
+  const p = byId("projects", d.id);
+  const x = docFind(p, d.k);
+  const fl = fileGet(x.fid);
+  const file = form && form.querySelector("input[type=file]")?.files?.[0];
+  const okv = validate("docnv", d, { note: [["req", "Say what changed in this version."]] });
+  // JF-52 rules apply to a new version like any upload
+  const chk = file ? uploadCheck([file], { where: "New version of " + fl.n, ctx: p.ctx }) : null;
+  if (!file) UI.err.docnv = { ...(UI.err.docnv || {}), file: "Choose the new file." };
+  else if (!chk.pass) UI.err.docnv = { ...(UI.err.docnv || {}), file: chk.msg };
+  if (!okv || !file || !chk.pass) {
+    if (chk && chk.quarantined.length) {
+      UI.modal = null;
+      clearF("docnv");
+      toast(chk.msg, "err");
+      return ok();
+    }
+    return render();
+  }
+  const key = fl.id + "@" + (fl.ver + 1);
+  const v = fileAddVersion(fl, { n: file.name, mb: +(file.size / 1048576).toFixed(2), note: d.note.trim(), blob: key });
+  docTx("readwrite", (st) => st.put(file, key)).catch(() => {
+    v.blob = null;
+    toast("Saved, but this browser could not store the file contents. Downloads of this version will be placeholders.", "warn");
+    ok();
+  });
+  // tell each space that holds it (once), and the people who filed it elsewhere
+  const refs = fileRefs(fl.id);
+  [...new Set(refs.map((r) => r.sp).filter(Boolean))].forEach((sp) => sysMsg(sp, me().name + " uploaded version " + v.ver + " of “" + v.n + "”: " + v.note));
+  [...new Set(refs.map((r) => r.h.by).filter((pid) => pid && pid !== myId()))].forEach((pid) =>
+    notify(pid, "New version v" + v.ver + " of “" + v.n + "” in " + p.title, "documents", { id: p.id, f: x.f }),
+  );
+  audit("Document version added", fl.id, "v" + v.ver + " · " + v.n + " · " + v.note + " · shown in " + refs.length + " place" + (refs.length === 1 ? "" : "s"));
+  UI.modal = null;
+  clearF("docnv");
+  toast("Saved as version " + v.ver + ". Every place that has this file now shows it.");
+  ok();
+};
+A.docRef = (d) => {
+  const p = byId("projects", d.id);
+  const x = docFind(p, d.k);
+  UI.dvMenu = null;
+  clearF("docrf");
+  UI.form.docrf = { vis: "Private" };
+  modal("Also file in…", () => {
+    const fl = fileGet(x.fid);
+    const pubOk = docVisOf(x) === "Public" || docMgr(p);
+    return `<form data-f="docRf" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${p.id}"><input type="hidden" name="k" value="${h(x.key)}">${banner("info", "The same file, not a copy", h(fl.n) + " (v" + fl.ver + ", file " + h(fl.id) + ") is filed in another folder by reference. A new version shows in every folder that has it.")}
+  ${fi("docrf", "to", "Folder", { type: "select", req: true, ph: "Choose a folder", opts: docRefTargets(p, fl.id) })}
+  ${fi("docrf", "vis", "Visibility here", { type: "select", opts: pubOk ? [["Private", "Private — the people of that space"], ["Public", projVis(p) === "Public" ? "Public — everyone in the programme" : "Public — the whole project team"]] : [["Private", "Private — the people of that space"]], help: pubOk ? "Each place keeps its own visibility." : "This file is Private where it is now, so it can be filed elsewhere only as Private." })}
+  <div class="actions">${B("Cancel", "closeM")}<button class="btn btn-p" type="submit">${ic("link", 14)}File here</button></div></form>`;
+  });
+};
+F.docRf = (d) => {
+  const p = byId("projects", d.id);
+  const x = docFind(p, d.k);
+  const fl = fileGet(x.fid);
+  const tgt = docRefTargets(p, fl.id).find(([v]) => v === d.to);
+  if (!validate("docrf", d, { to: [["req", "Choose a folder."]] }) || !tgt) {
+    if (!tgt && d.to) UI.err.docrf = { to: "Choose one of the listed folders." };
+    return render();
+  }
+  const [f, sid, s, it] = d.to.split("|");
+  const t = docUpTarget({ f, x: sid, s, it });
+  const vis = f === "rope" || !(docVisOf(x) === "Public" || docMgr(p)) ? "Private" : DOC_VIS.includes(d.vis) ? d.vis : "Private";
+  t.list.push({ id: uid("dc"), fid: fl.id, n: fl.n, mb: fl.mb, by: myId(), at: now(), docVis: vis, ref: { from: x.key, by: myId() } });
+  sysMsg(t.x, me().name + " filed “" + fl.n + "” (v" + fl.ver + ") here by reference" + (t.o ? " — " + ({ ms: "milestone", tk: "task", dc: "decision" }[s]) + " “" + t.o.t + "”" : ""));
+  audit("Document filed by reference", fl.id, fl.n + " v" + fl.ver + " → " + tgt[1] + " · " + vis);
+  UI.modal = null;
+  clearF("docrf");
+  toast("Filed in " + tgt[1] + ". It is the same file: a new version will show in both places.");
+  ok();
+};
+
 // ---- share links
 // A Public file gets a link to it. The link grants nothing by itself: the person signs in and must still be able to
 // see the file under its normal rules. A missing, Private or hidden file gives the same "not available" answer.
+// JF-52: a link also expires after the programme's set number of hours (to the minute), and access is checked
+// again when it is opened and on every download. A link without an expiry is treated as expired.
+const docLinkExp = (p) => Math.floor((Date.now() + linkHours(p.ctx) * 3600e3) / 60000) * 60000;
 const docShareUrl = (p, d) =>
   location.href.split("#")[0] +
   "#doc?p=" +
   encodeURIComponent(p.id) +
   "&k=" +
-  encodeURIComponent(d.key);
+  encodeURIComponent(d.key) +
+  "&exp=" +
+  docLinkExp(p);
 const docShareable = (p, d) =>
   !!p &&
   !!d &&
@@ -1146,7 +1417,7 @@ A.docShare = (d) => {
     `<div class="col" style="gap:12px"><p>Anyone with this link who can see “${h(x.n)}” can open and download it after signing in.</p>
     ${dl([["Can open it", h(docShareWho(p, x))], ["Visibility", docVisPill("Public")]])}
     <div class="adm-link"><code class="adm-mono">${h(docShareUrl(p, x))}</code></div>
-    <span class="help">If the file is made Private later, the link stops working.</span>
+    <span class="help">The link expires in ${linkHours(p.ctx)} hour${linkHours(p.ctx) === 1 ? "" : "s"} (${h(new Date(docLinkExp(p)).toLocaleString())}). Access is checked again when it is opened and on every download, so if the file is made Private the link stops working at once.</span>
     <div class="actions">${B("Close", "closeM")}${B(ic("link", 14) + "Copy link", "docCopyLink", { id: p.id, k: x.key }, "btn-p")}</div></div>`,
   );
 };
@@ -1174,6 +1445,12 @@ function docLinkOpen() {
   if (!m || !S.session) return;
   history.replaceState(null, "", location.href.split("#")[0]);
   const q = new URLSearchParams(m[1]);
+  const exp = +q.get("exp") || 0;
+  if (exp < Date.now()) {
+    audit("Share link refused", q.get("k") || "—", exp ? "Link expired " + new Date(exp).toISOString() : "Link has no expiry", "denied");
+    save();
+    return toast("This link has expired. Ask the person who shared it for a new link.", "warn");
+  }
   const p = byId("projects", q.get("p") || "");
   const x = p && docFind(p, q.get("k") || "");
   if (!docShareable(p, x))
@@ -1196,9 +1473,9 @@ A.docDl = (d) => {
   const p = byId("projects", d.id);
   const x = docFind(p, d.k);
   if (!x) return;
-  docBlob(p, x).then(([b, n]) => {
+  docBlob(p, x, d.v).then(([b, n]) => {
     docSave(b, n);
-    audit("Document downloaded", d.k, x.n);
+    audit("Document downloaded", d.k, x.n + (x.fid ? " · file " + x.fid + " v" + (+d.v || x.ver) : "") + " · access checked at download");
     save();
     toast(
       "Downloaded " + x.n + (n !== x.n ? " (prototype placeholder)" : "") + ".",
@@ -1401,6 +1678,21 @@ function docsMigrate() {
       );
   }
 }
+// JF-53: the sample shade scores (task tk22) are also filed by reference in the decision they support (dc21), so one
+// file is shown in two folders with one ID and version.
+function filesSeed() {
+  if (S.jf53) return;
+  S.jf53 = 1;
+  filesEnsure();
+  {
+    const x = byId("rooms", "ar2");
+    const k = x && (x.tasks || []).find((y) => y.id === "tk22");
+    const src = k && (k.files || []).find((y) => y.n === "Shade-scores-12-stops.xlsx");
+    const dc = x && (x.decisions || []).find((y) => y.id === "dc21");
+    if (src && dc && !(dc.files || []).some((y) => y.fid === src.fid))
+      (dc.files = dc.files || []).push({ id: uid("dc"), fid: src.fid, n: src.n, mb: src.mb, by: "p10", at: "2026-09-29T12:00", docVis: "Public", ref: { from: "td:ar2:tk22:" + src.id, by: "p10" } });
+  }
+}
 // Files uploaded for a milestone or task, shown with it in its Action Room, and the way to its Documents folder.
 function docFilesLine(x, files, o) {
   const p = roomProject(x);
@@ -1417,11 +1709,10 @@ function docFilesLine(x, files, o) {
 
 // ---- documents attached when a Circle, Rope Team or Action Room is created. They are stored on the new room, so
 // they appear in the project's Documents folder for that room and stay with the project wherever it moves.
-const DOC_BLOCKED = /\.(exe|bat|cmd|sh|msi|js)$/i;
 function docCreateField(f, kind) {
   const e = fe(f, "docs");
   const rope = kind === "ropes";
-  return `<fieldset class="np-fs col doc-create"><legend class="lbl">Project documents <span class="req">*</span></legend><div class="field"><label class="lbl" for="${f}_docs">Files</label><input id="${f}_docs" type="file" name="docs" class="input${e ? " err" : ""}" multiple aria-invalid="${!!e}" aria-describedby="${f}_docs_h">${e ? `<span class="emsg" role="alert">${ic("alert", 14)}${e}</span>` : ""}<span class="help" id="${f}_docs_h">At least one document that defines the work — a brief, charter, requirements or plan. Up to ${S.settings.maxFileMB} MB each. If the form shows an error, choose the files again.</span></div>${
+  return `<fieldset class="np-fs col doc-create"><legend class="lbl">Project documents <span class="req">*</span></legend><div class="field"><label class="lbl" for="${f}_docs">Files</label><input id="${f}_docs" type="file" name="docs" accept="${uploadAccept()}" class="input${e ? " err" : ""}" multiple aria-invalid="${!!e}" aria-describedby="${f}_docs_h">${e ? `<span class="emsg" role="alert">${ic("alert", 14)}${e}</span>` : ""}<span class="help" id="${f}_docs_h">At least one document that defines the work — a brief, charter, requirements or plan. ${uploadRuleText()}. If the form shows an error, choose the files again.</span></div>${
     rope
       ? `<div class="field"><span class="lbl">Visibility</span><span>${docVisPill("Private")}</span><span class="help">${DOC_ROPE_LOCK}</span></div>`
       : fi(f, "docVis", "Visibility", {
@@ -1440,18 +1731,9 @@ function docCreateField(f, kind) {
 // The chosen files, or null with the error shown on the field.
 function docTake(f, form) {
   const files = [...(form?.querySelector('input[name="docs"]')?.files || [])];
-  const big = files.find((x) => x.size > S.settings.maxFileMB * 1048576);
-  const bad = files.find((x) => DOC_BLOCKED.test(x.name));
-  const empty0 = files.find((x) => !x.size);
-  const err = !files.length
-    ? "Upload at least one document."
-    : big
-      ? big.name + " is over " + S.settings.maxFileMB + " MB."
-      : bad
-        ? bad.name + " is not a supported file type."
-        : empty0
-          ? empty0.name + " is empty."
-          : "";
+  // JF-52: approved types, the programme's size limit and the malware scan
+  const chk = files.length ? uploadCheck(files, { where: "Documents for a new space" }) : null;
+  const err = !files.length ? "Upload at least one document." : chk.pass ? "" : chk.msg;
   if (!err) return files;
   UI.err[f] = { ...(UI.err[f] || {}), docs: err };
   return null;

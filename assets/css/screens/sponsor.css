@@ -293,6 +293,39 @@
   border-top: 1px solid var(--line);
 }
 
+/* ---------- evidence the team attached to a sponsor milestone (the Sponsor's read-only view) ---------- */
+.sp-evs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  min-width: 0;
+}
+.sp-ev {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+.sp-ev-t {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px var(--s-2);
+  min-width: 0;
+}
+.sp-ev-t b {
+  overflow-wrap: anywhere;
+}
+.sp-ev-a {
+  gap: 6px;
+  align-items: center;
+}
+
 /* ---------- payment status ---------- */
 .sp-paytbl td {
   vertical-align: top;
@@ -372,4 +405,124 @@
 }
 .spd-chat .mname {
   font-weight: 700;
+}
+
+/* ---------- the Sponsor's Applications module (routes sponsorapps and spchat): layout only ----------
+   Scoped by the app's data-route, so the sponsor listing and project pages that share sp-body are not affected. */
+.app[data-route="sponsorapps"],
+.app[data-route="spchat"] {
+  --spa-gap: var(--grid-gap);
+}
+/* vertical rhythm between the page's blocks: status banner, summary strip, then the cards */
+.app[data-route="sponsorapps"] .sp-steps ~ .banner,
+.app[data-route="sponsorapps"] .hm-strip {
+  margin-bottom: var(--spa-gap);
+}
+/* the columns already space their cards (flex gap); the older margin doubled it, and misaligned the
+   two-column side rail on tablets */
+.app[data-route="sponsorapps"] .sp-body .hm-main > * + *,
+.app[data-route="sponsorapps"] .sp-body .hm-rail > * + *,
+.app[data-route="spchat"] .sp-body .hm-main > * + *,
+.app[data-route="spchat"] .sp-body .hm-rail > * + * {
+  margin-top: 0;
+}
+/* applicant rows on a project: name, note and status on top, the actions on their own line beneath,
+   so the note keeps the full width instead of being squeezed beside three buttons */
+.app[data-route="sponsorapps"] .dv-row:has(.sp-acts) {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: var(--s-4);
+  row-gap: var(--s-3);
+}
+.app[data-route="sponsorapps"] .dv-row:has(.sp-acts) > .dv-lead {
+  grid-column: 1;
+  grid-row: 1;
+}
+.app[data-route="sponsorapps"] .dv-row:has(.sp-acts) > .dv-main {
+  grid-column: 2;
+  grid-row: 1;
+}
+.app[data-route="sponsorapps"] .dv-row:has(.sp-acts) > .dv-badges {
+  grid-column: 3;
+  grid-row: 1;
+}
+.app[data-route="sponsorapps"] .dv-row:has(.sp-acts) > .dv-act {
+  grid-column: 2 / -1;
+  grid-row: 2;
+  justify-content: flex-start;
+}
+.app[data-route="sponsorapps"] .sp-acts {
+  justify-content: flex-start;
+}
+.app[data-route="sponsorapps"] .dv-row:has(.sp-acts) .dv-sub {
+  -webkit-line-clamp: 3;
+}
+/* the steps read as one progress line; long labels wrap inside their own step */
+.app[data-route="sponsorapps"] .sp-steps li {
+  min-width: 0;
+}
+.app[data-route="sponsorapps"] .sp-steps .n {
+  flex: none;
+}
+/* project discussion: long names and the time stay readable on narrow screens */
+.app[data-route="spchat"] .sp-msg-h b {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 639px) {
+  .app[data-route="sponsorapps"],
+  .app[data-route="spchat"] {
+    --spa-gap: var(--s-4);
+  }
+  /* three figures in a two-column strip: the last one spans the row instead of leaving an empty cell */
+  .app[data-route="sponsorapps"] .hm-strip > .kpi:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+  .app[data-route="sponsorapps"] .sp-steps {
+    gap: var(--s-2) var(--s-3);
+  }
+  .app[data-route="sponsorapps"] .sp-steps li {
+    font-size: var(--fs-sm);
+  }
+  /* applicant rows: icon and text on top; status, then the actions filling the row evenly */
+  .app[data-route="sponsorapps"] .dv-row:has(.sp-acts) {
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: var(--s-3);
+    row-gap: var(--s-2);
+  }
+  .app[data-route="sponsorapps"] .dv-row:has(.sp-acts) > .dv-badges {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .app[data-route="sponsorapps"] .dv-row:has(.sp-acts) > .dv-act {
+    grid-column: 2;
+    grid-row: 3;
+    margin-top: var(--s-1, 4px);
+  }
+  .app[data-route="sponsorapps"] .sp-acts {
+    display: flex;
+    flex-wrap: wrap;
+    width: 100%;
+    gap: var(--s-2);
+  }
+  .app[data-route="sponsorapps"] .sp-acts > .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+  /* all applications: status and Open share one line under the details */
+  .app[data-route="sponsorapps"] .dv-row:not(:has(.sp-acts)) > .dv-badges {
+    grid-row: 2;
+    align-self: center;
+  }
+  .app[data-route="sponsorapps"] .dv-row:not(:has(.sp-acts)) > .dv-act {
+    grid-row: 2;
+    justify-self: end;
+    align-self: center;
+  }
+  /* project discussion: the message form's Send button spans the width, easier to reach */
+  .app[data-route="spchat"] .sp-chat-f .actions .btn {
+    flex: 1;
+    justify-content: center;
+  }
 }

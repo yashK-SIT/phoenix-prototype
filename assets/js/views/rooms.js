@@ -2,8 +2,28 @@
 // Leading an Action Room follows the person's role in that room: Project owner or Facilitator.
 const isLead = (x) =>
   sCan("rooms", x, "lead") || (hasB("Project Lead") && memberOf(x));
+// JF-46: a Collaborator (partner organization) creates directly only under a valid mandate; without one they propose.
 const canCreateRoom = () =>
-  ["F", "C", "A"].includes(role()) || hasB("Project Lead");
+  ["F", "A"].includes(role()) || (role() === "C" && !!mandateOf(myId(), ctxId())) || hasB("Project Lead");
+// The creator's authority basis, recorded on the workspace (JF-46).
+const roomAuthority = (pr, creator) => {
+  const r = role();
+  const mand = mandateOf(myId(), ctxId());
+  const basis = !creator
+    ? "Proposal — no creation authority; an authorised creator activates it"
+    : r === "A"
+      ? "Organization Admin of " + ctxName(ctxId())
+      : r === "F"
+        ? "Faculty/Steward in " + ctxName(ctxId())
+        : r === "C" && mand
+          ? "Collaborator under a valid mandate: " + (mand.scope || "mandate on file") + (mand.until ? " (until " + mand.until + ")" : "")
+          : hasB("Project Lead")
+            ? "Project Lead authority bundle"
+            : pr && pr.owner === myId()
+              ? "Owner of the accepted project “" + pr.title + "”"
+              : roleName(roleId(), ctxId());
+  return { by: myId(), role: roleName(roleId(), ctxId()), basis, mandate: mand ? { scope: mand.scope || "", until: mand.until || "" } : null, at: now() };
+};
 // A project owner creates the Action Room for their own accepted project directly (no proposal step).
 const ownRoomProjects = () =>
   S.projects.filter((p) => inCtx(p) && p.owner === myId() && p.status === "Accepted" && !p.room && !["Final review", "Closed"].includes(p.stage));
@@ -41,13 +61,13 @@ route("rooms", "rooms", () => {
     card("Your " + WL() + "s", "", dataView("rooms", {
       label: WL() + "s",
       items: list,
-      search: (x) => [x.name, x.purpose, P(x.lead).name, x.origin.type, cName(x.origin.id), wsRoleTxt("rooms", x)].join(" "),
+      search: (x) => [x.name, x.purpose, P(x.lead).name, roomOriginType(x), ropeHiddenId(x.origin.id) ? "" : cName(x.origin.id), wsRoleTxt("rooms", x)].join(" "),
       searchLabel: "Search " + WL() + "s",
       quick: { label: "State", options: wsOpts(list, (x) => x.state), test: (x, v) => x.state === v },
       filters: [
         { key: "role", label: "Your role", options: wsOpts(list, (x) => wsRoleTxt("rooms", x)), test: (x, v) => wsRoleTxt("rooms", x) === v },
         { key: "lead", label: "Lead", options: wsPeople(list, (x) => x.lead), test: (x, v) => x.lead === v },
-        { key: "origin", label: "Origin", options: wsOpts(list, (x) => x.origin.type), test: (x, v) => x.origin.type === v },
+        { key: "origin", label: "Origin", options: wsOpts(list, roomOriginType), test: (x, v) => roomOriginType(x) === v },
       ],
       sorts: [
         ["name", "Name", (a, b) => a.name.localeCompare(b.name)],
@@ -63,7 +83,7 @@ route("rooms", "rooms", () => {
         meta: [
           `Lead <b>${nm(x.lead)}</b>`,
           `Your role <b>${h(wsRoleTxt("rooms", x))}</b>`,
-          h(x.origin.type) + " · " + cName(x.origin.id),
+          ropeHiddenId(x.origin.id) ? h(ROPE_HIDDEN) : h(x.origin.type) + " · " + cName(x.origin.id),
           wsMem(x),
           wsProg(x),
         ],
@@ -210,6 +230,9 @@ F.nr = (d, form) => {
     lead: pr ? pr.owner : myId(),
     origin,
     mandate: d.project === NR_NONE ? d.mandate : null,
+    // JF-46: who created it, on what authority, and who approved it (null until it is activated)
+    authority: roomAuthority(pr, creator),
+    approval: st === "Active" ? { by: myId(), at: now(), how: "Activated directly by an authorised creator" } : null,
     related: pr ? [pr.id] : [],
     state: st,
     flags,
@@ -236,12 +259,22 @@ F.nr = (d, form) => {
       if (!x.members.some((m) => m.pid === s)) x.members.push({ pid: s, role: "Facilitator", status: "Active" });
     });
   // Only the people chosen here are invited. Circle or Rope Team members are never added because of a link.
-  [].concat(d.inv || []).filter((pid) => !x.members.some((m) => m.pid === pid)).forEach((pid) => x.members.push({ pid, role: defaultSpaceRole(ctxRole(pid, x.ctx)) === "Observer" ? "Member" : defaultSpaceRole(ctxRole(pid, x.ctx)), status: "Invited" }));
+  // JF-46: each one goes through the join rules, so external and institutional invitees need a valid mandate and,
+  // where the rule says so, explicit approval before they are invited.
+  const joins = { refused: [], pending: [] };
+  const noteJoin = (pid, r) => r.res !== "invited" && joins[r.res].push(P(pid).name + (r.res === "refused" ? " (" + r.why + ")" : ""));
+  [].concat(d.inv || []).filter((pid) => !x.members.some((m) => m.pid === pid)).forEach((pid) => {
+    const rl = defaultSpaceRole(ctxRole(pid, x.ctx)) === "Observer" ? "Member" : defaultSpaceRole(ctxRole(pid, x.ctx));
+    noteJoin(pid, roomJoin(x, pid, joinCaseFor(pid, x.ctx, rl), rl, {}, true));
+  });
   if (pr && pr.pendingCollab) {
     pr.pendingCollab.forEach((pc) => {
       if (pc.match) introVias.push("mb:" + pc.match);
-      if (!x.members.some((m) => m.pid === pc.pid))
-        x.members.push({ pid: pc.pid, role: "Collaborator", label: pc.req, status: "Invited", req: pc.req, contrib: pc.contrib, match: pc.match });
+      if (x.members.some((m) => m.pid === pc.pid)) return;
+      const extra = { label: pc.req, req: pc.req, contrib: pc.contrib, match: pc.match };
+      // an internal collaborator found through a consented Match Brief is invited; an external one takes the external rule
+      if (isExternal(pc.pid, x.ctx)) noteJoin(pc.pid, roomJoin(x, pc.pid, JOIN_EXT, "Member", extra, true));
+      else x.members.push({ pid: pc.pid, role: "Collaborator", status: "Invited", join: { kind: JOIN_PLAIN, basis: "Consented Match Brief", mandate: null, by: myId(), at: now() }, ...extra });
     });
     pr.pendingCollab = [];
   }
@@ -271,12 +304,17 @@ F.nr = (d, form) => {
       .filter((a) => a.ctx === ctxId() && ["F", "A"].includes(roleBase(a.role)))
       .forEach((a) => notify(a.pid, `${WL()} ${st.toLowerCase()}: ${x.name}`, "room", { id: x.id }));
   x.members.filter((m) => m.status === "Invited").forEach((m) => notify(m.pid, "Invitation to join " + x.name, "room", { id: x.id }));
-  audit(WL() + " " + st, x.id, "Primary origin: " + origin.type + (origin.id ? " " + origin.id : origin.basis ? " — " + origin.basis : ""));
+  audit(WL() + " " + st, x.id, "Primary origin: " + origin.type + (origin.id ? " " + origin.id : origin.basis ? " — " + origin.basis : "") + " · authority: " + x.authority.basis);
   UI.modal = null;
   clearF("nr");
   mselReset("nr", "inv");
   save();
   go("room", { id: x.id });
+  if (joins.refused.length || joins.pending.length)
+    toast(
+      [joins.pending.length ? "Waiting for approval: " + joins.pending.join(", ") + "." : "", joins.refused.length ? "Not invited: " + joins.refused.join("; ") + "." : ""].filter(Boolean).join(" "),
+      joins.refused.length ? "warn" : "ok",
+    );
 };
 route("room", "rooms", () => {
   const x = byId("rooms", UI.p.id);
@@ -386,7 +424,16 @@ route("room", "rooms", () => {
         row: (k) => ({
           lead: `<span class="av sm" title="${nm(k.owner)}">${ini(k.owner)}</span>`,
           title: h(k.t),
-          meta: ["Owner " + nm(k.owner)],
+          // JF-53: a decision can hold files (uploaded, or filed by reference from elsewhere in the project)
+          meta: [
+            "Owner " + nm(k.owner),
+            (() => {
+              const pr = roomProject(x);
+              const n = (k.files || []).length;
+              const lab = ic("folder", 12) + (n ? n + " file" + (n === 1 ? "" : "s") : "Files");
+              return pr && docCanOpen(pr) ? L(lab, "documents", { id: pr.id, f: "room", s: "dc", it: k.id }, "lnk") : n ? lab : "";
+            })(),
+          ],
           badges: pill(k.state),
           menu:
             !ro && lead
@@ -587,7 +634,8 @@ route("room", "rooms", () => {
           const sr = m.pid === x.lead ? "Project owner" : normRole(m.role);
           return [
             nm(m.pid) +
-              ` <span class="cap">${h(roleName(ctxRole(m.pid, x.ctx), x.ctx) || "")}${m.label ? " · " + h(m.label) : ""}</span>`,
+              ` <span class="cap">${h(roleName(ctxRole(m.pid, x.ctx), x.ctx) || "")}${m.label ? " · " + h(m.label) : ""}</span>` +
+              (m.join && m.join.kind !== JOIN_PLAIN ? `<div class="cap">Joined on: ${h(m.join.basis)}${m.join.mandate ? " · mandate: " + mandateText(m.join.mandate) : ""}${m.join.approvedBy ? " · approved by " + nm(m.join.approvedBy) : ""}</div>` : ""),
             lead && m.pid !== x.lead && !ro && m.status === "Active"
               ? roleSelect(
                   "memRole",
@@ -615,15 +663,15 @@ route("room", "rooms", () => {
           ];
         }),
       ) +
-        `<h3 class="h3 ws-subh">Join requests</h3>` +
+        `<h3 class="h3 ws-subh">Join requests</h3><p class="cap">External and institutional invitees need a valid mandate on file; elevated cases need explicit approval by a Faculty/Steward or Organization Admin who did not ask. Refusals are recorded.</p>` +
         table(
           ["Person", "Join case", "Status", "Note", ""],
           x.joinReqs.map((j) => [
-            nm(j.pid),
+            nm(j.pid) + (j.by ? `<div class="cap">Asked by ${nm(j.by)}${j.at ? " · " + fmt(j.at.slice(0, 10)) : ""}</div>` : ""),
             h(j.kind),
-            pill(j.status),
-            h(j.note || ""),
-            j.status === "Pending" && (r === "F" || r === "A" || lead)
+            pill(j.status) + (j.decidedBy ? `<div class="cap">${nm(j.decidedBy)} · ${fmt(j.decidedAt.slice(0, 10))}</div>` : ""),
+            h(j.note || "") + (j.mandate ? `<div class="cap">Mandate: ${mandateText(j.mandate)}</div>` : ""),
+            j.status === "Pending" && (r === "F" || r === "A") && j.by !== myId()
               ? B("Decline", "joinDecide", {
                   r: x.id,
                   id: j.id,
@@ -648,7 +696,7 @@ route("room", "rooms", () => {
         : "",
     );
   if (t.cur === "about")
-    body = `<div class="g12">${card("Charter", "", dl([["Purpose / charter", h(x.charter)], ["Expected outcome", h(x.outcome || "—")], ["Lead", nm(x.lead)], ["State", pill(x.state)], x.flags.length && ["Approval flags", x.flags.map(h).join(", ")], ["Primary origin", primaryLink(x.id) ? OBJ_LABEL(primaryLink(x.id).target_type) + " · " + relLink(primaryLink(x.id).target_id) : originLink(x)], x.mandate && ["Mandate", h(x.mandate)], ["Related objects (linked by reference)", linksOf(x.id).filter((l) => !l.primary || l.source_id !== x.id).map((l) => relLink(linkOther(l, x.id)) + ' <span class="cap">' + h(l.source_id === x.id ? linkTypeLabel(l.link_type) : LINK_INVERSE[l.link_type]) + "</span>").join("<br>") || "—"], ["Sponsors", spP ? spWho(spP) + " sees this " + WL() + "’s sponsor milestones, payments and disputes only; never a member" : "Never members because of funding"], ["Linked learning activities and records", x.links.map((l) => pill(l.type, "p-grey") + " " + h(l.label)).join("<br>") || "—"]]), !ro && isM ? B(ic("link", 14) + "Link by reference", "roomLink", { r: x.id }) : "", "c7")}
+    body = `<div class="g12">${card("Charter", "", dl([["Purpose / charter", h(x.charter)], ["Expected outcome", h(x.outcome || "—")], ["Lead", nm(x.lead)], ["State", pill(x.state)], x.flags.length && ["Approval flags", x.flags.map(h).join(", ")], ["Primary origin", primaryLink(x.id) ? OBJ_LABEL(primaryLink(x.id).target_type) + " · " + relLink(primaryLink(x.id).target_id) : originLink(x)], x.mandate && ["Mandate", h(x.mandate)], ["Created by · authority", x.authority ? nm(x.authority.by) + " · " + h(x.authority.role) + '<div class="cap">' + h(x.authority.basis) + (x.authority.at ? " · " + fmt(x.authority.at.slice(0, 10)) : "") + "</div>" : '<span class="cap">Not recorded (created before authority was recorded)</span>'], x.activation && ["Activated by", nm(x.activation.by) + '<div class="cap">' + h(x.activation.basis) + " · " + fmt(x.activation.at.slice(0, 10)) + "</div>"], ["Approved by", x.approval ? nm(x.approval.by) + '<div class="cap">' + h(x.approval.how) + " · " + fmt(x.approval.at.slice(0, 10)) + "</div>" : ["Proposed", "Pending approval"].includes(x.state) ? '<span class="cap">Awaiting ' + (x.state === "Proposed" ? "activation by an authorised creator" : "Faculty/Steward or Organization Admin approval") + "</span>" : '<span class="cap">Not recorded</span>'], ["Related objects (linked by reference)", linksOf(x.id).filter((l) => !l.primary || l.source_id !== x.id).map((l) => relLink(linkOther(l, x.id)) + ' <span class="cap">' + h(l.source_id === x.id ? linkTypeLabel(l.link_type) : LINK_INVERSE[l.link_type]) + "</span>").join("<br>") || "—"], ["Sponsors", spP ? spWho(spP) + " sees this " + WL() + "’s sponsor milestones, payments and disputes only; never a member" : "Never members because of funding"], ["Linked learning activities and records", x.links.map((l) => pill(l.type, "p-grey") + " " + h(l.label)).join("<br>") || "—"]]), !ro && isM ? B(ic("link", 14) + "Link by reference", "roomLink", { r: x.id }) : "", "c7")}
  ${card("Lifecycle", "Draft · Proposed · Pending approval · Active · Closed", `<div class="col" style="gap:8px">${x.state === "Proposed" && canCreateRoom() ? B("Activate", "roomState", { r: x.id, v: x.flags.length ? "Pending approval" : "Active" }, "btn-p btn-sm") + B("Decline (back to Draft)", "roomDecline", { r: x.id }) : ""}${x.state === "Proposed" && !canCreateRoom() ? '<p class="cap">Proposed. An authorised Faculty/Steward, Project Lead, Collaborator or Organization Admin activates it.</p>' : ""}${x.state === "Pending approval" && (r === "F" || r === "A") ? B("Approve activation", "roomState", { r: x.id, v: "Active" }, "btn-p btn-sm") + B("Decline (back to Draft)", "roomDecline", { r: x.id }) : ""}${x.state === "Draft" && isM ? B("Re-propose", "roomState", { r: x.id, v: "Proposed" }) : ""}${x.declineReason ? banner("warn", "Approval declined", h(x.declineReason)) : ""}${!ro && isM ? B(ic("sparkle", 14) + "Start a Learning Harvest", "newHarvest", { scope: x.id }) : ""}${x.state === "Active" && lead ? B(ic("refresh", 14) + "Continue to a new cycle", "roomContinue", { r: x.id }) : ""}${x.state === "Active" && lead && !pr ? B("Close " + WL(), "roomClose", { r: x.id }) : ""}<p class="cap">Closing or continuing starts a Learning Harvest for this cycle. A person completes it; nothing is harvested automatically.</p>${pr ? `<p class="cap">Final deliverables are submitted from the Overview tab or the ${L("project", "project", { id: pr.id })}. Backward movement is on the Overview tab.</p>` : ""}</div>`, "", "c5")}
  ${returnsCard(x) ? `<div class="c12">${returnsCard(x)}</div>` : ""}</div>`;
   const acts =
@@ -863,12 +911,27 @@ A.winApprove = (d) => {
 // 3. Once every linked piece is approved, the Steward validates the milestone as achieved.
 const MS_PEND = "Awaiting Steward review";
 const MS_PILL = { [MS_PEND]: "p-amber", Approved: "p-green", "Changes requested": "p-amber", Rejected: "p-red" };
-// The Steward: the project's assigned Steward(s); for a room without one, its Facilitators and Reviewers.
+// The Steward: the project's assigned Steward(s); for a room without one, its Facilitators and Reviewers and, when the
+// project has no assigned Steward, its Project owner(s) — so evidence can still be approved. The conflict rule (JF-56)
+// still applies: nobody reviews evidence they created, and such items route to another eligible reviewer.
+const msOwners = (x) => {
+  const pr = x && roomProject(x);
+  if (!pr || (pr.stewards || []).length) return [];
+  const own = (pr.owners && pr.owners.length ? pr.owners : [pr.owner]).filter(Boolean);
+  return own.filter((pid) => S.assign.some((a) => a.pid === pid && a.ctx === x.ctx && a.status === "Active"));
+};
 const msStewards = (x) => {
   if (!x) return [];
   const pr = roomProject(x);
   const st = pr ? pr.stewards.filter((s) => S.assign.some((a) => a.pid === s && a.ctx === x.ctx && roleBase(a.role) === "F" && a.status === "Active")) : [];
-  return st.length ? st : x.members.filter((m) => (!m.status || m.status === "Active") && ["Facilitator", "Reviewer"].includes(normRole(m.role))).map((m) => m.pid);
+  if (st.length) return st;
+  const fac = x.members.filter((m) => (!m.status || m.status === "Active") && ["Facilitator", "Reviewer"].includes(normRole(m.role))).map((m) => m.pid);
+  return [...new Set([...fac, ...msOwners(x)])];
+};
+// Who reviews here, for labels: "Steward" normally, "Project owner" when the owner reviews because none is assigned.
+const msOwnerReviews = (x) => {
+  const own = msOwners(x);
+  return own.length > 0 && msStewards(x).every((pid) => own.includes(pid));
 };
 const msIsSteward = (x) => msStewards(x).includes(myId());
 const msItems = (m) => m.evs || [];
@@ -876,6 +939,41 @@ const msItems = (m) => m.evs || [];
 const msItemOk = (it) => it.st === "Approved" && byId("evidence", it.ev)?.review === "Approved";
 const msReady = (m) => msItems(m).length > 0 && msItems(m).every(msItemOk);
 const msToReview = (it) => it.st === MS_PEND || (it.st === "Approved" && !msItemOk(it));
+// JF-56: milestone evidence is reviewed by a Steward of the project who did not create, contribute to, supervise or
+// sponsor it and has not recused. If every Steward is conflicted, it is routed to an eligible Evidence Review
+// Authority (it.alt) — a logged reassignment, never left with a conflicted reviewer.
+const msCanReview = (x, it, pid = myId()) => {
+  const e = it && byId("evidence", it.ev);
+  if (!e) return false;
+  if (msStewards(x).includes(pid)) return !evConflict(e, pid);
+  return it.alt === pid && evCanReview(e, pid);
+};
+function msRouteEvidence(e) {
+  S.rooms.forEach((x) =>
+    (x.milestones || []).forEach((m) =>
+      msItems(m)
+        .filter((it) => it.ev === e.id && msToReview(it))
+        .forEach((it) => {
+          if (msStewards(x).some((pid) => !evConflict(e, pid))) {
+            delete it.alt;
+            return;
+          }
+          if (it.alt && evCanReview(e, it.alt)) return;
+          const prev = it.alt;
+          it.alt = evPickReviewer(e);
+          const what = "milestone “" + m.t + "” in " + x.name;
+          if (it.alt) {
+            notify(it.alt, "Milestone evidence routed to you for review — every Steward has a conflict: " + e.title + " (" + what + ")", "evidence", { id: e.id });
+            e.history.push({ at: today(), t: "Every Steward of " + x.name + " has a conflict; review for " + what + " routed to " + P(it.alt).name });
+          } else {
+            e.history.push({ at: today(), t: "Every Steward of " + x.name + " has a conflict and no other reviewer is eligible for " + what });
+            ctxAdmins(x.ctx).forEach((p) => notify(p, "No eligible, non-conflicted reviewer for milestone evidence “" + e.title + "” (" + what + ")", "evidence", { id: e.id }));
+          }
+          audit("Milestone evidence reviewer routed", x.id, m.t + " · " + e.id + " · " + (prev ? P(prev).name + " → " : "") + (it.alt ? P(it.alt).name : "no eligible reviewer"));
+        }),
+    ),
+  );
+}
 const msPending = (x) => x.milestones.flatMap((m) => (m.status === "Achieved" ? [] : msItems(m).filter(msToReview).map((it) => [m, it])));
 function msStep(m) {
   if (m.sp) return spMsStep(m);
@@ -902,6 +1000,7 @@ function msLink(x, m, e) {
   sysMsg(x, me().name + " added “" + e.title + "” to milestone “" + m.t + "” — sent to the Steward for review");
   msTellStewards(x, "Evidence to review for milestone “" + m.t + "” (" + x.name + "): " + e.title);
   audit("Evidence linked to milestone", x.id, m.t + " · " + e.id);
+  msRouteEvidence(e);
   return true;
 }
 // Evidence that can be added: linked to this room or to its project's spaces, not withdrawn or rejected, not already added.
@@ -950,7 +1049,8 @@ function msCard(x, isM, lead, ro) {
     .join("");
   return card(
     "Milestones",
-    "1. A member adds evidence → 2. the Steward reviews and approves every piece → 3. the Steward validates the milestone as achieved." + (spMs(x).length ? " Sponsor requirements are agreed with the sponsor and approved by the sponsor." : "") + (stewards.length ? " Steward: " + stewards.map(nm).join(", ") + "." : ""),
+    "1. A member adds evidence → 2. the Steward reviews and approves every piece → 3. the Steward validates the milestone as achieved." + (spMs(x).length ? " Sponsor requirements are agreed with the sponsor and approved by the sponsor." : "") + (stewards.length ? (msOwnerReviews(x) ? " Reviewer: " + stewards.map(nm).join(", ") + " (Project owner, no Steward assigned)." : " Steward: " + stewards.map(nm).join(", ") + ".") : ""),
+    (msOwnerReviews(x) ? banner("info", "No Steward assigned: the Project owner approves evidence", "Until the Organization Admin assigns a Steward to the project, the Project owner reviews and approves milestone evidence. Evidence the owner added themselves goes to another eligible reviewer.") : "") +
     (stw && pend ? banner("warn", pend + " piece" + (pend > 1 ? "s" : "") + " of evidence waiting for your review", "Review each one below. A milestone can be validated once all of its evidence is approved.") : "") +
       (!stewards.length ? banner("warn", "No Steward for this " + WL(), "Ask the Organization Admin to assign a Steward to the project. Evidence cannot be reviewed or milestones validated without one.") : "") +
       (rows ? `<div class="col" style="gap:12px">${rows}</div>` : empty("flag", "No milestones yet", lead ? "Add a milestone, then add the evidence that shows it is done." : "The project lead adds milestones.")),
@@ -1218,102 +1318,179 @@ const JOIN_RULES = {
   "Public-release authority": "Explicit authority approval",
   Sponsor: "No automatic membership",
 };
+// ---- JF-46: every workspace invitation runs through these join rules (invite form, creation invites, collaborators
+// from a Match Brief). External and institutional invitees never take the plain-invitation path:
+//   · External organization representative: a valid mandate on file, then explicit approval by a Faculty/Steward or
+//     Organization Admin who is not the person who asked.
+//   · Institutional representative: a valid mandate on file (the mandate is the authority).
+//   · Other elevated cases (reviewer, finance, restricted, research, public release): explicit approval.
+// Without a valid mandate an external or institutional invitation is refused and audited.
+const JOIN_PLAIN = "Participant in this context";
+const JOIN_EXT = "External organization representative";
+const JOIN_INST = "Institutional representative (can bind the organization)";
+const JOIN_MANDATE = [JOIN_EXT, JOIN_INST];
+// A mandate counts only while it is marked valid and has not passed its end date.
+const mandateOf = (pid, c) => {
+  const a = S.assign.find((y) => y.pid === pid && y.ctx === c && y.status === "Active");
+  const m = a && a.mandate;
+  return m && m.valid && (!m.until || m.until >= today()) ? m : null;
+};
+const mandateText = (m) => (m ? h(m.scope || "Mandate on file") + (m.until ? " · valid until " + fmt(m.until) : "") : "");
+// External: a Collaborator (partner organization) role, or a person whose organization is not the one running the programme.
+const isExternal = (pid, c) =>
+  roleBase(ctxRole(pid, c) || "") === "C" || (!!(P(pid) || {}).org && P(pid).org !== ctxOrg(c));
+// Join cases the inviter may choose for this person (an external person never gets the plain path).
+const joinCases = (pid, c) =>
+  Object.keys(JOIN_RULES).filter((k) => k !== "Sponsor" && !(k === JOIN_PLAIN && pid && isExternal(pid, c)));
+// The case that applies when the inviter does not choose one (creation invites) or chooses the plain path.
+const joinCaseFor = (pid, c, rl, kind) => {
+  if (kind && kind !== JOIN_PLAIN) return kind;
+  if (isExternal(pid, c)) return JOIN_EXT;
+  // the facilitator role reviews contributions and validates milestones: a reviewer/approver role
+  if (rl === "Facilitator" && roleBase(ctxRole(pid, c) || "") !== "F") return "Reviewer / approver";
+  return JOIN_PLAIN;
+};
+// Space role granted for a join case (rl is the role the inviter chose, used on the plain and reviewer paths).
+const joinRoleFor = (kind, rl) =>
+  kind === JOIN_PLAIN ? (INVITE_ROLES.includes(rl) ? rl : "Member") : kind === "Reviewer / approver" ? "Facilitator" : /Finance|External|Institutional/.test(kind) ? "Collaborator" : normRole(kind) === "Reviewer" ? "Member" : normRole(kind);
+// Applies the rule for one person. Returns { res: "invited" | "pending" | "refused", why }.
+// extra: fields carried onto the member record (e.g. a Match Brief responsibility); quiet: the caller notifies.
+function roomJoin(x, pid, kind, rl, extra = {}, quiet) {
+  const name = P(pid).name;
+  const base = roleBase(ctxRole(pid, x.ctx) || "");
+  const rec = (status, note, more = {}) => {
+    const j = { id: uid("jr"), pid, kind, role: rl || null, status, note, by: myId(), at: now(), ...more };
+    x.joinReqs.push(j);
+    return j;
+  };
+  if (base === "S") {
+    rec("Declined", "Sponsors have no automatic workspace membership.");
+    audit("Join denied", x.id, name + " · Sponsor", "denied");
+    return { res: "refused", why: "Sponsors cannot be added to a " + WL() + ". They see approved, funder-safe reports instead." };
+  }
+  kind = joinCaseFor(pid, x.ctx, rl, kind);
+  if (kind === "Research-related access" && !authorizePurpose("research", pid, { ctx: x.ctx }, "Research-related access to " + x.name).ok) {
+    const why = purposeCheck("research", pid, { ctx: x.ctx }).why;
+    rec("Refused", "Research permission missing: " + why);
+    audit("Join refused — research permission", x.id, name + " · " + why, "denied");
+    return { res: "refused", why: name + ": " + why };
+  }
+  const mand = mandateOf(pid, x.ctx);
+  if (JOIN_MANDATE.includes(kind) && !mand) {
+    rec("Refused", "No valid mandate on file — " + JOIN_RULES[kind].toLowerCase() + ".");
+    audit("Join refused — no valid mandate", x.id, name + " · " + kind, "denied");
+    return { res: "refused", why: "no valid mandate on file for " + name + " (" + kind.toLowerCase() + ")" };
+  }
+  const mref = mand ? { scope: mand.scope || "", until: mand.until || "" } : null;
+  // plain invitation, or an institutional representative whose mandate is the authority
+  if (kind === JOIN_PLAIN || kind === JOIN_INST) {
+    const role_ = joinRoleFor(kind, rl);
+    x.members.push({
+      pid,
+      role: role_,
+      status: "Invited",
+      ...(kind === JOIN_INST ? { label: kind } : {}),
+      join: { kind, basis: kind === JOIN_INST ? "Valid mandate on file" : "Invitation acceptance", mandate: mref, by: myId(), at: now() },
+      ...extra,
+    });
+    if (!quiet) notify(pid, "Invitation to join " + x.name + " as " + roleLabel(normRole(role_)), "room", { id: x.id });
+    audit(kind === JOIN_INST ? "Invited under mandate" : "Invited", x.id, name + " · " + kind + (mref ? " · mandate: " + mref.scope : ""));
+    return { res: "invited" };
+  }
+  // everything else waits for explicit approval by someone other than the person asking
+  rec("Pending", JOIN_RULES[kind], { mandate: mref, extra });
+  S.assign
+    .filter((a) => a.ctx === x.ctx && a.status === "Active" && ["F", "A"].includes(roleBase(a.role)) && a.pid !== myId())
+    .forEach((a) => notify(a.pid, "Elevated join request for " + x.name + ": " + name + " · " + kind, "room", { id: x.id, tab: "members" }));
+  audit("Join requested", x.id, name + " · " + kind + (mref ? " · mandate checked: " + mref.scope : ""));
+  return { res: "pending" };
+}
 A.roomInviteNew = (d) => {
   clearF("rin");
   const x = byId("rooms", d.r);
+  UI.form.rin = { role: "Member" };
   modal(
     "Invite or add to " + h(x.name),
-    () =>
-      `<form data-f="rin" class="col" style="gap:14px" novalidate><input type="hidden" name="r" value="${x.id}">${fi("rin", "pid", "Person", { type: "select", req: true, ph: "Select", opts: S.assign.filter((a) => a.ctx === x.ctx && a.status === "Active" && !memberOf(x, a.pid)).map((a) => [a.pid, P(a.pid).name + " — " + roleName(a.role, a.ctx)]) })}${fi("rin", "role", "Role in this " + WL(), { type: "select", req: true, opts: INVITE_ROLES.map((r) => [r, roleLabel(r)]), help: "You can change the role later in Members. Sponsors cannot be added." })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Continue</button></div></form>`,
+    () => {
+      const pid = fv("rin", "pid", "");
+      const rl = fv("rin", "role", "Member");
+      const cases = pid ? joinCases(pid, x.ctx) : [];
+      const def = pid ? joinCaseFor(pid, x.ctx, rl) : "";
+      const kind = cases.includes(fv("rin", "kind", "")) ? fv("rin", "kind", "") : def;
+      if (UI.form.rin) UI.form.rin.kind = kind;
+      const mand = pid && mandateOf(pid, x.ctx);
+      const ext = pid && isExternal(pid, x.ctx);
+      const k = JOIN_RULES[kind] || "";
+      const outcome = !pid
+        ? ""
+        : JOIN_MANDATE.includes(kind) && !mand
+          ? banner("err", "Will be refused", h(P(pid).name) + " has no valid mandate on file, so this invitation will be refused and recorded in the audit log. An Organization Admin records mandates.")
+          : kind === JOIN_PLAIN
+            ? banner("info", "Plain invitation", "The person joins when they accept.")
+            : kind === JOIN_INST
+              ? banner("ok", "Mandate checked", "Mandate on file: " + mandateText(mand) + ". The invitation is sent under this mandate; the person joins when they accept.")
+              : banner("warn", "Needs explicit approval", h(k) + ". A Faculty/Steward or Organization Admin other than you approves it before the invitation is sent." + (mand ? " Mandate on file: " + mandateText(mand) + "." : ""));
+      return `<form data-f="rin" class="col" style="gap:14px" novalidate><input type="hidden" name="r" value="${x.id}">${fi("rin", "pid", "Person", { type: "select", req: true, ph: "Select", ch: "reRender", opts: S.assign.filter((a) => a.ctx === x.ctx && a.status === "Active" && !x.members.some((m) => m.pid === a.pid && m.status !== "Removed") && !x.joinReqs.some((j) => j.pid === a.pid && j.status === "Pending")).map((a) => [a.pid, P(a.pid).name + " — " + roleName(a.role, a.ctx) + (isExternal(a.pid, x.ctx) ? " · external" : "")]) })}${fi("rin", "role", "Role in this " + WL(), { type: "select", req: true, ch: "reRender", opts: INVITE_ROLES.map((r) => [r, roleLabel(r)]), help: "You can change the role later in Members. Sponsors cannot be added." })}${pid ? fi("rin", "kind", "Join case", { type: "select", req: true, ch: "reRender", opts: cases.map((c) => [c, c + " — " + JOIN_RULES[c]]), help: ext ? "This person is external to the programme’s organization, so the plain invitation is not available." : "Choose an elevated case when the person needs authority beyond a participant’s." }) : ""}${outcome}<div class="actions"><span></span><button class="btn btn-p" type="submit">Continue</button></div></form>`;
+    },
     true,
   );
 };
 F.rin = (d) => {
   if (!validate("rin", d, { pid: ["req"], role: ["req"] })) return render();
   const x = byId("rooms", d.r);
-  const a = S.assign.find((a) => a.pid === d.pid && a.ctx === x.ctx);
-  d.kind = "Participant in this context";
-  if (roleBase(a.role) === "S") {
-    x.joinReqs.push({
-      id: uid("jr"),
-      pid: d.pid,
-      kind: "Sponsor",
-      status: "Declined",
-      note: "Sponsors have no automatic workspace membership.",
-    });
-    audit("Join denied", x.id, "Sponsor", "denied");
-    UI.modal = null;
-    toast(
-      "Sponsors cannot be added to a " +
-        WL() +
-        ". They see approved, funder-safe reports instead.",
-      "err",
-    );
-    return ok();
-  }
-  if (
-    d.kind === "Research-related access" &&
-    !authorizePurpose("research", d.pid, { ctx: x.ctx }, "Research-related access to " + x.name).ok
-  ) {
-    UI.modal = null;
-    return deny(purposeCheck("research", d.pid, { ctx: x.ctx }).why);
-  }
-  if (
-    d.kind === "Institutional representative (can bind the organization)" &&
-    !(a.mandate && a.mandate.valid)
-  ) {
-    UI.modal = null;
-    return deny("no valid mandate on file");
-  }
-  if (d.kind === "Participant in this context") {
-    const rl = INVITE_ROLES.includes(d.role) ? d.role : "Member";
-    x.members.push({ pid: d.pid, role: rl, status: "Invited" });
-    notify(d.pid, "Invitation to join " + x.name + " as " + roleLabel(rl), "room", { id: x.id });
-  } else {
-    x.joinReqs.push({
-      id: uid("jr"),
-      pid: d.pid,
-      kind: d.kind,
-      status: "Pending",
-      note: JOIN_RULES[d.kind],
-    });
-    S.assign
-      .filter((a) => a.ctx === x.ctx && ["F", "A"].includes(roleBase(a.role)))
-      .forEach((a) =>
-        notify(a.pid, "Elevated join request for " + x.name, "room", {
-          id: x.id,
-          tab: "members",
-        }),
-      );
-  }
-  audit("Join requested", x.id, d.kind);
+  // the case must be one this person may take (an external person can never be sent down the plain path)
+  const kind = joinCases(d.pid, x.ctx).includes(d.kind) ? d.kind : joinCaseFor(d.pid, x.ctx, d.role);
+  const r = roomJoin(x, d.pid, kind, d.role);
   UI.modal = null;
   clearF("rin");
+  if (r.res === "refused") {
+    toast("Not permitted: " + r.why, "err");
+    return ok();
+  }
+  toast(r.res === "pending" ? "Join request sent for approval. The invitation goes out once a Faculty/Steward or Organization Admin approves it." : "Invitation sent.");
   ok();
 };
+// Explicit approval (guards.js: joinDecide): a Faculty/Steward or Organization Admin who did not ask. A mandate-based
+// case is checked again at approval, since a mandate can lapse while the request waits.
 A.joinDecide = (d) => {
   const x = byId("rooms", d.r);
   const j = x.joinReqs.find((j) => j.id === d.id);
+  if (d.v === "Approved" && JOIN_MANDATE.includes(j.kind) && !mandateOf(j.pid, x.ctx)) {
+    j.status = "Refused";
+    j.note = "Mandate no longer valid at approval";
+    j.decidedBy = myId();
+    j.decidedAt = now();
+    audit("Join refused — no valid mandate", x.id, P(j.pid).name + " · " + j.kind + " · checked at approval", "denied");
+    toast("Not permitted: " + P(j.pid).name + "’s mandate is no longer valid, so the request was refused.", "err");
+    return ok();
+  }
   j.status = d.v;
+  j.decidedBy = myId();
+  j.decidedAt = now();
   if (d.v === "Approved") {
+    const mand = mandateOf(j.pid, x.ctx);
     x.members.push({
       pid: j.pid,
-      role:
-        normRole(j.kind) === "Member"
-          ? /Finance|External|Institutional/.test(j.kind)
-            ? "Collaborator"
-            : "Member"
-          : normRole(j.kind),
+      role: joinRoleFor(j.kind, j.role),
       label: j.kind,
       status: "Invited",
+      join: { kind: j.kind, basis: JOIN_RULES[j.kind], mandate: mand ? { scope: mand.scope || "", until: mand.until || "" } : null, by: j.by, at: j.at, approvedBy: myId(), approvedAt: now() },
+      ...(j.extra || {}),
     });
     notify(j.pid, "Invitation to join " + x.name, "room", { id: x.id });
   }
-  audit("Join " + d.v, x.id, j.kind);
+  if (j.by && j.by !== myId()) notify(j.by, "Join request for " + P(j.pid).name + " " + d.v.toLowerCase() + " in " + x.name, "room", { id: x.id, tab: "members" });
+  audit("Join " + d.v, x.id, P(j.pid).name + " · " + j.kind + " · requested by " + P(j.by || x.lead).name);
   ok();
 };
 A.roomState = (d) => {
   const x = byId("rooms", d.r);
+  const from = x.state;
+  // JF-46: record who activated a proposal and on what authority, and who approved a workspace pending approval
+  if (from === "Proposed" && ["Active", "Pending approval"].includes(d.v))
+    x.activation = { by: myId(), at: now(), basis: roomAuthority(null, true).basis };
+  if (d.v === "Active" && ["Proposed", "Pending approval"].includes(from))
+    x.approval = { by: myId(), at: now(), how: from === "Pending approval" ? "Approved by " + roleName(roleId(), ctxId()) : "Activated by an authorised creator — " + roomAuthority(null, true).basis };
   x.state = d.v;
   x.declineReason = null;
   const pr = S.projects.find((p) => p.room === x.id);
@@ -1367,9 +1544,13 @@ const ORIGIN_ROUTE = { circles: "circle", ropes: "rope", rooms: "room", projects
 function relLink(id) {
   const k = ["circles", "ropes", "rooms", "projects", "cards", "matches"].find((c) => byId(c, id));
   if (!k) return h(id);
+  if (k === "ropes" && ropeHiddenId(id)) return h(ROPE_HIDDEN);
   return objOpenable(k, byId(k, id)) ? L(cName(id), ORIGIN_ROUTE[k], { id }) : cName(id) + " " + ic("lock", 12);
 }
-const originLink = (x) => h(x.origin.type) + (x.origin.id ? " · " + relLink(x.origin.id) : x.origin.basis ? " · " + h(x.origin.basis) : "");
+const originLink = (x) =>
+  ropeHiddenId(x.origin.id) ? h(ROPE_HIDDEN) : h(x.origin.type) + (x.origin.id ? " · " + relLink(x.origin.id) : x.origin.basis ? " · " + h(x.origin.basis) : "");
+// JF-32: a Workspace formed from a Rope Team the viewer is outside of shows no origin type or name.
+const roomOriginType = (x) => (ropeHiddenId(x.origin.id) ? ROPE_HIDDEN : x.origin.type);
 // Continue: harvest this cycle (human-completed), then start the next cycle with the same members and links.
 A.roomContinue = (d) => {
   const x = byId("rooms", d.r);
@@ -1414,7 +1595,7 @@ function roomFlowState(x) {
     hv: S.harvests.find((v) => v.tpl === 2 && v.scope === x.id && v.subject === myId()),
   };
 }
-const hvDone = (v) => !!v && ["Approved", "Released"].includes(v.state);
+// hvDone: views/evidence.js (Approved or Released)
 function roomFlow(x) {
   const st = roomFlowState(x);
   const act = memberOf(x) && x.state === "Active";
@@ -1618,23 +1799,21 @@ A.cbNew = (d) => {
   modal(
     prev ? "Revise and resubmit" : "Submit a contribution",
     () =>
-      `<form data-f="cbn" class="col" style="gap:14px" novalidate><input type="hidden" name="r" value="${x.id}"><input type="hidden" name="re" value="${d.re || ""}">${prev ? banner("warn", "Steward feedback", h((prev.history.slice(-1)[0] || {}).t || "")) : ""}${fi("cbn", "resp", "Responsibility this delivers against", { req: true, help: "The requirement you were matched or invited for." })}${fi("cbn", "t", "Contribution", { req: true })}${fi("cbn", "desc", "What you are submitting and how it meets the responsibility", { type: "textarea", rows: 3, req: true })}<div class="field"><label class="lbl" for="cbn_f">File (optional)</label><input id="cbn_f" type="file" name="f" class="input" style="padding:8px"><span class="help">Up to ${S.settings.maxFileMB} MB.</span></div><div class="actions"><span></span><button class="btn btn-p" type="submit">Submit for steward review</button></div></form>`,
+      `<form data-f="cbn" class="col" style="gap:14px" novalidate><input type="hidden" name="r" value="${x.id}"><input type="hidden" name="re" value="${d.re || ""}">${prev ? banner("warn", "Steward feedback", h((prev.history.slice(-1)[0] || {}).t || "")) : ""}${fi("cbn", "resp", "Responsibility this delivers against", { req: true, help: "The requirement you were matched or invited for." })}${fi("cbn", "t", "Contribution", { req: true })}${fi("cbn", "desc", "What you are submitting and how it meets the responsibility", { type: "textarea", rows: 3, req: true })}<div class="field"><label class="lbl" for="cbn_f">File (optional)</label><input id="cbn_f" type="file" name="f" class="input" style="padding:8px" accept="${uploadAccept({ ctx: x.ctx })}"><span class="help">${uploadRuleText({ ctx: x.ctx })}.</span></div><div class="actions"><span></span><button class="btn btn-p" type="submit">Submit for steward review</button></div></form>`,
   );
 };
 F.cbn = (d, form) => {
   if (!validate("cbn", d, { resp: ["req"], t: ["req"], desc: ["req"] }))
     return render();
   const file = form.querySelector("input[type=file]")?.files?.[0];
-  if (file && file.size > S.settings.maxFileMB * 1048576) {
-    UI.err.cbn = {
-      t:
-        "File over " +
-        S.settings.maxFileMB +
-        " MB. Link it externally instead.",
-    };
-    return render();
-  }
   const x = byId("rooms", d.r);
+  // JF-52: approved types, the programme's size limit and the malware scan
+  const chk = file && uploadCheck([file], { where: "Contribution · " + x.name, ctx: x.ctx });
+  if (chk && !chk.pass) {
+    UI.form.cbn = d;
+    UI.err.cbn = { t: chk.msg };
+    return chk.quarantined.length ? ok() : render();
+  }
   const prev = d.re && x.contribs.find((c) => c.id === d.re);
   const att = file
     ? { n: file.name, mb: +(file.size / 1048576).toFixed(2) }

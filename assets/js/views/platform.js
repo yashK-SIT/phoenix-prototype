@@ -335,6 +335,59 @@ const ctxOrgMark = () => {
 };
 
 // ---------- ORGANIZATIONS ----------
+// ---------- ACCOUNTS (JF-10): the global account state, separate from memberships and roles ----------
+// Deactivating an account stops sign-in everywhere; each organization's memberships and roles keep their own state
+// and come back unchanged on reactivation. Organizations suspend their own membership instead (Users & roles).
+route("accounts", "platform", () => {
+  const ppl = S.people.slice().sort((a, b) => a.name.localeCompare(b.name));
+  const roles = (p) => {
+    const live = S.assign.filter((a) => a.pid === p.id);
+    const past = (S.assignHist || []).filter((a) => a.pid === p.id);
+    return (
+      [...live, ...past]
+        .map(
+          (a) =>
+            `${h(roleName(a.role, a.ctx) || a.role)} <span class="cap">· ${h(ctxName(a.ctx))}</span> ${pill(a.endedAt ? a.status : asgState(a) === "Account deactivated" ? a.status : asgState(a))}`,
+        )
+        .join("<br>") || "—"
+    );
+  };
+  const act = (p) =>
+    p.status === "Deleted" || p.id === myId()
+      ? ""
+      : acctActive(p.id)
+        ? CB("Deactivate account", "acctStatus", { pid: p.id, v: "Deactivated" }, "Deactivate the whole account of " + p.name + "? They cannot sign in to any organization. Their memberships, roles and records are kept unchanged and return when the account is reactivated.", "btn-d btn-sm", "Deactivate")
+        : B("Reactivate account", "acctStatus", { pid: p.id, v: "Active" }, "btn-p btn-sm");
+  return (
+    head(
+      "Accounts",
+      "Each person's single PHOENIX account across every organization. Deactivating an account stops all sign-in; to end access to one organization only, its Organization Admin suspends the membership there.",
+    ) +
+    card(
+      "People " + `<span class="adm-n">${ppl.length}</span>`,
+      "",
+      table(
+        ["Person", "Account", "Memberships and roles (each keeps its own state)", ""],
+        ppl.map((p) => [
+          `<b>${h(p.name)}</b><div class="cap">${h(p.email || "")}</div>`,
+          pill(p.status === "Deleted" ? "Deleted" : acctActive(p.id) ? "Active" : "Deactivated"),
+          roles(p),
+          act(p),
+        ]),
+      ),
+      "",
+      "adm-panel",
+    ) +
+    roleHistoryCard(null)
+  );
+});
+A.acctStatus = (d) => {
+  const p = P(d.pid);
+  p.status = d.v;
+  audit("Account " + d.v.toLowerCase(), p.id, p.email + " · memberships and roles unchanged");
+  toast(p.name + "’s account is now " + d.v.toLowerCase() + ". Memberships and roles were not changed.");
+  ok();
+};
 route("tenants", "platform", () => {
   if (UI.p.id) return tenantDetail(orgOf(UI.p.id));
   const q = UI.q;

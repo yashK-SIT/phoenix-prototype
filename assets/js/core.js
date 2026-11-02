@@ -2,6 +2,8 @@
 const KEY = "phoenix-alpha-proto-v5";
 let S = null;
 function save() {
+  // JF-53: every file holder gets its stored file and ID before the state is written, so IDs stay stable
+  if (S && typeof filesEnsure === "function") filesEnsure();
   try {
     localStorage.setItem(KEY, JSON.stringify(S));
   } catch (e) {}
@@ -207,7 +209,22 @@ const can = (m, need) => {
 };
 const tech = (m) =>
   lvl(m).includes("T") || (lvl(m).includes("M") && role() === "T");
-const hasB = (b) => (asg()?.bundles || []).includes(b);
+// JF-56: a bundle counts only on an active assignment and inside its active window (a.bundleDates[b] = { from,
+// until }). The Reviewer bundle is the Evidence Review Authority: it must have dates, so without them it grants nothing.
+const bundleWin = (a, b) => (a && a.bundleDates && a.bundleDates[b]) || null;
+const bundleActive = (a, b) => {
+  if (!a || (a.status && a.status !== "Active") || !(a.bundles || []).includes(b)) return false;
+  const w = bundleWin(a, b);
+  if (!w) return b !== "Reviewer";
+  const t = today();
+  return (!w.from || w.from <= t) && (!w.until || w.until >= t);
+};
+const bundleState = (a, b) => {
+  const w = bundleWin(a, b);
+  const t = today();
+  return !w ? (b === "Reviewer" ? "No dates" : "Active") : w.from && w.from > t ? "Not yet active" : w.until && w.until < t ? "Expired" : "Active";
+};
+const hasB = (b) => bundleActive(asg(), b);
 // Specialist authority without separate bundle holders: policies and products & payments are Platform Administrator
 // modules; release disclosure review and incident handling stay with the Organization Admin of the context.
 const isPolicyAdmin = () => role() === "T";
@@ -439,6 +456,12 @@ const SC = {
   Quarantined: "p-red",
   Escalated: "p-red",
   Suspended: "p-red",
+  "Suspended in this organization": "p-red",
+  "Context suspended": "p-red",
+  "Account deactivated": "p-red",
+  Deactivated: "p-red",
+  Deleted: "p-grey",
+  "Ended — account deleted": "p-grey",
   Failed: "p-red",
   Refunded: "p-grey",
   Cancelled: "p-grey",
@@ -927,6 +950,107 @@ const ctxCountry = (id) =>
       (o) => o.id === (S.contexts.find((c) => c.id === id) || {}).org,
     ) || {}
   ).country || "";
+
+// ---------- UPLOAD POLICY (JF-52) ----------
+// One policy for every upload path in a programme: an approved-type allow-list, a size limit the Organization Admin
+// sets (never above the platform ceiling, S.settings.maxFileMB), a malware scan with quarantine, and share links that
+// expire. Programs and scripts are never accepted, whatever the allow-list says.
+// Prototype limits: the scan is simulated (a file named with "eicar", "virus" or "malware" fails it), files stay in
+// this browser, and a production build stores them server-side behind access-checked, short-lived signed URLs.
+const UPLOAD_TYPES = {
+  documents: ["Documents", ["pdf", "doc", "docx", "odt", "rtf", "txt", "md", "log"]],
+  sheets: ["Spreadsheets and data", ["xls", "xlsx", "ods", "csv", "tsv", "json", "geojson", "kml", "kmz", "gpx"]],
+  slides: ["Presentations", ["ppt", "pptx", "odp"]],
+  images: ["Images", ["jpg", "jpeg", "png", "gif", "webp", "heic"]],
+  audio: ["Audio", ["mp3", "m4a", "wav", "ogg"]],
+  video: ["Video", ["mp4", "mov", "webm", "avi", "mkv"]],
+  archives: ["Archives (ZIP)", ["zip"]],
+};
+// Video and archives are off until an Organization Admin turns them on (video is normally linked, and an archive
+// can hide what is inside it).
+const UPLOAD_DEFAULT = ["documents", "sheets", "slides", "images", "audio"];
+const UPLOAD_NEVER =
+  /\.(exe|bat|cmd|com|scr|msi|msp|dll|sh|bash|ps1|psm1|vbs|vbe|js|jse|mjs|wsf|jar|apk|app|dmg|iso|reg|hta|lnk|cpl)$/i;
+const LINK_HOURS_DEFAULT = 24;
+const uploadCfg = (c = ctxId()) => ((S.settings.uploads || {})[c] || {});
+// The platform ceiling, and the programme's own limit within it.
+const uploadCeiling = () => +S.settings.maxFileMB || 100;
+const uploadMaxMB = (c = ctxId()) => Math.min(+uploadCfg(c).maxMB || uploadCeiling(), uploadCeiling());
+const uploadTypes = (c = ctxId()) => uploadCfg(c).types || UPLOAD_DEFAULT;
+const linkHours = (c = ctxId()) => +uploadCfg(c).linkHours || LINK_HOURS_DEFAULT;
+const fileExt = (n) => {
+  const m = /\.([^./\\]+)$/.exec(String(n || ""));
+  return m ? m[1].toLowerCase() : "";
+};
+const fileTypeOf = (n) => Object.keys(UPLOAD_TYPES).find((k) => UPLOAD_TYPES[k][1].includes(fileExt(n)));
+const uploadTypeNames = (ks) => ks.map((k) => UPLOAD_TYPES[k][0]).join(", ");
+// For file inputs: the extensions the browser should offer (the check below still runs on submit).
+const uploadAccept = (o = {}) =>
+  uploadTypes(o.ctx)
+    .filter((k) => (!o.only || o.only.includes(k)) && !(o.except || []).includes(k))
+    .flatMap((k) => UPLOAD_TYPES[k][1].map((e) => "." + e))
+    .join(",");
+// Help text that states the rule where people choose files.
+const uploadRuleText = (o = {}) => {
+  const ks = uploadTypes(o.ctx).filter((k) => (!o.only || o.only.includes(k)) && !(o.except || []).includes(k));
+  return "Up to " + Math.min(uploadMaxMB(o.ctx), o.maxMB || Infinity) + " MB each · " + (uploadTypeNames(ks) || "no file types are approved here") + " · every file is scanned";
+};
+const scanSim = (f) => (/eicar|virus|malware/i.test(f.name) ? "infected" : "clean");
+// A file that fails the scan is kept out of the space: it is recorded as quarantined (owner and Organization Admin
+// see the record, nobody can open it), audited, and the programme's Organization Admins are told.
+function uploadQuarantine(f, where, c = ctxId()) {
+  S.records.push({
+    id: uid("rc"),
+    title: f.name,
+    kind: "Quarantined upload",
+    owner: myId(),
+    ctx: c,
+    linked: [],
+    date: today(),
+    vis: "Owner and Organization Admin",
+    consent: "n/a",
+    retention: "Programme",
+    review: "Pending",
+    state: "Quarantined",
+    ver: 1,
+    tags: "",
+    sizeMB: +(f.size / 1048576).toFixed(2),
+    note: "Failed malware scan — quarantined, not linked" + (where ? " (" + where + ")" : ""),
+  });
+  audit("File quarantined", f.name, "Malware scan failed" + (where ? " · " + where : ""), "denied");
+  S.assign
+    .filter((a) => a.ctx === c && a.status === "Active" && roleBase(a.role) === "A" && a.pid !== myId())
+    .forEach((a) => notify(a.pid, "A file failed the malware scan and was quarantined: " + f.name + (where ? " (" + where + ")" : ""), "admin", { tab: "packs" }));
+}
+// Checks files against the programme's policy. o: { where, ctx, maxMB (a lower cap for this path), only / except
+// (type keys), typeMsg(file, typeKey) for a path-specific message, scan: false to check type and size only }. Nothing is accepted unless every file passes;
+// a file that fails the scan is quarantined as it is found.
+function uploadCheck(files, o = {}) {
+  const c = o.ctx || ctxId();
+  const max = Math.min(uploadMaxMB(c), o.maxMB || Infinity);
+  const types = uploadTypes(c).filter((k) => (!o.only || o.only.includes(k)) && !(o.except || []).includes(k));
+  const errors = [];
+  const quarantined = [];
+  const ok = [];
+  [].concat(files || []).filter(Boolean).forEach((f) => {
+    const k = fileTypeOf(f.name);
+    if (UPLOAD_NEVER.test(f.name)) return errors.push(`“${f.name}” is a program or script. These are never accepted.`);
+    if (!k || !types.includes(k))
+      return errors.push((o.typeMsg && o.typeMsg(f, k)) || `“${f.name}” is not an approved file type here. Approved: ${uploadTypeNames(types) || "none"}.`);
+    if (!f.size) return errors.push(`“${f.name}” is empty.`);
+    if (f.size > max * 1048576) return errors.push(`“${f.name}” is ${(f.size / 1048576).toFixed(1)} MB — over the ${max} MB limit.`);
+    if (o.scan !== false && scanSim(f) === "infected") {
+      uploadQuarantine(f, o.where, c);
+      return quarantined.push(f.name);
+    }
+    ok.push(f);
+  });
+  const qMsg = quarantined.length
+    ? quarantined.map((n) => "“" + n + "”").join(", ") + (quarantined.length > 1 ? " failed the malware scan and were" : " failed the malware scan and was") + " quarantined."
+    : "";
+  const pass = !errors.length && !quarantined.length;
+  return { ok, errors, quarantined, pass, msg: pass ? "" : [...errors, qMsg].filter(Boolean).join(" ") + " Nothing was uploaded." };
+}
 // Accounts are soft-deleted; a deleted account no longer matches an email address.
 const personByEmail = (e) =>
   S.people.find(
@@ -993,6 +1117,7 @@ function navItems() {
     items.push(
       ["home", "Dashboard", "grid"],
       ["tenants", "Contexts & tenants", "building"],
+      ["accounts", "Accounts", "users"],
       ["roles", "Roles & bundles", "shield"],
       ["packs", "Packs & role names", "settings"],
       ["policies", "Trust/Data: Policies", "shield"],
@@ -1174,6 +1299,7 @@ const GROUP = {
   incidents: "Always available",
   platform: "Platform",
   tenants: "Platform",
+  accounts: "Platform",
   roles: "Platform",
 };
 // Section label for a nav route: Participant keeps Orient for pathway; other roles fold it into Work.
@@ -1315,6 +1441,7 @@ const SHORT = {
   billing: "Billing",
   platform: "Platform",
   tenants: "Orgs",
+  accounts: "Accounts",
   roles: "Roles",
   audit: "Audit",
   org: "Org",
@@ -1420,8 +1547,12 @@ function render() {
   } else {
     const a = asg();
     tick();
-    if (a.status !== "Active") {
-      html = PUB.pending();
+    if (!asgUsable(a)) {
+      // Personal records stay available while a role or one context is blocked (not when the whole account is).
+      html =
+        UI.route === "privacy" && acctActive(a.pid)
+          ? PUB.ownRecords()
+          : PUB.pending();
     } else if (
       !a.onb.agreement ||
       !a.onb.consents ||
@@ -1751,10 +1882,37 @@ A.logout = () => {
 function roleChoices(pid = myId()) {
   return S.assign.filter((x) => x.pid === pid);
 }
+// JF-10 / BF-29: three separate states decide whether a role can be used for work.
+//   1. Account (global identity): Active or Deactivated. Only the Platform Administrator changes it.
+//   2. Membership in one context: suspended or not. The Organization Admin of that context changes it; it never
+//      touches the person's other contexts, their account or their personal records.
+//   3. Role assignment: Active, Deactivated, Pending role approval, … (one role in one context).
+// Lifting a suspension leaves each role's own state exactly as it was.
+const ctxSusp = (pid, ctx) =>
+  (S.membership || []).find(
+    (m) => m.pid === pid && m.ctx === ctx && m.state === "Suspended" && !m.ended,
+  ) || null;
+const acctActive = (pid) => {
+  const p = S.people.find((x) => x.id === pid);
+  return !!p && (p.status || "Active") === "Active";
+};
 const asgUsable = (x) =>
   !!x &&
   x.status === "Active" &&
+  acctActive(x.pid) &&
+  !ctxSusp(x.pid, x.ctx) &&
   (S.contexts.find((c) => c.id === x.ctx) || {}).status !== "Suspended";
+// What a person can see about one role: the most important reason it cannot be used, otherwise its own status.
+const asgState = (x) =>
+  !x
+    ? "—"
+    : !acctActive(x.pid)
+      ? "Account deactivated"
+      : ctxSusp(x.pid, x.ctx)
+        ? "Suspended in this organization"
+        : (S.contexts.find((c) => c.id === x.ctx) || {}).status === "Suspended"
+          ? "Context suspended"
+          : x.status;
 // A form holds unsaved input when any of its text fields has content.
 const unsavedForms = () =>
   Object.entries(UI.form || {})
@@ -1779,7 +1937,7 @@ function switcherBody(then) {
           .map((x) => {
             const usable = asgUsable(x);
             const isCur = x.id === cur;
-            return `<button class="demo-acc${usable ? "" : " is-off"}" type="button" ${usable && !isCur ? `data-a="doSwitch" data-id="${x.id}"${then ? ` data-then="${h(then)}"` : ""}` : 'disabled aria-disabled="true"'}><span class="tile t-soft">${ic("user", 18)}</span><span class="col" style="flex:1"><b>${h(roleName(x.role, x.ctx))}</b>${x.bundles.length || !usable ? `<span class="cap">${[x.bundles.length ? "Bundles: " + h(x.bundles.join(", ")) : "", usable ? "" : "Not available for work until it is active"].filter(Boolean).join(" · ")}</span>` : ""}</span>${x.id === prim ? pill("Primary", "p-navy") : ""}${isCur ? pill("Current", "p-teal") : pill(x.status)}</button>`;
+            return `<button class="demo-acc${usable ? "" : " is-off"}" type="button" ${usable && !isCur ? `data-a="doSwitch" data-id="${x.id}"${then ? ` data-then="${h(then)}"` : ""}` : 'disabled aria-disabled="true"'}><span class="tile t-soft">${ic("user", 18)}</span><span class="col" style="flex:1"><b>${h(roleName(x.role, x.ctx))}</b>${x.bundles.length || !usable ? `<span class="cap">${[x.bundles.length ? "Bundles: " + h(x.bundles.join(", ")) : "", usable ? "" : ctxSusp(x.pid, x.ctx) ? "Your access to this organization is suspended; your other organizations are not affected" : "Not available for work until it is active"].filter(Boolean).join(" · ")}</span>` : ""}</span>${x.id === prim ? pill("Primary", "p-navy") : ""}${isCur ? pill("Current", "p-teal") : pill(asgState(x))}</button>`;
           })
           .join("")}</section>`,
     )
@@ -1794,11 +1952,49 @@ A.switcher = () => {
   UI.panel = null;
   modal("Switch tenant or role", switcherBody());
 };
+// Merge two copies of the sponsor project discussions: the incoming copy leads; messages either copy has are kept
+// (by id), a question answered in either stays answered, and a closed discussion stays closed.
+function spSyncMerge(loc, inc) {
+  const byL = Object.fromEntries(loc.map((c) => [c.id, c]));
+  const out = inc.map((c) => {
+    const l = byL[c.id];
+    if (!l) return c;
+    // matched on id and time, so two messages that were given the same id in different tabs are both kept
+    const key = (m) => m.id + "|" + m.at;
+    const ids = new Set((c.msgs || []).map(key));
+    const lm = Object.fromEntries((l.msgs || []).map((m) => [key(m), m]));
+    const extra = (l.msgs || []).filter((m) => !ids.has(key(m)));
+    let msgs = (c.msgs || []).map((m) => (lm[key(m)] && lm[key(m)].ans && !m.ans ? { ...m, ans: true } : m));
+    if (extra.length) msgs = [...msgs, ...extra].sort((a, b) => String(a.at).localeCompare(String(b.at)));
+    const pids = new Set((c.members || []).map((m) => m.pid));
+    const members = [...(c.members || []), ...(l.members || []).filter((m) => !pids.has(m.pid))];
+    const closed = c.state !== "Active" || l.state !== "Active";
+    return { ...c, msgs, members, ...(closed && c.state === "Active" ? { state: l.state, closedAt: l.closedAt } : {}) };
+  });
+  loc.forEach((l) => {
+    if (!out.some((c) => c.id === l.id)) out.push(l);
+  });
+  return out;
+}
+// Read marks: the later mark per person and conversation.
+function spSyncReads(loc, inc) {
+  const out = JSON.parse(JSON.stringify(inc));
+  Object.entries(loc).forEach(([pid, m]) => {
+    out[pid] = out[pid] || {};
+    Object.entries(m || {}).forEach(([id, at]) => {
+      if ((out[pid][id] || "") < at) out[pid][id] = at;
+    });
+  });
+  return out;
+}
 // A policy published in another tab reaches this one straight away.
 window.addEventListener("storage", (e) => {
   if (e.key !== KEY || !e.newValue || !S || !S.session) return;
   try {
     const n = JSON.parse(e.newValue);
+    // ids come from a shared counter (uid): move this tab's counter past the other tab's, so the two never hand out
+    // the same id for different records
+    if (n && n.seq > S.seq) S.seq = n.seq;
     if (
       n &&
       n.agreements &&
@@ -1806,6 +2002,35 @@ window.addEventListener("storage", (e) => {
     ) {
       S.agreements = n.agreements;
       render();
+    }
+    // Sponsor project discussions (S.spchats) and read marks: a message sent in another tab (the Sponsor's Chat room
+    // or a member's Messages) shows here straight away. What is being typed keeps its text and focus.
+    // Every tab saves the whole state, so a tab holding an older copy can overwrite a newer message. Merging (never
+    // replacing) and writing the merged copy back keeps every message, whichever tab saved last.
+    const sp = JSON.stringify(n && n.spchats);
+    if (n && n.spchats && sp !== JSON.stringify(S.spchats)) {
+      const merged = spSyncMerge(S.spchats || [], n.spchats);
+      S.spchats = merged;
+      S.chatRead = spSyncReads(S.chatRead || {}, n.chatRead || {});
+      // the other tab's notices, plus this tab's discussion notices it did not have, so neither save drops them
+      if (Array.isArray(n.notifs)) {
+        const ids = new Set(n.notifs.map((x) => x.id));
+        const chatN = (x) => x.r === "spchat" || (x.p && x.p.k === "spchats");
+        S.notifs = [...S.notifs.filter((x) => !ids.has(x.id) && chatN(x)), ...n.notifs];
+      }
+      if (JSON.stringify(merged) !== sp) save();
+      const a = document.activeElement;
+      const f = a && a.form && a.form.dataset && a.form.dataset.f;
+      const fn = f && a.name;
+      const val = f && a.value;
+      render();
+      if (fn) {
+        const el = document.querySelector('form[data-f="' + f + '"] [name="' + fn + '"]');
+        if (el) {
+          el.value = val;
+          el.focus();
+        }
+      }
     }
   } catch (x) {}
 });

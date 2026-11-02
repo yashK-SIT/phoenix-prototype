@@ -143,6 +143,79 @@ const evProjects = e =>
   S.projects.filter(p => e.project === p.id || (e.linked || []).some(l => l && ([p.id, p.circle, p.rope, p.room].includes(l) || roomProject(byId('rooms', l)) === p)));
 const evProjectName = e => evProjects(e).map(p => h(p.title)).join(', ');
 const spaceProject = id => S.projects.find(p => [p.circle, p.rope, p.room].includes(id)) || roomProject(byId('rooms', id)) || undefined;
+
+// ---------- JF-56: Evidence Review Authority, conflicts and recusal ----------
+// Only an active Evidence Review Authority (the Reviewer bundle, inside its active window — core.js bundleActive)
+// reviews evidence, and never evidence they created, contributed to, supervised or sponsored. Contributors,
+// supervisors and sponsors are recorded on the evidence (a linked project's sponsor is added automatically). Each item
+// is assigned to one eligible reviewer; a reviewer who declares a conflict, or becomes conflicted, is recused — the
+// recusal is logged and the item goes to the next eligible reviewer. The project's Steward follows the same conflict
+// rule for milestone evidence (views/rooms.js).
+const EV_ROLES = [
+  ['contributors', 'Contributors', 'contributed to it'],
+  ['supervisors', 'Supervisors', 'supervised it'],
+  ['sponsors', 'Sponsors', 'sponsored it'],
+];
+const evRevAuth = (pid, c) => S.assign.some(a => a.pid === pid && a.ctx === c && bundleActive(a, 'Reviewer'));
+const evAutoSponsors = e => evProjects(e).map(p => p.sponsor).filter(Boolean);
+const evPeople = (e, k) => [...new Set([...(e[k] || []), ...(k === 'sponsors' ? evAutoSponsors(e) : [])])];
+// Why this person may not review this evidence; null when they may.
+function evConflict(e, pid) {
+  if (!e || !pid) return null;
+  if (e.owner === pid) return 'created it';
+  const role_ = EV_ROLES.find(([k]) => evPeople(e, k).includes(pid));
+  if (role_) return role_[2];
+  const r = (e.recusals || []).find(x => x.pid === pid);
+  return r ? 'declared a conflict (' + r.reason + ')' : null;
+}
+const evPending = e => !!e && e.lifecycle === 'Active' && ['Submitted', 'In review', 'Needs Revision'].includes(e.review);
+const evCanReview = (e, pid = myId()) => !!e && evRevAuth(pid, evCtx(e)) && !evConflict(e, pid);
+// The next reviewer: an active Evidence Review Authority in the evidence's context with no conflict, with the fewest
+// items already waiting for them.
+function evPickReviewer(e) {
+  const c = evCtx(e);
+  const load = pid => S.evidence.filter(x => x.assignee === pid && evPending(x)).length;
+  return [...new Set(S.assign.filter(a => a.ctx === c && bundleActive(a, 'Reviewer')).map(a => a.pid))]
+    .filter(pid => !evConflict(e, pid))
+    .sort((a, b) => load(a) - load(b) || a.localeCompare(b))[0] || null;
+}
+function evAssign(e, why) {
+  const prev = e.assignee || null;
+  const next = evPickReviewer(e);
+  e.assignee = next;
+  if (next) {
+    notify(next, 'Evidence assigned to you for review: ' + e.title, 'evidence', { id: e.id });
+    e.history.push({ at: today(), t: (prev ? 'Reassigned' : 'Assigned') + ' for review to ' + P(next).name + (why ? ' — ' + why : '') });
+  } else {
+    e.history.push({ at: today(), t: 'No eligible reviewer is available' + (why ? ' — ' + why : '') + '. The Organization Admin is asked to assign Evidence Review Authority.' });
+    ctxAdmins(evCtx(e)).forEach(p => notify(p, 'No eligible, non-conflicted reviewer for the evidence “' + e.title + '”', 'evidence', { id: e.id }));
+  }
+  audit('Evidence reviewer ' + (prev ? 'reassigned' : 'assigned'), e.id, (prev ? P(prev).name + ' → ' : '') + (next ? P(next).name : 'no eligible reviewer') + (why ? ' · ' + why : ''));
+  return next;
+}
+// Records a recusal (declared, or automatic when a recorded role makes the reviewer conflicted) and reassigns.
+function evRecuse(e, pid, reason, auto) {
+  (e.recusals = e.recusals || []).push({ pid, at: now(), reason, by: myId(), auto: !!auto });
+  e.history.push({ at: today(), by: myId(), t: P(pid).name + ' recused from reviewing' + (auto ? ' (automatic)' : '') + ': ' + reason });
+  audit('Reviewer recused', e.id, P(pid).name + ' · ' + reason + (auto ? ' · automatic' : ''), auto ? 'denied' : 'ok');
+  if (!e.assignee || e.assignee === pid) evAssign(e, P(pid).name + ' recused');
+  if (typeof msRouteEvidence === 'function') msRouteEvidence(e);
+}
+// After the recorded roles change, or authority lapses: a reviewer who can no longer review is replaced.
+function evConflictCheck(e) {
+  if (!evPending(e)) return;
+  const a = e.assignee;
+  if (a && evConflict(e, a) && !(e.recusals || []).some(r => r.pid === a)) evRecuse(e, a, 'now recorded as having ' + evConflict(e, a), true);
+  else if (a && !evRevAuth(a, evCtx(e))) evAssign(e, P(a).name + '’s Evidence Review Authority is not active');
+  else if (!a) evAssign(e);
+  if (typeof msRouteEvidence === 'function') msRouteEvidence(e);
+}
+// People who may be recorded as contributors, supervisors or sponsors.
+const evRolePool = (k, c = ctxId()) => eligiblePeople([], k === 'sponsors' ? ['S', 'C', 'A'] : ['P', 'F', 'M', 'C', 'A']).filter(p => S.assign.some(a => a.pid === p.pid && a.ctx === c));
+const evRoleFields = (f, e) =>
+  EV_ROLES.map(([k, l]) => msel(f, k, l + (k === 'sponsors' ? ' (besides the project’s sponsor)' : ''), evRolePool(k), (e && e[k]) || [], { help: k === 'contributors' ? 'Everyone who helped produce it. None of them can review it.' : k === 'supervisors' ? 'Anyone who supervised the work. They cannot review it.' : 'Anyone who sponsored the work. A sponsor never reviews it.' })).join('');
+const evRolesRows = e =>
+  EV_ROLES.map(([k, l]) => [l, evPeople(e, k).map(pid => nm(pid) + (k === 'sponsors' && !(e[k] || []).includes(pid) ? ' <span class="cap">(project sponsor)</span>' : '')).join(', ') || '—']);
 route('evidence', 'evidence', () => {
   const r = role();
   if (UI.p.id) {
@@ -179,7 +252,8 @@ route('evidence', 'evidence', () => {
       )
     );
   }
-  const inQueue = e => ['Submitted', 'In review'].includes(e.review) && e.lifecycle === 'Active' && e.owner !== myId();
+  // JF-56: my queue is the items assigned to me (or not yet assigned) that I may review: active authority, no conflict
+  const inQueue = e => ['Submitted', 'In review'].includes(e.review) && e.lifecycle === 'Active' && evCanReview(e) && (!e.assignee || e.assignee === myId());
   const t = tabs('ev', [
     ['mine', 'My evidence', S.evidence.filter(e => e.owner === myId()).length],
     hasB('Reviewer') && ['queue', 'Review queue', S.evidence.filter(inQueue).length],
@@ -335,7 +409,11 @@ function evCommentsCard(e) {
 function evDetail(e) {
   const own = e.owner === myId();
   const reviewable = e.lifecycle === 'Active' && ['Submitted', 'In review', 'Needs Revision'].includes(e.review);
-  const rev = hasB('Reviewer') && !own;
+  // JF-56: the review form only for an active Evidence Review Authority with no conflict, to whom it is assigned
+  const auth = evRevAuth(myId(), evCtx(e));
+  const conflict = evConflict(e, myId());
+  const mine = !e.assignee || e.assignee === myId();
+  const rev = auth && !conflict && mine && !own;
   const rr = S.releases.filter(x => x.ev === e.id);
   const confBtn = (own || rev) && e.lifecycle === 'Active' && (own || e.conf !== 'Confidential') ? B(own ? 'Change confidentiality' : 'Raise confidentiality', 'evConf', { id: e.id }) : '';
   return (
@@ -363,14 +441,19 @@ function evDetail(e) {
         ['Confidentiality', h(e.conf) + ' — ' + h(confMeaning(e.conf))],
         ['Retention', h(e.retention)],
         ['Linked to', e.linked.map(cName).join(', ')],
-        ['Reviewer', e.reviewer ? nm(e.reviewer) : '—'],
+        ...evRolesRows(e),
+        ['Assigned reviewer', e.assignee ? nm(e.assignee) : evPending(e) ? '<span class="cap">None eligible yet</span>' : '—'],
+        ['Last reviewed by', e.reviewer ? nm(e.reviewer) : '—'],
+        (e.recusals || []).length && ['Recusals', e.recusals.map(r => nm(r.pid) + ' · ' + h(r.reason) + ' · ' + fmt(r.at.slice(0, 10)) + (r.auto ? ' <span class="cap">(automatic)</span>' : '')).join('<br>')],
         ['Limitations / uncertainty', h(e.limits || '—')],
       ]),
       confBtn,
       'ev-meta',
     )}${evCommentsCard(e)}</div>
- <aside class="c4 col ev-side">${evMilestonesCard(e)}${rev && reviewable ? card('Review', 'Quality review only. Confidentiality and release are separate decisions; approval does not release it.', evReviewForm(e), '', 'accent') : ''}
- ${!rev && !own && role() === 'F' && reviewable ? card('Review', '', '<p class="cap">Approving or rejecting evidence needs the Reviewer bundle. You can comment on it.</p>') : ''}
+ <aside class="c4 col ev-side">${evMilestonesCard(e)}${rev && reviewable ? card('Review', 'Quality review only. Confidentiality and release are separate decisions; approval does not release it.', evReviewForm(e) + `<div class="ev-recuse">${B(ic('alert', 14) + 'Declare a conflict and recuse', 'evRecuse', { id: e.id }, 'btn-s btn-sm btn-block')}<p class="cap">If you have any interest in this evidence, recuse: it is logged and the item goes to another reviewer.</p></div>`, '', 'accent') : ''}
+ ${!own && reviewable && auth && conflict ? card('Review', '', banner('warn', 'You cannot review this evidence', 'You ' + h(conflict) + '. It is reviewed by ' + (e.assignee && e.assignee !== myId() ? nm(e.assignee) : 'another eligible reviewer') + '.')) : ''}
+ ${!own && reviewable && auth && !conflict && !mine ? card('Review', '', '<p class="cap">Assigned to ' + nm(e.assignee) + '. Only the assigned reviewer reviews it.</p>') : ''}
+ ${!own && reviewable && !auth && role() === 'F' ? card('Review', '', '<p class="cap">Approving or rejecting evidence needs an active Evidence Review Authority (the Reviewer bundle, inside its active dates). You can comment on it.</p>') : ''}
  ${own && e.review === 'Needs Revision' && e.lifecycle === 'Active' ? card('Revise and resubmit', 'History is kept.', B('Resubmit', 'evResub', { id: e.id }, 'btn-p btn-block')) : ''}
  ${own ? evReleaseCard(e, rr) : ''}
  ${own ? recordPurposesCard(e) : ''}
@@ -396,10 +479,11 @@ function evDetail(e) {
 }
 // The Steward's queue of milestone evidence, across the Action Rooms they steward.
 function msQueueCard() {
+  // JF-56: items a Steward may review (no conflict), plus items routed to me because every Steward is conflicted
   const rows = S.rooms
-    .filter(x => inCtx(x) && msIsSteward(x))
+    .filter(x => inCtx(x))
     .flatMap(x => msPending(x).map(([m, it]) => [x, m, it, msItems(m).indexOf(it)]))
-    .filter(([, , it]) => byId('evidence', it.ev)?.owner !== myId());
+    .filter(([x, , it]) => msCanReview(x, it));
   return (
     card(
       'Milestone evidence awaiting your review',
@@ -431,7 +515,7 @@ function evMilestonesCard(e) {
     rows
       .map(([x, m, it, i]) => {
         const st = msToReview(it) ? MS_PEND : it.st;
-        const act = msIsSteward(x) && m.status !== 'Achieved' && e.owner !== myId() && msToReview(it) ? B('Review for this milestone', 'msRev', { r: x.id, id: m.id, i }, 'btn-p btn-sm') : '';
+        const act = m.status !== 'Achieved' && msToReview(it) && msCanReview(x, it) ? B('Review for this milestone', 'msRev', { r: x.id, id: m.id, i }, 'btn-p btn-sm') + (!e.recusals?.some(r => r.pid === myId()) ? ' ' + B('Declare a conflict', 'evRecuse', { id: e.id }, 'btn-s btn-sm') : '') : msToReview(it) && msIsSteward(x) && evConflict(e, myId()) && e.owner !== myId() ? `<span class="cap">You ${h(evConflict(e, myId()))}, so ${it.alt ? nm(it.alt) : 'another Steward'} reviews it.</span>` : '';
         return `<div class="lrow" style="align-items:flex-start"><div class="lt"><b>${h(m.t)}</b><p class="cap">${L(h(x.name), 'room', { id: x.id, tab: 'plan' })} · milestone ${h(m.status.toLowerCase())}${it.rv ? ' · reviewed by ' + nm(it.rv) : ''}</p>${act ? `<div style="margin-top:8px">${act}</div>` : ''}</div>${pill(st, MS_PILL[st])}</div>`;
       })
       .join(''),
@@ -471,6 +555,7 @@ function evApplyReview(e, review, level, limits, comment) {
   e.level = level;
   e.limits = limits;
   e.reviewer = myId();
+  if (!e.assignee) e.assignee = myId();
   if (was !== review) evHist(e, 'Review', was, review, comment);
   if (wasLvl !== level) evHist(e, 'Evidence Support', wasLvl, level);
   if (was === review && wasLvl === level && comment) evHist(e, 'Review', was, review, comment);
@@ -523,6 +608,34 @@ F.evr = d => {
   toast('Review saved.' + (raise ? ' Confidentiality raised to ' + d.conf + '.' : ''));
   ok();
 };
+// ---- JF-56: declaring a conflict. The reason is logged, the person is recorded in the matching role where it is one,
+// and the item goes to the next eligible reviewer (and, for milestone evidence, the next eligible Steward or reviewer).
+const EV_RECUSE_WHY = [
+  ['contributors', 'I contributed to this work'],
+  ['supervisors', 'I supervised this work'],
+  ['sponsors', 'I sponsored this work'],
+  ['interest', 'Personal, financial or other interest'],
+  ['other', 'Other conflict'],
+];
+A.evRecuse = d => {
+  const e = byId('evidence', d.id);
+  clearF('evrc');
+  modal('Declare a conflict', () =>
+    `<form data-f="evrc" class="col ev-form" novalidate><input type="hidden" name="id" value="${e.id}">${banner('info', 'You will not review this evidence', 'Your recusal is logged on the evidence and in the audit trail, and the item goes to another eligible reviewer.')}${fi('evrc', 'why', 'Conflict', { type: 'select', req: true, ph: 'Select', opts: EV_RECUSE_WHY })}${fi('evrc', 'note', 'Details (optional)', { max: 200 })}<div class="actions">${B('Cancel', 'closeM')}<button class="btn btn-p" type="submit">Recuse</button></div></form>`,
+  );
+};
+F.evrc = d => {
+  if (!validate('evrc', d, { why: [['req', 'Choose the kind of conflict.']] })) return render();
+  const e = byId('evidence', d.id);
+  const w = EV_RECUSE_WHY.find(x => x[0] === d.why);
+  if (!w) return render();
+  if (EV_ROLES.some(([k]) => k === d.why) && !(e[d.why] || []).includes(myId())) (e[d.why] = e[d.why] || []).push(myId());
+  evRecuse(e, myId(), w[1] + ((d.note || '').trim() ? ' — ' + d.note.trim() : ''));
+  UI.modal = null;
+  clearF('evrc');
+  toast('Recusal recorded. ' + (e.assignee ? P(e.assignee).name + ' now reviews it.' : 'No other eligible reviewer is available; the Organization Admin has been told.'));
+  ok();
+};
 // ---- confidentiality: the owner sets it; a Reviewer may raise it with a reason. Never a review status.
 A.evConf = d => {
   const e = byId('evidence', d.id);
@@ -567,10 +680,11 @@ A.evEdit = d => {
   const e = byId('evidence', d.id);
   clearF('eve');
   UI.form.eve = { title: e.title, type: e.type, claim: e.claim || '', source: e.source || '', conf: e.conf };
+  EV_ROLES.forEach(([k]) => mselReset('eve', k));
   modal(
     'Edit evidence',
     () =>
-      `<form data-f="eve" class="col ev-form" novalidate>${errSum('eve')}<input type="hidden" name="id" value="${e.id}">${fi('eve', 'title', 'Title', { req: true, max: 120 })}<div class="f2">${fi('eve', 'type', 'Evidence type', { type: 'select', req: true, opts: EV_TYPES })}${fi('eve', 'source', 'Source', { req: true })}</div>${fi('eve', 'claim', 'Claim or metric it supports', { req: true })}${fi('eve', 'conf', 'Confidentiality', { type: 'select', req: true, opts: CONF.map(([k, m]) => [k, k + ' — ' + m]), help: 'Who can see it. Separate from the review status.' })}${banner('info', '', 'The file, link or text itself is not changed here. Your reviewer is told what changed.')}<div class="actions">${B('Cancel', 'closeM')}<button class="btn btn-p" type="submit">Save changes</button></div></form>`,
+      `<form data-f="eve" class="col ev-form" novalidate>${errSum('eve')}<input type="hidden" name="id" value="${e.id}">${fi('eve', 'title', 'Title', { req: true, max: 120 })}<div class="f2">${fi('eve', 'type', 'Evidence type', { type: 'select', req: true, opts: EV_TYPES })}${fi('eve', 'source', 'Source', { req: true })}</div>${fi('eve', 'claim', 'Claim or metric it supports', { req: true })}${fi('eve', 'conf', 'Confidentiality', { type: 'select', req: true, opts: CONF.map(([k, m]) => [k, k + ' — ' + m]), help: 'Who can see it. Separate from the review status.' })}${banner('info', '', 'The file, link or text itself is not changed here. Your reviewer is told what changed.')}${evRoleFields('eve', e)}<div class="actions">${B('Cancel', 'closeM')}<button class="btn btn-p" type="submit">Save changes</button></div></form>`,
   );
 };
 F.eve = d => {
@@ -579,9 +693,22 @@ F.eve = d => {
   const next = { title: d.title.trim(), type: d.type, claim: d.claim.trim(), source: d.source.trim() };
   const ch = changedFields(e, next, { title: 'title', type: 'type', claim: 'claim', source: 'source' });
   const confCh = d.conf && CONF.some(c => c[0] === d.conf) && d.conf !== e.conf;
+  // JF-56: changes to who took part are recorded; a reviewer they now conflict is recused and the item reassigned
+  const roleCh = EV_ROLES.filter(([k]) => {
+    const nx = [].concat(d[k] || []).filter(pid => pid && pid !== e.owner);
+    if ([...nx].sort().join() === [...(e[k] || [])].sort().join()) return false;
+    e.history.push({ at: today(), by: myId(), t: k[0].toUpperCase() + k.slice(1) + ' changed: ' + (nx.map(pid => P(pid).name).join(', ') || 'none') });
+    e[k] = nx;
+    return true;
+  });
+  if (roleCh.length) {
+    audit('Evidence roles changed', e.id, roleCh.map(([k]) => k).join(', '));
+    evConflictCheck(e);
+  }
   UI.modal = null;
   clearF('eve');
-  if (!ch.length && !confCh) {
+  EV_ROLES.forEach(([k]) => mselReset('eve', k));
+  if (!ch.length && !confCh && !roleCh.length) {
     toast('No changes to save.');
     return ok();
   }
@@ -591,7 +718,8 @@ F.eve = d => {
     audit('Evidence edited', e.id, ch.join(', '));
   }
   if (confCh) evSetConf(e, d.conf, 'set by the owner');
-  if (e.reviewer && e.reviewer !== myId()) notify(e.reviewer, 'Evidence edited by ' + me().name + ': ' + e.title, 'evidence', { id: e.id });
+  const tell = e.assignee || e.reviewer;
+  if (tell && tell !== myId()) notify(tell, 'Evidence edited by ' + me().name + ': ' + e.title, 'evidence', { id: e.id });
   toast('Evidence updated.');
   ok();
 };
@@ -600,7 +728,9 @@ A.evResub = d => {
   if (e.lifecycle !== 'Active' || e.review !== 'Needs Revision') return deny('only active evidence that needs revision can be resubmitted', e.id);
   evHist(e, 'Review', e.review, 'Submitted', 'resubmitted after revision');
   e.review = 'Submitted';
-  if (e.reviewer) notify(e.reviewer, 'Evidence resubmitted: ' + e.title, 'evidence', { id: e.id });
+  evConflictCheck(e);
+  const tell = e.assignee || e.reviewer;
+  if (tell) notify(tell, 'Evidence resubmitted: ' + e.title, 'evidence', { id: e.id });
   msEvidenceResubmitted(e);
   audit('Evidence resubmitted', e.id, '');
   ok();
@@ -700,7 +830,7 @@ function neFmtFields(f, fmt, spaces) {
       ? fi(f, 'rec', 'Record', { type: 'select', req: true, ph: 'Select a record', opts: recs.map(r => [r.id, r.title + ' · ' + r.kind]), help: 'Linked by reference. The record keeps its own permissions.' })
       : banner('info', 'No records available', 'Only active records you own or that belong to your spaces can be referenced.');
   }
-  return `<div class="field"><span class="lbl">File <span class="req">*</span></span><label class="dz ev-dz ${fe(f, 'file') ? 'err' : ''}"><span class="ev-dz-ic" aria-hidden="true">${ic('upload', 22)}</span><div><b>Choose a file</b></div><div class="cap">Up to ${S.settings.maxFileMB} MB. Video must be linked externally. Files are scanned; failures are quarantined.</div><input type="file" name="file" class="sr"><span class="fname">No file chosen</span></label>${fe(f, 'file') ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe(f, 'file')}</span>` : ''}</div>`;
+  return `<div class="field"><span class="lbl">File <span class="req">*</span></span><label class="dz ev-dz ${fe(f, 'file') ? 'err' : ''}"><span class="ev-dz-ic" aria-hidden="true">${ic('upload', 22)}</span><div><b>Choose a file</b></div><div class="cap">${uploadRuleText({ except: ['video'] })}. Video must be linked externally. Files that fail the scan are quarantined.</div><input type="file" name="file" accept="${uploadAccept({ except: ['video'] })}" class="sr"><span class="fname">No file chosen</span></label>${fe(f, 'file') ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe(f, 'file')}</span>` : ''}</div>`;
 }
 // Which deliverable the evidence supports (optional). Value "roomId|taskId".
 function neTaskField(f, spaces) {
@@ -750,6 +880,9 @@ route('newevidence', 'evidence', () => {
  ${spaces.length ? fi(f, 'link', 'Link to', { type: 'select', req: true, ph: 'Select a Circle, Rope Team or ' + WL(), value: UI.p.link || '', opts: spaces.map(s => [s.id, (byId('circles', s.id) ? 'Circle' : byId('ropes', s.id) ? 'Rope Team' : WL()) + ' · ' + s.name + (spaceProject(s.id) ? ' — ' + spaceProject(s.id).title : '')]), help: 'Linked by reference, not copied.' }) : banner('info', '', 'Join a Circle, Rope Team or ' + WL() + ' to link evidence.')}
  <div class="f2">${fi(f, 'source', 'Source', { req: true, ph: 'e.g. Field survey' })}${fi(f, 'purpose', 'Purpose', { type: 'select', req: true, opts: ['Project evidence', 'Milestone evidence', 'Learning evidence', 'Personal learning record (not public)'], ph: 'Select', help: 'There is no public portfolio. Any audience outside the programme is a separate release decision.' })}</div>
  ${fi(f, 'conf', 'Confidentiality', { type: 'select', req: true, value: 'Programme', opts: CONF.map(([k, m]) => [k, k + ' — ' + m]), help: 'Who can see it. Separate from the review status; you can change it later.' })}
+ <div class="np-sh"><span class="np-n" aria-hidden="true">4</span><h2 class="h3">Who took part</h2></div>
+ <p class="cap">A reviewer who created, contributed to, supervised or sponsored this evidence never reviews it.</p>
+ ${evRoleFields(f)}
  <div class="actions">${L('Cancel', 'evidence', {}, 'btn btn-g')}<button class="btn btn-p" type="submit">Submit for review</button></div></form></div>`
   );
 });
@@ -780,39 +913,22 @@ F.ne = (d, form) => {
   const e = UI.err.ne;
   if (fmt === 'File upload') {
     if (!file) e.file = 'Choose a file to upload.';
-    else if (file.size > S.settings.maxFileMB * 1048576)
-      e.file = `File is ${(file.size / 1048576).toFixed(1)} MB — over the ${S.settings.maxFileMB} MB limit.`;
-    else if (/\.(mp4|mov|avi|mkv)$/i.test(file.name))
-      e.file = 'Video is linked externally, not uploaded. Choose “Link” as the format instead.';
-    else if (/\.(exe|bat|cmd|sh|js)$/i.test(file.name)) e.file = 'This file type is not supported.';
+    else {
+      // JF-52: approved types (video is linked, not uploaded) and the size limit. The malware scan runs below, once
+      // the rest of the form is valid, so a correctable form error never quarantines anything.
+      const pre = uploadCheck([{ name: file.name, size: file.size }], { where: 'Evidence', except: ['video'], scan: false, typeMsg: (f, t) => (t === 'video' ? 'Video is linked externally, not uploaded. Choose “Link” as the format instead.' : '') });
+      if (!pre.pass) e.file = pre.errors.join(' ');
+    }
   }
   if (fmt === 'Link' && !/^https?:\/\/[^\s.]+\.[^\s]+$/i.test((d.url || '').trim())) e.url = 'Enter a full link starting with http:// or https://.';
   if (fmt === 'Reflection or written output' && (d.text || '').trim().length < 20) e.text = 'Write at least a couple of sentences (20 characters or more).';
   if (fmt === 'Repository record' && !byId('records', d.rec)) e.rec = 'Choose the record this evidence refers to.';
   if (!d.link.length) e.link = 'Choose the Circle, Rope Team or ' + WL() + ' this evidence belongs to.';
   if (Object.keys(e).length) return render();
-  if (file && /eicar|virus/i.test(file.name)) {
-    S.records.push({
-      id: uid('rc'),
-      title: file.name,
-      kind: 'Evidence upload',
-      owner: myId(),
-      linked: [],
-      date: today(),
-      sens: d.sens,
-      vis: d.vis,
-      consent: d.consent,
-      retention: d.retention,
-      review: 'Pending',
-      state: 'Quarantined',
-      ver: 1,
-      tags: '',
-      sizeMB: +(file.size / 1048576).toFixed(1),
-      note: 'Failed malware check — quarantined, not linked',
-    });
-    audit('File quarantined', file.name, 'Malware check failed', 'denied');
+  if (file && scanSim(file) === 'infected') {
+    uploadQuarantine(file, 'Evidence');
     clearF('ne');
-    toast('File failed the malware check and was quarantined. It was not linked.', 'err');
+    toast('File failed the malware scan and was quarantined. It was not linked.', 'err');
     return ok();
   }
   const ev = {
@@ -845,11 +961,15 @@ F.ne = (d, form) => {
     cleared: [],
     comments: [],
     history: [{ at: today(), by: myId(), t: 'Submitted · Support E0 · Confidentiality ' + d.conf + ' · Lifecycle Active · Release not cleared' }],
+    // JF-56: the people who took part, so none of them reviews it
+    ...Object.fromEntries(EV_ROLES.map(([k]) => [k, [].concat(d[k] || []).filter(pid => pid && pid !== myId())])),
+    recusals: [],
+    assignee: null,
   };
   S.evidence.push(ev);
-  S.assign
-    .filter(a => a.ctx === ctxId() && a.bundles.includes('Reviewer') && a.pid !== myId())
-    .forEach(a => notify(a.pid, 'Evidence submitted for review: ' + ev.title, 'evidence', { id: ev.id }));
+  EV_ROLES.forEach(([k, l]) => evPeople(ev, k).length && ev.history.push({ at: today(), t: l + ' recorded: ' + evPeople(ev, k).map(pid => P(pid).name).join(', ') }));
+  evAssign(ev);
+  EV_ROLES.forEach(([k]) => mselReset('ne', k));
   const tx = tRoom && byId('rooms', tRoom);
   const tk = tx && tx.tasks.find(k => k.id === tId);
   if (tk) {
@@ -996,14 +1116,23 @@ A.repoUp = () => {
   modal(
     'Upload a record',
     () =>
-      `<form data-f="ru" class="col prj-dlg" novalidate>${fi('ru', 'title', 'Title', { req: true })}${fi('ru', 'kind', 'Type', { type: 'select', req: true, ph: 'Select', opts: ['Meeting notes', 'Transcript', 'Approved chat export', 'Decision', 'Commitment', 'Document', 'Recording (external link)'] })}<div class="field"><label class="lbl" for="ru_file">File</label><input id="ru_file" type="file" name="file" class="input repo-file"></div>${fi('ru', 'link', 'Link to', { type: 'select', req: true, ph: 'Select', opts: sp.map(s => [s.id, s.name]) })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Upload</button></div></form>`,
+      `<form data-f="ru" class="col prj-dlg" novalidate>${fi('ru', 'title', 'Title', { req: true })}${fi('ru', 'kind', 'Type', { type: 'select', req: true, ph: 'Select', opts: ['Meeting notes', 'Transcript', 'Approved chat export', 'Decision', 'Commitment', 'Document', 'Recording (external link)'] })}<div class="field"><label class="lbl" for="ru_file">File</label><input id="ru_file" type="file" name="file" class="input repo-file" accept="${uploadAccept()}"><span class="help">${uploadRuleText()}.</span></div>${fi('ru', 'link', 'Link to', { type: 'select', req: true, ph: 'Select', opts: sp.map(s => [s.id, s.name]) })}<div class="actions"><span></span><button class="btn btn-p" type="submit">Upload</button></div></form>`,
   );
 };
 F.ru = (d, form) => {
   if (!validate('ru', d, { title: ['req'], kind: ['req'], link: ['req'] })) return render();
   const file = form.querySelector('input[type=file]').files[0];
-  if (file && file.size > S.settings.maxFileMB * 1048576) {
-    UI.err.ru = { title: 'File over ' + S.settings.maxFileMB + ' MB.' };
+  // JF-52: approved types, the programme's size limit and the malware scan
+  const chk = file && uploadCheck([file], { where: 'Repository' });
+  if (chk && !chk.pass) {
+    UI.form.ru = d;
+    UI.err.ru = { title: chk.msg };
+    if (chk.quarantined.length) {
+      UI.modal = null;
+      clearF('ru');
+      toast(chk.msg, 'err');
+      return ok();
+    }
     return render();
   }
   S.records.push({
@@ -1039,6 +1168,30 @@ const HV_SECTIONS = [
   'AI transparency',
 ];
 const canComplete = () => role() === 'F' || hasB('Reviewer') || hasB('Project Lead');
+// ---- JF-59: Harvest lifecycle  Draft → Review → Approved | Rejected → Released (after audience clearance).
+// Edits: the creator or an authorised completer, while Draft or Review. Approve / reject: an authorised completer
+// (Faculty/Steward, Reviewer or Project Lead with standing in the space) who is neither the creator nor the person it
+// is about, and only once it is in Review. A person decides — AI only drafts. Dissent is kept through every edit,
+// approval and release. Nothing in a Harvest writes to a profile: participants get suggestions they decide on, built
+// from the learning sections only — never from dissent, negative findings or what is said about other people.
+const hvSpace = x => byId('circles', x.scope) || byId('rooms', x.scope) || byId('ropes', x.scope);
+const hvMember = x => (hvSpace(x) ? memberOf(hvSpace(x)) : x.personal === myId());
+const hvCompleter = x => canComplete() && (hvMember(x) || (role() === 'F' && !byId('ropes', x.scope)));
+const hvAbout = x => x.subject || x.personal || null;
+const hvDone = x => !!x && ['Approved', 'Released'].includes(x.state);
+// Why this person may not approve or reject; '' when they may.
+const hvDecideWhy = x =>
+  !x || !['Draft', 'Review'].includes(x.state)
+    ? 'this Learning Harvest is no longer open for a decision'
+    : x.state !== 'Review'
+      ? 'send the Learning Harvest for review first: it is approved or rejected only once it is in Review'
+      : x.by === myId()
+        ? 'you started this Learning Harvest, so another authorised person approves or rejects it'
+        : hvAbout(x) === myId()
+          ? 'a Learning Harvest is approved or rejected by someone other than the person it is about'
+          : !hvCompleter(x)
+            ? 'only an authorised Faculty/Steward, Reviewer or Project Lead approves or rejects a Learning Harvest'
+            : '';
 // Release of an approved Harvest is a separate, later decision per audience, made by the Organization Admin.
 const HV_AUD = ['Funder report', 'Public showcase', 'Organisation report'];
 const hvRelStr = x => [(x.cleared || []).length ? 'Cleared: ' + x.cleared.map(c => c.aud).join('; ') : 'Not cleared', x.relReq ? 'Release requested: ' + x.relReq : ''].filter(Boolean).join(' · ');
@@ -1063,8 +1216,9 @@ function hvReleaseCard(x, comp) {
     'Release',
     'A separate decision after approval, for one audience at a time. The Organization Admin decides.',
     `<p class="hv-rel">${h(hvRelStr(x))}</p>` +
-      (x.state === 'Approved' && comp && !pend && open.length ? `<div class="row wrap" style="gap:6px">${open.map(a => B('Request release: ' + a, 'hvRel', { id: x.id, v: 'Release requested', aud: a })).join('')}</div>` : '') +
-      (x.state !== 'Approved' ? '<p class="cap">Available after a person approves the Harvest.</p>' : '') +
+      (x.state === 'Released' ? `<p class="cap">Released ${x.releasedAt ? fmt(x.releasedAt) + ' ' : ''}after the Organization Admin cleared it for ${h((x.cleared || []).map(c => c.aud).join(', '))}. Other audiences need their own clearance.</p>` : '') +
+      (hvDone(x) && comp && !pend && open.length ? `<div class="row wrap" style="gap:6px">${open.map(a => B('Request release: ' + a, 'hvRel', { id: x.id, v: 'Release requested', aud: a })).join('')}</div>` : '') +
+      (!hvDone(x) ? '<p class="cap">Available after a person approves the Harvest.</p>' : '') +
       (pend && isReleaseReviewer() ? `<div class="row wrap" style="gap:6px;margin-top:8px">${B('Withhold', 'hvRelNo', { id: x.id })}${B('Release to ' + h(pend), 'hvRel', { id: x.id, v: 'Released', aud: pend }, 'btn-p btn-sm')}</div>` : pend ? '<p class="cap">Waiting for the Organization Admin.</p>' : ''),
   );
 }
@@ -1091,7 +1245,7 @@ route('harvests', 'harvest', () => {
       label: 'Harvests',
       items: list,
       search: x => x.scopeName + ' ' + x.trigger + ' ' + x.state + ' ' + x.release,
-      quick: { label: 'State', options: ['Draft', 'Review', 'Approved', 'Rejected'].filter(s => list.some(x => x.state === s)).map(s => [s, s]), test: (x, v) => x.state === v },
+      quick: { label: 'State', options: ['Draft', 'Review', 'Approved', 'Rejected', 'Released'].filter(s => list.some(x => x.state === s)).map(s => [s, s]), test: (x, v) => x.state === v },
       filters: [
         { key: 'trigger', label: 'Trigger', options: dvOpts(list, x => x.trigger), test: (x, v) => x.trigger === v },
         { key: 'release', label: 'Release', options: dvOpts(list, x => x.release), test: (x, v) => x.release === v },
@@ -1201,17 +1355,18 @@ route('harvest', 'harvest', () => {
   // a Rope Team's Harvest is ROPE_TEAM_ONLY until released: members only, whatever the platform role
   const rope = !!byId('ropes', x.scope);
   if (rope && !mem && x.state !== 'Released') return deniedView('harvest');
-  const comp = canComplete() && (mem || (r === 'F' && !rope));
+  const comp = hvCompleter(x);
   const edit = ['Draft', 'Review'].includes(x.state) && (x.by === myId() || comp);
+  const decideWhy = hvDecideWhy(x);
   if (x.tpl === 2) return hv2View(x, mem, comp, edit);
   return (
     crumbsHtml([['Learning Harvests', 'harvests'], ['Harvest']]) +
     `<div class="shead-main hv-head"><span class="tile" aria-hidden="true">${ic('sparkle', 20)}</span><div class="shead-t"><div class="shead-kind">Learning Harvest · ${h(x.trigger)}</div><div class="row wrap hv-ttl"><h1 class="h1">${h(x.scopeName)}</h1>${pill(x.state)}${x.ai ? aiTag('AI draft / advisory') : ''}</div><div class="shead-meta"><span>Learning Harvest Template v1.0 · version ${x.ver}</span><span>${h(hvRelStr(x))}</span></div></div></div>` +
-    (x.state === 'Approved' ? banner('ok', 'Completed by a person (human decision)', (x.approvedBy ? 'Approved by ' + nm(x.approvedBy) + (x.approvedAt ? ' on ' + fmt(x.approvedAt) : '') + '.' : 'Approved by an authorised reviewer.') + (x.ai ? ' The AI draft was advisory only.' : '') + ' Release is a separate decision.') : '') +
-    `<div class="g12"><form data-f="hve" class="card c8 col hv-doc" novalidate><input type="hidden" name="id" value="${x.id}">${HV_SECTIONS.map(s => (edit ? fi('hve', s, s, { type: 'textarea', rows: 2, value: x.sections[s] }) : `<section class="hv-s"><h2 class="h3">${s}</h2><p class="hv-x">${h(x.sections[s] || '—')}</p></section>`)).join('')}${hvDissentSection(x, 'hve', edit)}${edit ? `<div class="actions"><span class="cap">Approval is a human decision; AI never approves.</span><div class="row wrap"><button class="btn btn-s" type="submit" name="act" value="save">Save edits</button>${x.state === 'Draft' ? `<button class="btn btn-s" type="submit" name="act" value="review">Send for review</button>` : ''}${comp ? `<button class="btn btn-s" type="submit" name="act" value="reject">Reject</button><button class="btn btn-p" type="submit" name="act" value="approve">Approve (human decision)</button>` : ''}</div></div>` : ''}</form>
+    (hvDone(x) ? banner('ok', x.state === 'Released' ? 'Approved by a person, then released' : 'Completed by a person (human decision)', (x.approvedBy ? 'Approved by ' + nm(x.approvedBy) + (x.approvedAt ? ' on ' + fmt(x.approvedAt) : '') + '.' : 'Approved by an authorised reviewer.') + (x.ai ? ' The AI draft was advisory only.' : '') + ' Release is a separate decision.') : '') +
+    `<div class="g12"><form data-f="hve" class="card c8 col hv-doc" novalidate><input type="hidden" name="id" value="${x.id}">${HV_SECTIONS.map(s => (edit ? fi('hve', s, s, { type: 'textarea', rows: 2, value: x.sections[s] }) : `<section class="hv-s"><h2 class="h3">${s}</h2><p class="hv-x">${h(x.sections[s] || '—')}</p></section>`)).join('')}${hvDissentSection(x, 'hve', edit)}${edit ? `<div class="actions"><span class="cap">Approval is a human decision; AI never approves.</span><div class="row wrap"><button class="btn btn-s" type="submit" name="act" value="save">Save edits</button>${x.state === 'Draft' ? `<button class="btn btn-s" type="submit" name="act" value="review">Send for review</button>` : ''}${!decideWhy ? `<button class="btn btn-s" type="submit" name="act" value="reject">Reject</button><button class="btn btn-p" type="submit" name="act" value="approve">Approve (human decision)</button>` : ''}</div></div>${decideWhy && comp ? `<p class="cap">${h(decideWhy[0].toUpperCase() + decideWhy.slice(1))}.</p>` : ''}` : ''}</form>
  <aside class="c4 col hv-side">${card('Contributions', 'Reflections, lessons, dissent and questions. Dissent is also kept in its own section.', x.contrib.map(c => lrow('message', h(c.t), nm(c.by))).join('') || '<p class="cap">None yet.</p>', mem && ['Draft', 'Review'].includes(x.state) ? B(ic('plus', 14) + 'Contribute', 'hvContrib', { id: x.id }) : '')}
  ${hvReleaseCard(x, comp)}
- ${card('Profile candidates', 'A Harvest never writes to a profile. Each participant who was a member is offered one candidate to accept, edit or reject.', x.state === 'Approved' && comp ? B('Offer profile candidates to participants', 'hvCand', { id: x.id }) : '<p class="cap">Available after approval.</p>')}
+ ${card('Profile candidates', 'A Harvest never writes to a profile. Each participant who was a member is offered one candidate to accept, edit or reject. Dissent and disagreements are never used.', hvDone(x) && comp ? B('Offer profile candidates to participants', 'hvCand', { id: x.id }) : '<p class="cap">Available after approval.</p>')}
  ${x.state === 'Rejected' && (x.by === myId() || comp) ? card('Rejected', 'Revise contributions and redraft. The rejected version is kept.', B(ic('refresh', 14) + 'Revise and redraft', 'hvRedraft', { id: x.id }, 'btn-p btn-sm')) : ''}
  ${x.versions.length ? card('Previous versions', '', `<ol class="hv-vers">${x.versions.map(v => `<li class="cap">v${v.ver} · ${fmt(v.at)} · ${h(v.state)}</li>`).join('')}</ol>`) : ''}</aside></div>`
   );
@@ -1236,6 +1391,7 @@ F.hve = d => {
     x.state = 'Approved';
     x.approvedBy = myId();
     x.approvedAt = today();
+    x.approvedAs = roleName(roleId(), ctxId());
     const j = S.ai.find(a => a.purpose === 'Harvest draft' && a.status === 'In review');
     if (j) {
       j.status = 'Released';
@@ -1274,7 +1430,7 @@ F.hc = d => {
 // Request (Facilitator, Reviewer or Project Lead) and release (Organization Admin), one audience at a time.
 A.hvRel = d => {
   const x = byId('harvests', d.id);
-  if (x.state !== 'Approved') return deny('a Learning Harvest is released only after a person approves it', x.id);
+  if (!hvDone(x)) return deny('a Learning Harvest is released only after a person approves it', x.id);
   if (!HV_AUD.includes(d.aud)) return deny('choose one of the listed audiences', x.id);
   if (d.v === 'Release requested') {
     if (x.relReq) return deny('a release request is already waiting for the Organization Admin', x.id);
@@ -1285,6 +1441,13 @@ A.hvRel = d => {
     x.cleared = (x.cleared || []).filter(c => c.aud !== d.aud);
     x.cleared.push({ aud: d.aud, at: today(), by: myId() });
     x.relReq = null;
+    // JF-59: the first audience clearance moves an approved Harvest to Released; approval and dissent stay on record
+    if (x.state === 'Approved') {
+      x.state = 'Released';
+      x.releasedAt = today();
+      x.releasedBy = myId();
+      (x.versions = x.versions || []).push({ ver: x.ver, at: today(), state: 'Approved', sections: { ...x.sections }, dissent: (x.dissent || []).length });
+    }
     if (x.by) notify(x.by, 'Learning Harvest released to ' + d.aud + ': ' + x.scopeName, 'harvest', { id: x.id });
   } else return deny('unknown release decision', x.id);
   x.release = hvRelStr(x);
@@ -1304,7 +1467,7 @@ A.hvRelNo = d => {
 // draws on nothing private (no Rope Team private notes, no Purpose Compass).
 A.hvCand = d => {
   const x = byId('harvests', d.id);
-  if (x.state !== 'Approved') return deny('candidates are offered only from an approved Learning Harvest', x.id);
+  if (!hvDone(x)) return deny('candidates are offered only from an approved Learning Harvest', x.id);
   const o = byId('circles', x.scope) || byId('rooms', x.scope) || byId('ropes', x.scope);
   const ps = o
     ? (o.members || [])
@@ -1525,7 +1688,7 @@ function hv2View(x, mem, comp, edit) {
   ${sec('partners', HV2[4][1], HV2[4][2], ta('partners', '<span class="sr">' + HV2[4][1] + '</span>', { rows: 5, req: true, help: edit ? 'Add how each contribution affected the outcome.' : '' }) + refs(['Collaborator', 'Contribution']))}
   ${sec('decisions', 'F. Continue / Change / Stop / Test', 'The Harvest concludes with four decisions. All four are required.', `<div class="hv2-dec">${HV2_DEC.map(([k, l, q]) => `<div class="hv2-d hv2-d-${k}${fe(f, k) ? ' err' : ''}"><label class="hv2-dl" for="hv2_${k}"><b>${l}</b><span class="cap">${q}</span></label>${edit ? `<textarea id="hv2_${k}" name="${k}" class="input${fe(f, k) ? ' err' : ''}" rows="4" aria-invalid="${!!fe(f, k)}">${h(fv(f, k, s[k] || ''))}</textarea>${fe(f, k) ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe(f, k)}</span>` : ''}` : `<p class="hv2-x">${h(s[k] || '—')}</p>`}</div>`).join('')}</div>`)}
   ${sec('links', 'G. Links to records', 'Every source record this Harvest draws on. Each link opens the underlying record, which keeps its own permissions.', groups.length ? `<div class="hv2-links">${groups.map(g => `<div class="hv2-lg"><span class="lbl">${g === 'Baseline' ? 'Purpose Compass Baseline (only you)' : g + 's'}</span><div class="hv2-refs">${links.filter(l => l.type === g).map(chip).join('')}</div></div>`).join('')}</div>` : '<p class="cap">No linked records.</p>')}
-  ${edit ? `<div class="actions"><span class="cap">Every save keeps the previous version.</span><div class="row wrap"><button class="btn btn-s" type="submit" name="act" value="save">Save edits</button>${x.state === 'Draft' ? '<button class="btn btn-s" type="submit" name="act" value="review">Send for review</button>' : ''}${comp && !subj ? '<button class="btn btn-s" type="submit" name="act" value="reject">Reject</button><button class="btn btn-p" type="submit" name="act" value="approve">Approve (human decision)</button>' : ''}</div></div>` : ''}</form>`;
+  ${edit ? `<div class="actions"><span class="cap">Every save keeps the previous version.</span><div class="row wrap"><button class="btn btn-s" type="submit" name="act" value="save">Save edits</button>${x.state === 'Draft' ? '<button class="btn btn-s" type="submit" name="act" value="review">Send for review</button>' : ''}${!hvDecideWhy(x) ? '<button class="btn btn-s" type="submit" name="act" value="reject">Reject</button><button class="btn btn-p" type="submit" name="act" value="approve">Approve (human decision)</button>' : ''}</div></div>${hvDecideWhy(x) && comp && !subj ? `<p class="cap">${h(hvDecideWhy(x)[0].toUpperCase() + hvDecideWhy(x).slice(1))}.</p>` : ''}` : ''}</form>`;
   const side = `<aside class="c4 col" style="gap:12px">${card(
     'Status',
     '',
@@ -1585,6 +1748,7 @@ F.hv2 = d => {
     x.state = 'Approved';
     x.approvedBy = myId();
     x.approvedAt = today();
+    x.approvedAs = roleName(roleId(), ctxId());
     found = evoGenerate(x);
   }
   if (act === 'reject') x.state = 'Rejected';

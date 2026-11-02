@@ -139,12 +139,85 @@ const joinBtn = (c, kind = 'circles') => {
   if (s === 'member') return '';
   return B(s === 'ended' ? 'Request to join again' : 'Request to join', kind === 'circles' ? 'joinCircle' : 'joinRope', { id: c.id }, 'btn-p btn-sm');
 };
+// ---------- JF-31 Circle lifecycle ----------
+// Draft → Pending Review → Active ⇄ Paused/Repair → Completed → Archived/Closed, plus Pending Review → Draft when a
+// reviewer returns a proposal with a reason. Every move is recorded in c.life (who, when, from, to, note); closing
+// also keeps a closure record (c.closure). Draft and Pending Review Circles cannot be used (guards.js).
+const CIRCLE_STATES = ['Draft', 'Pending Review', 'Active', 'Paused/Repair', 'Completed', 'Archived/Closed'];
+// OWNER DECISION (WSS product owner to confirm): may a Programme-visibility Circle show its content, read-only, to
+// programme members who are not in it? true keeps the current behaviour; false shows non-members the summary only,
+// exactly like a Members-only Circle. Nothing else depends on this switch.
+const CIRCLE_PROGRAMME_READ = true;
+const circleProgOpen = c => c.visibility === 'Programme' && CIRCLE_PROGRAMME_READ;
+const circleUnapproved = c => !!c && ['Draft', 'Pending Review'].includes(c.state);
+const circleProposer = c => c.createdBy || c.owner;
+// Before approval a Circle is seen only by the people working on the proposal (and Organization Admin oversight).
+const circleSeen = c => {
+  if (!c) return false;
+  if (c.state === 'Draft') return [c.createdBy, c.owner].includes(myId()) || spaceAdmin('circles', c);
+  if (c.state === 'Pending Review') return [c.createdBy, c.owner, c.facilitator].includes(myId()) || spaceAdmin('circles', c);
+  return true;
+};
+const circleSubmitter = c => !!c && c.state === 'Draft' && [c.createdBy, c.owner].includes(myId());
+// Approve or return a proposal: the Circle's facilitator or an Organization Admin of the context, never its proposer.
+const circleReviewer = c =>
+  !!c && c.state === 'Pending Review' && myId() !== circleProposer(c) && myId() !== c.createdBy && (c.facilitator === myId() || spaceAdmin('circles', c));
+// Closure authority (Complete, Archive/Close): the facilitator or an Organization Admin of the context.
+const circleCloser = c => !!c && (c.facilitator === myId() || spaceRole('circles', c) === 'Facilitator' || spaceAdmin('circles', c));
+function circleMove(c, to, note) {
+  const from = c.state;
+  c.state = to;
+  (c.life = c.life || []).push({ at: now(), by: myId(), from, to, note: note || '' });
+  return from;
+}
+// Invitations made while a Circle was unapproved are delivered when it becomes Active.
+const circleActivate = c =>
+  c.members.filter(m => m.status === 'Invited').forEach(m => notify(m.pid, 'You were invited to the Circle “' + c.name + '”', 'circle', { id: c.id }));
+const circleReviewersOf = c => (c.facilitator && c.facilitator !== circleProposer(c) ? [c.facilitator] : ctxAdmins(c.ctx).filter(x => x !== circleProposer(c)));
+function lifeCard(c, mgr) {
+  const paused = c.state === 'Paused/Repair';
+  const acts = [
+    circleSubmitter(c) && B(ic('check', 14) + 'Submit for review', 'circleSubmit', { id: c.id }, 'btn-p btn-sm'),
+    circleReviewer(c) && B(ic('check', 14) + 'Approve Circle', 'circleApprove', { id: c.id }, 'btn-p btn-sm') + B('Return with reason', 'circleReturn', { id: c.id }),
+    mgr && c.state === 'Active' && B(ic('pause', 14) + 'Pause and repair', 'pauseCircle', { id: c.id }),
+    mgr && paused && B('Resume Circle', 'circleState', { id: c.id, v: 'Active' }, 'btn-p btn-sm'),
+    circleCloser(c) && c.state === 'Active' && B('Mark as completed', 'circleComplete', { id: c.id }),
+    circleCloser(c) && ['Completed', 'Paused/Repair'].includes(c.state) && B('Archive / close', 'circleArchive', { id: c.id }, 'btn-d btn-sm'),
+  ].filter(Boolean).join('');
+  const track = CIRCLE_STATES.map(s => (s === c.state ? '<b>' + h(s) + '</b>' : '<span class="cap">' + h(s) + '</span>')).join(' → ');
+  const cl = c.closure;
+  const rec = cl
+    ? dl([
+        ['Completed', cl.at ? fmt(cl.at) + ' by ' + nm(cl.by) + (cl.note ? ': “' + h(cl.note) + '”' : '') : '—'],
+        cl.archived && ['Archived / closed', fmt(cl.archived.at) + ' by ' + nm(cl.archived.by) + ': “' + h(cl.archived.reason) + '”'],
+      ])
+    : '';
+  const hist = (c.life || []).slice().reverse().map(x => `<li class="cap">${fmt(x.at)} · ${nm(x.by)} · ${x.from ? h(x.from) + ' → ' : ''}<b>${h(x.to)}</b>${x.note ? ' — ' + h(x.note) : ''}</li>`).join('');
+  return card(
+    'Lifecycle',
+    track,
+    `<div class="col" style="gap:8px"><div class="row wrap" style="gap:8px">${acts || '<p class="cap">' + (mgr || circleCloser(c) ? 'Nothing to change right now.' : 'Managed by the facilitator; closure by the facilitator or an Organization Admin.') + '</p>'}</div>${rec}${hist ? '<p class="lbl" style="margin:6px 0 0">History</p><ul class="col" style="gap:2px;margin:0;padding-left:18px">' + hist + '</ul>' : ''}</div>`,
+    '',
+    'c5',
+  );
+}
+function lifeBanner(c) {
+  if (c.state === 'Draft')
+    return banner('info', 'Draft — only you can see it', (c.returned ? 'Returned by ' + nm(c.returned.by) + ' on ' + fmt(c.returned.at) + ': “' + h(c.returned.reason) + '”. ' : '') + 'Edit it if needed, then submit it from About &amp; lifecycle. Nobody is invited until it is active.');
+  if (c.state === 'Pending Review')
+    return banner('warn', 'Waiting for review', 'The facilitator or an Organization Admin approves it or returns it with a reason. It cannot be used, and invitations are not sent, until it is approved.');
+  if (c.state === 'Completed' && c.closure)
+    return banner('info', 'Completed', 'On ' + fmt(c.closure.at) + ' by ' + nm(c.closure.by) + (c.closure.note ? ': ' + h(c.closure.note) : '') + '. Read-only; the record is kept.');
+  if (c.state === 'Archived/Closed')
+    return banner('info', 'Archived / closed', (c.closure && c.closure.archived ? 'On ' + fmt(c.closure.archived.at) + ' by ' + nm(c.closure.archived.by) + ': ' + h(c.closure.archived.reason) + '. ' : '') + 'Read-only; the record is kept.');
+  return '';
+}
 route('circles', 'circles', () => {
   const r = role();
   const all = S.circles.filter(inCtx);
   const sees = c => memberOf(c) || r === 'A' || c.facilitator === myId() || ['Requested', 'Invited'].includes((memberRec(c) || {}).status);
-  const mine = all.filter(sees);
-  const others = all.filter(c => !sees(c) && !['Archived/Closed'].includes(c.state));
+  const mine = all.filter(c => sees(c) && circleSeen(c));
+  const others = all.filter(c => !sees(c) && !['Archived/Closed', 'Draft', 'Pending Review'].includes(c.state));
   const ownP = r === 'P' ? ownCircleProjects() : [];
   return (
     head(
@@ -186,7 +259,7 @@ route('circles', 'circles', () => {
         empty: ['users', 'You are not in a Circle yet.', 'Ask to join one below, or wait for an invitation.', ''],
       }),
     ) +
-    (others.length && !r === 'A'
+    (others.length && r !== 'A'
       ? '<div class="section-gap"></div>' +
         card(
           'Other Circles in this programme',
@@ -205,7 +278,7 @@ route('circles', 'circles', () => {
               sub: h(c.purpose),
               meta: ['Facilitator ' + nm(c.facilitator), h(c.visibility)],
               badges: pill(c.state),
-              primary: (c.visibility === 'Programme' ? L('Open', 'circle', { id: c.id }, 'btn btn-s btn-sm') : '') + (c.state === 'Active' ? joinBtn(c) : ''),
+              primary: (circleProgOpen(c) ? L('Open', 'circle', { id: c.id }, 'btn btn-s btn-sm') : '') + (c.state === 'Active' ? joinBtn(c) : ''),
             }),
             empty: ['users', 'No other Circles', 'Circles you are not in appear here.', ''],
           }),
@@ -270,7 +343,7 @@ A.newCircle = d => {
       fromFixed
         ? dl([['Primary origin', OBJ_LABEL(d.fromKind) + ' · ' + h(from.name)]]) + fi('nc', 'ltype', 'Relationship to ' + h(from.name), { type: 'select', req: true, opts: LINK_TYPES.filter(([v]) => v !== 'originated-from'), help: 'Stored as a link. The ' + OBJ_LABEL(d.fromKind) + ' stays unchanged and keeps its own members and privacy.' })
         : fi('nc', 'project', 'Primary origin', { type: 'select', req: true, opts: [...projOpts, [NC_NONE, 'No project — programme cohort, institutional or community Circle']], ch: 'ncProject', help: 'A Circle does not need a project. Choose a project only if this Circle exists for it.' })
-    }${cur ? projBrief(cur) : ''}${!fromFixed && !cur ? fi('nc', 'basis', 'Basis for this Circle', { req: true, ph: 'e.g. Food-resilience cohort 2026, approved by the programme', help: 'The legitimate context, mandate or programme this Circle runs under.' }) : ''}${fi('nc', 'name', 'Name', { req: true })}${fi('nc', 'purpose', 'Purpose', { type: 'textarea', rows: 2, req: true })}${fi('nc', 'outcome', 'Expected outcome', { type: 'textarea', rows: 3, req: true })}${fi('nc', 'agreement', 'Working agreement', { type: 'select', opts: ['Circle working agreement v1'], req: true })}
+    }${cur ? projBrief(cur) : ''}${!fromFixed && !cur ? fi('nc', 'basis', 'Basis for this Circle', { req: true, ph: 'e.g. Food-resilience cohort 2026, approved by the programme', help: 'The legitimate context, mandate or programme this Circle runs under.' }) + fi('nc', 'draft', 'Save as a draft first — only you see it until you submit it', { type: 'checkbox' }) : ''}${fi('nc', 'name', 'Name', { req: true })}${fi('nc', 'purpose', 'Purpose', { type: 'textarea', rows: 2, req: true })}${fi('nc', 'outcome', 'Expected outcome', { type: 'textarea', rows: 3, req: true })}${fi('nc', 'agreement', 'Working agreement', { type: 'select', opts: ['Circle working agreement v1'], req: true })}
  ${msel('nc', 'm', 'Invite people (optional)', cands, [], { help: 'Linking adds no one. Each person you choose is invited and must accept.' })}
  ${docCreateField('nc', 'circles')}
  <div class="actions"><span></span><button class="btn btn-p" type="submit">Create Circle</button></div></form>`;
@@ -306,6 +379,8 @@ F.nc = (d, form) => {
   const owner = pr ? pr.owner : myId();
   // A participant creating a Circle that is not for their accepted project needs a facilitator's review first.
   const authorised = !isP || !!pr;
+  // JF-31: a direct Circle (no project, no linked origin) may start as a Draft that only its proposer sees.
+  const draft = !fromFixed && !pr && d.draft === 'yes';
   const c = {
     id: uid('ci'),
     ctx: ctxId(),
@@ -318,7 +393,9 @@ F.nc = (d, form) => {
     origin: from && fromFixed ? { type: OBJ_LABEL(d.fromKind), id: from.id } : pr ? { type: 'Project', id: pr.id } : { type: 'Direct — programme, institutional or community Circle', basis: d.basis, by: myId() },
     visibility: 'Members only',
     docs: [],
-    state: authorised ? 'Active' : 'Pending Review',
+    state: draft ? 'Draft' : authorised ? 'Active' : 'Pending Review',
+    needsReview: !authorised,
+    life: [{ at: now(), by: myId(), from: null, to: draft ? 'Draft' : authorised ? 'Active' : 'Pending Review', note: 'Created' }],
     agreement: d.agreement,
     members: [{ pid: owner, role: pr || isP ? 'Project owner' : 'Facilitator', status: 'Active' }],
     chat: [],
@@ -335,7 +412,8 @@ F.nc = (d, form) => {
   if (fac && !c.members.some(m => m.pid === fac)) c.members.push({ pid: fac, role: 'Facilitator', status: 'Active' });
   [].concat(d.m || []).filter(pid => !c.members.some(m => m.pid === pid)).forEach(pid => {
     c.members.push({ pid, role: defaultSpaceRole(ctxRole(pid, c.ctx)), status: 'Invited' });
-    notify(pid, 'You were invited to the Circle “' + c.name + '”', 'circle', { id: c.id });
+    // held back until the Circle is active (circleActivate)
+    if (c.state === 'Active') notify(pid, 'You were invited to the Circle “' + c.name + '”', 'circle', { id: c.id });
   });
   S.circles.push(c);
   docAttach(c.docs, files, d.docVis, pr ? pr.id : null);
@@ -353,7 +431,8 @@ F.nc = (d, form) => {
     if (!pr.stage) pr.stage = 'Circle';
     if (pr.owner !== myId()) notify(pr.owner, 'Circle created for your project', 'circle', { id: c.id });
   }
-  if (fac && fac !== myId()) notify(fac, (c.state === 'Active' ? 'You are facilitator of the new Circle “' : 'Circle awaiting your review: “') + c.name + '”', 'circle', { id: c.id });
+  if (c.state === 'Active' && fac && fac !== myId()) notify(fac, 'You are facilitator of the new Circle “' + c.name + '”', 'circle', { id: c.id });
+  if (c.state === 'Pending Review') circleReviewersOf(c).forEach(x => notify(x, 'Circle awaiting your review: “' + c.name + '” from ' + me().name, 'circle', { id: c.id, tab: 'about' }));
   audit('Circle created', c.id, c.state + ' · origin ' + c.origin.type + (c.origin.id ? ' ' + c.origin.id : ''));
   UI.modal = null;
   clearF('nc');
@@ -363,7 +442,7 @@ F.nc = (d, form) => {
 };
 route('circle', 'circles', () => {
   const c = byId('circles', UI.p.id);
-  if (!c) return empty('users', 'Circle not found', '');
+  if (!c || !circleSeen(c)) return empty('users', 'Circle not found', '');
   const r = role();
   const isMem = memberOf(c);
   const mgr = sCan('circles', c, 'facilitate') || spaceAdmin('circles', c);
@@ -381,7 +460,7 @@ route('circle', 'circles', () => {
       ) +
       card('', '', dl([['Purpose', h(c.purpose)], ['Facilitator', nm(c.facilitator)], ['Requested', fmt(myM.at || '')]]) + `<div class="row ws-acts">${B('Withdraw request', 'joinWithdraw', { id: c.id, kind: 'circles' })}</div>`)
     );
-  if (!(myM && myM.status === 'Invited') && !isMem && !mgr && c.visibility !== 'Programme')
+  if (!(myM && myM.status === 'Invited') && !isMem && !mgr && !circleProgOpen(c))
     return (
       head(h(c.name), h(c.purpose), pill(c.state), [['Circles', 'circles'], [h(c.name)]]) +
       card(
@@ -405,7 +484,7 @@ route('circle', 'circles', () => {
       )
     );
   const paused = c.state === 'Paused/Repair';
-  const ro = paused || ['Completed', 'Archived/Closed'].includes(c.state) || (!isMem && !mgr);
+  const ro = paused || circleUnapproved(c) || ['Completed', 'Archived/Closed'].includes(c.state) || (!isMem && !mgr);
   const noRec = ro || !(canRec || mgr);
   const t = subnav(
     'ci_' + c.id,
@@ -541,10 +620,11 @@ route('circle', 'circles', () => {
   }
   if (t.cur === 'about') {
     const pr = byId('projects', c.project);
-    const fromCards = S.cards.filter(k => k.from === c.id && (k.owner === myId() || cardVisible(k) || ['A', 'F'].includes(r)));
+    // JF-39: same read rule as the card page (drafts owner-only; closed cards only for the owner and people involved)
+    const fromCards = S.cards.filter(k => k.from === c.id && cardReadable(k));
     const hvDone = S.harvests.some(x => x.scope === c.id && ['Approved', 'Released'].includes(x.state));
     body = `<div class="g12">${c.aiSummary && c.aiSummary.status === 'Draft' && mgr ? `<div class="c12">${card('AI-drafted Circle summary', 'Class B workflow draft — review before it is shared with members.', `<p class="muted">${h(c.aiSummary.text)}</p><div style="margin:10px 0">${aiTag('AI draft · sources: chat, sessions, decisions')}</div><div class="row">${B('Reject', 'summaryDecide', { id: c.id, v: 'Rejected' })}${B('Approve and share', 'summaryDecide', { id: c.id, v: 'Approved' }, 'btn-p btn-sm')}</div>`)}</div>` : ''}${card('About', '', dl([['Purpose', h(c.purpose)], ['Expected outcome', h(c.outcome)], ['Owner', nm(c.owner)], ['Facilitator', nm(c.facilitator)], ['Agreement', h(c.agreement)], ['Project', pr ? L(h(pr.title), 'project', { id: pr.id }) : '—'], ['State', pill(c.state)], paused && ['Pause reason', h(c.pause.reason) + ' · restart when: ' + h(c.pause.restart)]]), '', 'c7')}
-  ${card('Lifecycle', 'Pending Review → Active → Paused/Repair', `<div class="col" style="gap:8px">${mgr ? [c.state === 'Pending Review' && B('Approve Circle', 'circleState', { id: c.id, v: 'Active' }, 'btn-p btn-sm'), c.state === 'Active' && B(ic('pause', 14) + 'Pause and repair', 'pauseCircle', { id: c.id }), paused && B('Resume Circle', 'circleState', { id: c.id, v: 'Active' }, 'btn-p btn-sm')].filter(Boolean).join('') || '<p class="cap">Nothing to change right now.</p>' : '<p class="cap">Managed by the project owner and facilitator.</p>'}</div>`, '', 'c5')}
+  ${lifeCard(c, mgr)}
   <div class="c7 col ws-stack">${linkCard('circles', c)}${stageGate(pr, 'circles', c)}${reportsCard(pr, 'circles', c)}</div>
   ${card('Move toward action', 'Create or link — the Circle always stays intact.', `<div class="col" style="gap:8px">${!ro && sCan('circles', c, 'card') && can('opportunities', 'CM') ? B(ic('megaphone', 14) + 'Create Opportunity Card from this Circle', 'go', { r: 'newcard', from: c.id }) : ''}${!ro && (sCan('circles', c, 'harvest') || mgr) ? B(ic('sparkle', 14) + 'Start a Learning Harvest', 'newHarvest', { scope: c.id }) : ''}<p class="cap">Linked Rope Teams and ${WL()}s are created from <b>Linked objects</b>. Circle members do not become their members automatically.</p></div>`, '', 'c5')}
   ${card('Opportunity Cards from this Circle', 'Cards created here link back to this Circle. Audience is set by each card’s creator.', fromCards.map(k => lrow('megaphone', h(k.title), h(k.kind) + ' · ' + h(k.vis === 'Circle members' ? 'This Circle’s members' : k.vis) + ' · ' + nm(k.owner), pill(k.status) + ' ' + L('Open', 'card', { id: k.id }))).join('') || '<p class="cap">None yet.</p>', '', 'c12')}
@@ -571,9 +651,9 @@ route('circle', 'circles', () => {
         }),
         empty: ['file', 'No documents yet.', '', ''],
       }),
-      !ro && (isMem || mgr) ? `<form data-f="cdoc" class="row wrap ws-upform" novalidate><input type="hidden" name="c" value="${c.id}"><input type="file" name="f" class="input ws-file" multiple aria-label="Choose documents"><button class="btn btn-p btn-sm" type="submit">${ic('upload', 14)}Upload</button></form>` : '',
+      !ro && (isMem || mgr) ? `<form data-f="cdoc" class="row wrap ws-upform" novalidate><input type="hidden" name="c" value="${c.id}"><input type="file" name="f" class="input ws-file" multiple aria-label="Choose documents" accept="${uploadAccept({ ctx: c.ctx })}" title="${h(uploadRuleText({ ctx: c.ctx }))}"><button class="btn btn-p btn-sm" type="submit">${ic('upload', 14)}Upload</button></form>` : '',
     );
-  const acts = spaceEditBtn('circles', c) + (!isMem && !mgr && c.state === 'Active' ? joinBtn(c) : isMem ? L(ic('message', 16) + 'Open in Messages', 'messages', { c: c.id, k: 'circles' }, 'btn btn-s') : '');
+  const acts = spaceEditBtn('circles', c) + (!isMem && !mgr && c.state === 'Active' ? joinBtn(c) : isMem && !circleUnapproved(c) ? L(ic('message', 16) + 'Open in Messages', 'messages', { c: c.id, k: 'circles' }, 'btn btn-s') : '');
   // the space header, its facts and its lineage (linked objects) live in Overview; other sections get a one-line context bar
   if (t.cur === 'overview') body = spaceHead('circles', c, h(c.purpose), null, acts) + roleNote('circles', c) + linkStrip('circles', c);
   else body = wsBar('circles', c, acts) + body;
@@ -581,7 +661,7 @@ route('circle', 'circles', () => {
     crumbsHtml([['Circles', 'circles'], [h(c.name)]]) +
     (paused
       ? banner('warn', 'Paused for repair', h(c.pause.reason) + ' — members can read but not add records.')
-      : '') +
+      : lifeBanner(c)) +
     withSubnav(t, body)
   );
 });
@@ -1050,10 +1130,11 @@ F.cdoc = (d, form) => {
     toast('Choose at least one document.', 'warn');
     return render();
   }
-  const big = files.find(f => f.size > S.settings.maxFileMB * 1048576);
-  if (big) {
-    toast(big.name + ' is over ' + S.settings.maxFileMB + ' MB.', 'err');
-    return render();
+  // JF-52: approved types, the programme's size limit and the malware scan
+  const chk = uploadCheck(files, { where: 'Circle documents · ' + c.name, ctx: c.ctx });
+  if (!chk.pass) {
+    toast(chk.msg, 'err');
+    return ok();
   }
   c.docs = c.docs || [];
   files.forEach(f => c.docs.push({ id: uid('dc'), n: f.name, mb: +(f.size / 1048576).toFixed(2), by: myId(), at: now() }));
@@ -1062,10 +1143,86 @@ F.cdoc = (d, form) => {
   toast('Uploaded.');
   ok();
 };
+// ---- JF-31 lifecycle actions (guards.js checks who may take each one)
+A.circleSubmit = d => {
+  const c = byId('circles', d.id);
+  c.returned = null;
+  if (c.needsReview !== false) {
+    circleMove(c, 'Pending Review', 'Submitted for review');
+    circleReviewersOf(c).forEach(x => notify(x, 'Circle awaiting your review: “' + c.name + '” from ' + me().name, 'circle', { id: c.id, tab: 'about' }));
+    toast('Submitted. The facilitator or an Organization Admin approves it or returns it with a reason.');
+  } else {
+    circleMove(c, 'Active', 'Submitted — active (the proposer may create Circles directly)');
+    circleActivate(c);
+    toast('The Circle is active. Invitations were sent.');
+  }
+  audit('Circle submitted', c.id, c.state);
+  ok();
+};
+A.circleApprove = d => {
+  const c = byId('circles', d.id);
+  circleMove(c, 'Active', 'Approved by ' + me().name);
+  c.returned = null;
+  circleActivate(c);
+  [c.createdBy, c.owner].filter((x, i, a) => x && x !== myId() && a.indexOf(x) === i).forEach(x => notify(x, 'Your Circle “' + c.name + '” was approved and is now active', 'circle', { id: c.id }));
+  sysMsg(c, 'Circle approved by ' + me().name);
+  audit('Circle approved', c.id, 'Pending Review → Active');
+  toast('Approved. The Circle is active and invitations were sent.');
+  ok();
+};
+const lifeForm = (f, id, label, btn, cls, extra = '') =>
+  `<form data-f="${f}" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${id}">${extra}${fi(f, 'why', label, { type: 'textarea', rows: 3, req: true, max: 600 })}<div class="actions">${B('Cancel', 'closeM')}<button class="btn ${cls}" type="submit">${btn}</button></div></form>`;
+A.circleReturn = d => {
+  clearF('cret');
+  modal('Return the proposal', () => lifeForm('cret', d.id, 'Reason (shown to the proposer)', 'Return to the proposer', 'btn-p', banner('info', '', 'The Circle goes back to Draft. The proposer can change it and submit it again.')));
+};
+F.cret = d => {
+  if (!validate('cret', d, { why: ['req', ['min', 5]] })) return render();
+  const c = byId('circles', d.id);
+  circleMove(c, 'Draft', 'Returned: ' + d.why.trim());
+  c.returned = { by: myId(), at: now(), reason: d.why.trim() };
+  [c.createdBy, c.owner].filter((x, i, a) => x && a.indexOf(x) === i).forEach(x => notify(x, 'Your Circle “' + c.name + '” was returned: ' + d.why.trim(), 'circle', { id: c.id }));
+  audit('Circle returned', c.id, d.why.trim());
+  UI.modal = null;
+  clearF('cret');
+  toast('Returned to the proposer with your reason.');
+  ok();
+};
+A.circleComplete = d => {
+  clearF('ccomp');
+  modal('Mark the Circle as completed', () => lifeForm('ccomp', d.id, 'Closure note — what the Circle achieved', 'Mark as completed', 'btn-p', banner('info', '', 'The Circle becomes read-only. Its discussion, decisions and records are kept. Archive it later to close it.')));
+};
+F.ccomp = d => {
+  if (!validate('ccomp', d, { why: ['req', ['min', 5]] })) return render();
+  const c = byId('circles', d.id);
+  circleMove(c, 'Completed', d.why.trim());
+  c.closure = { by: myId(), at: now(), note: d.why.trim() };
+  sysMsg(c, 'Circle completed by ' + me().name);
+  c.members.filter(m => m.status === 'Active' && m.pid !== myId()).forEach(m => notify(m.pid, c.name + ' is completed: ' + d.why.trim(), 'circle', { id: c.id }));
+  audit('Circle completed', c.id, d.why.trim());
+  UI.modal = null;
+  clearF('ccomp');
+  ok();
+};
+A.circleArchive = d => {
+  clearF('carc');
+  modal('Archive / close the Circle', () => lifeForm('carc', d.id, 'Reason for closing', 'Archive / close', 'btn-d', banner('warn', '', 'Closing is final in this prototype. The Circle and its records stay readable by its members; it no longer appears among other Circles in the programme.')));
+};
+F.carc = d => {
+  if (!validate('carc', d, { why: ['req', ['min', 5]] })) return render();
+  const c = byId('circles', d.id);
+  const from = circleMove(c, 'Archived/Closed', d.why.trim());
+  c.closure = { ...(c.closure || {}), archived: { by: myId(), at: now(), reason: d.why.trim(), from } };
+  sysMsg(c, 'Circle archived / closed by ' + me().name);
+  c.members.filter(m => m.status === 'Active' && m.pid !== myId()).forEach(m => notify(m.pid, c.name + ' was archived / closed: ' + d.why.trim(), 'circle', { id: c.id }));
+  audit('Circle archived / closed', c.id, from + ' → Archived/Closed · ' + d.why.trim());
+  UI.modal = null;
+  clearF('carc');
+  ok();
+};
 A.circleState = d => {
   const c = byId('circles', d.id);
-  const from = c.state;
-  c.state = d.v;
+  const from = circleMove(c, d.v, d.v === 'Paused/Repair' ? (c.pause ? c.pause.reason : '') : 'Resumed');
   if (d.v === 'Active') c.pause = null;
   sysMsg(c, `Circle ${d.v === 'Paused/Repair' ? 'paused for repair' : from === 'Paused/Repair' && d.v === 'Active' ? 'resumed' : 'is now ' + d.v.toLowerCase()}`);
   c.members

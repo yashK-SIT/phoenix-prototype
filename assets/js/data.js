@@ -145,7 +145,7 @@ function seed() {
         status: 'Active',
         org: 'o1',
       },
-      { id: 'p13', name: 'Kofi Mensah', display: 'Kofi', email: 'kofi@demo.phoenix', verified: true, status: 'Active' },
+      { id: 'p13', name: 'Kofi Mensah', display: 'Kofi', email: 'kofi@demo.phoenix', verified: true, status: 'Active', primary: 'a13' },
       // Organization Admin of a second tenant: proves an admin manages only their own tenant's members and invitations
       { id: 'p18', name: 'Zainab Bello', display: 'Zainab', email: 'zainab@demo.phoenix', verified: true, status: 'Active', org: 'o3' },
     ],
@@ -264,6 +264,9 @@ function seed() {
       },
       // plain Facilitator (no Reviewer bundle): proves a Facilitator does not inherit evidence approval
       { id: 'a13', pid: 'p13', role: 'F', ctx: 'c1', status: 'Active', bundles: [], onb: { agreement: true, consents: true, profile: true, compass: true } },
+      // JF-10: Kofi also belongs to Riverside Seva Trust (from the accepted tenant invitation ti4), so suspending him in
+      // Excelsior can be shown to leave his Seva access and personal records untouched.
+      { id: 'a13b', pid: 'p13', role: 'F', ctx: 'c2', status: 'Active', bundles: [], onb: { agreement: true, consents: true, profile: true, compass: true } },
       { id: 'a18', pid: 'p18', role: 'A', ctx: 'c3', status: 'Active', bundles: [], onb: { agreement: true, consents: true, profile: true, compass: true } },
     ],
     invites: [
@@ -274,9 +277,10 @@ function seed() {
         role: 'M',
         ctx: 'c1',
         status: 'Pending',
-        expires: '2026-10-16',
+        // JF-06 valid-link fixture: dated from today so it stays valid
+        expires: addDays(today(), 12),
         by: 'p7',
-        sent: '2026-10-01',
+        sent: addDays(today(), -2),
       },
       {
         id: 'i2',
@@ -318,9 +322,10 @@ function seed() {
         role: 'C',
         ctx: 'c3',
         status: 'Pending',
-        expires: '2026-10-30',
+        // JF-06 valid-link fixture for an email that already has an account
+        expires: addDays(today(), 12),
         by: 'p7',
-        sent: '2026-10-02',
+        sent: addDays(today(), -2),
       },
       {
         id: 'i6',
@@ -328,6 +333,7 @@ function seed() {
         email: 'new.student@demo.phoenix',
         role: 'P',
         ctx: 'c1',
+        // JF-06: resent, then left past its expiry; the link page must refuse it as expired
         status: 'Resent',
         expires: '2026-10-14',
         by: 'p5',
@@ -338,6 +344,7 @@ function seed() {
       { id: 'ti1', kind: 'member', pid: 'p3', email: 'samuel@demo.phoenix', role: 'M', ctx: 'c3', status: 'Pending', expires: '2026-11-20', by: 'p18', sent: '2026-10-22' },
       { id: 'ti2', kind: 'member', pid: 'p1', email: 'mary@demo.phoenix', role: 'P', ctx: 'c3', status: 'Pending', expires: '2026-11-24', by: 'p18', sent: '2026-10-26' },
       { id: 'ti3', kind: 'member', pid: 'p18', email: 'zainab@demo.phoenix', role: 'F', ctx: 'c1', status: 'Rejected', expires: '2026-10-30', by: 'p7', sent: '2026-10-16', decided: '2026-10-18' },
+      { id: 'ti4', kind: 'member', pid: 'p13', email: 'kofi@demo.phoenix', role: 'F', ctx: 'c2', status: 'Accepted', expires: '2026-10-24', by: 'p8', sent: '2026-10-10', decided: '2026-10-11' },
     ],
     agreements: [
       {
@@ -794,7 +801,7 @@ function seed() {
         ctx: 'c1',
         name: 'Operations leadership (custom)',
         tpl: null,
-        mode: '3 · AI or custom pathway',
+        mode: '3 · Custom pathway',
         state: 'In review',
         by: 'p3',
         steps: [
@@ -1166,6 +1173,41 @@ function seed() {
         decisions: [],
         polls: [],
         pause: null,
+      },
+      // JF-31: a participant's own Circle proposal (no project) waiting for its facilitator's review.
+      {
+        id: 'ci4',
+        ctx: 'c1',
+        name: 'Community Gardens Peer Circle',
+        purpose: 'Share what works in neighbourhood food gardens and plan a joint harvest day.',
+        outcome: 'A shared planting calendar and one joint harvest day by March.',
+        owner: 'p9',
+        facilitator: 'p13',
+        project: null,
+        origin: { type: 'Direct — programme, institutional or community Circle', basis: 'Food-resilience cohort 2026', by: 'p9' },
+        visibility: 'Members only',
+        docs: [],
+        state: 'Pending Review',
+        needsReview: true,
+        life: [
+          { at: '2026-10-28T10:00:00.000Z', by: 'p9', from: null, to: 'Draft', note: 'Created' },
+          { at: '2026-10-28T10:20:00.000Z', by: 'p9', from: 'Draft', to: 'Pending Review', note: 'Submitted for review' },
+        ],
+        agreement: 'Circle working agreement v1',
+        members: [
+          { pid: 'p9', role: 'Project owner', status: 'Active' },
+          { pid: 'p13', role: 'Facilitator', status: 'Active' },
+          { pid: 'p1', role: 'Member', status: 'Invited' },
+        ],
+        chat: [],
+        sessions: [],
+        reflections: [],
+        commitments: [],
+        concerns: [],
+        decisions: [],
+        polls: [],
+        pause: null,
+        createdBy: 'p9',
       },
     ],
     ropes: [
@@ -2243,7 +2285,7 @@ function seed() {
       {
         id: 'm1',
         name: 'Onboarding completion',
-        cat: 'Activation',
+        layer: 'workflow',
         def: 'Active role assignments with onboarding complete ÷ all active assignments',
         owner: 'Organization Admin',
         gate: 'Aggregate only',
@@ -2252,7 +2294,7 @@ function seed() {
       {
         id: 'm2',
         name: 'Circle participation',
-        cat: 'Activation',
+        layer: 'workflow',
         def: 'Participants who are members of ≥1 active Circle',
         owner: 'Organization Admin',
         gate: 'Aggregate only',
@@ -2261,7 +2303,7 @@ function seed() {
       {
         id: 'm3',
         name: 'Purpose pathway saved',
-        cat: 'Learning & purpose',
+        layer: 'workflow',
         def: 'Participants with a current pathway',
         owner: 'Organization Admin',
         gate: 'Aggregate only',
@@ -2270,7 +2312,7 @@ function seed() {
       {
         id: 'm4',
         name: 'Needs/offers created',
-        cat: 'Collaboration',
+        layer: 'workflow',
         def: 'Opportunity Cards published (not draft)',
         owner: 'Organization Admin',
         gate: 'None',
@@ -2279,7 +2321,7 @@ function seed() {
       {
         id: 'm5',
         name: 'Match Brief accepted',
-        cat: 'Collaboration',
+        layer: 'workflow',
         def: 'Briefs reaching Introduced',
         owner: 'Organization Admin',
         gate: 'Aggregate only',
@@ -2288,7 +2330,7 @@ function seed() {
       {
         id: 'm6',
         name: 'Milestones completed',
-        cat: 'Action & evidence',
+        layer: 'outputs',
         def: 'Room milestones Achieved',
         owner: 'Organization Admin',
         gate: 'None',
@@ -2297,7 +2339,7 @@ function seed() {
       {
         id: 'm7',
         name: 'Action-to-evidence coverage',
-        cat: 'Action & evidence',
+        layer: 'evidence',
         def: 'Achieved milestones with linked approved evidence',
         owner: 'Organization Admin',
         gate: 'None',
@@ -2306,7 +2348,7 @@ function seed() {
       {
         id: 'm8',
         name: 'Consent completeness',
-        cat: 'Trust & governance',
+        layer: 'workflow',
         def: 'Active people with every optional purpose explicitly set',
         owner: 'Organization Admin',
         gate: 'Aggregate only',
@@ -2315,7 +2357,7 @@ function seed() {
       {
         id: 'm9',
         name: 'AI review compliance',
-        cat: 'Trust & governance',
+        layer: 'workflow',
         def: 'Class B/C AI outputs reviewed before release',
         owner: 'Platform Administrator',
         gate: 'None',
@@ -2324,11 +2366,49 @@ function seed() {
       {
         id: 'm10',
         name: 'Sponsor-seat utilisation',
-        cat: 'Access & sustainability',
+        layer: 'workflow',
         def: 'Assigned seats ÷ total seats',
         owner: 'Platform Administrator',
         gate: 'Aggregate only',
         status: 'Active',
+      },
+      {
+        id: 'm11',
+        name: 'Evidence review status',
+        layer: 'evidence',
+        def: 'Active evidence items by review status (Submitted, In review, Needs Revision, Approved, Rejected, Insufficient). Confidential items are left out unless released for organisation reports.',
+        owner: 'Organization Admin',
+        gate: 'Aggregate only',
+        status: 'Active',
+      },
+      {
+        id: 'm12',
+        name: 'Evidence Support Levels (approved evidence)',
+        layer: 'evidence',
+        def: 'Approved, active evidence counted per Support Level E0–E4. Each level is counted separately; levels are never averaged, summed or combined.',
+        owner: 'Organization Admin',
+        gate: 'Aggregate only',
+        status: 'Active',
+      },
+    ],
+    // JF-90 layer 4: real-world outcome indicators. Recorded by a person, never derived from platform activity.
+    // Every field is required; an incomplete indicator is not shown as an outcome anywhere.
+    outcomes: [
+      {
+        id: 'oc1',
+        ctx: 'c1',
+        project: 'pr1',
+        name: 'Heat-related calls to the Ward 7 council helpline',
+        def: 'Calls logged by the council helpline as heat-related, from Ward 7 addresses, averaged per week over July and August.',
+        unit: 'calls per week',
+        baseline: 'Summer 2025 (July–August): 46 calls per week',
+        value: 'Summer 2026 (July–August): 39 calls per week',
+        at: '2026-09-30',
+        source: 'Excelsior City Council helpline log, shared by the Ward 7 office (external record)',
+        conf: 'Low',
+        attrib: 'Not attributable to this project. Summer 2026 was cooler and the council ran its own heat campaign. Recorded as context for pilot learning only.',
+        by: 'p7',
+        rec: '2026-10-01',
       },
     ],
     configVersions: [
@@ -2353,7 +2433,7 @@ function seed() {
     ],
     // Specialist bundles are capabilities attached to a person in a context, not personas (doc 1 §6.9).
     bundles: [
-      { name: 'Reviewer', desc: 'Approve evidence, evidence-linked milestones and custom or AI-drafted pathways where assigned.', limit: 'Not general programme authority.', approval: 'Programme/Org Admin' },
+      { name: 'Reviewer', desc: 'Approve evidence, evidence-linked milestones, custom pathways and adaptations outside a template’s rules.', limit: 'Not general programme authority.', approval: 'Programme/Org Admin' },
       { name: 'Project Lead', desc: 'Assign and approve tasks and milestones in a workspace; complete Learning Harvests.', limit: 'Only inside the workspace it is granted for.', approval: 'Circle/Workspace Owner within delegated limits' },
     ],
     supportQueries: [

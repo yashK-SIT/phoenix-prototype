@@ -16,6 +16,7 @@ const ropeInviter = (x) => {
 const ropeDocs = (x) => x.docs || [];
 // Rope Teams a person may ask to join: those linked to a Circle they belong to.
 const ropeJoinable = (x) =>
+  ROPE_SHARED.includes("name") &&
   !!x.circle &&
   memberOf(byId("circles", x.circle) || {}) &&
   !memberOf(x) &&
@@ -210,7 +211,6 @@ route("ropeteams", "ropeteams", () => {
     (x) =>
       inCtx(x) &&
       (memberOf(x) ||
-        r === "A" ||
         ["Requested", "Invited"].includes((memberRec(x) || {}).status)),
   );
   const joinable = S.ropes.filter(
@@ -441,14 +441,16 @@ route("ropeteams", "ropeteams", () => {
           "Rope Teams linked to your Circles",
           "You can ask to join. The project owner or the Faculty/Steward approves or declines.",
           table(
-            ["Rope Team", "Circle", "Mentor", "State", ""],
-            joinable.map((x) => [
-              `<div class="ws-name"><span class="tile t-teal" aria-hidden="true">${ic("route", 16)}</span><div class="ws-name-t"><b>${h(x.name)}</b></div></div>`,
-              cName(x.circle),
-              x.mentor ? nm(x.mentor) : "—",
-              pill(x.state),
-              joinBtn(x, "ropes"),
-            ]),
+            ["Rope Team", ROPE_SHARED.includes("charter") && "Charter", ROPE_SHARED.includes("circle") && "Circle", ROPE_SHARED.includes("mentor") && "Mentor", ""].filter((x) => x !== false),
+            joinable.map((x) =>
+              [
+                `<div class="ws-name"><span class="tile t-teal" aria-hidden="true">${ic("route", 16)}</span><div class="ws-name-t"><b>${h(x.name)}</b></div></div>`,
+                ROPE_SHARED.includes("charter") && h(x.charter || ""),
+                ROPE_SHARED.includes("circle") && cName(x.circle),
+                ROPE_SHARED.includes("mentor") && (x.mentor ? nm(x.mentor) : "—"),
+                joinBtn(x, "ropes"),
+              ].filter((v) => v !== false),
+            ),
           ),
         )
       : "")
@@ -496,27 +498,28 @@ route("rope", "ropeteams", () => {
         ])}<div class="row ws-acts">${B("Decline", "ropeInvite", { id: x.id, v: "Declined" })}${B("Accept and join", "ropeInvite", { id: x.id, v: "Active" }, "btn-p btn-sm")}</div>`,
       )
     );
-  if (!isMem && r !== "A" && !inviter) {
-    if (
-      ropeJoinable(x) ||
-      (x.circle && memberOf(byId("circles", x.circle) || {}))
-    )
+  if (!isMem && !inviter) {
+    if (ropeShareTo(x))
       return (
-        head(h(x.name), "Rope Team", pill(x.state), crumbs) +
+        head(h(x.name), "Rope Team", "", crumbs) +
         card(
           "Members only",
-          "Only Rope Team members see its chat, reviews and support.",
-          dl([
-            ["Charter", h(x.charter)],
-            ["Mentor", x.mentor ? nm(x.mentor) : "—"],
-            ["Circle", cName(x.circle)],
-          ]) +
+          "Only Rope Team members see its chat, reviews and support. Shown here: the fields shared for mentoring.",
+          dl(
+            [
+              ROPE_SHARED.includes("charter") && ["Charter", h(x.charter)],
+              ROPE_SHARED.includes("mentor") && ["Mentor", x.mentor ? nm(x.mentor) : "—"],
+              ROPE_SHARED.includes("circle") && ["Circle", cName(x.circle)],
+            ].filter(Boolean),
+          ) +
             (x.state === "Active"
               ? `<div class="row ws-acts">${joinBtn(x, "ropes")}</div>`
               : ""),
         )
       );
-    return deniedView("ropeteams");
+    // JF-32: same answer as a Rope Team that does not exist; the attempt is recorded
+    audit("Access denied", "rope", "Outside the Rope Team privacy boundary", "denied");
+    return empty("route", "Not found", "");
   }
   const ro = x.state !== "Active" || !isMem;
   const canShare = sCan("ropes", x, "share");
@@ -776,7 +779,7 @@ route("rope", "ropeteams", () => {
         "No documents yet.",
       ),
       !ro
-        ? `<form data-f="rdoc" class="row wrap" style="gap:8px" novalidate><input type="hidden" name="id" value="${x.id}"><input type="file" name="f" class="input" style="padding:6px;max-width:320px" multiple aria-label="Choose documents"><button class="btn btn-p btn-sm" type="submit">${ic("upload", 14)}Upload</button></form>`
+        ? `<form data-f="rdoc" class="row wrap" style="gap:8px" novalidate><input type="hidden" name="id" value="${x.id}"><input type="file" name="f" class="input" style="padding:6px;max-width:320px" multiple aria-label="Choose documents" accept="${uploadAccept({ ctx: x.ctx })}" title="${h(uploadRuleText({ ctx: x.ctx }))}"><button class="btn btn-p btn-sm" type="submit">${ic("upload", 14)}Upload</button></form>`
         : "",
     );
   }
@@ -1020,22 +1023,20 @@ A.revNew = (d) => {
   modal(
     prev ? "Resubmit after changes" : "Share work for review",
     () =>
-      `<form data-f="rvn" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${x.id}"><input type="hidden" name="re" value="${d.re || ""}">${fi("rvn", "title", "What should the mentor review?", { req: true, ph: "e.g. Survey question set v3" })}${fi("rvn", "desc", "Context and what kind of feedback you want", { type: "textarea", rows: 3, req: true })}<div class="field"><label class="lbl" for="rvn_f">File (optional)</label><input id="rvn_f" type="file" name="f" class="input" style="padding:8px"><span class="help">Up to ${S.settings.maxFileMB} MB. Link video externally.</span></div><div class="actions"><span></span><button class="btn btn-p" type="submit">Send for review</button></div></form>`,
+      `<form data-f="rvn" class="col" style="gap:14px" novalidate><input type="hidden" name="id" value="${x.id}"><input type="hidden" name="re" value="${d.re || ""}">${fi("rvn", "title", "What should the mentor review?", { req: true, ph: "e.g. Survey question set v3" })}${fi("rvn", "desc", "Context and what kind of feedback you want", { type: "textarea", rows: 3, req: true })}<div class="field"><label class="lbl" for="rvn_f">File (optional)</label><input id="rvn_f" type="file" name="f" class="input" style="padding:8px" accept="${uploadAccept({ ctx: x.ctx })}"><span class="help">${uploadRuleText({ ctx: x.ctx })}.</span></div><div class="actions"><span></span><button class="btn btn-p" type="submit">Send for review</button></div></form>`,
   );
 };
 F.rvn = (d, form) => {
   if (!validate("rvn", d, { title: ["req"], desc: ["req"] })) return render();
   const file = form.querySelector("input[type=file]")?.files?.[0];
-  if (file && file.size > S.settings.maxFileMB * 1048576) {
-    UI.err.rvn = {
-      title:
-        "File over " +
-        S.settings.maxFileMB +
-        " MB. Link it externally instead.",
-    };
-    return render();
-  }
   const x = byId("ropes", d.id);
+  // JF-52: approved types, the programme's size limit and the malware scan
+  const chk = file && uploadCheck([file], { where: "Rope Team review request · " + x.name, ctx: x.ctx });
+  if (chk && !chk.pass) {
+    UI.form.rvn = d;
+    UI.err.rvn = { title: chk.msg };
+    return chk.quarantined.length ? ok() : render();
+  }
   x.reviews.push({
     id: uid("rv"),
     by: myId(),
@@ -1109,10 +1110,11 @@ F.rdoc = (d, form) => {
     toast("Choose at least one document.", "warn");
     return render();
   }
-  const big = files.find((f) => f.size > S.settings.maxFileMB * 1048576);
-  if (big) {
-    toast(big.name + " is over " + S.settings.maxFileMB + " MB.", "err");
-    return render();
+  // JF-52: approved types, the programme's size limit and the malware scan
+  const chk = uploadCheck(files, { where: "Rope Team documents · " + x.name, ctx: x.ctx });
+  if (!chk.pass) {
+    toast(chk.msg, "err");
+    return ok();
   }
   x.docs = x.docs || [];
   files.forEach((f) =>

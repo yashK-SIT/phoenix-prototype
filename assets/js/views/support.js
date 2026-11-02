@@ -321,6 +321,26 @@ function migrate() {
   ensurePlatformData();
   syncCtxNames();
   tenantMigrate(); // second tenant's admin, sample tenant invitations, primary memberships (views/admin.js)
+  invMigrate(); // JF-06: valid-link fixtures dated from today (views/public.js)
+  metricsMigrate(); // JF-90: metric layers and outcome indicators (views/home.js)
+  // JF-31: the sample Circle proposal is added once to stored data.
+  if (!S.jf31) {
+    const ci4 = seed().circles.find((x) => x.id === "ci4");
+    if (ci4 && !byId("circles", "ci4") && byId("people", "p9") && byId("people", "p13")) S.circles.push(ci4);
+    S.jf31 = 1;
+  }
+  // JF-10: membership suspensions and role history live in their own lists; Kofi's Seva membership is added once.
+  S.membership = S.membership || [];
+  S.assignHist = S.assignHist || [];
+  if (!S.jf10) {
+    const sd = seed();
+    ["assign", "invites"].forEach((k) =>
+      sd[k].filter((x) => ["a13b", "ti4"].includes(x.id) && !byId(k, x.id)).forEach((x) => S[k].push(x)),
+    );
+    const k = byId("people", "p13");
+    if (k && byId("assign", "a13")) k.primary = "a13";
+    S.jf10 = 1;
+  }
   // accounts that are not in the seed were created in this browser (registration or Programme admin)
   const seedIds = new Set(seed().people.map((p) => p.id));
   S.people.forEach((p) => {
@@ -343,7 +363,15 @@ function migrate() {
   [...S.projects, ...S.cards].forEach((x) => {
     if (!x.country) x.country = (x.project && (byId("projects", x.project) || {}).country) || ctxCountry(x.ctx) || "";
   });
+  // JF-39: Opportunity Cards gained a continent (and an optional region); earlier cards take it from their country where
+  // it is known, otherwise the owner chooses it on the next edit
+  S.cards.forEach((x) => {
+    if (x.continent == null) x.continent = CONTINENT_HINT[x.country] || "";
+    if (x.region == null) x.region = "";
+  });
   docsMigrate(); // project and document visibility, demo files (views/documents.js)
+  reviewAuthMigrate(); // JF-56: Evidence Review Authority dates, evidence roles and reviewer assignment (below)
+  filesSeed(); // JF-53: one stored file per holder; a sample file filed in two folders (views/documents.js)
   pubMigrate(); // the seeded Public project gets its approved team vote (views/publish.js)
   profileMigrate(); // pathway step rules, candidate source/audience (views/profile.js)
   // Milestones hold a list of evidence, each approved by the Steward; the project's Steward facilitates its Action Room
@@ -678,12 +706,25 @@ A.resNew = () => {
   modal(
     role() === "A" ? "Add resource" : "Suggest a resource",
     () =>
-      `<form data-f="res" class="col fgap" novalidate>${fi("res", "title", "Title", { req: true })}${fi("res", "kind", "Type", { type: "select", req: true, opts: ["Guide", "Learning resource", "Template guidance", "Governance guidance"] })}${fi("res", "audience", "Audience", { type: "select", req: true, opts: ["All roles", "Participants", "Facilitators", "Mentors", "Collaborators", "Organization representatives", "Sponsors"] })}${fi("res", "desc", "Description", { type: "textarea", rows: 3, req: true })}<div class="field"><label class="lbl">File or link</label><input type="file" name="f" class="input res-file"></div>${role() !== "A" ? banner("info", "", "An Organization Admin reviews suggestions before they are published.") : ""}<div class="actions"><span></span><button class="btn btn-p" type="submit">${role() === "A" ? "Publish" : "Submit for review"}</button></div></form>`,
+      `<form data-f="res" class="col fgap" novalidate>${fi("res", "title", "Title", { req: true })}${fi("res", "kind", "Type", { type: "select", req: true, opts: ["Guide", "Learning resource", "Template guidance", "Governance guidance"] })}${fi("res", "audience", "Audience", { type: "select", req: true, opts: ["All roles", "Participants", "Facilitators", "Mentors", "Collaborators", "Organization representatives", "Sponsors"] })}${fi("res", "desc", "Description", { type: "textarea", rows: 3, req: true })}<div class="field"><label class="lbl">File or link</label><input type="file" name="f" class="input res-file" accept="${uploadAccept()}"><span class="help">${uploadRuleText()}.</span></div>${role() !== "A" ? banner("info", "", "An Organization Admin reviews suggestions before they are published.") : ""}<div class="actions"><span></span><button class="btn btn-p" type="submit">${role() === "A" ? "Publish" : "Submit for review"}</button></div></form>`,
   );
 };
-F.res = (d) => {
+F.res = (d, form) => {
   if (!validate("res", d, { title: ["req"], desc: ["req", ["min", 10]] }))
     return render();
+  // JF-52: approved types, the programme's size limit and the malware scan
+  const file = form && form.querySelector("input[type=file]")?.files?.[0];
+  const chk = file && uploadCheck([file], { where: "Learning resource" });
+  if (chk && !chk.pass) {
+    UI.err.res = { desc: chk.msg };
+    if (chk.quarantined.length) {
+      UI.modal = null;
+      clearF("res");
+      toast(chk.msg, "err");
+      return ok();
+    }
+    return render();
+  }
   const x = {
     id: uid("rs"),
     title: d.title,
@@ -1044,3 +1085,26 @@ A.summaryDecide = (d) => {
   audit("AI Circle summary " + d.v, c.id, "");
   ok();
 };
+
+// JF-56: existing Reviewer bundles get an active window (sample: the current academic year); Kofi Mensah, a
+// Faculty/Steward in the sample programme, also holds it, so a recusal has someone to go to; evidence gets empty role
+// lists and pending items are assigned to one eligible reviewer.
+function reviewAuthMigrate() {
+  if (S.jf56) return;
+  S.jf56 = 1;
+  S.assign.forEach((a) => {
+    if ((a.bundles || []).includes("Reviewer") && !bundleWin(a, "Reviewer"))
+      a.bundleDates = { ...(a.bundleDates || {}), Reviewer: { from: "2026-09-01", until: "2027-08-31" } };
+  });
+  const k = byId("assign", "a13");
+  if (k && k.ctx === "c1" && !(k.bundles || []).includes("Reviewer")) {
+    k.bundles = [...(k.bundles || []), "Reviewer"];
+    k.bundleDates = { ...(k.bundleDates || {}), Reviewer: { from: "2026-09-01", until: "2027-08-31" } };
+  }
+  S.evidence.forEach((e) => {
+    ["contributors", "supervisors", "sponsors"].forEach((r) => (e[r] = e[r] || []));
+    e.recusals = e.recusals || [];
+    if (!("assignee" in e)) e.assignee = e.reviewer && evPending(e) ? e.reviewer : null;
+    if (evPending(e) && !e.assignee) e.assignee = evPickReviewer(e);
+  });
+}

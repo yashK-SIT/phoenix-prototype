@@ -40,6 +40,9 @@ Object.assign(SC, {
 // Payment status is recorded, never processed. "Disputed" is set only by a dispute, never by hand.
 const PAY_ST = ["Pending", "Due", "Paid Offline", "On Hold", "Disputed"];
 const PAY_MANUAL = PAY_ST.filter((s) => s !== "Disputed");
+// What either side may set by hand. Paid Offline is reached only when the sponsor's Sent and the owner's Received
+// records agree (spPayConfirm), or by a Steward's decision; a record already Paid Offline keeps that option.
+const PAY_HAND = PAY_MANUAL.filter((s) => s !== "Paid Offline");
 const PAY_PILL = { Pending: "p-grey", Due: "p-amber", "Paid Offline": "p-green", "On Hold": "p-grey", Disputed: "p-red" };
 const payPill = (s) => pill(s, PAY_PILL[s]);
 const SP_OFFLINE =
@@ -100,14 +103,10 @@ const spFiles = (fs) =>
 // File names and sizes from a multi-file input; null (with a message) when a file is too large or not allowed.
 function spTakeFiles(form) {
   const fs = [...((form && form.querySelector("input[type=file]")) || { files: [] }).files];
-  const big = fs.find((f) => f.size > S.settings.maxFileMB * 1048576);
-  if (big) {
-    toast(big.name + " is over " + S.settings.maxFileMB + " MB. Link large media instead.", "err");
-    return null;
-  }
-  const bad = fs.find((f) => /\.(exe|bat|cmd|sh|msi)$/i.test(f.name));
-  if (bad) {
-    toast(bad.name + ": this file type is not allowed.", "err");
+  // JF-52: approved types, the programme's size limit and the malware scan
+  const chk = uploadCheck(fs, { where: "Sponsor project records" });
+  if (!chk.pass) {
+    toast(chk.msg, "err");
     return null;
   }
   return fs.map((f) => ({ n: f.name, mb: +(f.size / 1048576).toFixed(2) }));
@@ -170,8 +169,17 @@ function spTodo() {
       });
       if (side === "sponsor")
         spPays(x)
-          .filter((y) => y.status === "Due")
+          .filter((y) => y.status === "Due" && !spdRec(p, y, "sponsor"))
           .forEach((y) => out.push(["Record an offline payment", h(p.title) + " · " + h(y.ref) + " is due", "sproom", { id: x.id, tab: "pay" }]));
+      // offline payment confirmation: the owner confirms what the sponsor sent; a mismatch is flagged to both sides
+      const payGo = side === "sponsor" ? ["sproom", { id: x.id, tab: "pay" }] : ["room", { id: x.id, tab: "pay" }];
+      spPays(x)
+        .filter((y) => y.status !== "Disputed" && !dspOn(x, "pay", y.id))
+        .forEach((y) => {
+          const st = spdPayState(x, p, y);
+          if (side === "owner" && !y.ow && spdRec(p, y, "sponsor") && st === "Pending verification") out.push(["Confirm a payment received", h(p.title) + " · " + h(y.ref) + " was marked as sent", ...payGo]);
+          if (st === "Flagged for review") out.push(["Check a flagged payment", h(p.title) + " · " + h(y.ref) + ": sent and received differ", ...payGo]);
+        });
     });
   return out;
 }
@@ -985,7 +993,7 @@ const spdPayForT = (x, y) => {
 function spdPayCell(p, y, side, none) {
   const r = spdRec(p, y, side);
   if (!r) return `<span class="cap">${none || "—"}</span>`;
-  return `<div class="spd-conf">${ic("check", 13)}<span>${side === "sponsor" ? "Paid" : "Received"} ${money(spCur(p), r.amount)}</span><span class="cap">${fmtD(r.date)}${r.ref ? " · ref " + h(r.ref) : ""}</span>${spFiles(r.files)}</div>`;
+  return `<div class="spd-conf">${ic("check", 13)}<span>${side === "sponsor" ? "Sent" : "Received"} ${money(spCur(p), r.amount)}</span><span class="cap">${fmtD(r.date)}${r.ref ? " · ref " + h(r.ref) : ""}</span>${spFiles(r.files)}</div>`;
 }
 function spdPay(p, x) {
   if (!x) return spdNoWs(p, "Payments");
@@ -1020,7 +1028,7 @@ function spdPay(p, x) {
     if (!live || y.status === "Disputed") return "";
     const s = st(y);
     if (s === "Flagged for review") return B("Correct my record", "spdPay", { id: p.id, y: y.id }) + B(ic("shield", 14) + "Escalate to a Steward", "spDspNew", { r: x.id, kind: "pay", s: y.id });
-    if (!spdRec(p, y, "sponsor") && y.status === "Due") return B("Record payment", "spdPay", { id: p.id, y: y.id }, "btn-p btn-sm");
+    if (!spdRec(p, y, "sponsor") && y.status === "Due") return B("Mark as sent", "spdPay", { id: p.id, y: y.id }, "btn-p btn-sm");
     return "";
   };
   const hist = ps
@@ -1046,14 +1054,14 @@ function spdPay(p, x) {
     card(
       "Milestone payments",
       "For each milestone: the agreed amount, its approval and the payment confirmations from both sides.",
-      table(["Milestone", "Agreed amount", "Milestone status", "Payment reference", "Sponsor", ownT, "Payment status"], msRows, "No agreed milestones yet. Agree them in Funding & milestones."),
+      table(["Milestone", "Agreed amount", "Milestone status", "Payment reference", "Sent (you)", "Received (" + ownT.toLowerCase() + ")", "Payment status"], msRows, "No agreed milestones yet. Agree them in Funding & milestones."),
       "",
       "spd-paytbl",
     ) +
     card(
       "Payment history",
       "Every payment either side recorded, with both confirmations and supporting records. Newest first.",
-      table(["Recorded", "Payment", "Amount", "Sponsor", ownT, "Status", ""], hist, "No payments recorded yet."),
+      table(["Recorded", "Payment", "Amount", "Sent (you)", "Received (" + ownT.toLowerCase() + ")", "Status", ""], hist, "No payments recorded yet."),
       live ? B(ic("plus", 14) + "Record a payment made", "spdPay", { id: p.id }, "btn-p btn-sm") : "",
       "spd-paytbl",
     ) +
@@ -1074,7 +1082,7 @@ A.spdPay = (d) => {
       y
         ? `<input type="hidden" name="for" value="${y.id}">` + dl([["For", h(spdPayForT(x, y))], ["Reference", `<span class="mono">${h(y.ref)}</span>`], ["Amount due", money(cur, y.amount)]])
         : fi("spdp", "for", "What the payment is for", { type: "select", req: true, opts: [...opts.map((z) => [z.id, z.ref + " · " + spdPayForT(x, z) + " · " + cur + " " + (+z.amount).toLocaleString("en-US")]), ["new", "Initial project funding or an advance (new record)"]], help: "A milestone payment can be recorded once you have approved the milestone." })
-    }<div class="f2">${fi("spdp", "amount", "Amount paid (" + h(cur) + ")", { type: "number", req: true, min: 0.01, step: "0.01" })}${fi("spdp", "date", "Date paid", { type: "date", req: true, maxv: today() })}</div>${fi("spdp", "ref", "Payment reference (optional)", { max: 80, ph: "e.g. bank transfer reference" })}<div class="field"><label class="lbl" for="spdp_files">Supporting records (optional)</label><input id="spdp_files" class="input" type="file" name="files" multiple><span class="help">For example a remittance advice. Up to ${S.settings.maxFileMB} MB each.</span></div>${fi("spdp", "note", "Note (optional)", { type: "textarea", rows: 2, max: 1000 })}${banner("info", "Independent confirmation", "The " + spdOwnerT(p).toLowerCase() + " confirms what they received separately. If the two figures differ, the payment is flagged for review. " + SP_OFFLINE)}<div class="actions">${B("Cancel", "closeM")}<button class="btn btn-p" type="submit">Record payment</button></div></form>`,
+    }<div class="f2">${fi("spdp", "amount", "Amount paid (" + h(cur) + ")", { type: "number", req: true, min: 0.01, step: "0.01" })}${fi("spdp", "date", "Date paid", { type: "date", req: true, maxv: today() })}</div>${fi("spdp", "ref", "Payment reference (optional)", { max: 80, ph: "e.g. bank transfer reference" })}<div class="field"><label class="lbl" for="spdp_files">Supporting records (optional)</label><input id="spdp_files" class="input" type="file" name="files" multiple accept="${uploadAccept()}"><span class="help">For example a remittance advice. ${uploadRuleText()}.</span></div>${fi("spdp", "note", "Note (optional)", { type: "textarea", rows: 2, max: 1000 })}${banner("info", "Independent confirmation", "The " + spdOwnerT(p).toLowerCase() + " confirms what they received separately. If the two figures differ, the payment is flagged for review. " + SP_OFFLINE)}<div class="actions">${B("Cancel", "closeM")}<button class="btn btn-p" type="submit">Record payment</button></div></form>`,
   );
 };
 F.spdp = (d, form) => {
@@ -1097,11 +1105,94 @@ F.spdp = (d, form) => {
   y.sp = { amount: +d.amount, date: d.date, ref: (d.ref || "").trim(), files: files.length ? files : (y.sp && y.sp.files) || [], note, by: myId(), at: now() };
   if (!y.offRef && y.sp.ref) y.offRef = y.sp.ref;
   y.hist.push({ at: now(), by: myId(), from: y.status, to: y.status, amount: +d.amount, ref: y.sp.ref || undefined, note: (had ? "Sponsor corrected their record of the payment made" : "Sponsor recorded a payment made") + " on " + fmtD(d.date) + (note ? ": " + note : "") });
-  spTell(p, x, spOwners(p), p.alias + " recorded a payment made for “" + p.title + "”: " + y.ref + ", " + spCur(p) + " " + (+d.amount).toLocaleString("en-US") + ". Confirm what you received.", "pay");
+  spTell(p, x, spOwners(p), p.alias + " marked a payment as sent for “" + p.title + "”: " + y.ref + ", " + spCur(p) + " " + (+d.amount).toLocaleString("en-US") + ". Confirm what you received.", "pay");
   audit("Sponsor recorded a payment made", x.id, y.id + " · " + d.amount);
+  spPayConfirm(x, p, y);
   UI.modal = null;
   clearF("spdp");
   toast("Payment recorded. Nothing was paid through PHOENIX; the " + spdOwnerT(p).toLowerCase() + " confirms what they received.");
+  ok();
+};
+
+// ---- Offline payment confirmation: the sponsor marks a payment Sent (spdPay above), the project owner confirms it
+// Received. When both records agree on the amount the payment becomes Paid Offline; when they differ it is flagged
+// for review and either side can escalate it to a Steward. PHOENIX still never moves money.
+function spPayConfirm(x, p, y) {
+  if (y.status === "Disputed" || dspOn(x, "pay", y.id)) return;
+  const s = spdRec(p, y, "sponsor");
+  const o = spdRec(p, y, "owner");
+  if (!s || !o) return;
+  if (spdEq(s.amount, o.amount)) {
+    if (y.status !== "Paid Offline") {
+      spPaySet(x, y, "Paid Offline", "Confirmed by both sides: sent by the sponsor and received by the project owner");
+      y.paidOn = String(s.date || today()).slice(0, 10);
+      if (!y.offRef && (s.ref || o.ref)) y.offRef = s.ref || o.ref;
+      spTell(p, x, [p.sponsor, ...spOwners(p)], "Payment " + y.ref + " of “" + p.title + "” is confirmed by both sides and recorded as Paid Offline", "pay");
+      sysMsg(x, "Payment " + y.ref + " confirmed by both sides (sent and received)");
+      audit("Payment confirmed by both sides", x.id, y.id);
+    }
+  } else {
+    spTell(p, x, [p.sponsor, ...spOwners(p)], "Payment " + y.ref + " of “" + p.title + "” is flagged: the amount sent and the amount received differ. Correct your record or escalate it.", "pay");
+    audit("Payment flagged: sent and received differ", x.id, y.id + " · " + s.amount + " / " + o.amount);
+  }
+}
+// Sent / Received actions for one payment record, for whichever side is signed in.
+function spPayConfActs(x, p, y, ro) {
+  if (ro || y.status === "Disputed" || dspOn(x, "pay", y.id) || (y.ms && dspOn(x, "ms", y.ms))) return "";
+  const s = spdRec(p, y, "sponsor");
+  const flagged = spdPayState(x, p, y) === "Flagged for review";
+  if (spSponsor(p)) {
+    if (!s && y.status === "Due") return B("Mark as sent", "spdPay", { id: p.id, y: y.id }, "btn-p btn-sm");
+    if (y.sp && flagged) return B("Correct what you sent", "spdPay", { id: p.id, y: y.id });
+    return "";
+  }
+  if (spOwner(p)) {
+    if (!y.ow && (s || y.status === "Due")) return B("Confirm received", "spPayRecv", { r: x.id, p: y.id }, s ? "btn-p btn-sm" : "btn-s btn-sm");
+    if (y.ow && flagged) return B("Correct what you received", "spPayRecv", { r: x.id, p: y.id });
+  }
+  return "";
+}
+// The project owner confirms what they received for a payment the sponsor marked Sent (or one that is Due).
+A.spPayRecv = (d) => {
+  const x = byId("rooms", d.r);
+  const p = spOfRoom(x);
+  const y = spPays(x).find((z) => z.id === d.p);
+  const s = spdRec(p, y, "sponsor");
+  const own = y.ow;
+  const cur = spCur(p);
+  clearF("sppr");
+  UI.form.sppr = { amount: String(own ? own.amount : s ? s.amount : y.amount), date: own ? String(own.date).slice(0, 10) : today(), ref: own ? own.ref || "" : (s && s.ref) || "" };
+  modal(own ? "Correct what you received · " + h(y.ref) : "Confirm payment received · " + h(y.ref), () =>
+    `<form data-f="sppr" class="col fgap" novalidate>${errSum("sppr")}<input type="hidden" name="r" value="${x.id}"><input type="hidden" name="p" value="${y.id}">${dl([
+      ["For", spPayFor(x, y)],
+      ["Amount due", money(cur, y.amount)],
+      ["Sent by the sponsor", s ? money(cur, s.amount) + ` <span class="cap">${fmtD(s.date)}${s.ref ? " · ref " + h(s.ref) : ""}</span>` : '<span class="cap">Not marked as sent yet</span>'],
+    ])}<div class="f2">${fi("sppr", "amount", "Amount received (" + h(cur) + ")", { type: "number", req: true, min: 0.01, step: "0.01" })}${fi("sppr", "date", "Date received", { type: "date", req: true, maxv: today() })}</div>${fi("sppr", "ref", "Payment reference (optional)", { max: 80, ph: "e.g. bank transfer reference" })}<div class="field"><label class="lbl" for="sppr_files">Supporting records (optional)</label><input id="sppr_files" class="input" type="file" name="files" multiple accept="${uploadAccept()}"><span class="help">For example a bank statement line. ${uploadRuleText()}.</span></div>${fi("sppr", "note", "Note (optional)", { type: "textarea", rows: 2, max: 1000 })}${banner("info", "Independent confirmation", "Record what actually arrived. If it matches what the sponsor sent, the payment is recorded as Paid Offline. If it differs, it is flagged and either side can escalate it to a Steward. " + SP_OFFLINE)}<div class="actions">${B("Cancel", "closeM")}<button class="btn btn-p" type="submit">${own ? "Save correction" : "Confirm received"}</button></div></form>`,
+  );
+};
+F.sppr = (d, form) => {
+  if (
+    !validate("sppr", d, {
+      amount: ["req", "num", ["fn", { f: (v) => +v > 0, m: "Enter an amount above 0." }]],
+      date: ["req", ["fn", { f: (v) => /^\d{4}-\d{2}-\d{2}$/.test(v) && v <= today(), m: "Enter the date it arrived (today or earlier)." }]],
+    })
+  )
+    return render();
+  const files = spTakeFiles(form);
+  if (!files) return render();
+  const x = byId("rooms", d.r);
+  const p = spOfRoom(x);
+  const y = spPays(x).find((z) => z.id === d.p);
+  const note = (d.note || "").trim();
+  const had = !!y.ow;
+  y.ow = { amount: +d.amount, date: d.date, ref: (d.ref || "").trim(), files: files.length ? files : (y.ow && y.ow.files) || [], note, by: myId(), at: now() };
+  y.hist.push({ at: now(), by: myId(), from: y.status, to: y.status, amount: +d.amount, ref: y.ow.ref || undefined, note: (had ? "Project owner corrected their record of the payment received" : "Project owner confirmed the payment received") + " on " + fmtD(d.date) + (note ? ": " + note : "") });
+  spTell(p, x, [p.sponsor], me().name + " confirmed receiving " + spCur(p) + " " + (+d.amount).toLocaleString("en-US") + " for payment " + y.ref + " of “" + p.title + "”", "pay");
+  audit("Project owner confirmed a payment received", x.id, y.id + " · " + d.amount);
+  spPayConfirm(x, p, y);
+  UI.modal = null;
+  clearF("sppr");
+  toast(y.status === "Paid Offline" ? "Confirmed. Both sides agree, so the payment is recorded as Paid Offline." : spdRec(p, y, "sponsor") ? "Recorded. The amounts differ, so the payment is flagged for review." : "Recorded. It is confirmed once the sponsor marks it as sent.");
   ok();
 };
 
@@ -1190,6 +1281,7 @@ function spMsBlock(x, m, sponsorView) {
     ["Acceptance criteria", spText(spClip(s.criteria, 220))],
     fin && ["Amount on approval", money(spCur(p), s.amount)],
     ["Assigned work", `<span class="sp-tasks">${work}</span>`],
+    sponsorView && ["Evidence from the team", spMsEvList(x, m)],
   ])}<div class="row wrap sp-ms-a">${B("Requirement details", "spMs", { r: x.id, m: m.id }, spTodo().some((t) => t[1].includes(h(m.t)) && t[3].id === x.id) ? "btn-p btn-sm" : "btn-s btn-sm")}${canAssign ? B(ic("plus", 14) + "Assign work", "roomItem", { r: x.id, k: "tasks", ms: m.id }) : ""}</div></div>`;
 }
 function spMsStep(m) {
@@ -1205,6 +1297,31 @@ function spMsStep(m) {
   );
 }
 const spMsOk = (m, k) => (m.sp.ok[k] ? `${ic("check", 13)}${fmtD(m.sp.ok[k])}` : '<span class="cap">not yet</span>');
+// Evidence the team attached to a sponsor milestone: pieces linked to the milestone (with their review status) and
+// pieces sent with a completion submission. Rejected pieces are left out. This is what the Sponsor may see; the rest
+// of the team's evidence stays with the team.
+function spMsEvs(x, m) {
+  const out = new Map();
+  (m.evs || []).forEach((it) => {
+    const e = byId("evidence", it.ev);
+    if (e && it.st !== "Rejected") out.set(e.id, { e, st: it.st === "Approved" && !msItemOk(it) ? MS_PEND : it.st, rv: it.rv });
+  });
+  (m.sp.subs || []).forEach((b) =>
+    (b.evs || []).forEach((id) => {
+      const e = byId("evidence", id);
+      if (e && !out.has(id)) out.set(id, { e, st: "Sent with a submission" });
+    }),
+  );
+  return [...out.values()];
+}
+// The content of Restricted or Confidential evidence is not shown to the Sponsor; its title and status are.
+const spEvShared = (e) => !e.conf || e.conf === "Programme";
+const spEvPill = (st) => pill(st, MS_PILL[st] || "p-navy");
+function spMsEvList(x, m) {
+  const evs = spMsEvs(x, m);
+  if (!evs.length) return '<span class="cap">No evidence attached yet</span>';
+  return `<span class="sp-evs">${evs.map(({ e, st }) => `<span class="sp-ev"><span class="sp-ev-t">${ic("file", 13)}<b>${h(e.title)}</b><span class="cap">${h(e.type || "Evidence")} · by ${nm(e.owner)}</span></span><span class="row wrap sp-ev-a">${spEvPill(st)}${B("View", "spEv", { r: x.id, m: m.id, e: e.id }, "btn-s btn-sm")}</span></span>`).join("")}</span>`;
+}
 // The Sponsor's scoped Milestones section: the sponsor requirements only, in the same milestone layout.
 function spMsList(x, p) {
   const side = spSide(p);
@@ -1328,13 +1445,40 @@ A.spMs = (d) => {
               )
               .join("")}</section>`
           : ""
-      }${fin && ps.length ? `<section class="col fgap"><h3 class="h3">Payment status</h3>${ps.map((y) => lrow("coin", h(y.ref) + " · " + payPill(y.status), money(spCur(p), y.amount) + (y.offRef ? " · ref " + h(y.offRef) : "") + (y.due ? " · due " + fmtD(y.due) : ""))).join("")}</section>` : ""}<section class="col fgap"><h3 class="h3">Discussion</h3>${
+      }${spMsEvs(x, m).length || spSponsor(p) ? `<section class="col fgap"><h3 class="h3">Evidence from the team</h3><p class="cap">${spSponsor(p) ? "Evidence the team attached to this milestone, with its review status. Restricted or Confidential evidence shows its title and status only." : "What the sponsor sees: evidence attached to this milestone, with its review status. The content of Restricted or Confidential evidence is not shown to the sponsor."}</p>${spMsEvList(x, m)}</section>` : ""}${fin && ps.length ? `<section class="col fgap"><h3 class="h3">Payment status</h3>${ps.map((y) => lrow("coin", h(y.ref) + " · " + payPill(y.status), money(spCur(p), y.amount) + (y.offRef ? " · ref " + h(y.offRef) : "") + (y.due ? " · due " + fmtD(y.due) : ""))).join("")}</section>` : ""}<section class="col fgap"><h3 class="h3">Discussion</h3>${
         s.notes.length
           ? `<ol class="sp-notes">${s.notes.map((n) => `<li class="${n.kind}"><b>${n.kind === "steward" ? "Independent Steward" : spNm(p, n.by)}</b><span class="cap"> · ${fmtD(n.at)}${n.kind === "changes" ? " · asked for changes" : n.kind === "revise" ? " · revision" : ""}</span><p>${spText(n.t)}</p></li>`).join("")}</ol>`
           : '<p class="cap">No discussion yet.</p>'
       }${spSide(p) && x.state === "Active" ? `<form data-f="spmc" class="col fgap" novalidate><input type="hidden" name="r" value="${x.id}"><input type="hidden" name="m" value="${m.id}">${fi("spmc", "t", "Add to the discussion", { type: "textarea", rows: 2, req: true, max: 2000, help: "The sponsor and the project team see this. It is kept with the milestone." })}<div class="actions"><span></span><button class="btn btn-s btn-sm" type="submit">${ic("send", 14)}Post</button></div></form>` : ""}</section>${s.versions.length ? `<details class="ws-done"><summary class="cap">${s.versions.length} earlier version${s.versions.length > 1 ? "s" : ""}</summary>${s.versions.map((v) => `<p class="cap">${fmtD(v.at)} · ${h(v.t)}${fin ? " · " + money(spCur(p), v.amount) : ""} · was ${h(v.sr)}</p>`).join("")}</details>` : ""}<div class="actions sp-ms-acts"><span></span><div class="row wrap">${spMsActs(x, p, m)}</div></div></div>`;
     },
     true,
+  );
+};
+// Read-only view of one piece of evidence attached to a sponsor milestone, for the Sponsor (who has no access to the
+// evidence pages) and the team. Restricted and Confidential content is withheld from the Sponsor.
+A.spEv = (d) => {
+  const x = byId("rooms", d.r);
+  const p = spOfRoom(x);
+  const m = x.milestones.find((y) => y.id === d.m);
+  const it = spMsEvs(x, m).find((v) => v.e.id === d.e);
+  const e = it.e;
+  const show = !spSponsor(p) || spEvShared(e);
+  modal("Evidence · " + h(e.title), () =>
+    `<div class="col fgap">${dl([
+      ["Milestone", "Milestone " + m.sp.n + " · " + h(m.t)],
+      ["Submitted by", nm(e.owner)],
+      ["Type", h(e.type || "—")],
+      ["For this milestone", spEvPill(it.st) + (it.rv ? ` <span class="cap">reviewed by ${nm(it.rv)}</span>` : "")],
+      ["Evidence review", pill(e.review) + (e.level ? " " + pill(e.level, "p-navy") : "")],
+      ["Confidentiality", pill(e.conf || "Programme", CONF_PILL[e.conf || "Programme"])],
+      show && ["Claim", spText(e.claim)],
+      show && e.format && ["Format", h(e.format)],
+      show && e.file && ["File", spFiles([{ n: e.file }])],
+      show && e.url && ["Link", h(e.url)],
+      show && e.text && ["Written evidence", spText(e.text)],
+      show && e.source && ["Source", h(e.source)],
+      show && e.limits && ["Limitations", spText(e.limits)],
+    ])}${show ? "" : banner("info", "Content not shared with the sponsor", "This evidence is marked " + h(e.conf) + ". You see that it exists and its review status; its content stays with the team, its reviewers and programme staff. Ask the project owner if you need more.", "lock")}<div class="actions">${B(ic("chevl", 14) + "Back to the milestone", "spMs", { r: x.id, m: m.id })}${B("Close", "closeM", {}, "btn-p")}</div></div>`,
   );
 };
 F.spmc = (d) => {
@@ -1401,7 +1545,7 @@ A.spMsDone = (d) => {
       `<form data-f="spmd" class="col fgap" novalidate>${errSum("spmd")}<input type="hidden" name="r" value="${x.id}"><input type="hidden" name="m" value="${m.id}">${dl([
         ["Milestone", h(m.t)],
         ["Acceptance criteria", spText(m.sp.criteria)],
-      ])}${ask && ask.decision ? banner("warn", "The sponsor asked for", spText(ask.decision.note)) : ""}${open.length ? banner("warn", open.length + " linked task" + (open.length > 1 ? "s are" : " is") + " not done", open.map((t) => h(t.t) + " → " + nm(t.owner)).join("; ") + ". You can still submit; the sponsor decides.") : ""}${fi("spmd", "note", "What was delivered", { type: "textarea", rows: 4, req: true, max: 3000, help: "How each acceptance criterion is met. At least 20 characters." })}<div class="field"><label class="lbl" for="spmd_files">Supporting documents and deliverables (optional)</label><input id="spmd_files" class="input" type="file" name="files" multiple><span class="help">Up to ${S.settings.maxFileMB} MB each. File names are recorded with the submission.</span></div><div class="field"><span class="lbl">Evidence from the project (optional)</span>${chkGroup("evs", evs.map((e) => [e.id, h(e.title) + ` <span class="cap">· ${h(e.review)}</span>`]), [])}</div><div class="actions">${B("Cancel", "closeM")}<button class="btn btn-p" type="submit">Send to the sponsor</button></div></form>`,
+      ])}${ask && ask.decision ? banner("warn", "The sponsor asked for", spText(ask.decision.note)) : ""}${open.length ? banner("warn", open.length + " linked task" + (open.length > 1 ? "s are" : " is") + " not done", open.map((t) => h(t.t) + " → " + nm(t.owner)).join("; ") + ". You can still submit; the sponsor decides.") : ""}${fi("spmd", "note", "What was delivered", { type: "textarea", rows: 4, req: true, max: 3000, help: "How each acceptance criterion is met. At least 20 characters." })}<div class="field"><label class="lbl" for="spmd_files">Supporting documents and deliverables (optional)</label><input id="spmd_files" class="input" type="file" name="files" multiple accept="${uploadAccept()}"><span class="help">${uploadRuleText()}. File names are recorded with the submission.</span></div><div class="field"><span class="lbl">Evidence from the project (optional)</span>${chkGroup("evs", evs.map((e) => [e.id, h(e.title) + ` <span class="cap">· ${h(e.review)}</span>`]), [])}</div><div class="actions">${B("Cancel", "closeM")}<button class="btn btn-p" type="submit">Send to the sponsor</button></div></form>`,
     true,
   );
 };
@@ -1501,14 +1645,16 @@ function spPayTab(x, p) {
       spPayFor(x, y),
       money(cur, y.amount),
       y.due ? fmtD(y.due) + dueTag(y.due, y.status === "Paid Offline") : '<span class="cap">—</span>',
-      payPill(y.status) + (y.paidOn ? `<div class="cap">Paid ${fmtD(y.paidOn)}</div>` : ""),
+      payPill(y.status) + (y.paidOn ? `<div class="cap">Paid ${fmtD(y.paidOn)}</div>` : "") + (["Pending verification", "Flagged for review"].includes(spdPayState(x, p, y)) ? `<div>${spdPayPill(spdPayState(x, p, y))}</div>` : ""),
+      spdPayCell(p, y, "sponsor", "Not sent yet"),
+      spdPayCell(p, y, "owner", "Not confirmed"),
       y.offRef ? h(y.offRef) : '<span class="cap">—</span>',
       l ? spNm(p, l.by) + `<div class="cap">${fmtD(l.at)}</div>` : "",
-      `<span class="row wrap" style="gap:6px">${B("History", "spPayHist", { r: x.id, p: y.id })}${side && !ro && y.status !== "Disputed" ? B("Update status", "spPayUpd", { r: x.id, p: y.id }, "btn-p btn-sm") : ""}${side && !ro && !dsp && y.status !== "Disputed" ? B(ic("shield", 14) + "Escalate", "spDspNew", { r: x.id, kind: "pay", s: y.id }) : ""}${dsp ? spDspLink(x, p, dsp) : ""}</span>`,
+      `<span class="row wrap" style="gap:6px">${spPayConfActs(x, p, y, ro)}${B("History", "spPayHist", { r: x.id, p: y.id })}${side && !ro && y.status !== "Disputed" ? B("Update status", "spPayUpd", { r: x.id, p: y.id }) : ""}${side && !ro && !dsp && y.status !== "Disputed" ? B(ic("shield", 14) + "Escalate", "spDspNew", { r: x.id, kind: "pay", s: y.id }) : ""}${dsp ? spDspLink(x, p, dsp) : ""}</span>`,
     ];
   });
   return (
-    banner("info", "Recorded, never processed", SP_OFFLINE + " Either side records the status; every change is kept with who made it.", "coin") +
+    banner("info", "Recorded, never processed", SP_OFFLINE + " The sponsor marks a payment Sent; the project owner confirms it Received. When both agree it is recorded as Paid Offline; if the amounts differ it is flagged and either side can escalate it. Every change is kept with who made it.", "coin") +
     '<div class="section-gap"></div>' +
     hmStrip(
       [
@@ -1521,8 +1667,8 @@ function spPayTab(x, p) {
     ) +
     card(
       "Payment status",
-      "A milestone’s payment is created when the milestone is agreed, and becomes Due when the sponsor approves it. " + (role() === "A" ? "You can read these records; only the two sides update them." : ""),
-      table(["Ref", "For", "Amount", "Due date", "Status", "Offline reference", "Last update", ""], rows, "No payment records yet. They are created when a milestone with an amount is agreed."),
+      "A milestone’s payment is created when the milestone is agreed, and becomes Due when the sponsor approves it. It is Paid Offline once the sponsor has marked it Sent and the project owner has confirmed it Received. " + (role() === "A" ? "You can read these records; only the two sides update them." : ""),
+      table(["Ref", "For", "Amount", "Due date", "Status", "Sent (sponsor)", "Received (team)", "Offline reference", "Last update", ""], rows, "No payment records yet. They are created when a milestone with an amount is agreed."),
       side && !ro ? B(ic("plus", 14) + "Add payment record", "spPayNew", { r: x.id }, "btn-s btn-sm") : "",
       "sp-paytbl",
     )
@@ -1537,11 +1683,11 @@ A.spPayNew = (d) => {
   modal(
     "Add a payment record",
     () =>
-      `<form data-f="sppn" class="col fgap" novalidate>${errSum("sppn")}<input type="hidden" name="r" value="${x.id}"><div class="f2">${fi("sppn", "kind", "What it is for", { type: "select", opts: ["Advance", "Expenses", "Other"] })}${fi("sppn", "amount", "Amount (" + h(spCur(p)) + ")", { type: "number", req: true, min: 0.01, step: "0.01" })}</div><div class="f2">${fi("sppn", "status", "Status", { type: "select", opts: PAY_MANUAL })}${fi("sppn", "due", "Due date (optional)", { type: "date" })}</div>${fi("sppn", "note", "Note", { type: "textarea", rows: 2, max: 1000, help: "What was agreed about this payment." })}${banner("info", "", "Milestone payments are created automatically when a milestone is agreed. " + SP_OFFLINE)}<div class="actions">${B("Cancel", "closeM")}<button class="btn btn-p" type="submit">Add record</button></div></form>`,
+      `<form data-f="sppn" class="col fgap" novalidate>${errSum("sppn")}<input type="hidden" name="r" value="${x.id}"><div class="f2">${fi("sppn", "kind", "What it is for", { type: "select", opts: ["Advance", "Expenses", "Other"] })}${fi("sppn", "amount", "Amount (" + h(spCur(p)) + ")", { type: "number", req: true, min: 0.01, step: "0.01" })}</div><div class="f2">${fi("sppn", "status", "Status", { type: "select", opts: PAY_HAND })}${fi("sppn", "due", "Due date (optional)", { type: "date" })}</div>${fi("sppn", "note", "Note", { type: "textarea", rows: 2, max: 1000, help: "What was agreed about this payment." })}${banner("info", "", "Milestone payments are created automatically when a milestone is agreed. " + SP_OFFLINE)}<div class="actions">${B("Cancel", "closeM")}<button class="btn btn-p" type="submit">Add record</button></div></form>`,
   );
 };
 F.sppn = (d) => {
-  if (!validate("sppn", d, { amount: ["req", "num"], status: [["fn", { f: (v) => PAY_MANUAL.includes(v), m: "Choose a status." }]] })) return render();
+  if (!validate("sppn", d, { amount: ["req", "num"], status: [["fn", { f: (v) => PAY_HAND.includes(v), m: "Choose a status. Paid Offline is recorded when the sponsor marks it Sent and the project owner confirms it Received." }]] })) return render();
   const x = byId("rooms", d.r);
   const p = spOfRoom(x);
   const y = spPayAdd(x, { ms: null, kind: d.kind || "Other", amount: +d.amount, due: d.due || "", status: d.status, note: (d.note || "").trim() }, "Recorded" + (d.note ? ": " + d.note.trim() : ""));
@@ -1569,7 +1715,7 @@ A.spPayUpd = (d) => {
       `<form data-f="sppu" class="col fgap" novalidate>${errSum("sppu")}<input type="hidden" name="r" value="${x.id}"><input type="hidden" name="p" value="${y.id}">${dl([
         ["For", spPayFor(x, y)],
         ["Current status", payPill(y.status)],
-      ])}<div class="f2">${fi("sppu", "status", "New status", { type: "select", req: true, opts: PAY_MANUAL, help: "Disputed is set only by escalating to an independent Steward." })}${fi("sppu", "amount", "Amount (" + h(spCur(p)) + ")", { type: "number", req: true, min: 0.01, step: "0.01" })}</div><div class="f2">${fi("sppu", "due", "Due date (optional)", { type: "date" })}${fi("sppu", "paidOn", "Paid on", { type: "date", maxv: today(), help: "Needed for Paid Offline." })}</div>${fi("sppu", "offRef", "Offline payment reference (optional)", { max: 80, ph: "e.g. bank transfer reference" })}${fi("sppu", "note", "Note", { type: "textarea", rows: 2, max: 1000, help: "Needed when you put a payment on hold or change its amount." })}${banner("info", "", SP_OFFLINE)}<div class="actions">${B("Cancel", "closeM")}<button class="btn btn-p" type="submit">Save status</button></div></form>`,
+      ])}<div class="f2">${fi("sppu", "status", "New status", { type: "select", req: true, opts: y.status === "Paid Offline" ? PAY_MANUAL : PAY_HAND, help: "Paid Offline is recorded when the sponsor marks the payment Sent and the project owner confirms it Received. Disputed is set only by escalating to an independent Steward." })}${fi("sppu", "amount", "Amount (" + h(spCur(p)) + ")", { type: "number", req: true, min: 0.01, step: "0.01" })}</div><div class="f2">${fi("sppu", "due", "Due date (optional)", { type: "date" })}${fi("sppu", "paidOn", "Paid on", { type: "date", maxv: today(), help: "Needed for Paid Offline." })}</div>${fi("sppu", "offRef", "Offline payment reference (optional)", { max: 80, ph: "e.g. bank transfer reference" })}${fi("sppu", "note", "Note", { type: "textarea", rows: 2, max: 1000, help: "Needed when you put a payment on hold or change its amount." })}${banner("info", "", SP_OFFLINE)}<div class="actions">${B("Cancel", "closeM")}<button class="btn btn-p" type="submit">Save status</button></div></form>`,
   );
 };
 F.sppu = (d) => {
@@ -1578,7 +1724,7 @@ F.sppu = (d) => {
   const changed = +d.amount !== +y.amount;
   if (
     !validate("sppu", d, {
-      status: [["fn", { f: (v) => PAY_MANUAL.includes(v), m: "Choose a status." }], ["fn", { f: (v) => spPayAllowed(x, y, v), m: "A milestone payment becomes Due or Paid Offline only after the sponsor approves the milestone." }]],
+      status: [["fn", { f: (v) => (y.status === "Paid Offline" ? PAY_MANUAL : PAY_HAND).includes(v), m: "Choose a status. Paid Offline is recorded when the sponsor marks it Sent and the project owner confirms it Received." }], ["fn", { f: (v) => spPayAllowed(x, y, v), m: "A milestone payment becomes Due or Paid Offline only after the sponsor approves the milestone." }]],
       amount: ["req", "num"],
       paidOn: [["fn", { f: (v, dd) => dd.status !== "Paid Offline" || (!!v && v <= today()), m: "Enter the date it was paid (today or earlier)." }]],
       note: [["fn", { f: (v, dd) => (dd.status !== "On Hold" && +dd.amount === +y.amount) || v.length >= 5, m: "Say why it is on hold or why the amount changed." }]],
@@ -1682,7 +1828,7 @@ A.spDspNew = (d) => {
   modal(
     "Escalate to an independent Steward",
     () =>
-      `<form data-f="spdn" class="col fgap" novalidate>${errSum("spdn")}<input type="hidden" name="r" value="${x.id}"><input type="hidden" name="kind" value="${d.kind}"><input type="hidden" name="s" value="${d.s}">${dl([["About", subj]])}${fi("spdn", "reason", "What is disputed, and why", { type: "textarea", rows: 4, req: true, max: 3000, help: "At least 40 characters. Refer to the agreed milestone, its acceptance criteria or the payment records." })}${fi("spdn", "want", "The outcome you are asking for", { type: "textarea", rows: 2, req: true, max: 1000 })}<div class="field"><label class="lbl" for="spdn_files">Supporting evidence (optional)</label><input id="spdn_files" class="input" type="file" name="files" multiple></div>${banner("info", "How a dispute is decided", "The Organization Admin assigns a human Steward who is not affiliated with either side. The Steward reviews the milestone and its acceptance criteria, submissions, reviews, the milestone discussion and the payment records, then decides. Both sides appear under new aliases: names and organisations are not shown to the Steward or to the other side in the dispute. Any payment involved shows as Disputed until it is resolved.")}<div class="actions">${B("Cancel", "closeM")}<button class="btn btn-p" type="submit">Escalate</button></div></form>`,
+      `<form data-f="spdn" class="col fgap" novalidate>${errSum("spdn")}<input type="hidden" name="r" value="${x.id}"><input type="hidden" name="kind" value="${d.kind}"><input type="hidden" name="s" value="${d.s}">${dl([["About", subj]])}${fi("spdn", "reason", "What is disputed, and why", { type: "textarea", rows: 4, req: true, max: 3000, help: "At least 40 characters. Refer to the agreed milestone, its acceptance criteria or the payment records." })}${fi("spdn", "want", "The outcome you are asking for", { type: "textarea", rows: 2, req: true, max: 1000 })}<div class="field"><label class="lbl" for="spdn_files">Supporting evidence (optional)</label><input id="spdn_files" class="input" type="file" name="files" multiple accept="${uploadAccept()}" title="${h(uploadRuleText())}"></div>${banner("info", "How a dispute is decided", "The Organization Admin assigns a human Steward who is not affiliated with either side. The Steward reviews the milestone and its acceptance criteria, submissions, reviews, the milestone discussion and the payment records, then decides. Both sides appear under new aliases: names and organisations are not shown to the Steward or to the other side in the dispute. Any payment involved shows as Disputed until it is resolved.")}<div class="actions">${B("Cancel", "closeM")}<button class="btn btn-p" type="submit">Escalate</button></div></form>`,
     true,
   );
 };
@@ -1957,7 +2103,7 @@ function dspView(dp) {
       "Both sides and the Steward see everything here.",
       dspThread(dp) +
         (canPost
-          ? `<form data-f="spds" class="col fgap" novalidate><input type="hidden" name="id" value="${dp.id}">${fi("spds", "t", stew ? "Question to both sides" : "Add a statement or evidence", { type: "textarea", rows: 3, req: true, max: 3000, help: "Shown under " + h(stew ? "Independent Steward" : dspAlias(dp, myId())) + ". Do not include names or organisations." })}<div class="field"><label class="lbl" for="spds_files">Files (optional)</label><input id="spds_files" class="input" type="file" name="files" multiple></div><div class="actions"><span></span><button class="btn btn-s btn-sm" type="submit">${ic("send", 14)}Post</button></div></form>`
+          ? `<form data-f="spds" class="col fgap" novalidate><input type="hidden" name="id" value="${dp.id}">${fi("spds", "t", stew ? "Question to both sides" : "Add a statement or evidence", { type: "textarea", rows: 3, req: true, max: 3000, help: "Shown under " + h(stew ? "Independent Steward" : dspAlias(dp, myId())) + ". Do not include names or organisations." })}<div class="field"><label class="lbl" for="spds_files">Files (optional)</label><input id="spds_files" class="input" type="file" name="files" multiple accept="${uploadAccept()}" title="${h(uploadRuleText())}"></div><div class="actions"><span></span><button class="btn btn-s btn-sm" type="submit">${ic("send", 14)}Post</button></div></form>`
           : ""),
     ) +
     (decide
@@ -2117,7 +2263,7 @@ route("sproom", "funding", () => {
   return (
     crumbsHtml([["My projects", "sponsorprojects"], [h(p.title), "sponsorproject", { id: p.id }], [h(x.name)]]) +
     wsBar("rooms", x) +
-    banner("info", "Your view of this " + WL(), "You see this project’s milestones, payment status and disputes. You are not a member: the team’s tasks, discussion, members and evidence stay with the team.", "lock") +
+    banner("info", "Your view of this " + WL(), "You see this project’s milestones, the evidence the team attaches to them, payment status and disputes. You are not a member: the team’s tasks, discussion, members and other evidence stay with the team.", "lock") +
     withSubnav(t, body)
   );
 });

@@ -2043,3 +2043,11 @@ button.pw-pick-i:hover {
   .pw-ed-step .lbl { white-space: normal; }
   .pw-acts { bottom: calc(-1 * var(--s-5)); }
 }
+
+/* JF-90: one heading per metric layer on the Organization Admin home */
+.hm-layer {
+  margin: var(--s-4) 0 var(--s-2);
+}
+.hm-layer:first-of-type {
+  margin-top: 0;
+}

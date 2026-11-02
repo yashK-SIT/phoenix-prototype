@@ -10,7 +10,7 @@ const SQ_STATES = ['New', 'In Progress', 'Resolved', 'Closed'];
 const SQ_OPEN = ['New', 'In Progress'];
 const SQ_TOPICS = ['Access or sign-in', 'Onboarding or agreement', 'My records or consent', 'Something is not working', 'Other'];
 const SQ_MAX_FILES = 5;
-const sqMaxMB = () => Math.min(S.settings.maxFileMB, 20);
+const sqMaxMB = () => Math.min(uploadMaxMB(), 20);
 // Accepted by extension; the browser's MIME type is used only to choose a preview.
 const SQ_EXT = { png: 'image', jpg: 'image', jpeg: 'image', gif: 'image', webp: 'image', heic: 'image', mp4: 'video', mov: 'video', webm: 'video', mp3: 'audio', m4a: 'audio', wav: 'audio', pdf: 'pdf', txt: 'text', csv: 'text', log: 'text', doc: 'doc', docx: 'doc', xlsx: 'doc', pptx: 'doc' };
 const SQ_ACCEPT = Object.keys(SQ_EXT).map(x => '.' + x).join(',');
@@ -79,8 +79,9 @@ A.sqPick = (d, el) => {
   picked.forEach(f => {
     const k = SQ_EXT[sqExt(f.name)];
     if (!k) return bad.push(`“${f.name}” is not a supported file type.`);
-    if (!f.size) return bad.push(`“${f.name}” is empty.`);
-    if (f.size > sqMaxMB() * 1048576) return bad.push(`“${f.name}” is ${sqSize(sqMB(f.size))}, over the ${sqMaxMB()} MB limit.`);
+    // JF-52: the programme's approved types, its size limit (support caps it at 20 MB) and the malware scan
+    const chk = uploadCheck([f], { where: 'Support request attachment', maxMB: 20 });
+    if (!chk.pass) return bad.push(chk.msg.replace(/ Nothing was uploaded\.$/, ''));
     if (UI.sqFiles.length >= SQ_MAX_FILES) return bad.push(`“${f.name}” was not added: up to ${SQ_MAX_FILES} files per request.`);
     if (UI.sqFiles.some(x => x.file.name === f.name && x.file.size === f.size)) return;
     UI.sqFiles.push({ key: 'st' + Date.now() + Math.random().toString(36).slice(2, 6), file: f, kind: k, url: k === 'image' ? URL.createObjectURL(f) : null });

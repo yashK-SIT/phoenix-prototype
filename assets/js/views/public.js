@@ -8,7 +8,7 @@ const DEMO = [
   ["p1", "a1", "Participant · Excelsior (pending tenant invitation)"],
   ["p9", "a9", "Participant · pathway in progress (every step status)"],
   ["p3", "a3", "Mentor · Excelsior (pending tenant invitation)"],
-  ["p13", "a13", "Facilitator / Steward (plain, no bundles)"],
+  ["p13", "a13", "Facilitator / Steward (plain, no bundles) · also Riverside Seva Trust"],
   ["p2", "a2", "Facilitator / Steward + Reviewer bundle"],
   ["p4", "a4", "Collaborator"],
   ["p5", "a5", "Organization Admin · second admin, with a mandate"],
@@ -27,7 +27,7 @@ PUB.login = () => {
  ${UI.pre?.addRole ? banner("info", "Sign in to add your new role", "We will add the " + ROLE[UI.pre.addRole.role] + " role to your existing record. No second account is created.") : ""}
  ${st === "failed" ? banner("err", "Email or password is incorrect", "Check your details and try again, or reset your password.") : ""}
  ${st === "locked" ? banner("err", "Account temporarily locked", "Too many failed attempts. Try again in 15 minutes or reset your password.") : ""}
- ${st === "deactivated" ? banner("err", "This account is deactivated", "Contact your Organization Admin.") : ""}
+ ${st === "deactivated" ? banner("err", "This account is deactivated", "It applies to every organization you belong to. Contact your organization; only the Platform Administrator can reactivate a whole account.") : ""}
  <form data-f="login" class="col auth-form" novalidate>
  ${fi(f, "email", "Email address", { type: "email", req: true, ph: "name@organisation.org", auto: "email" })}
  ${fi(f, "pw", "Password", { type: "password", req: true, auto: "current-password" })}
@@ -93,6 +93,24 @@ A.loginPick = (d) => {
 };
 let fails = {};
 function startSession(p, mfaDone) {
+  // A deactivated account cannot start a session by any sign-in route (password, demo, created-account, two-step).
+  if (!p || (p.status || "Active") !== "Active") {
+    audit("Sign-in refused", p ? p.id : "—", "Account " + (p ? p.status : "missing"), "denied");
+    UI.pre = null;
+    return go("login", { state: "deactivated" });
+  }
+  // Recheck at sign-in acceptance: if the invitation was revoked, resent, used or expired since the link was opened,
+  // no role is added and the account is not changed; the person sees the safe message and can ask again.
+  const ar = UI.pre?.addRole;
+  if (ar && ar.inv && ar.email === p.email) {
+    const iv = byId("invites", ar.inv);
+    const tok = ar.tok || iv?.token || "";
+    if (invLinkProblem(iv, tok)) {
+      UI.pre = null;
+      save();
+      return go("invite", { token: tok, stage: "signin" });
+    }
+  }
   const list = S.assign.filter((a) => a.pid === p.id);
   // First sign-in uses the primary membership (the invited context); afterwards the last-used valid context.
   let a =
@@ -105,6 +123,7 @@ function startSession(p, mfaDone) {
   // second account. The same role in the same context is not added twice.
   const dup =
     UI.pre?.addRole &&
+    UI.pre.addRole.email === p.email &&
     list.find(
       (x) => x.role === UI.pre.addRole.role && x.ctx === UI.pre.addRole.ctx,
     );
@@ -249,6 +268,15 @@ PUB.register = () => {
   const inv = UI.pre?.invite ? byId("invites", UI.pre.invite) : null;
   // Invitation-only: without a valid invitation the person requests access instead (no account is created).
   if (!inv) return PUB.apply();
+  // The invitation is rechecked while the form is open: if it was revoked, resent or expired, the form is replaced
+  // by the safe message and nothing is created.
+  const tok = UI.pre.inviteTok || inv.token;
+  if (invLinkProblem(inv, tok)) {
+    UI.pre = null;
+    UI.route = "invite";
+    UI.p = { token: tok, stage: "create" };
+    return PUB.invite();
+  }
   const r = fv(f, "role", inv ? inv.role : "P");
   const exists = UI.p.exists;
   return authWrap(
@@ -296,6 +324,13 @@ A.regRole = (d, el) => {
 };
 F.reg = (d) => {
   const inv = UI.pre?.invite ? byId("invites", UI.pre.invite) : null;
+  const tok = inv && (UI.pre.inviteTok || inv.token);
+  // Recheck at account creation: a revoked, resent, used or expired invitation creates no account.
+  if (inv && invLinkProblem(inv, tok)) {
+    UI.pre = null;
+    clearF("reg");
+    return go("invite", { token: tok, stage: "create" });
+  }
   if (inv) d.email = inv.email;
   const okv = validate("reg", d, {
     role: ["req"],
@@ -327,6 +362,7 @@ F.reg = (d) => {
         role: inv ? inv.role : selfRole(d.role),
         ctx: inv ? inv.ctx : defaultCtx(),
         inv: inv?.id,
+        tok,
       },
     };
     UI.p = { exists: 1 };
@@ -381,36 +417,89 @@ F.reg = (d) => {
   save();
   go("verify");
 };
+// ---------- JF-06 invitation lifecycle: one check, used at every step ----------
+// The same rule applies on the link page, at account creation and at sign-in acceptance, so an invitation that
+// expired, was revoked, was used or was replaced by a resend can never be accepted at a later step.
+const invOpen = (i) => !!i && ["Pending", "Resent"].includes(i.status);
+// Pending and Resent invitations both expire. The stored status is updated when expiry is noticed, so the admin
+// list and the link agree without waiting for an admin to open the list.
+function invSweep(i) {
+  if (invOpen(i) && i.expires < today()) i.status = "Expired";
+  return i;
+}
+// null when the link can still be used, otherwise the safe message. tok is the link the person opened: after a
+// resend the old link stops working even though the invitation itself is open again.
+function invLinkProblem(inv, tok) {
+  if (!inv || inv.kind === "member" || !tok || inv.token !== tok)
+    return "This link is not valid";
+  invSweep(inv);
+  if (inv.status === "Expired") return "This invitation has expired";
+  if (inv.status === "Revoked") return "This invitation was withdrawn";
+  if (inv.status === "Accepted") return "This link has already been used";
+  if (!invOpen(inv)) return "This link is not valid";
+  return null;
+}
+const INV_STAGE = {
+  create: ["at account creation", "No account was created."],
+  signin: [
+    "at sign-in acceptance",
+    "Your existing account was not changed and no role was added. You can still sign in as usual.",
+  ],
+};
+// Seeded links are dated relative to today so the valid-link test keeps working; earlier stored data is refreshed
+// once (only links nobody has used, revoked or resent).
+function invMigrate() {
+  if (S.jf06) return;
+  const sd = seed().invites;
+  ["i1", "i5"].forEach((id) => {
+    const x = byId("invites", id),
+      s = sd.find((i) => i.id === id);
+    if (x && s && ["Pending", "Expired"].includes(x.status))
+      Object.assign(x, { status: "Pending", expires: s.expires, sent: s.sent });
+  });
+  S.jf06 = 1;
+}
 // Invitation link
 PUB.invite = () => {
-  const tok = UI.p.token;
-  const inv = tok ? S.invites.find((i) => i.token === tok.trim()) : null;
+  const tok = UI.p.token && UI.p.token.trim();
+  const inv = tok ? S.invites.find((i) => i.token === tok) : null;
   if (!tok)
     return authWrap(
       `<h1 class="h1">Open your invitation</h1><p class="muted">Paste the code from your invitation email, or open the link in the email directly.</p><form data-f="tok" class="col auth-form" novalidate>${fi("tok", "token", "Invitation code", { req: true, ph: "TKN-…" })}<button class="btn btn-p btn-block" type="submit">Continue</button></form><div class="col auth-codes"><span class="cap">Invitation codes:</span><div class="row wrap">${S.invites.filter((i) => i.token).map((i) => `<button class="chip auth-chip" type="button" data-a="go" data-r="invite" data-token="${i.token}">${i.token}</button>`).join("")}<button class="chip auth-chip" type="button" data-a="go" data-r="invite" data-token="TKN-UNKNOWN">TKN-UNKNOWN</button></div></div>${L("Back to sign in", "login")}`,
     );
-  const bad = !inv
-    ? "This link is not valid"
-    : inv.status === "Expired" ||
-        (inv.expires < today() && inv.status === "Pending")
-      ? "This invitation has expired"
-      : inv.status === "Revoked"
-        ? "This invitation was withdrawn"
-        : inv.status === "Accepted"
-          ? "This link has already been used"
-          : null;
+  const bad = invLinkProblem(inv, tok);
+  const stage = INV_STAGE[UI.p.stage];
   if (bad) {
+    // every denial is recorded once; the account is never changed here
     if (!UI.p.logged) {
-      audit("Invitation link denied", tok, bad, "denied");
+      audit(
+        "Invitation link denied",
+        inv ? inv.id : tok,
+        bad + (stage ? " — " + stage[0] : ""),
+        "denied",
+      );
       UI.p.logged = 1;
       save();
     }
     if (UI.p.requested)
       return authWrap(
-        `<span class="tile t-teal auth-ic" aria-hidden="true">${ic("check", 22)}</span><h1 class="h1">Request sent</h1><p class="muted">We have asked the administrator for this context to send you a new invitation.</p>${B("Back to sign in", "go", { r: "login" }, "btn-s")}`,
+        `<span class="tile t-teal auth-ic" aria-hidden="true">${ic("check", 22)}</span><h1 class="h1">Request sent</h1><p class="muted">We have asked the Organization Admins of ${h(ctxName(inv.ctx))} to send you a new invitation.</p>${B("Back to sign in", "go", { r: "login" }, "btn-s")}`,
       );
+    const used = inv?.status === "Accepted";
+    const note =
+      (stage ? stage[1] + " " : "") +
+      (used
+        ? "Each invitation link works once. If it was you, sign in instead."
+        : inv
+          ? "Ask for a new invitation below. For your security, this attempt has been recorded."
+          : "For your security, this attempt has been recorded.");
+    // A known link names its organization, so the request goes only to that organization's admins. An unknown
+    // link names none: the person uses Request access, where they choose the programme and its admins review it.
+    const ask = inv
+      ? `<form data-f="reinv" class="col auth-form" novalidate>${fi("reinv", "email", "Your email address", { type: "email", req: true, value: inv.email })}${fi("reinv", "msg", "Message to the administrator", { type: "textarea", rows: 3 })}<p class="cap">Sent to the Organization Admins of ${h(ctxName(inv.ctx))}.</p><button class="btn btn-p btn-block" type="submit">Request a new invitation</button></form>`
+      : `<p class="muted">We cannot tell which organization this link came from. Ask to join instead: the organization's admin reviews the request and, if approved, sends you a new invitation.</p>${B("Request access", "go", { r: "apply" }, "btn-p btn-block")}`;
     return authWrap(
-      `<h1 class="h1">Invitation link not valid</h1>${banner("err", bad, inv?.status === "Accepted" ? "Each invitation link works once. If it was you, sign in instead." : "Ask for a new invitation below. For your security, this attempt has been recorded.")}${inv?.status === "Accepted" ? B("Sign in", "go", { r: "login" }, "btn-s") : ""}<form data-f="reinv" class="col auth-form" novalidate>${fi("reinv", "email", "Your email address", { type: "email", req: true, value: inv?.email })}${fi("reinv", "msg", "Message to the administrator", { type: "textarea", rows: 3 })}<button class="btn btn-p btn-block" type="submit">Request a new invitation</button></form>`,
+      `<h1 class="h1">Invitation link not valid</h1>${banner("err", bad, note)}${used || stage ? B("Sign in", "go", { r: "login" }, "btn-s") : ""}${ask}`,
     );
   }
   const c = S.contexts.find((x) => x.id === inv.ctx);
@@ -424,36 +513,71 @@ PUB.invite = () => {
    ["Valid until", fmt(inv.expires)],
  ])}</div>
  ${inv.preApproved ? banner("info", "Already approved", "The Platform Administrator appointed you to this role. It is active as soon as your account is set up.") : roleNeedsApproval(roleBase(inv.role)) ? banner("warn", "This role needs approval", "After you register, an authorised approver must approve it before it becomes active.") : ""}
- ${exists ? banner("info", "You already have a PHOENIX account", "Sign in and this role is added to your existing record.") + B("Sign in to accept", "acceptInvExisting", { id: inv.id }, "btn-p btn-block") : B("Accept and create account", "acceptInv", { id: inv.id }, "btn-p btn-block")}
+ ${exists ? banner("info", "You already have a PHOENIX account", "Sign in and this role is added to your existing record.") + B("Sign in to accept", "acceptInvExisting", { id: inv.id, tok }, "btn-p btn-block") : B("Accept and create account", "acceptInv", { id: inv.id, tok }, "btn-p btn-block")}
  <p class="cap">This link works once.</p>`);
 };
 F.tok = (d) => {
   if (!validate("tok", d, { token: ["req"] })) return render();
   go("invite", { token: d.token.trim() });
 };
+// A new-invitation request goes only to the active Organization Admins of the invitation's own context, into their
+// assignment there, and is marked on the invitation so the admin can resend it from the list.
 F.reinv = (d) => {
   if (!validate("reinv", d, { email: ["req", "email"] })) return render();
+  const tok = UI.p.token && UI.p.token.trim();
+  const inv = tok && S.invites.find((i) => i.token === tok);
+  if (!inv) return go("apply");
   S.assign
-    .filter((a) => roleBase(a.role) === "A")
+    .filter(
+      (a) =>
+        roleBase(a.role) === "A" && a.ctx === inv.ctx && a.status === "Active",
+    )
     .forEach((a) =>
-      notify(a.pid, `New invitation requested by ${d.email}`, "admin", {
-        tab: "invites",
-      }),
+      notify(
+        a.pid,
+        `New invitation requested by ${d.email} (${roleName(inv.role, inv.ctx)})`,
+        "admin",
+        { tab: "invites" },
+        a.id,
+      ),
     );
-  audit("New invitation requested", d.email, d.msg || "");
+  inv.renew = { at: today(), email: d.email.trim(), msg: d.msg || "" };
+  audit(
+    "New invitation requested",
+    inv.id,
+    ctxName(inv.ctx) + " · " + d.email + (d.msg ? " · " + d.msg : ""),
+  );
+  clearF("reinv");
   save();
   UI.p.requested = 1;
   render();
 };
+// Accepting rechecks the link: the page may have been open while the admin revoked or resent it.
+const invGate = (d, stage) => {
+  const inv = byId("invites", d.id);
+  if (!invLinkProblem(inv, d.tok)) return inv;
+  UI.pre = null;
+  go("invite", { token: d.tok || "", ...(stage ? { stage } : {}) });
+  return null;
+};
 A.acceptInv = (d) => {
-  UI.pre = { invite: d.id };
+  const inv = invGate(d);
+  if (!inv) return;
+  UI.pre = { invite: inv.id, inviteTok: d.tok };
   clearF("reg");
   go("register");
 };
 A.acceptInvExisting = (d) => {
-  const inv = byId("invites", d.id);
+  const inv = invGate(d);
+  if (!inv) return;
   UI.pre = {
-    addRole: { email: inv.email, role: inv.role, ctx: inv.ctx, inv: inv.id },
+    addRole: {
+      email: inv.email,
+      role: inv.role,
+      ctx: inv.ctx,
+      inv: inv.id,
+      tok: d.tok,
+    },
   };
   go("login");
 };
@@ -531,13 +655,42 @@ PUB.pending = () => {
     UI.pre = { verifyPid: a.pid };
     return PUB.verify();
   }
+  // JF-10: the reason shown is the broadest one that applies, from the whole account down to one role.
+  const other = S.assign.some((x) => x.pid === myId() && x.id !== a.id && asgUsable(x));
+  const sw = other ? B("Switch to another organization or role", "switcher", {}, "btn-p btn-block") : "";
+  const recs = B("My records & consent", "go", { r: "privacy" }, "btn-s btn-block");
+  const out = B("Sign out", "logout", {}, "btn-s btn-block");
+  if (!acctActive(a.pid))
+    return authWrap(
+      `<h1 class="h1">Account deactivated</h1>${banner("err", "Your PHOENIX account is deactivated", "This applies to every organization you belong to. Contact the Platform Administrator through your organization.")}${out}`,
+    );
+  const sus = ctxSusp(a.pid, a.ctx);
+  if (sus)
+    return authWrap(
+      `<h1 class="h1">Access to ${h(ctxName(a.ctx))} suspended</h1>${banner("err", "Your access to " + h(ctxName(a.ctx)) + " is suspended", "Since " + fmt(sus.at) + ". Contact an Organization Admin of " + h(ctxName(a.ctx)) + " if you think this is wrong.")}${banner("info", "", "This affects " + h(ctxName(a.ctx)) + " only. Your account, your roles in other organizations and your personal records are not affected.")}${sw}${recs}${out}`,
+    );
+  if ((S.contexts.find((c) => c.id === a.ctx) || {}).status === "Suspended")
+    return authWrap(
+      `<h1 class="h1">${h(ctxName(a.ctx))} is suspended</h1>${banner("err", h(ctxName(a.ctx)) + " is not available at the moment", "This affects everyone in it. Your account, your other organizations and your personal records are not affected.")}${sw}${recs}${out}`,
+    );
   if (a.status === "Deactivated")
     return authWrap(
-      `<h1 class="h1">Access deactivated</h1>${banner("err", "Your " + roleName(a.role, a.ctx) + " access in " + h(ctx().name) + " is deactivated", "Contact your Organization Admin. Your consent, correction and export rights continue.")}${S.assign.filter((x) => x.pid === myId()).length > 1 ? B("Switch to another role", "switcher", {}, "btn-s btn-block") : ""}${B("Sign out", "logout", {}, "btn-s btn-block")}`,
+      `<h1 class="h1">Access deactivated</h1>${banner("err", "Your " + roleName(a.role, a.ctx) + " access in " + h(ctx().name) + " is deactivated", "Contact your Organization Admin. Your account and your other roles are not affected; your consent, correction and export rights continue.")}${sw}${recs}${out}`,
     );
   const declined = a.status === "Role not activated";
   return `<div class="auth solo"><main class="auth-main"><section class="auth-card">${declined ? `<h1 class="h1">Role not activated</h1>${banner("err", `The approver did not approve the ${roleName(a.role, a.ctx)} role`, h(a.approval?.slice(-1)[0]?.note || "") + " Your account still exists; other roles are unaffected.")}` : `<span class="tile t-purple auth-ic" aria-hidden="true">${ic("clock", 22)}</span><h1 class="h1">Your role is awaiting approval</h1><p class="sub">The <b>${roleName(a.role, a.ctx)}</b> role in <b>${h(ctx().name)}</b> needs approval from an authorised approver before it becomes active.</p><div class="timeline"><div class="tl done"><span class="td">${ic("check", 14)}</span>Registered</div><div class="tl done"><span class="td">${ic("check", 14)}</span>Email verified</div><div class="tl cur"><span class="td">3</span>Role approval</div><div class="tl"><span class="td">4</span>Agreement</div></div>${banner("info", "", "We will notify you when a decision is made.")}`}
  ${S.assign.filter((x) => x.pid === myId()).length > 1 ? B("Switch to another role", "switcher", {}, "btn-s btn-block") : ""}${B("Sign out", "logout", {}, "btn-s btn-block")}</section></main></div>`;
+};
+// Personal records while the current role cannot be used: the person's own consent, agreements and data, without
+// the blocked organization's menu or content.
+PUB.ownRecords = () => {
+  let inner;
+  try {
+    inner = ROUTES.privacy.view();
+  } catch (e) {
+    inner = banner("err", "Something went wrong on this screen", h(e.message));
+  }
+  return `<div class="auth solo"><main class="auth-main"><section class="auth-card wide">${B(ic("chevl", 16) + "Back", "go", { r: "home" }, "btn-s btn-sm")}${inner}</section></main></div>`;
 };
 // LMS deep-link entry (7.13)
 PUB.lms = () =>

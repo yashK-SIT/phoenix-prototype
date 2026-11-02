@@ -687,7 +687,9 @@ function analyseHarvest(x) {
     });
   return out;
 }
-// Runs once, when the Harvest is approved. Creates Pending suggestions only.
+// Runs once, when the Harvest is approved. Creates Pending suggestions only. JF-59: suggestions come from the
+// learning sections only (analyseHarvest); dissent, negative findings and collaborator notes — team disagreement and
+// what is said about other people — are never read, so a team conflict never reaches a profile.
 function evoGenerate(x) {
   if (x.evoAt || !x.subject) return [];
   const list = analyseHarvest(x);
@@ -1485,7 +1487,6 @@ A.proposePathway = (d) => {
   clearF("pp");
   const rq = d.req && byId("pwReqs", d.req);
   UI.form.pp = { pid: d.pid, mode: "1", req: d.req || "" };
-  const dir = role() === "F";
   modal("Recommend a pathway to " + nm(d.pid), () => {
     const m = fv("pp", "mode", "1");
     const tpl = byId("templates", fv("pp", "tpl"));
@@ -1496,17 +1497,11 @@ A.proposePathway = (d) => {
       rq ? banner("info", nm(d.pid) + " asked for a recommendation", "“" + h(rq.goal) + "”") : ""
     }${fi("pp", "mode", "What you recommend", {
       type: "select",
-      opts: dir
-        ? [
-            ["1", "1 · Approved template, unchanged"],
-            ["2", "2 · Adapted from a template"],
-            ["3", "3 · Custom pathway"],
-          ]
-        : [
-            ["1", "1 · Approved template, unchanged (no review)"],
-            ["2", "2 · Adapted from a template (review only if outside its rules)"],
-            ["3", "3 · Custom pathway (an authorised Reviewer approves it first)"],
-          ],
+      opts: [
+        ["1", "1 · Approved template, unchanged (no review)"],
+        ["2", "2 · Adapted from a template (review only if outside its rules)"],
+        ["3", "3 · Custom pathway (an authorised Reviewer approves it first)"],
+      ],
       help: "The form below changes to match.",
       ch: "ppRefresh",
     })}${m !== "3" ? fi("pp", "tpl", "Approved template", { type: "select", req: true, ch: "ppRefresh", ph: "Select an approved template", opts: S.templates.filter((t) => t.status === "Approved").map((t) => [t.id, t.name + " · v" + tplVer(t)]) }) : fi("pp", "name", "Pathway name", { req: true })}${
@@ -1516,14 +1511,14 @@ A.proposePathway = (d) => {
         ? env
           ? env.ok
             ? banner("ok", "Within the template’s adaptation rules", "It goes straight to " + nm(d.pid) + " to accept. Press “Check adaptation rules” again after changing steps.")
-            : banner("warn", "Outside the template’s adaptation rules", h(env.why.join("; ")) + (dir ? ". It still goes straight to " + nm(d.pid) + ", recorded as adapted outside the template’s rules." : ". An authorised Reviewer approves it before " + nm(d.pid) + " sees it."))
-          : banner("info", "Adaptation rules (assumed rule)", "Keep every Mandatory step of the template as it is. Optional and Conditional steps may be added, removed or reworded." + (dir ? "" : " Anything else needs a Reviewer.") + " Press “Check adaptation rules” after editing the steps.")
+            : banner("warn", "Outside the template’s adaptation rules", h(env.why.join("; ")) + ". An authorised Reviewer approves it before " + nm(d.pid) + " sees it.")
+          : banner("info", "Adaptation rules (assumed rule, pending WSS confirmation)", "Keep every Mandatory step of the template as it is. Optional and Conditional steps may be added, removed or reworded. Anything else needs a Reviewer. Press “Check adaptation rules” after editing the steps.")
         : ""
     }${fi("pp", "reason", "Why you recommend it", { type: "textarea", rows: 2, req: true, max: 300, help: "Shown to " + nm(d.pid) + " with your name and role." })}${
       circles.length
         ? fi("pp", "circle", "Connect to a Circle you steward (optional)", { type: "select", opts: [["", "No Circle"], ...circles.map((c) => [c.id, c.name])], help: "Links the pathway to that Circle’s learning and action. You recommend as its Circle Steward." })
         : ""
-    }${banner("info", "", (dir ? "Sent straight to " + nm(d.pid) + " — no further approval. " : "") + nm(d.pid) + " must accept before it becomes their pathway. They can reject it or ask for changes without losing access to anything else.")}<div class="actions">${m === "2" ? B("Check adaptation rules", "ppRefresh") : "<span></span>"}<button class="btn btn-p" type="submit">Send recommendation</button></div></form>`;
+    }${banner("info", "", (m === "3" ? "An authorised Reviewer approves it first. " : "") + nm(d.pid) + " must accept before it becomes their pathway. They can reject it or ask for changes without losing access to anything else.")}<div class="actions">${m === "2" ? B("Check adaptation rules", "ppRefresh") : "<span></span>"}<button class="btn btn-p" type="submit">Send recommendation</button></div></form>`;
   }, true);
 };
 A.ppRefresh = () => {
@@ -1877,7 +1872,7 @@ A.pwFact = (d) => {
 };
 // ---- prior evidence. A suggestion never completes a step. The participant (or a Reviewer) selects the evidence;
 // where review is required: Evidence proposed → Reviewer approved → Satisfied by prior evidence, with provenance.
-const pwStepReviewers = (p) => [...new Set(S.assign.filter((a) => a.ctx === p.ctx && a.status === "Active" && (a.bundles || []).includes("Reviewer") && a.pid !== p.pid).map((a) => a.pid))];
+const pwStepReviewers = (p) => [...new Set(S.assign.filter((a) => a.ctx === p.ctx && a.status === "Active" && bundleActive(a, "Reviewer") && a.pid !== p.pid).map((a) => a.pid))];
 function pwApplyPrior(p, i, ev, by, okBy, why) {
   const s = p.steps[i];
   delete s.pend;
@@ -2297,11 +2292,20 @@ function profileMigrate() {
     if (r) p.steps.forEach((st, i) => fill(st, r.steps[i]));
   });
   sd.evidence.filter((e) => e.id === "ev6").forEach((e) => !byId("evidence", e.id) && byId("people", e.owner) && S.evidence.push(cp(e)));
-  // Facilitator / Circle Steward recommendations no longer wait for a Reviewer: any still queued go to the participant.
+  // JF-23: the AI mode was a label only.
   S.pathways.forEach((p) => {
-    if (!pwDirect(p) || !["Awaiting reviewer", "In review", "Clarification requested"].includes(p.state)) return;
-    Object.assign(p, { state: PW_REC, reviewer: null, reviewNote: "" });
-    (p.activity = p.activity || []).push({ at: now(), by: null, t: "Sent directly to the participant (the Reviewer step for Facilitator recommendations was removed)" });
+    if (p.mode === "3 · AI or custom pathway") p.mode = PW_MODE.custom;
+  });
+  // JF-23: a custom or out-of-rules pathway sent to the participant without Reviewer approval (earlier Facilitator
+  // exemption) goes back to the Reviewer queue. Approvals already recorded in the activity log are kept.
+  S.pathways.forEach((p) => {
+    if (p.approvedBy || !pwNeedsReview(p)) return;
+    const ap = (p.activity || []).find((x) => /^Approved by /.test(x.t || "") && x.by);
+    if (ap) return Object.assign(p, { approvedBy: ap.by, approvedAt: ap.at });
+    if (p.state !== PW_REC) return;
+    Object.assign(p, { state: "Awaiting reviewer", reviewer: null, reviewNote: "" });
+    pwReqSet(p, "With reviewer");
+    p.activity.push({ at: now(), by: null, t: "Returned to the Reviewer queue: custom and out-of-rules pathways need Reviewer approval from every recommender (JF-23)" });
   });
   // requests answered before their status followed the participant's decision
   (S.pwReqs || []).forEach((q) => {
@@ -2376,7 +2380,7 @@ CONVO.pathway = {
           ? "Participant"
           : ctxAdmins(p.ctx).includes(pid)
             ? "Organization Admin"
-            : S.assign.some((a) => a.pid === pid && a.bundles.includes("Reviewer"))
+            : S.assign.some((a) => a.pid === pid && bundleActive(a, "Reviewer"))
               ? "Reviewer"
               : "",
   post: (p) =>
@@ -2412,15 +2416,16 @@ const pwCanView = (p) =>
     (role() === "M" && myRopes().some((rt) => memberOf(rt, p.pid))));
 // ---- Recommend Pathways (WSS clarification 1). A recommendation is an action over the pathway system, not a third
 // pathway engine. Unchanged approved template → straight to the participant; adaptation within the template's rules →
-// straight to the participant; custom, AI-drafted or outside the rules → an authorised Reviewer first. In every case
-// the participant accepts the version that becomes current.
+// straight to the participant; custom or outside the rules → an authorised Reviewer first, whoever recommends it
+// (JF-23). In every case the participant accepts the version that becomes current. PHOENIX does not draft pathways
+// with AI, so there is no separate AI mode; an AI-drafted pathway would be treated as custom.
 const PW_REC = "Recommended";
 const tplVer = (t) => (t && t.ver) || 1;
 const PW_MODE = {
   template: "1 · Pre-approved template",
   adapted: "2 · Adapted pathway",
   outside: "2 · Adapted pathway (outside template rules)",
-  custom: "3 · AI or custom pathway",
+  custom: "3 · Custom pathway",
 };
 // Facilitators / Circle Stewards recommend to participants in their context; Mentors only to participants in their Rope Teams.
 const pwCanRecommend = (pid) =>
@@ -2431,8 +2436,9 @@ const pwCanRecommend = (pid) =>
   (role() === "F" || myRopes().some((rt) => memberOf(rt, pid)));
 // Circles this person stewards that the participant belongs to; a recommendation can be connected to one.
 const pwStewardCircles = (pid) => (role() === "F" ? S.circles.filter((c) => inCtx(c) && c.facilitator === myId() && memberOf(c, pid)) : []);
-// Assumed rule (adaptation envelope): every Mandatory template step is kept with the same wording and still Mandatory;
-// Optional and Conditional steps may be added, removed or reworded; 3–5 steps in total (checked by the step editor).
+// Adaptation envelope — ASSUMED RULE, pending WSS confirmation (JF-23): every Mandatory template step is kept with the
+// same wording and still Mandatory; Optional and Conditional steps may be added, removed or reworded; 3–5 steps in
+// total (checked by the step editor). Change it here only; every route uses this one check.
 function pwEnvelope(tpl, steps) {
   if (!tpl) return { ok: false, why: ["it is not based on an approved template"] };
   const key = (t) => String(t || "").trim().toLowerCase();
@@ -2445,10 +2451,13 @@ const pwUnchanged = (tpl, steps) => !!tpl && pwStepsSig(steps) === pwStepsSig(pw
 // → template | adapted | outside | custom. Only template and adapted skip the Reviewer.
 const pwRoute = (tpl, steps, custom) => (custom || !tpl ? "custom" : pwUnchanged(tpl, steps) ? "template" : pwEnvelope(tpl, steps).ok ? "adapted" : "outside");
 const pwSkipsReview = (route) => route === "template" || route === "adapted";
-// A Facilitator or Circle Steward's recommendation goes straight to the participant on every route: no Reviewer and no
-// Organization Admin step. Mentor recommendations and a participant's own pathways still go to a Reviewer.
-const pwDirect = (p) => !!p && p.by !== p.pid && p.byRole !== "Mentor";
-const pwSends = (p, route) => pwSkipsReview(route) || pwDirect(p);
+// JF-23: the route alone decides, never the recommender's role. Custom and out-of-rules pathways from a Facilitator,
+// Circle Steward, Mentor or the participant go to an authorised Reviewer before the participant sees them.
+const pwSends = (p, route) => pwSkipsReview(route);
+// A pathway that needed review and has not been approved by a Reviewer cannot be accepted (guards.js pwAccept).
+const pwNeedsReview = (p) =>
+  !!p && (p.by === p.pid || !p.tpl || String(p.mode).startsWith("3") || p.mode === PW_MODE.outside);
+const pwApprovedOk = (p) => !pwNeedsReview(p) || !!p.approvedBy;
 // The request a recommendation answered follows it: Recommended → Accepted / Rejected / Changes requested.
 const PW_REQ_C = { Open: "p-amber", Recommended: "p-blue", "With reviewer": "p-grey", "Changes requested": "p-amber", Accepted: "p-green", Rejected: "p-red", Withdrawn: "p-grey", Answered: "p-green" };
 function pwReqSet(p, status) {
@@ -2458,7 +2467,7 @@ function pwReqSet(p, status) {
 // Authorised reviewers: active Reviewer-bundle holders in the pathway's context, never its author or participant.
 // Pathways go to this shared queue; the Organization Admin steps in only when nobody can review.
 const pwReviewers = (p) =>
-  [...new Set(S.assign.filter((a) => a.ctx === p.ctx && a.status === "Active" && (a.bundles || []).includes("Reviewer") && a.pid !== p.by && a.pid !== p.pid).map((a) => a.pid))];
+  [...new Set(S.assign.filter((a) => a.ctx === p.ctx && a.status === "Active" && bundleActive(a, "Reviewer") && a.pid !== p.by && a.pid !== p.pid).map((a) => a.pid))];
 const pwCanReview = (p) => !!p && (p.reviewer ? p.reviewer === myId() : p.state === "Awaiting reviewer" && hasB("Reviewer") && pwReviewers(p).includes(myId()));
 function pwToQueue(p) {
   p.submitted = p.submitted || today();
@@ -2519,8 +2528,8 @@ F.pp = (d) => {
       : route === "adapted"
         ? `Adapted the approved template “${tpl.name}” v${p.tplVer} within its rules and recommended it`
         : route === "outside"
-          ? `Adapted the approved template “${tpl.name}” v${p.tplVer} outside its rules (${pwEnvelope(tpl, steps).why.join("; ")}) — ${pwDirect(p) ? "sent directly to the participant" : "sent for Reviewer approval"}`
-          : "Drafted a custom pathway (mode 3) — " + (pwDirect(p) ? "sent directly to the participant" : "sent for Reviewer approval"),
+          ? `Adapted the approved template “${tpl.name}” v${p.tplVer} outside its rules (${pwEnvelope(tpl, steps).why.join("; ")}) — sent for Reviewer approval`
+          : "Drafted a custom pathway (mode 3) — sent for Reviewer approval",
   );
   S.pathways.push(p);
   const sent = pwSends(p, route);
@@ -2689,7 +2698,7 @@ function pwToReviewCard() {
   return (
     card(
       "Pathways waiting for your review <span class=\"adm-n\">" + mine.length + "</span>",
-      "Custom pathways, and adaptations outside a template’s rules, from participants and Mentors come here without Organization Admin assignment. Facilitator and Circle Steward recommendations go straight to the participant and never come here. Approving a pathway someone recommended sends it to the participant to accept; a participant’s own pathway becomes current. Pathways waiting on the creator stay here until they are resubmitted.",
+      "Custom pathways, and adaptations outside a template’s rules, come here from every recommender — Facilitator, Circle Steward, Mentor or the participant — without Organization Admin assignment. You never see your own pathways or pathways for you. Approving a pathway someone recommended sends it to the participant to accept; a participant’s own pathway becomes current. Pathways waiting on the creator stay here until they are resubmitted.",
       dataView("pathway:toreview", {
         label: "pathways",
         items: mine,
@@ -2905,7 +2914,7 @@ F.pwn = (d) => {
 // pathways go to the shared Reviewer queue. Candidates: Reviewer-bundle holders and Facilitators / Stewards.
 const pwStewards = (p) =>
   S.assign
-    .filter((a) => a.ctx === p.ctx && a.status === "Active" && a.pid !== p.by && a.pid !== p.pid && (roleBase(a.role) === "F" || (a.bundles || []).includes("Reviewer")))
+    .filter((a) => a.ctx === p.ctx && a.status === "Active" && a.pid !== p.by && a.pid !== p.pid && (roleBase(a.role) === "F" || bundleActive(a, "Reviewer")))
     .filter((a, i, all) => all.findIndex((b) => b.pid === a.pid) === i);
 // Needs the Organization Admin only when nobody can pick it up.
 const pwNeedsSteward = (p) => (p.state === "Awaiting reviewer" && !pwReviewers(p).length) || (p.state === "In review" && !p.reviewer);
@@ -2918,7 +2927,7 @@ A.pwAssign = (d) => {
     () =>
       `<form data-f="pwas" class="col pf-form" novalidate><input type="hidden" name="id" value="${p.id}">${dl([["Pathway", h(p.name)], ["Created by", nm(p.by)], ["For", nm(p.pid)], ["Steps", p.steps.map((s) => h(s.t)).join(" → ")], p.reviewer && ["Current Steward", nm(p.reviewer)]])}${
         rv.length
-          ? fi("pwas", "rv", "Reviewer", { type: "select", req: true, ph: "Choose a reviewer", value: p.reviewer || "", opts: rv.map((a) => [a.pid, P(a.pid).name + " · " + roleName(a.role, a.ctx) + ((a.bundles || []).includes("Reviewer") ? " + Reviewer bundle" : "")]), help: "Reviewer-bundle holders and Facilitators / Stewards in this programme. The creator and the participant cannot approve it." })
+          ? fi("pwas", "rv", "Reviewer", { type: "select", req: true, ph: "Choose a reviewer", value: p.reviewer || "", opts: rv.map((a) => [a.pid, P(a.pid).name + " · " + roleName(a.role, a.ctx) + (bundleActive(a, "Reviewer") ? " + Reviewer bundle" : "")]), help: "Reviewer-bundle holders and Facilitators / Stewards in this programme. The creator and the participant cannot approve it." })
           : banner("warn", "No reviewer available in this programme", "Grant the Reviewer bundle or invite a Facilitator / Steward from " + L("Programme admin → Invitations", "admin", { tab: "invites" }) + ", then assign them here.")
       }${banner("info", "", "Optional. Pathways normally go to the shared Reviewer queue without assignment. Assigning a named reviewer takes it out of the queue.")}<div class="actions"><span></span><button class="btn btn-p" type="submit" ${rv.length ? "" : "disabled"}>${p.reviewer ? "Change reviewer" : "Assign reviewer"}</button></div></form>`,
   );
@@ -3013,7 +3022,10 @@ const pwPickUp = (p) => {
 };
 A.pwDec = (d) => {
   const p = byId("pathways", d.id);
-  if (d.v === "Current") pwPickUp(p);
+  if (d.v === "Current") {
+    pwPickUp(p);
+    Object.assign(p, { approvedBy: myId(), approvedAt: now() });
+  }
   // A pathway someone else wrote for the participant still needs the participant's acceptance after approval.
   if (d.v === "Current" && p.by !== p.pid) {
     p.state = PW_REC;
@@ -3185,7 +3197,7 @@ A.pwRevise = (d) => {
   modal(
     "Revise and re-propose",
     () =>
-      `<form data-f="pwv" class="col pf-form" novalidate>${errSum("pwv")}<input type="hidden" name="id" value="${p.id}">${p.changeReq ? banner("warn", "Change requested", h(p.changeReq)) : ""}${pwStepFields("pwv")}${fi("pwv", "note", "What you changed", { req: true })}${banner("info", "", pwDirect(p) ? "It goes straight back to " + nm(p.pid) + " to accept or reject." : pwCustom(p) ? "Custom pathways go back to a Reviewer before the participant sees them." : "If the revised steps stay within the template’s adaptation rules, it goes straight back to the participant to accept; otherwise a Reviewer approves it first.")}<div class="actions"><span></span><button class="btn btn-p" type="submit">Re-recommend</button></div></form>`, true,
+      `<form data-f="pwv" class="col pf-form" novalidate>${errSum("pwv")}<input type="hidden" name="id" value="${p.id}">${p.changeReq ? banner("warn", "Change requested", h(p.changeReq)) : ""}${pwStepFields("pwv")}${fi("pwv", "note", "What you changed", { req: true })}${banner("info", "", pwCustom(p) ? "Custom pathways go back to a Reviewer before the participant sees them." : "If the revised steps stay within the template’s adaptation rules, it goes straight back to the participant to accept; otherwise a Reviewer approves it first.")}<div class="actions"><span></span><button class="btn btn-p" type="submit">Re-recommend</button></div></form>`, true,
   );
 };
 // Steps read back from the editor keep the template wording of a step whose title was reworded (minor change).
@@ -3197,6 +3209,7 @@ F.pwv = (d) => {
   const p = byId("pathways", d.id);
   p.steps = pwKeepTplT(p.steps, pwStepsRead(d));
   p.partChange = false;
+  p.approvedBy = p.approvedAt = null; // changed steps need a fresh approval where review applies
   const route = pwRoute(byId("templates", p.tpl), p.steps, pwCustom(p));
   if (!pwCustom(p)) p.mode = PW_MODE[route];
   p.changeReq = "";
@@ -3232,7 +3245,7 @@ A.pwStep = (d) => {
           s.type === "Conditional" && ["Applies when", h(pwWhenTxt(s))],
           s.review && ["Review", "A Reviewer checks this completion. The step shows Pending review until they decide."],
         ],
-      )}${s.early ? banner("info", "Earlier completion record", `You recorded this step on ${fmt(s.early.doneAt)}, before its prerequisites were complete${s.early.note ? ": “" + h(s.early.note) + "”" : ""}. Add it again below if it still applies.`) : ""}${fi("pws", "note", "Note (optional)", { type: "textarea", rows: 3, ph: "What you did, what you learned, anything the facilitator should know" })}<div class="field"><label class="lbl" for="pws_f">Supporting files (optional)</label><input id="pws_f" type="file" name="f" multiple class="input" style="padding:8px" data-ch="pwsFiles"><span class="help">Up to ${S.settings.maxFileMB} MB each. Your facilitator and the person who proposed this pathway can see them.</span><div class="pws-list cap"></div></div><div class="actions"><span></span><button class="btn btn-p" type="submit">${s.review ? "Send for review" : "Mark step complete"}</button></div></form>`,
+      )}${s.early ? banner("info", "Earlier completion record", `You recorded this step on ${fmt(s.early.doneAt)}, before its prerequisites were complete${s.early.note ? ": “" + h(s.early.note) + "”" : ""}. Add it again below if it still applies.`) : ""}${fi("pws", "note", "Note (optional)", { type: "textarea", rows: 3, ph: "What you did, what you learned, anything the facilitator should know" })}<div class="field"><label class="lbl" for="pws_f">Supporting files (optional)</label><input id="pws_f" type="file" name="f" multiple class="input" style="padding:8px" data-ch="pwsFiles" accept="${uploadAccept()}"><span class="help">${uploadRuleText()}. Your facilitator and the person who proposed this pathway can see them.</span><div class="pws-list cap"></div></div><div class="actions"><span></span><button class="btn btn-p" type="submit">${s.review ? "Send for review" : "Mark step complete"}</button></div></form>`,
   );
 };
 A.pwsFiles = (d, el) => {
@@ -3244,13 +3257,12 @@ A.pwsFiles = (d, el) => {
 };
 F.pws = (d, form) => {
   const files = [...(form.querySelector("input[type=file]")?.files || [])];
-  const big = files.find((f) => f.size > S.settings.maxFileMB * 1048576);
-  if (big) {
+  // JF-52: approved types, the programme's size limit and the malware scan
+  const chk = files.length ? uploadCheck(files, { where: "Pathway step files" }) : null;
+  if (chk && !chk.pass) {
     UI.form.pws = d;
-    UI.err.pws = {
-      note: `“${big.name}” is over ${S.settings.maxFileMB} MB. Link large files externally instead.`,
-    };
-    return render();
+    UI.err.pws = { note: chk.msg };
+    return chk.quarantined.length ? ok() : render();
   }
   const p = byId("pathways", d.id);
   const s = p.steps[d.i];
@@ -3365,6 +3377,8 @@ F.pwnv = (d) => {
     id: uid("pw"),
     ver: (old.ver || 1) + 1,
     prev: old.id,
+    approvedBy: null, // a Reviewer approval covers the version it was given for, not a changed one (JF-23)
+    approvedAt: null,
     mode: pwCustom(old) ? old.mode : PW_MODE[route],
     state: PW_REC,
     by: myId(),
@@ -3432,7 +3446,7 @@ A.pwActivity = (d) => {
       ["Created by", pwRoleLine(p)],
       p.reason && ["Why it was recommended", h(p.reason)],
       p.tpl && ["Template", h((byId("templates", p.tpl) || {}).name || "—") + " · version " + (p.tplVer || 1)],
-      ["Reviewer", p.reviewer ? nm(p.reviewer) : p.state === "Awaiting reviewer" ? "In the review queue — any authorised Reviewer" : pwDirect(p) ? "Not needed — sent by a Facilitator / Circle Steward straight to the participant" : pwCustom(p) ? "—" : "Not needed (approved template or allowed adaptation)"],
+      ["Reviewer", p.reviewer ? nm(p.reviewer) : p.state === "Awaiting reviewer" ? "In the review queue — any authorised Reviewer" : p.approvedBy ? "Approved by " + nm(p.approvedBy) + (p.approvedAt ? " on " + fmt(p.approvedAt) : "") : pwNeedsReview(p) ? "Required — not yet approved" : "Not needed (approved template or allowed adaptation)"],
       ["Pathway state", pill(p.state === "Draft" && p.changeReq ? "Change requested" : p.state) + (p.ver > 1 ? " · version " + p.ver : "")],
       ["Participant acceptance", pwAccPill(p) + (p.acceptedAt ? " · " + fmt(p.acceptedAt) : p.declinedAt ? " · " + fmt(p.declinedAt) : "")],
       p.prev && ["Replaces", h((byId("pathways", p.prev) || {}).name || p.prev) + " (earlier version)"],
