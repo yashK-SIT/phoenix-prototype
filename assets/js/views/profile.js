@@ -2112,13 +2112,16 @@ const pwRowsShown = (f) => {
   return Math.min(PW_ROWS, Math.max(PW_MIN, last + 1, +d._rows || 0));
 };
 const PW_LEAN_HIDE = ["w", "c", "fr", "cs"];
+// Review and dependency fields of step i: not offered on Create pathway; a template's values are carried unchanged.
+const pwLeanKeep = (i) => ["rv", "pe", ...[...Array(i).keys()].map((j) => "p" + j)];
 const pwRowMore = (f, i, lean) => {
   const d = UI.form[f] || {};
   const k = ["w", "c", "fr", "rv", "pe", "cs", ...[...Array(i).keys()].map((j) => "p" + j)].filter((x) => !lean || !PW_LEAN_HIDE.includes(x));
   return k.filter((x) => d["s" + i + x]).length;
 };
 // o.lean (Create pathway): no "Applies when", "Yes / no question", "Available from" or "Needs an optional permission"
-// fields. Values a template already set for them are kept as hidden fields, so an unchanged template stays unchanged.
+// fields, and no "Review and dependencies" options (evidence review, prior evidence, depends on), so the step has no
+// optional panel. Values a template already set for them are kept as hidden fields, so an unchanged template stays unchanged.
 function pwStepFields(f, o = {}) {
   const lean = !!o.lean;
   const rows = pwRowsShown(f);
@@ -2140,16 +2143,17 @@ function pwStepFields(f, o = {}) {
     out += `<div class="pw-ed-step" role="group" aria-labelledby="${f}_${s}_h"><div class="pw-ed-sh"><span class="np-n" aria-hidden="true">${i + 1}</span><b id="${f}_${s}_h">Step ${i + 1}</b><span class="cap">${i < PW_MIN ? "Required row" : "Extra row"}</span>${rm}</div>
 <div class="pw-ed-main">${fi(f, s + "t", "What the participant does", { max: 120, req: i < PW_MIN, ph: "e.g. Complete the safeguarding module" })}${fi(f, s + "ty", "Requirement type", { type: "select", opts: PW_TYPES, ch: "pwTy" })}</div>
 ${fi(f, s + "r", "Completion or evidence rule", { max: 200, ph: PW_RULE_DEF })}
-<details class="pw-ed-more" data-open="${f + i}" ${open ? "open" : ""}><summary><span>${lean ? "Review and dependencies" : "Conditions, timing and review"}</span>${n ? `<span class="pill p-teal">${n} set</span>` : '<span class="cap">Optional</span>'}${ic("chev", 14)}</summary><div class="pw-ed-body">
 ${
   lean
-    ? PW_LEAN_HIDE.map((k) => `<input type="hidden" name="${s + k}" value="${h(d[s + k] || "")}">`).join("")
-    : `<div class="pw-ed-grid">${fi(f, s + "w", "Applies when (Conditional only)", { type: "select", opts: pwWhenOpts() })}${fi(f, s + "c", "Yes / no question", { max: 200, ph: "e.g. Will you run sessions outdoors?" })}${fi(f, s + "fr", "Available from", { type: "date" })}${fi(f, s + "cs", "Needs an optional permission", { type: "select", opts: [["", "None"], ...OPT_PURPOSES.map(([k, l]) => [k, l])] })}</div>
-<p class="help pw-ed-note">Conditions are stored, testable rules — never decided by AI. A permission holds back only this step; the rest of the pathway is unaffected.</p>`
-}
+    ? // Create pathway: no optional panel. Template values are carried as hidden fields only.
+      [...PW_LEAN_HIDE, ...pwLeanKeep(i)].map((k) => `<input type="hidden" name="${s + k}" value="${h(d[s + k] || "")}">`).join("") + `</div>`
+    : `<details class="pw-ed-more" data-open="${f + i}" ${open ? "open" : ""}><summary><span>Conditions, timing and review</span>${n ? `<span class="pill p-teal">${n} set</span>` : '<span class="cap">Optional</span>'}${ic("chev", 14)}</summary><div class="pw-ed-body">
+<div class="pw-ed-grid">${fi(f, s + "w", "Applies when (Conditional only)", { type: "select", opts: pwWhenOpts() })}${fi(f, s + "c", "Yes / no question", { max: 200, ph: "e.g. Will you run sessions outdoors?" })}${fi(f, s + "fr", "Available from", { type: "date" })}${fi(f, s + "cs", "Needs an optional permission", { type: "select", opts: [["", "None"], ...OPT_PURPOSES.map(([k, l]) => [k, l])] })}</div>
+<p class="help pw-ed-note">Conditions are stored, testable rules — never decided by AI. A permission holds back only this step; the rest of the pathway is unaffected.</p>
 <div class="pw-ed-checks">${fi(f, s + "rv", "Requires evidence review (a Reviewer approves completion)", { type: "checkbox" })}${fi(f, s + "pe", "May be satisfied by prior evidence (a Reviewer confirms it)", { type: "checkbox" })}</div>
 ${pre.length ? `<div class="pw-ed-deps"><span class="lbl">Depends on</span><div class="pw-ed-grid">${pre.join("")}</div></div>` : ""}
-</div></details></div>`;
+</div></details></div>`
+}`;
   }
   out += rows < PW_ROWS ? `<div class="pw-ed-add">${B(ic("plus", 14) + "Add step " + (rows + 1), "pwRowAdd", { f, n: rows + 1 }, "btn-s btn-sm")}<span class="cap">Up to ${PW_ROWS} steps.</span></div>` : `<p class="cap pw-ed-add">${PW_ROWS} steps is the maximum.</p>`;
   return out + `</section>`;
@@ -2200,7 +2204,8 @@ function pwStepRules(d, o = {}) {
     }
     r["s" + i + "w"] = [["req", "Choose the rule that decides when this Conditional step applies."]];
     if (d["s" + i + "w"] === "ask") r["s" + i + "c"] = [["req", "Write the yes/no question."]];
-    if (d["s" + i + "w"] === "after" && ![...Array(i).keys()].some((j) => ["yes", "done"].includes(d["s" + i + "p" + j])))
+    // Create pathway (lean) offers no dependency fields, so it never asks the person to choose them.
+    if (!o.lean && d["s" + i + "w"] === "after" && ![...Array(i).keys()].some((j) => ["yes", "done"].includes(d["s" + i + "p" + j])))
       r["s" + i + "w"] = [["fn", { f: () => false, m: "Choose the steps it depends on below." }]];
   }
   return r;
