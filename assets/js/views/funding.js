@@ -73,217 +73,19 @@ const NEVER_SPONSOR =
 
 route('funding', 'funding', () => {
   if (role() !== 'S') return sponsorshipOverview();
-  const t = tabs(
-    'fund',
-    [
-      ['seats', 'Seat utilisation'],
-      ['initiatives', 'Approved initiatives'],
-      ['reports', 'Funder-safe reports'],
-      ['invoices', 'Invoices & receipts'],
-    ],
-    UI.p.tab,
-  );
-  const body = { seats: sponsorSeats, initiatives: sponsorInitiatives, reports: sponsorReports, invoices: sponsorInvoices }[t.cur]();
+  // Seat utilisation, approved initiatives, funder-safe reports and invoices were removed from the Sponsor role.
+  // Old links and notifications that still point here land on this notice instead of a blank screen.
   return (
-    head(
-      'Sponsorship',
-      'What your support enabled: seats, approved initiatives, approved evidence and funder-safe reporting. Commercial entitlement never creates authority or access to participants’ work.',
-    ) +
-    t.html +
-    `<div class="fund-stack">${body}</div>`
-  );
-});
-function sponsorSeats() {
-  const pools = myPools();
-  const live = pools.filter(s => s.status === 'Active');
-  const tot = live.reduce((a, s) => a + s.total, 0),
-    asg = live.reduce((a, s) => a + poolAssigned(s), 0),
-    act = live.reduce((a, s) => a + poolActive(s), 0);
-  const kpi = (l, v) => `<div class="kpi"><span class="lt">${l}</span><span class="fig">${v}</span></div>`;
-  return (
-    (live.length
-      ? `<div class="kpis fund-kpis">${kpi('Seats purchased', tot.toLocaleString('en-US'))}${kpi('Assigned', sup(asg))}${kpi('Active', sup(act))}${kpi('Utilisation', supPct(act, tot))}</div>`
-      : '') +
-    (pools
-      .map(sp => {
-        const as = poolAssigned(sp),
-          ac = poolActive(sp),
-          d = daysLeft(sp.until);
-        const pending = sp.status !== 'Active';
-        return card(
-          `Seat pool · ${h(ctxNameOf(sp.ctx))}`,
-          `${sp.total} seats · valid until ${fmt(sp.until)}${!pending && d >= 0 ? ' · ' + d + ' days left' : ''}`,
-          (pending
-            ? banner('info', 'Awaiting invoice payment', 'This pool activates when the Platform Administrator confirms the invoice is paid.')
-            : `<div class="seat-meter"><div class="seat-meter-h"><span class="fig">${sup(ac)}<span class="fig-of"> / ${sp.total}</span></span><span class="cap">seats active · utilisation ${supPct(ac, sp.total)}</span></div><div class="progress" role="img" aria-label="${isSupp(ac) ? 'Fewer than 5' : ac} of ${sp.total} seats active"><div class="bar" style="width:${isSupp(ac) ? 0 : Math.round((ac / sp.total) * 100)}%"></div></div></div>`) +
-            dl([
-              ['Purchased', sp.total.toLocaleString('en-US')],
-              ['Assigned', pending ? '—' : sup(as)],
-              ['Active', pending ? '—' : sup(ac)],
-              ['Available', pending ? sp.total.toLocaleString('en-US') : Math.max(0, sp.total - as).toLocaleString('en-US')],
-              ['Validity', fmt(sp.until) + (d >= 0 && d <= 60 && !pending ? ' ' + pill('Expiring soon', 'p-amber') : '')],
-              ['Status', pill(sp.status)],
-              sp.invoice && ['Invoice', `<span class="mono">${h(sp.invoice)}</span>`],
-            ]) +
-            `<p class="cap bill-note">Seats are assigned by the programme team through invitations. You see counts only, never names, profiles or activity.</p>`,
-          pending ? '' : B('Request more seats', 'checkout', { id: 'pd5' }),
-          'bill-pool',
-        );
-      })
-      .join('') || empty('card', 'No seat pools yet', 'Buy sponsored seats by invoice. The pool activates when the invoice is paid.', B('Buy seats by invoice', 'checkout', { id: 'pd5' }, 'btn-p btn-sm'))) +
-    card(
-      'More seats or a donation',
-      '',
-      `<div class="row wrap">${B('Buy seats by invoice', 'checkout', { id: 'pd5' }, 'btn-p btn-sm')}${B('Donate', 'checkout', { id: 'pd6' })}</div><p class="cap bill-note">A donation grants no entitlement. Sponsors receive approved, aggregate reporting only.</p>`,
-    ) +
-    banner('info', 'What seat sponsorship never gives', 'Membership of any Circle, Rope Team or ' + WL() + ', access to participants or their records, or any governance power. Paying never restores access that was revoked.')
-  );
-}
-function sponsorInitiatives() {
-  const ps = sponsorInitProjects();
-  const ev = sponsorCleared();
-  const inits = S.initiatives.filter(i => i.status === 'Published');
-  return (
-    card(
-      'Programme initiatives',
-      'Published by the Organization Admin for sponsors.',
-      inits.map(i => lrow('megaphone', h(i.title), h(i.summary) + `<span class="cap"> · Published ${fmt(i.at)}</span>`)).join('') ||
-        empty('megaphone', 'No initiatives published yet', 'The Organization Admin publishes initiative summaries for sponsors.'),
-      '',
-      'hm-list',
-    ) +
-    card(
-      'Approved projects',
-      'Aggregate status only: no workspace access, member lists or messaging. Counts below 5 show as “Fewer than 5”.',
-      table(
-        ['Project', 'Programme', 'Where it is now', 'Milestones achieved', 'Approved evidence'],
-        ps.map(p => {
-          const ms = projMilestones(p);
-          return [
-            '<b>' + h(p.title) + '</b>',
-            h(ctxNameOf(p.ctx)),
-            h(plainStage(p)),
-            ms.length ? ms.filter(m => m.status === 'Achieved').length + ' of ' + ms.length : '<span class="cap">None set yet</span>',
-            sup(ev.filter(e => projSpaces(p).some(id => (e.linked || []).includes(id))).length),
-          ];
-        }),
-        'No approved projects in this programme yet.',
-      ),
-      '',
-      'sp-tbl',
+    head('Sponsorship', 'Your projects, applications and approved evidence.') +
+    empty(
+      'megaphone',
+      'This section is no longer part of the Sponsor menu',
+      'Use My projects, Applications or Approved evidence.',
+      `<div class="row wrap">${B('My projects', 'go', { r: 'sponsorprojects' }, 'btn-p btn-sm')}${B('Approved evidence', 'go', { r: 'evidence' }, 'btn-s btn-sm')}</div>`,
     )
   );
-}
-function sponsorReports() {
-  const c = ctxId();
-  const ev = sponsorCleared();
-  const hv = funderHarvests();
-  const parts = [...new Set(S.assign.filter(a => a.ctx === c && a.status === 'Active' && roleBase(a.role) === 'P').map(a => a.pid))];
-  const inCircle = parts.filter(pid => S.circles.some(ci => ci.ctx === c && ci.state === 'Active' && memberOf(ci, pid))).length;
-  const ach = S.rooms.filter(r => r.ctx === c).flatMap(r => r.milestones || []).filter(m => m.status === 'Achieved').length;
-  const ps = sponsorInitProjects();
-  const buckets = ['Circle', 'Rope Team', 'Room', 'Final review', 'Closed'].map(s => [s === 'Room' ? WL() : s === 'Closed' ? 'Completed' : s, ps.filter(p => (p.stage || 'Circle') === s).length]);
-  const max = Math.max(1, ...buckets.map(b => b[1]));
-  const reqs = myStoryReqs();
-  const mdef = id => h((S.metrics.find(m => m.id === id) || {}).def || '');
-  // JF-90: each signal carries its layer and is read on its own; nothing here is combined into a score.
-  const lay = id => layerPill(id);
-  return (
-    pilotNote() +
-    card(
-      'Programme signals',
-      'Aggregate only, for ' + h(ctxNameOf(c)) + '. Counts below 5 are shown as “Fewer than 5” in tables, totals and charts. ' + PILOT_LABEL + '.',
-      table(
-        ['Signal', 'Layer', 'Value', 'How it is counted'],
-        [
-          ['Participants in the programme', lay('workflow'), sup(parts.length), 'Active participant roles in this programme'],
-          ['Circle participation', lay('workflow'), supPct(inCircle, parts.length), mdef('m2')],
-          ['Action-to-evidence coverage', lay('evidence'), isSupp(ach) ? SUPP : typeof metric === 'function' ? h(String(metric('m7'))) : '—', mdef('m7')],
-          ['Approved evidence summaries', lay('evidence'), sup(ev.length), 'Approved evidence cleared for funder reports. Support levels are shown per summary, never combined.'],
-          ['Milestones achieved', lay('outputs'), sup(ach), mdef('m6')],
-          ['Funder-safe Harvests', lay('outputs'), sup(hv.length), 'Learning Harvests released to funders'],
-        ],
-      ),
-      pilotPill(),
-      'sp-tbl',
-    ) +
-    card('Approved projects by stage', 'Each bar is a count of approved projects. Small buckets show no bar.', buckets.map(([l, n]) => supBar(h(l), n, max)).join(''), '', 'sp-bars') +
-    card(
-      'Approved evidence summaries',
-      'Cleared for funder reports by the evidence owner and a disclosure review. Summaries only: no names, files or private context.',
-      ev
-        .map(e => {
-          const p = evProject(e);
-          const open = reqs.find(x => x.ev === e.id && !['Declined by owner', 'Withheld after disclosure review', 'Released'].includes(x.status));
-          return lrow(
-            'award',
-            h(e.title),
-            [h(e.claim || ''), h(e.type || ''), e.level ? 'Support level ' + h(e.level) : '', p ? 'Project: ' + h(p.title) : ''].filter(Boolean).join(' · '),
-            open ? pill('Story requested', 'p-grey') : purposeOn('public', e.owner, { ctx: e.ctx, rec: e }) ? B('Request an identifiable story', 'storyReq', { id: e.id }) : '<span class="cap">Personal stories not available</span>',
-          );
-        })
-        .join('') || empty('award', 'No approved evidence summaries yet', 'Evidence appears here only after its owner authorises a funder release and the disclosure review clears it.'),
-      '',
-      'hm-list',
-    ) +
-    card(
-      'Funder-safe Harvests',
-      'Learning Harvests the Organization Admin released to funders. Only the funder-safe sections are shown.',
-      hv
-        .map(x => `<details class="fdisc-more"><summary>${ic('sparkle', 14)}<b>${h(x.scopeName)}</b> <span class="cap">· ${h(x.trigger || '')}</span></summary>${dl(HV_FUNDER_SECTIONS.filter(k => x.sections && x.sections[k]).map(k => [h(k), h(x.sections[k])]))}</details>`)
-        .join('') || empty('sparkle', 'No Harvests released to funders yet', 'A Harvest appears here only after the Organization Admin approves a funder release.'),
-      '',
-      'hm-list',
-    ) +
-    (reqs.length
-      ? card(
-          'Your story requests',
-          'Each request is decided by the participant first, then by the Organization Admin. Sponsorship has no bearing on the decision.',
-          table(
-            ['Evidence', 'Requested', 'Status'],
-            reqs.map(x => [h((byId('evidence', x.ev) || {}).title || '—'), fmt(x.at), pill(x.status)]),
-          ),
-          '',
-          'sp-tbl',
-        )
-      : '') +
-    banner('info', 'What sponsors never receive', NEVER_SPONSOR)
-  );
-}
-function sponsorInvoices() {
-  const items = S.payments.filter(p => p.pid === myId() && !p.dup);
-  return (
-    card(
-      'Invoices and receipts',
-      'Issued by the payment provider. PHOENIX never sees card details.',
-      dataView('fund:invoices', {
-        label: 'invoices and receipts',
-        items,
-        search: p => [p.ref || p.id, (byId('products', p.product) || {}).name || p.product, p.note || '', p.state].join(' '),
-        quick: { label: 'Status', options: [...new Set(items.map(p => p.state))].map(v => [v, v]), test: (p, v) => p.state === v },
-        sorts: [
-          ['new', 'Newest first', (a, b) => String(b.at).localeCompare(String(a.at))],
-          ['old', 'Oldest first', (a, b) => String(a.at).localeCompare(String(b.at))],
-        ],
-        defaultSort: 'new',
-        layout: 'table',
-        dense: true,
-        columns: [
-          { label: 'Reference', cell: p => `<span class="mono" style="white-space:nowrap">${h(p.ref || p.id)}</span>` },
-          { label: 'Item', cell: p => h((byId('products', p.product) || {}).name || p.product) + (p.note ? `<div class="cap">${h(p.note)}</div>` : '') },
-          { label: 'Amount', cell: p => h(p.amount || '—') },
-          { label: 'Status', cell: p => pill(p.state) + (p.due && p.state === 'Invoice due' ? `<div class="cap">Due ${fmt(p.due)}</div>` : '') },
-          { label: 'Date', sort: 'new', cell: p => fmt(p.at) },
-          { label: '', cell: p => (p.state === 'Invoice due' ? B('Pay on provider page', 'invPay', { id: p.id }, 'btn-p btn-sm') : '') },
-        ],
-        empty: ['inbox', 'No invoices or receipts yet', 'Seat-pool invoices and donation receipts appear here once the provider issues them.', ''],
-      }),
-      B('Buy seats by invoice', 'checkout', { id: 'pd5' }) + B('Donate', 'checkout', { id: 'pd6' }),
-      'bill-tx',
-    ) + `<p class="cap bill-note">A donation grants no entitlement. Payment never buys authority, visibility, matching priority or access to participants’ work.</p>`
-  );
-}
-// Organization Admin view of the same boundary (sponsors have their own tabs above).
+});
+// Organization Admin view of the sponsorship boundary.
 function sponsorshipOverview() {
   const pools = S.seatPools.filter(s => inCtx(s));
   return (
@@ -610,8 +412,6 @@ route('billing', 'payments', () => {
   )}
   <div class="c12">${banner('info', 'Never dependent on payment', 'Consent controls, withdrawal, correction, appeal, incident reporting, your own records, permitted export and privacy rights. Payment never buys reviewer status, authority, visibility or matching priority.')}</div></div>`;
   }
-  if (r === 'S' && t.cur === 'access')
-    body = banner('info', 'Your sponsorship', `Seat pools, utilisation, invoices and receipts are under ${L('Sponsorship', 'funding', { tab: 'seats' })}. Sponsors see seat counts only, never seat holders.`) + body;
   if (t.cur === 'products')
     body = card(
       'Product catalogue',
@@ -1092,7 +892,7 @@ A.poolActivate = d => {
   const sp = byId('seatPools', d.id);
   sp.status = 'Active';
   const isSp = S.assign.some(a => a.pid === sp.sponsor && roleBase(a.role) === 'S');
-  notify(sp.sponsor, 'Your seat pool is active: ' + sp.total + ' seats until ' + fmt(sp.until), isSp ? 'funding' : 'billing', isSp ? { tab: 'seats' } : {});
+  notify(sp.sponsor, 'Your seat pool is active: ' + sp.total + ' seats until ' + fmt(sp.until), isSp ? 'home' : 'billing', {});
   audit('Seat pool activated against invoice', sp.id, 'Platform Administrator');
   toast('Seat pool activated.');
   ok();

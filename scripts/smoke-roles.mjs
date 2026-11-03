@@ -14,7 +14,7 @@ const ROLES = [
   { role: 'F', pid: 'p2', expectSec: ['Work', 'Records', 'Always available'], mustNav: ['Circles', 'Review inbox', 'Match Briefs', 'Learning Harvests', 'Evidence review'], banSec: ['Discover'] },
   { role: 'C', pid: 'p4', expectSec: ['Work', 'Discover', 'Records', 'Always available'], mustNav: ['Organisation & mandate', 'Opportunities', 'Match Briefs'] },
   { role: 'O', pid: 'p5', expectSec: ['Organisation', 'Always available'], mustNav: ['People & cohorts', 'Programme progress'] },
-  { role: 'S', pid: 'p6', expectSec: ['Sponsorship', 'Always available'], mustNav: ['Seat utilisation', 'Approved initiatives', 'Funder-safe reports'], banNav: [/pitch/i, /tranche/i] },
+  { role: 'S', pid: 'p6', expectSec: ['Sponsorship', 'Always available'], mustNav: ['My projects', 'Applications', 'Approved evidence'], banNav: [/pitch/i, /tranche/i, /seat utilisation/i, /approved initiatives/i, /funder-safe reports/i, /invoices/i] },
   { role: 'A', pid: 'p7', expectSec: ['Administration', 'Always available'], mustNav: ['Approval inbox', 'Users & roles', 'Template library'] },
   { role: 'T', pid: 'p8', expectSec: [], mustNav: ['System health', 'Contexts & tenants', 'Audit & logs'] },
 ];
@@ -106,11 +106,11 @@ async function main() {
         else ok.push('A: four metric layers shown, pilot label present, no composite score, incomplete outcome refused');
       }
       if (r.role === 'S') {
-        await page.click('aside.side a.nav:has-text("Funder-safe reports")');
-        await page.waitForSelector('main .sp-tbl', { timeout: 5000 });
-        const txt = await page.locator('main').innerText();
-        if (!txt.includes('Pilot learning, not impact proof')) fails.push('S: funder-safe reports missing the pilot-learning label');
-        else ok.push('S: funder-safe reports labelled pilot learning, each signal with its layer');
+        // Seat utilisation, approved initiatives, funder-safe reports and invoices are removed from the Sponsor home.
+        const homeTxt = await page.locator('main').innerText();
+        const gone = ['Seat utilisation', 'Approved initiatives', 'Funder-safe reports', 'Invoices and receipts'].filter((t) => homeTxt.includes(t));
+        if (gone.length) fails.push('S: home still shows removed modules: ' + gone.join(', '));
+        else ok.push('S: removed modules absent from sidebar and home');
       }
       if (r.role === 'P') {
         await page.click('aside.side a.nav[data-r="board"]');

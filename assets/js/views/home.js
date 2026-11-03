@@ -557,40 +557,14 @@ function nextAction() {
       ];
   }
   if (r === "S") {
-    // Sponsor projects first (owner choice, milestones, payments due), then invoices, seats and reports.
+    // Sponsor projects first (owner choice, milestones, payments due), then approved evidence.
     if (spTodo().length) return spTodo()[0];
-    const inv = S.payments.find(
-      (p) => p.pid === pid && p.state === "Invoice due",
-    );
-    if (inv)
+    if (sponsorCleared().length)
       return [
-        "Invoice due",
-        h(inv.ref || inv.id) +
-          (inv.due ? " · due " + fmt(inv.due) : "") +
-          (inv.note ? " · " + h(inv.note) : ""),
-        "funding",
-        { tab: "invoices" },
-      ];
-    const exp = S.seatPools.find(
-      (s) =>
-        s.sponsor === pid &&
-        s.status === "Active" &&
-        s.until >= today() &&
-        (new Date(s.until) - new Date(today())) / 864e5 <= 60,
-    );
-    if (exp)
-      return [
-        "Seats expiring soon",
-        exp.total + " sponsored seats end on " + fmt(exp.until) + ".",
-        "funding",
-        { tab: "seats" },
-      ];
-    if (sponsorCleared().length || funderHarvests().length)
-      return [
-        "Funder-safe report ready",
-        "Approved evidence summaries and programme signals cleared for your reporting.",
-        "funding",
-        { tab: "reports" },
+        "Approved evidence ready",
+        "Approved evidence summaries cleared for funder reports.",
+        "evidence",
+        {},
       ];
   }
   if (r === "T") {
@@ -1217,23 +1191,13 @@ function roleJourney() {
     );
   }
   if (r === "S") {
-    const seats = (typeof myPools === "function" ? myPools() : []).some(
-      (s) => s.status === "Active",
-    );
-    const inits =
-      S.initiatives.some((i) => i.status === "Published") ||
-      (typeof sponsorInitProjects === "function" &&
-        sponsorInitProjects().length);
     const cleared =
       typeof sponsorCleared === "function" && sponsorCleared().length > 0;
-    const due = !S.payments.some(
-      (p) => p.pid === pid && p.state === "Invoice due",
-    );
     const chs = S.projects.filter((p) => isSpP(p) && inCtx(p) && p.sponsor === pid);
     return journeyRail(
       "Sponsor flow",
       "Your sponsorship flow",
-      "My projects → seats → initiatives → safe reports → invoices (Doc 1 §6.6)",
+      "My projects → approved evidence (Doc 1 §6.6)",
       [
         {
           k: "Projects",
@@ -1246,45 +1210,12 @@ function roleJourney() {
               : chs.length + " created · nothing waiting",
         },
         {
-          k: "Seats",
-          done: seats,
-          r: "funding",
-          p: { tab: "seats" },
-          meta: seats ? "Active seat pool" : "Buy seats by invoice",
-        },
-        {
-          k: "Initiatives",
-          done: !!inits,
-          r: "funding",
-          p: { tab: "initiatives" },
-          meta: inits
-            ? "Approved initiatives visible"
-            : "Awaiting published initiatives",
-        },
-        {
           k: "Evidence",
           done: !!cleared,
           r: "evidence",
           meta: cleared
             ? "Cleared summaries available"
             : "No funder-cleared evidence yet",
-        },
-        {
-          k: "Reports",
-          done:
-            !!cleared ||
-            (typeof funderHarvests === "function" &&
-              funderHarvests().length > 0),
-          r: "funding",
-          p: { tab: "reports" },
-          meta: "Funder-safe aggregate reports",
-        },
-        {
-          k: "Invoices",
-          done: due,
-          r: "funding",
-          p: { tab: "invoices" },
-          meta: due ? "Nothing outstanding" : "Invoice due",
         },
       ],
     );
@@ -1942,31 +1873,20 @@ function homeC() {
   );
 }
 function homeS() {
-  // Sponsor Alpha (BF-08, Doc 1 §6.6): seats, approved initiatives, approved evidence summaries, funder-safe
-  // reports and invoices. Aggregate only; counts below 5 are suppressed (helpers in funding.js).
-  const seats = myPools();
-  const live = seats.filter((s) => s.status === "Active");
-  const tot = live.reduce((a, s) => a + s.total, 0);
-  const act = live.reduce((a, s) => a + poolActive(s), 0);
+  // Sponsor Alpha (BF-08, Doc 1 §6.6): sponsor projects and approved evidence summaries. Seat utilisation, approved
+  // initiatives, funder-safe reports and invoices are not part of the Sponsor role. Counts below 5 are suppressed.
   const ev = sponsorCleared();
-  const hv = funderHarvests();
-  const projs = sponsorInitProjects();
-  const inits = S.initiatives.filter((i) => i.status === "Published");
-  const pays = S.payments
-    .filter((p) => p.pid === myId() && !p.dup)
-    .sort((a, b) => String(b.at).localeCompare(String(a.at)));
-  const due = pays.filter((p) => p.state === "Invoice due");
   const chs = S.projects.filter((p) => isSpP(p) && inCtx(p) && p.sponsor === myId());
   const todo = spTodo();
   return (
     head(
       "My PHOENIX",
       "Sponsor · " + h(S.orgs.find((o) => o.id === me().org)?.name || ""),
-      B("Funder-safe reports", "go", { r: "funding", tab: "reports" }, "btn-p"),
+      B("My projects", "go", { r: "sponsorprojects" }, "btn-p"),
     ) +
     `<div class="hm">
  <div class="hm-top solo">${nextCard()}</div>
- ${hmStrip([stat("s-mist", "t-soft", "card", sup(act) + " / " + tot.toLocaleString("en-US"), "Active sponsored seats", "Utilisation " + supPct(act, tot), "funding", { tab: "seats" }), stat("s-purple", "t-purple", "folder", inits.length + projs.length, "Approved initiatives", inits.length + " initiative" + (inits.length === 1 ? "" : "s") + " · " + projs.length + " project" + (projs.length === 1 ? "" : "s"), "funding", { tab: "initiatives" }), stat("s-teal", "t-teal", "award", sup(ev.length), "Approved evidence summaries", "Cleared for funder reports", "funding", { tab: "reports" }), stat("s-slate", "t-navy", "coin", due.length, "Invoices due", due.length ? "Due " + fmt(due[0].due || due[0].at) : "Nothing outstanding", "funding", { tab: "invoices" })], "Your sponsorship summary")}
+ ${hmStrip([stat("s-teal", "t-teal", "award", sup(ev.length), "Approved evidence summaries", "Cleared for funder reports", "evidence")], "Your sponsorship summary")}
  ${roleJourney()}
  ${hmCols(
    `${card(
@@ -2009,104 +1929,24 @@ function homeS() {
      L("All projects", "sponsorprojects"),
      "hm-list",
    )}
- ${card(
-   "Seat utilisation",
-   "Counts only: sponsors never see who holds a seat",
-   seats
-     .map((s) => {
-       const a = poolActive(s);
-       return s.status === "Active"
-         ? `<div class="hm-seat"><div class="row hm-seat-h"><b>${sup(a)} of ${s.total} seats active</b><span class="cap">${supPct(a, s.total)}</span></div><div class="progress"><span class="bar" style="width:${isSupp(a) ? 0 : Math.round((a / s.total) * 100)}%"></span></div><span class="cap">${h(ctxNameOf(s.ctx))} · valid until ${fmt(s.until)}</span></div>`
-         : hrow(
-             "card",
-             s.total + " seats · " + h(ctxNameOf(s.ctx)),
-             "Awaiting invoice payment",
-             pill(s.status),
-           );
-     })
-     .join("") ||
-     empty(
-       "card",
-       "No seat pools",
-       "Buy sponsored seats by invoice.",
-       B("Buy seats by invoice", "checkout", { id: "pd5" }, "btn-p btn-sm"),
-     ),
-   L("Seat utilisation", "funding", { tab: "seats" }),
-   "hm-list",
- )}
- ${card(
-   "Approved initiatives",
-   "Aggregate status only",
-   [
-     ...inits.map((i) =>
-       hrow("megaphone", h(i.title), "Initiative · published " + fmt(i.at)),
-     ),
-     ...projs.map((p) => {
-       const ms = projMilestones(p);
-       return hrow(
-         "folder",
-         h(p.title),
-         h(plainStage(p)) +
-           (ms.length
-             ? " · " +
-               ms.filter((m) => m.status === "Achieved").length +
-               " of " +
-               ms.length +
-               " milestones achieved"
-             : ""),
-       );
-     }),
-   ].join("") || empty("folder", "No approved initiatives yet", ""),
-   L("All initiatives", "funding", { tab: "initiatives" }),
-   "hm-list",
- )}
- ${card(
-   "Approved evidence summaries",
-   "Cleared for funder reports by the owner and a disclosure review",
-   ev
-     .map((e) =>
-       hrow(
-         "award",
-         h(e.title),
-         [h(e.type || ""), e.level ? "Support level " + h(e.level) : ""]
-           .filter(Boolean)
-           .join(" · "),
-       ),
-     )
-     .join("") || empty("award", "No approved evidence summaries yet", ""),
-   L("Funder-safe reports", "funding", { tab: "reports" }),
-   "hm-list",
- )}`,
+`,
    `${card(
-     "Funder-safe reports",
-     "",
-     dl([
-       ["Approved evidence summaries", sup(ev.length)],
-       ["Funder-safe Harvests", sup(hv.length)],
-       ["Programme signals", "Aggregate, small numbers suppressed"],
-       ["How to read them", PILOT_LABEL + ". Each signal is labelled with its layer; there is no combined score."],
-     ]),
-     L("Open reports", "funding", { tab: "reports" }),
-     "hm-list hm-kvs",
+     "Approved evidence summaries",
+     "Cleared for funder reports by the owner and a disclosure review",
+     ev
+       .map((e) =>
+         hrow(
+           "award",
+           h(e.title),
+           [h(e.type || ""), e.level ? "Support level " + h(e.level) : ""]
+             .filter(Boolean)
+             .join(" · "),
+         ),
+       )
+       .join("") || empty("award", "No approved evidence summaries yet", ""),
+     L("Approved evidence", "evidence"),
+     "hm-list",
    )}
- ${card(
-   "Invoices and receipts",
-   "",
-   pays
-     .slice(0, 3)
-     .map((p) =>
-       hrow(
-         "coin",
-         h(p.ref || p.id),
-         h((byId("products", p.product) || {}).name || p.product) +
-           (p.amount ? " · " + h(p.amount) : ""),
-         pill(p.state),
-       ),
-     )
-     .join("") || empty("coin", "No invoices yet", ""),
-   L("All invoices", "funding", { tab: "invoices" }),
-   "hm-list",
- )}
  ${banner("info", "What sponsors never receive", "Private participant profiles, Purpose Compass responses, private discussions, mentor notes, AI conversations or unapproved evidence. Sponsors are never members of Circles, Rope Teams or Action Workspaces: for your own projects you see who shortlisted them, and their milestones, payment status and disputes only.")}`,
  )}</div>`
   );

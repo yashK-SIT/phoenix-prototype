@@ -742,7 +742,7 @@ function rfFlows() {
       ],
     },
     S: {
-      lead: "Sponsor. Lists projects under an alias, chooses each project’s owner from the people who shortlist it, agrees milestones and records offline payment status in the project’s Action Workspace; buys seat pools or donates, follows aggregate seat use and sees approved, funder-safe outcomes. Identifiable stories need a separate release.",
+      lead: "Sponsor. Lists projects under an alias, chooses each project’s owner from the people who shortlist it, agrees milestones and records offline payment status in the project’s Action Workspace; buys seat pools or donates and sees approved evidence summaries.",
       side: [],
       phases: [
         ["Authorize", "Access, Sponsor agreement and sign-in", rfAccess("S")],
@@ -803,20 +803,12 @@ function rfFlows() {
         ],
         [
           "Outcomes",
-          "Utilisation and funder-safe outcomes",
+          "Approved evidence",
           [
-            rfA("See seat utilisation", "Aggregate only."),
             rfA(
-              "See approved initiatives, approved evidence summaries and funder-safe Learning Harvests",
+              "See approved evidence summaries",
               "Small numbers are suppressed.",
             ),
-            rfD("Want an identifiable story?", [
-              rfB("No", [rfY("Aggregate view only")]),
-              rfB("Yes", [
-                rfA("Send a separate release request"),
-                rfH("A", "Decides, with the person’s own release permission"),
-              ]),
-            ]),
             rfS("End: continue from My PHOENIX"),
           ],
         ],
@@ -1052,7 +1044,7 @@ function rfOverview() {
       "Alongside",
       "Supporting flows",
       [
-        rfH("S", "Seat pools, aggregate utilisation and funder-safe outcomes"),
+        rfH("S", "Sponsor projects, seat pools and approved evidence"),
         rfH("T", "Runs the platform; no participant content"),
         rfY(
           "Role + context switching",

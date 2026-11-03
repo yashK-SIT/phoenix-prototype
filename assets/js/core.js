@@ -1214,15 +1214,12 @@ function navItems() {
     add("repository", "repository", "Repository", "archive");
     add("harvest", "harvests", "Learning Harvests", "sparkle");
   } else if (r === "S") {
-    // Doc 1 §6.6 — sponsor projects (sponsor.js), seats & funder-safe reporting (no pitches/tranches)
+    // Doc 1 §6.6 — sponsor projects (sponsor.js) and approved evidence (no pitches/tranches).
+    // Seat utilisation, approved initiatives, funder-safe reports and invoices are removed from the Sponsor menu.
     items.push(
       ["sponsorprojects", "My projects", "megaphone"],
       ["sponsorapps", "Applications", "inbox"],
       ["board", "Explore board", "grid"],
-      ["funding:seats", "Seat utilisation", "card"],
-      ["funding:initiatives", "Approved initiatives", "folder"],
-      ["funding:reports", "Funder-safe reports", "chart"],
-      ["funding:invoices", "Invoices & receipts", "coin"],
     );
     add("evidence", "evidence", "Approved evidence", "award");
   } else if (r === "A") {
@@ -1320,7 +1317,6 @@ function navCount(r, tb) {
   if (r === "support") return sqPlatform().filter((q) => SQ_OPEN.includes(q.status)).length;
   if (r === "incidents" && role() === "T")
     return S.incidents.filter((i) => incOwnerOf(i) && i.state !== "Closed").length;
-  if (r === "funding" && tb === "invoices") return dueInvoices().length;
   if (r === "messages") return unreadTotal();
   if (r === "myinvites") return myTenantInvites(true).length;
   if (r === "projects" && role() === "F")
@@ -2166,7 +2162,7 @@ function boot() {
   if (S.session && !S.assign.find((a) => a.id === S.session.aid))
     S.session = null;
   UI.route = S.session ? "home" : "login";
-  // A pack's Request access link (#apply?pack=<id>) opens the form for that pack only, with the pack locked.
+  // A pack's Request access link (#apply?pack=<id>) opens the Request access form (always for the default organization).
   const ap = /^#apply\?(.*)$/.exec(location.hash);
   if (ap && !S.session) {
     UI.route = "apply";

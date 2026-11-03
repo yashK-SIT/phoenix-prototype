@@ -784,9 +784,7 @@ F.ini = (d) => {
   S.assign
     .filter((a) => a.ctx === ctxId() && roleBase(a.role) === "S")
     .forEach((a) =>
-      notify(a.pid, "New initiative for sponsors: " + d.title, "funding", {
-        tab: "initiatives",
-      }),
+      notify(a.pid, "New initiative for sponsors: " + d.title, "home"),
     );
   audit("Sponsor initiative published", d.title, "");
   UI.modal = null;

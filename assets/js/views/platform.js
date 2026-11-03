@@ -27,7 +27,7 @@ const MODULES = {
   payments: ["Access & billing", "Products, seats and payments"],
   funding: [
     "Sponsorship",
-    "Seats, approved initiatives, funder-safe reports and invoices",
+    "Sponsor projects and applications",
   ],
   metrics: ["Metrics & reports", "Programme metrics"],
   governance: ["Governance & incidents", "Concerns and incidents"],

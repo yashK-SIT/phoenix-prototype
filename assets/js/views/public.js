@@ -494,7 +494,7 @@ PUB.invite = () => {
           ? "Ask for a new invitation below. For your security, this attempt has been recorded."
           : "For your security, this attempt has been recorded.");
     // A known link names its organization, so the request goes only to that organization's admins. An unknown
-    // link names none: the person uses Request access, where they choose the programme and its admins review it.
+    // link names none: the person uses Request access, which goes to the default organization's admins.
     const ask = inv
       ? `<form data-f="reinv" class="col auth-form" novalidate>${fi("reinv", "email", "Your email address", { type: "email", req: true, value: inv.email })}${fi("reinv", "msg", "Message to the administrator", { type: "textarea", rows: 3 })}<p class="cap">Sent to the Organization Admins of ${h(ctxName(inv.ctx))}.</p><button class="btn btn-p btn-block" type="submit">Request a new invitation</button></form>`
       : `<p class="muted">We cannot tell which organization this link came from. Ask to join instead: the organization's admin reviews the request and, if approved, sends you a new invitation.</p>${B("Request access", "go", { r: "apply" }, "btn-p btn-block")}`;
@@ -703,62 +703,31 @@ const ageConfirm = (f) =>
   `<div class="field">${fi(f, "age", "I confirm I meet the minimum age for this programme.", { type: "checkbox", req: true })}</div>`;
 // ---- Request access (Apply-to-Join): collects a request only. An Organization Admin approves it and PHOENIX
 // sends a normal single-use invitation. An unapproved applicant has no account and cannot sign in.
-// A request is always for one pack. Each pack has its own link (#apply?pack=<id>, read in boot); on that link the
-// person sees only that pack's organizations and cannot switch packs (UI.p.lock). The generic link asks first.
-// An organization is its own context (same name), so the person picks an organization, never a separate programme.
-const applyProgs = (pk) =>
-  S.contexts.filter(
-    (c) => c.pack === pk && c.kind !== "Platform" && c.status === "Active",
-  );
-const applyPacks = () =>
-  S.packs.filter((p) => p.status === "Active" && applyProgs(p.id).length);
+// There is no organization choice: every request goes to the default organization (S.settings.defaultCtx,
+// Excelsior University), and its name is not shown on these screens. A pack link (#apply?pack=<id>, read in boot)
+// still opens this form, but the request is always for the default organization.
 const applyLink = (pk) =>
   location.href.split("#")[0] + "#apply?pack=" + encodeURIComponent(pk);
+// The default organization when it can take requests, otherwise null.
+const applyCtx = () => {
+  const c = S.contexts.find((x) => x.id === defaultCtx());
+  return c && c.kind !== "Platform" && c.status === "Active" ? c : null;
+};
 PUB.apply = () => {
   const f = "apply";
   if (UI.p.sent)
     return authWrap(
       `<div class="col auth-h"><h1 class="h1">Request received</h1><p class="sub">Thank you. An Organization Admin will review your request. If it is approved you will receive a normal invitation email to create your account. Until then there is no account to sign in to.</p></div>${B("Back to sign in", "go", { r: "login" }, "btn-s")}`,
     );
-  const pk = UI.p.pack && applyPacks().find((p) => p.id === UI.p.pack);
-  if (UI.p.pack && !pk)
+  if (!applyCtx())
     return authWrap(
-      `<div class="col auth-h"><p class="over">Request access</p><h1 class="h1">This link is not valid</h1><p class="sub">The organization this link points to is not taking requests right now. Ask them for their current Request access link.</p></div>${B("Back to sign in", "go", { r: "login" }, "btn-s")}`,
+      `<div class="col auth-h"><p class="over">Request access</p><h1 class="h1">Requests are closed</h1><p class="sub">Access requests are not being taken right now. If you were sent an invitation, use the link in that email instead.</p></div>${B("Back to sign in", "go", { r: "login" }, "btn-s")}`,
     );
-  if (!pk)
-    return authWrap(
-      `<div class="col auth-h"><p class="over">Request access</p><h1 class="h1">Which organization are you joining?</h1><p class="sub">Your request goes only to that organization's Organization Admin. If they sent you a link, use it instead; it opens this form for them directly.</p></div>
-  <div class="col apl-packs">${applyPacks()
-    .map(
-      (p) =>
-        `<button type="button" class="apl-pack" data-a="go" data-r="apply" data-pack="${h(p.id)}"><span class="tile t-soft" aria-hidden="true">${ic("building", 18)}</span><span class="apl-pack-t"><b>${applyProgs(
-          p.id,
-        )
-          .map((c) => h(c.name))
-          .join(", ")}</b></span>${ic("chevr", 16)}</button>`,
-    )
-    .join("")}</div>
-  <p class="cap">Have an account? ${L("Sign in", "login")}</p>`,
-      true,
-    );
-  const progs = applyProgs(pk.id);
-  // One organization on this pack: it is named in the heading, nothing to choose. Several: a choice limited to this pack.
-  const one = progs.length === 1 && progs[0];
-  const who = one ? one.name : pk.name;
-  const progField = one
-    ? `<input type="hidden" name="ctx" value="${h(one.id)}">`
-    : fi(f, "ctx", "Organization", {
-          type: "select",
-          req: true,
-          ph: "Choose an organization",
-          opts: progs.map((c) => [c.id, c.name]),
-        });
   return authWrap(
-    `<div class="col auth-h"><p class="over">Request access</p><h1 class="h1">Ask to join ${h(who)}</h1><p class="sub">We only ask for what is needed to review your request. It goes to ${one ? h(who) + "'s" : "the"} Organization Admin. This does not create an account.</p>${UI.p.lock ? "" : `<p class="cap">${L("Choose a different organization", "apply")}</p>`}</div>
+    `<div class="col auth-h"><p class="over">Request access</p><h1 class="h1">Ask to join</h1><p class="sub">We only ask for what is needed to review your request. It goes to the Organization Admin. This does not create an account.</p></div>
   ${banner("info", "", "Already invited? Use the link in your invitation email instead.")}
   ${errSum(f)}<form data-f="apply" class="col auth-form" novalidate>
   <div class="f2">${fi(f, "name", "Full name", { req: true, auto: "name" })}${fi(f, "email", "Email address", { type: "email", req: true, auto: "email" })}</div>
-  ${progField}
   ${fi(f, "as", "I would like to take part as", {
     type: "select",
     req: true,
@@ -775,16 +744,14 @@ PUB.apply = () => {
   );
 };
 F.apply = (d) => {
-  // The programme must belong to the pack this form was opened for, whatever the page sent.
-  const inPack = {
-    f: (v) => applyProgs(UI.p.pack).some((c) => c.id === v),
-    m: "Choose an organization from this list.",
-  };
+  // The organization is never taken from the page: every request goes to the default organization.
+  const c = applyCtx();
+  if (!c) return render();
+  d.ctx = c.id;
   if (
     !validate("apply", d, {
       name: ["req"],
       email: ["req", "email"],
-      ctx: ["req", ["fn", inPack]],
       as: ["req"],
       age: [["req", "Confirm that you meet the age requirement."]],
     })

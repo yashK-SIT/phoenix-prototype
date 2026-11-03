@@ -811,7 +811,7 @@ A.relDecide = d => {
   const what = story ? 'identifiable story request' : aud;
   if (d.v.startsWith('Owner authorised')) evStewards(evCtx(e)).forEach(p => notify(p, 'Disclosure review needed: ' + e.title + ' (' + what + ')', 'evidence', { id: e.id }));
   notify(e.owner, 'Release decision (' + what + '): ' + d.v, 'evidence', { id: e.id });
-  if (story && x.requester && x.requester !== myId()) notify(x.requester, 'Your identifiable story request about “' + e.title + '”: ' + d.v, 'funding', { tab: 'reports' });
+  if (story && x.requester && x.requester !== myId()) notify(x.requester, 'Your identifiable story request about “' + e.title + '”: ' + d.v, 'evidence');
   audit('Release decision', x.id, what + ' · ' + d.v);
   ok();
 };
