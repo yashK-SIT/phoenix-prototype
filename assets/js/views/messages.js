@@ -46,9 +46,11 @@ const pwChat = p =>
   );
 // A conversation that carries a sponsor's alias shows the sponsor under it to everyone but themselves.
 const cvAnon = (o, pid) => !!o.alias && pid === o.sponsor && pid !== myId();
-const cvNm = (o, pid) => (cvAnon(o, pid) ? h(o.alias) : nm(pid));
+// JF-42: a selected team member also sees the name once the Sponsor disclosed it (views/sponsor.js).
+const cvSpP = o => (o.pr && byId('projects', o.pr)) || null;
+const cvNm = (o, pid) => (cvAnon(o, pid) ? (cvSpP(o) ? spAliasFor(cvSpP(o)) : h(o.alias)) : nm(pid));
 const cvIni = (o, pid) => (cvAnon(o, pid) ? 'S' : ini(pid));
-const cvDisp = (o, pid) => (cvAnon(o, pid) ? o.alias : P(pid).display);
+const cvDisp = (o, pid) => (cvAnon(o, pid) ? (cvSpP(o) ? spAliasTxt(cvSpP(o)) : o.alias) : P(pid).display);
 const chatMsgs = o => (isPwConvo(o) ? pwChat(o) : isSpConvo(o) ? o.msgs || [] : o.chat || []);
 const hasChats = () => !!S && !!S.session && chatSpaces().length > 0;
 const readMark = (id, pid = myId()) => ((S.chatRead || {})[pid] || {})[id] || '';

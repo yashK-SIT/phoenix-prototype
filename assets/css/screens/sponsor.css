@@ -27,6 +27,16 @@
   margin-top: 2px;
   color: var(--signal-text);
 }
+/* the box's text: alias, then one or more notes, evenly spaced */
+.sp-alias-box > div {
+  min-width: 0;
+}
+.sp-alias-box > div > p {
+  margin: var(--s-1) 0 0;
+}
+.sp-alias-box > div > p + p {
+  margin-top: var(--s-2);
+}
 
 /* ---------- how it works ---------- */
 .sp-how {
@@ -61,6 +71,31 @@
 .sp-body .hm-main > .sp-facts + .card,
 .sp-body .hm-rail > * + * {
   margin-top: var(--s-4);
+}
+/* between 640 and 1279px the rail is a two-column grid (home.css): side-by-side cards must share a top edge */
+@media (min-width: 640px) and (max-width: 1279px) {
+  .sp-body .hm-rail > * + * {
+    margin-top: 0;
+  }
+}
+/* The listing's right rail is narrow at every width: label above value, so a status pill or a long note keeps the
+   full card width instead of overflowing a 32% label column. */
+.sp-listing .hm-rail .kv2 {
+  grid-template-columns: minmax(0, 1fr);
+}
+.sp-listing .hm-rail .kv2 dt {
+  padding: var(--s-3) 0 var(--s-1);
+  border-bottom: 0;
+}
+.sp-listing .hm-rail .kv2 dd {
+  padding-top: 0;
+}
+.sp-listing .hm-rail .kv2 dd .pill {
+  max-width: 100%;
+  white-space: normal;
+}
+.sp-listing .hm-rail .banner + .kv2 {
+  margin-top: var(--s-2);
 }
 /* the listing a person views before applying: key facts first, then the sponsor's brief */
 .sp-facts {

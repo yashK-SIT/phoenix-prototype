@@ -47,9 +47,10 @@ const PAY_PILL = { Pending: "p-grey", Due: "p-amber", "Paid Offline": "p-green",
 const payPill = (s) => pill(s, PAY_PILL[s]);
 const SP_OFFLINE =
   "PHOENIX records payment status only. It has no payment gateway and never initiates, processes, holds or verifies a payment: money moves offline between the Sponsor and the project owner.";
-// An alias nobody else holds: "<prefix> · <Word> <Word> <nn>". It belongs to one project (or one dispute) only.
+// An alias nobody else holds: "<prefix> · <Word> <Word> <nn>". It belongs to one project (or one dispute) only, and is
+// never reused, even after it expires (JF-42: no correlation across posts).
 function spAlias(prefix) {
-  const taken = new Set([...S.projects.map((p) => p.alias), ...(S.disputes || []).flatMap((d) => Object.values(d.aliases || {}))]);
+  const taken = new Set([...S.projects.map((p) => p.alias), ...(S.disputes || []).flatMap((d) => Object.values(d.aliases || {})), ...(S.aliasMaps || []).map((m) => m.alias)]);
   const pick = (l) => l[Math.floor(Math.random() * l.length)];
   let a;
   do a = prefix + " · " + pick(SP_WORDS[0]) + " " + pick(SP_WORDS[1]) + " " + (10 + Math.floor(Math.random() * 90));
@@ -86,11 +87,11 @@ const spTeam = (p) => {
 // Financial records: the two sides, and Organization Admins of the programme (read-only).
 const spFin = (p) => !!spSide(p) || (role() === "A" && inCtx(p));
 const spCur = (p) => (p.brief && p.brief.currency) || "USD";
-// Everyone but the Sponsor sees the project's alias.
-const spWho = (p) => (p.sponsor === myId() ? nm(p.sponsor) + ' <span class="cap">(you)</span>' : h(p.alias));
+// Everyone but the Sponsor sees the project's alias; the selected team also sees the name once the Sponsor disclosed it.
+const spWho = (p) => (p.sponsor === myId() ? nm(p.sponsor) + ' <span class="cap">(you)</span>' : spAliasFor(p));
 const spNm = (p, pid) =>
   pid === p.sponsor
-    ? (p.sponsor === myId() ? "You" : h(p.alias)) + ' <span class="cap">(sponsor)</span>'
+    ? (p.sponsor === myId() ? "You" : spAliasFor(p)) + ' <span class="cap">(sponsor)</span>'
     : nm(pid) + (spOwners(p).includes(pid) ? ' <span class="cap">(project owner)</span>' : "");
 const spLog = (p, t) => p.history.push({ at: now(), by: myId(), t });
 const fmtD = (s) => fmt(String(s || "").slice(0, 10));
@@ -263,7 +264,7 @@ route("sponsorlisting", "any", () => {
     );
   const rail =
     spApplyCard(p) +
-    card("Sponsor", "", `<div class="sp-alias-box">${ic("shield", 18)}<div><b><span class="sp-alias">${h(p.alias)}</span></b><p class="cap">An alias made for this project. The sponsor’s name and organisation are not shown.</p></div></div>`) +
+    card("Sponsor", "", `<div class="sp-alias-box">${ic("shield", 18)}<div><b><span class="sp-alias">${h(p.alias)}</span></b><p class="cap">An alias made for this project only. The sponsor’s name and organisation are not shown${spDisclosedTo(p) ? ", except to the selected team: the sponsor disclosed them as " + nm(p.sponsor) : ""}.</p><p class="cap">It is a controlled pseudonym, not full anonymity: an Organization Admin can resolve it only for a dispute, suspected fraud or a legal or safety obligation, and every resolution is recorded.</p></div></div>`) +
     card("What happens next", "", `<ol class="sp-how sp-how-v">${[["Apply", "Send your interest with a short note."], ["Selection", "The sponsor chooses the project owner from the applicants."], ["Start", "The owner starts the work in a Circle, Rope Team or " + WL() + " and invites the team."]].map(([t_, d_], i) => `<li><span class="sp-how-n" aria-hidden="true">${i + 1}</span><div><b>${t_}</b><p class="cap">${d_}</p></div></li>`).join("")}</ol>`);
   return (
     head(h(p.title), "Sponsor project · listed " + fmtD(p.at) + " by " + `<span class="sp-alias">${ic("shield", 12)}${h(p.alias)}</span>`, pill(spShort(p) ? "Interest sent" : spLabel(p)), [["Explore board", "board"], [h(p.title)]]) +
@@ -345,7 +346,7 @@ const spHow = () =>
   );
 route("sponsorprojects", "funding", () => {
   if (role() !== "S") return spNotS();
-  const mine = S.projects.filter((p) => isSpP(p) && inCtx(p) && p.sponsor === myId());
+  const mine = S.projects.filter((p) => isSpP(p) && inCtx(p) && p.sponsor === myId() && !spFunded(p));
   return (
     head("My projects", "Projects you sponsor, listed under an alias. You see each project’s milestones, payments and disputes; the team’s own work stays with the team.", B(ic("plus", 16) + "Create project", "spNew", {}, "btn-p")) +
     spHow() +
@@ -436,7 +437,7 @@ route("sponsornew", "funding", () => {
   ${fi(f, "closes", "Applications close on", { type: "date", req: true, help: "You can stop applications earlier." })}
   ${banner("info", "Payments stay offline", SP_OFFLINE)}</div>
   <div class="actions">${L("Cancel", p ? "sponsorproject" : "sponsorprojects", p ? { id: p.id } : {}, "btn btn-g")}<button class="btn btn-p" type="submit">${p ? "Save changes" : "Create project"}</button></div></form>
-  <aside class="c4 col np-side"><div class="sp-alias-box">${ic("shield", 18)}<div><b>This project shows as <span class="sp-alias">${h(UI.spAlias)}</span></b><p class="cap">The alias is made for this project only. Your name, organisation and contact details never appear on it, in its ${WL()} or in notices to the team.</p></div></div>${card("What happens next", "", `<p class="cap">Your project is listed under Opportunities on the Explore board. Participants and Collaborators apply; you choose the main owner(s) and where the work starts, then agree milestones in the project’s ${WL()}.</p>`, "", "quiet")}</aside></div>`
+  <aside class="c4 col np-side"><div class="sp-alias-box">${ic("shield", 18)}<div><b>This project shows as <span class="sp-alias">${h(UI.spAlias)}</span></b><p class="cap">The alias is made for this project only. Your name, organisation and contact details never appear on it, in its ${WL()} or in notices to the team.</p><p class="cap">It is a controlled pseudonym: only an Organization Admin in this programme can resolve it, for a dispute, suspected fraud or a legal or safety obligation. You are told when that happens. After you finalize the team you may choose to disclose your identity to the people you selected. The link to you is deleted ${AM_KEEP_MONTHS} months after the project closes.</p></div></div>${card("What happens next", "", `<p class="cap">Your project is listed under Opportunities on the Explore board. Participants and Collaborators apply; you choose the main owner(s) and where the work starts, then agree milestones in the project’s ${WL()}.</p>`, "", "quiet")}</aside></div>`
   );
 });
 F.spn = (d) => {
@@ -468,8 +469,10 @@ F.spn = (d) => {
     const alias = S.projects.some((x) => x.alias === UI.spAlias) ? spAlias("Sponsor") : UI.spAlias;
     p = { id: uid("pr"), ctx: ctxId(), sponsor: myId(), alias, ...fields, brief, status: "Open", stage: null, owner: null, owners: [], shortlist: [], stewards: [], sections: null, clar: [], thread: [], history: [], at: now() };
     S.projects.push(p);
+    const am = amIssue(alias, "project", p);
     spLog(p, "Listed on the Explore board as " + alias);
     audit("Sponsor project created", p.id, alias);
+    audit("Sponsor alias issued", am.id, alias + " · project alias");
     toast("Project created. It is listed under Opportunities on the Explore board as " + alias + ".");
   }
   UI.spAlias = null;
@@ -481,6 +484,7 @@ F.spn = (d) => {
 A.spState = (d) => {
   const p = byId("projects", d.id);
   p.status = d.v;
+  p.withdrawnAt = d.v === "Withdrawn" ? now() : null;
   if (d.v === "Withdrawn") {
     spShortlist(p).forEach((s) => notify(s.pid, "The sponsor project “" + p.title + "” was withdrawn by " + p.alias, "projects", {}));
     spaChatClose(p, "The sponsor withdrew the project.");
@@ -541,6 +545,20 @@ const spdMsTodo = (x) => spMs(x).filter((m) => !dspOn(x, "ms", m.id) && (m.sp.sr
 route("sponsorproject", "funding", () => {
   const p = byId("projects", UI.p.id);
   if (!p || !spSponsor(p)) return spGone();
+  // A project funded through an offer has no listing, applications or team selection: its sponsor works from the
+  // workspace view (milestones, payments, disputes). Links into this page land there.
+  if (spFunded(p)) {
+    const fx = spRoom(p);
+    // No workspace linked yet: the funding summary on the Explore page is all there is to show.
+    if (!fx) {
+      UI.route = "spexp";
+      UI.p = { id: p.id };
+      return ROUTES.spexp.view();
+    }
+    UI.route = "sproom";
+    UI.p = { id: fx.id, tab: ["ms", "pay", "dsp"].includes(UI.p.tab) ? UI.p.tab : "ms", ...(UI.p.d ? { d: UI.p.d } : {}) };
+    return ROUTES.sproom.view();
+  }
   const x = spRoom(p);
   // A dispute opens inside Disputes from a link (tab + d); choosing any section from the menu drops it.
   if (!UI.p.tab) delete UI.p.d;
@@ -607,6 +625,7 @@ A.spdArchive = (d) => {
   }
   if (spListing(p) && p.status !== "Withdrawn") {
     p.status = "Withdrawn";
+    p.withdrawnAt = now();
     spShortlist(p).forEach((s) => notify(s.pid, "The sponsor project “" + p.title + "” was withdrawn by " + p.alias, "projects", {}));
   }
   spaChatClose(p, "The sponsor archived the post.");
@@ -637,11 +656,7 @@ function spdOverview(p) {
     ]),
     spListing(p) && p.status !== "Withdrawn" ? B(ic("edit", 14) + "Edit", "spEdit", { id: p.id }) : "",
   );
-  const id = card(
-    "Your identity on this project",
-    "",
-    `<p class="muted">Everyone else sees <span class="sp-alias">${ic("shield", 12)}${h(p.alias)}</span>. Your name, organisation and contact details are not shown on the listing, in the chat room, in the team’s spaces or in notices to applicants.</p><p class="cap">${L("Preview the listing", "sponsorlisting", { id: p.id })}</p>`,
-  );
+  const id = spIdCard(p);
   const act = card(
     "Activity",
     "Kept with the project",
@@ -1331,8 +1346,8 @@ function spMsList(x, p) {
   return card(
     "Milestones",
     "Defined with the project owner, completed by the team, approved by you. The milestones are the " + WL() + "’s own; the team’s tasks, discussion and evidence stay with the team.",
-    rows ? `<div class="col" style="gap:12px">${rows}</div>` : empty("flag", "No milestones yet", "Propose one; the project owner approves it before it is agreed."),
-    side && x.state === "Active" ? B(ic("plus", 14) + "Propose a milestone", "spMsNew", { r: x.id }, "btn-p btn-sm") : "",
+    rows ? `<div class="col" style="gap:12px">${rows}</div>` : spFunded(p) ? empty("flag", "No sponsor milestones yet", "The project owner proposes them; you approve each one before it is agreed.") : empty("flag", "No milestones yet", "Propose one; the project owner approves it before it is agreed."),
+    side && x.state === "Active" && !(spFunded(p) && side === "sponsor") ? B(ic("plus", 14) + "Propose a milestone", "spMsNew", { r: x.id }, "btn-p btn-sm") : "",
   );
 }
 // The fields both sides agree: deliverables, outcome, acceptance criteria, an optional deadline and the amount.
@@ -1398,7 +1413,8 @@ function spMsActs(x, p, m) {
     out.push(B("Ask for changes", "spMsChanges", { r: x.id, m: m.id }), B(ic("check", 14) + (side === "owner" ? "Approve for the team" : "Approve milestone"), "spMsAgree", { r: x.id, m: m.id }, "btn-p btn-sm"));
   if (["Proposed", "Changes requested"].includes(s.sr) && s.by === myId())
     out.push(B(ic("edit", 14) + "Revise", "spMsEdit", { r: x.id, m: m.id }, s.sr === "Changes requested" ? "btn-p btn-sm" : "btn-s btn-sm"));
-  if (s.sr === "Agreed" && !dsp) out.push(B(ic("edit", 14) + "Propose a change", "spMsEdit", { r: x.id, m: m.id }));
+  // On a project funded through an offer, only the owner changes milestones.
+  if (s.sr === "Agreed" && !dsp && !(spFunded(p) && side === "sponsor")) out.push(B(ic("edit", 14) + "Propose a change", "spMsEdit", { r: x.id, m: m.id }));
   if (side === "owner" && ["Agreed", "More information requested"].includes(s.sr) && !dsp)
     out.push(B(ic("check", 14) + (s.sr === "Agreed" ? "Mark complete" : "Send what was asked for"), "spMsDone", { r: x.id, m: m.id }, "btn-p btn-sm"));
   if (side === "sponsor" && s.sr === "Submitted" && !dsp)
@@ -1410,6 +1426,7 @@ function spMsActs(x, p, m) {
 }
 // The Sponsor opens a dispute inside their project page; everyone else inside the workspace.
 const spDspLink = (x, p, dp) =>
+  spSponsor(p) && spFunded(p) ? L(ic("shield", 14) + "Open dispute " + h(dp.ref), "sproom", { id: x.id, tab: "dsp", d: dp.id }, "btn btn-s btn-sm") :
   spSponsor(p) ? L(ic("shield", 14) + "Open dispute " + h(dp.ref), "sponsorproject", { id: p.id, tab: "dsp", d: dp.id }, "btn btn-s btn-sm") : L(ic("shield", 14) + "Open dispute " + h(dp.ref), "room", { id: x.id, tab: "dsp", d: dp.id }, "btn btn-s btn-sm");
 // View only: the two sides, workspace members and Organization Admins see a sponsor milestone in full.
 A.spMs = (d) => {
@@ -1864,6 +1881,8 @@ F.spdn = (d, form) => {
   dp.thread.push({ id: uid("dst"), by: myId(), at: now(), kind: "statement", t: d.reason.trim() + "\n\nOutcome sought: " + d.want.trim(), files });
   dp.log.push({ at: now(), t: "Raised by the " + DSP_SIDE[side].toLowerCase() + " (" + dspAlias(dp, myId()) + ")" });
   S.disputes.push(dp);
+  amIssue(dp.aliases.sponsor, "sponsor", p, dp.id);
+  amIssue(dp.aliases.team, "team", p, dp.id);
   dspPaysOf(dp).forEach((y) => {
     y.prev = y.status;
     spPaySet(x, y, "Disputed", "Automatic: dispute " + dp.ref + " raised");
@@ -2039,15 +2058,27 @@ function dspView(dp) {
     "",
     "sp-dsp-parties",
   );
-  // The alias ↔ party mapping is kept for administration and audit; an Organization Admin reveals it deliberately.
-  const shown = role() === "A" && (UI.dspReveal || {})[dp.id];
+  // The alias ↔ party mapping is kept for administration and audit. An Organization Admin resolves each alias
+  // deliberately, with a reason and justification (JF-42, Sponsor aliases register).
+  const amRow = (a) => {
+    const m = amOf(a);
+    if (!m) return [h(a), '<span class="cap">No mapping record</span>'];
+    const shown = (UI.amShown || {})[m.id];
+    return [
+      h(a),
+      m.deletedAt
+        ? '<span class="cap">Mapping deleted ' + fmtD(m.deletedAt) + "</span>"
+        : shown
+          ? amIdentity(m) + " " + B("Hide", "amHide", { id: m.id }, "btn-g btn-sm")
+          : '<span class="cap">Hidden</span> ' + B("Resolve", "amResolve", { id: m.id, dsp: dp.id }, "btn-s btn-sm"),
+    ];
+  };
   const mapping =
     role() === "A"
       ? card(
           "Alias mapping (restricted)",
           "For administration and audit only. Never shown to the Steward or to either side.",
-          shown ? dl([[h(dp.aliases.sponsor), nm(p.sponsor) + ' <span class="cap">· ' + h((S.orgs.find((o) => o.id === P(p.sponsor).org) || {}).name || "") + "</span>"], [h(dp.aliases.team), spOwners(p).map(nm).join(", ") + ' <span class="cap">and the project team</span>']]) : '<p class="cap">Hidden. Revealing it is recorded in the audit log.</p>',
-          shown ? "" : CB("Reveal", "spDspReveal", { id: dp.id }, "Reveal who is behind the two aliases of " + dp.ref + "? This is recorded in the audit log."),
+          dl([amRow(dp.aliases.sponsor), amRow(dp.aliases.team)]) + '<p class="cap">Resolving needs a reason and a justification and is recorded in the audit log. The people behind the alias are told. ' + L("Sponsor aliases", "sponsoraliases") + "</p>",
         )
       : "";
   // the Steward confirms independence before any evidence is shown
@@ -2130,7 +2161,9 @@ route("dispute", "any", () => {
   const x = dspRoom(dp);
   const side = dspMine(dp);
   const crumbs =
-    side === "sponsor"
+    side === "sponsor" && spFunded(p)
+      ? [["Explore projects", "spexplore"], [h(p.title), "spexp", { id: p.id }], [h(x.name), "sproom", { id: x.id, tab: "dsp" }], [h(dp.ref)]]
+      : side === "sponsor"
       ? [["My projects", "sponsorprojects"], [h(p.title), "sponsorproject", { id: p.id }], [h(x.name), "sproom", { id: x.id, tab: "dsp" }], [h(dp.ref)]]
       : side
         ? [[WL() + "s", "rooms"], [h(x.name), "room", { id: x.id, tab: "dsp" }], [h(dp.ref)]]
@@ -2138,13 +2171,6 @@ route("dispute", "any", () => {
   const v = dspView(dp);
   return crumbsHtml(crumbs) + head("Dispute " + h(dp.ref), "About " + h(dspSubject(dp)) + " · raised " + fmtD(dp.at), pill(dp.status)) + hmCols(v.main, v.rail);
 });
-A.spDspReveal = (d) => {
-  const dp = byId("disputes", d.id);
-  UI.dspReveal = { ...(UI.dspReveal || {}), [dp.id]: true };
-  audit("Dispute aliases revealed", dp.id, "Organization Admin");
-  toast("Revealed. This is recorded in the audit log.");
-  ok();
-};
 F.spdsa = (d) => {
   const dp = byId("disputes", d.id);
   if (d.v === "decline") {
@@ -2244,6 +2270,373 @@ A.spDspWithdraw = (d) => {
   ok();
 };
 
+// ---------- JF-42 · THE SPONSOR ALIAS AS A CONTROLLED PSEUDONYM ----------
+// Every alias (a project's, and the two of each dispute) has an AliasMapping record in S.aliasMaps: what it stands for,
+// how long the link to the person is kept, any hold, the Sponsor's own disclosure and every resolution.
+// Owner decisions (WSS):
+//  · Resolver: only an Organization Admin in the programme, with a reason category and a written justification. Audited.
+//  · Triggers: a dispute about the project, suspected fraud, or a legal or safety obligation. Nothing else resolves it.
+//  · After mutual introduction (the Sponsor finalized the team) the Sponsor may disclose their identity to the selected
+//    team only. Audited and final. Nothing is disclosed automatically.
+//  · Retention: until 12 months after the project closes or the listing is withdrawn. Then the alias expires and the
+//    mapping is deleted, unless a dispute about the project is open or a fraud review or legal hold applies.
+//  · Notice: the people behind the alias are told (reason, date, resolver's role). For fraud or a legal or safety
+//    obligation the Admin may defer the notice with a recorded reason, then sends it later.
+// PROTOTYPE LIMIT: the mapping lives in browser state. In production it must be held server-side, encrypted, in a store
+// only the resolver service can read; the UI never receives an identity it was not authorized to resolve.
+const AM_KIND = { project: "Project alias", sponsor: "Dispute alias · sponsor side", team: "Dispute alias · team side" };
+const AM_WHY = [
+  ["dispute", "A dispute about this project"],
+  ["fraud", "Suspected fraud"],
+  ["legal", "A legal or safety obligation"],
+];
+const AM_DEFER_OK = ["fraud", "legal"];
+const AM_HOLD = [
+  ["fraud", "Fraud review"],
+  ["legal", "Legal hold"],
+];
+const AM_KEEP_MONTHS = 12;
+const amLbl = (list, v) => (list.find(([k]) => k === v) || [, v])[1];
+const amAll = () => (S.aliasMaps = S.aliasMaps || []);
+const amOf = (alias) => amAll().find((m) => m.alias === alias) || null;
+const amProj = (p) => (p && amAll().find((m) => m.kind === "project" && m.pr === p.id)) || null;
+const amLive = (m) => !!m && !m.deletedAt;
+// Alias.Create → AliasIssued
+function amIssue(alias, kind, p, dsp, at) {
+  const had = amOf(alias);
+  if (had) return had;
+  const m = { id: uid("am"), alias, kind, pr: p.id, ctx: p.ctx, dsp: dsp || null, issuedAt: at || now(), hold: null, holds: [], disclosed: null, res: [], deletedAt: null };
+  amAll().push(m);
+  return m;
+}
+// When a sponsor project stopped: its listing withdrawn, or the project closed after final review.
+function spClosedAt(p) {
+  const last = (re) => ((p.history || []).slice().reverse().find((y) => re.test(y.t)) || {}).at || null;
+  if (p.status === "Withdrawn") return p.withdrawnAt || p.spArchived || last(/withdrawn|archived/i);
+  if (p.stage === "Closed") return p.closedAt || last(/closed/i);
+  return null;
+}
+const amAddMonths = (s, n) => {
+  const d = new Date(s);
+  d.setMonth(d.getMonth() + n);
+  return d.toISOString();
+};
+// All aliases of a project share one retention clock and one hold (kept on the project alias's record).
+const amProjOf = (m) => byId("projects", m.pr);
+const amExpires = (m) => {
+  const c = spClosedAt(amProjOf(m));
+  return c ? amAddMonths(c, AM_KEEP_MONTHS) : null;
+};
+const amHoldOf = (m) => (amProj(amProjOf(m)) || m).hold;
+function amBlocks(m) {
+  const b = [];
+  const open = (S.disputes || []).filter((d) => d.pr === m.pr && dspOpen(d));
+  if (open.length) b.push("dispute " + open.map((d) => d.ref).join(", ") + (open.length > 1 ? " are" : " is") + " open");
+  const hd = amHoldOf(m);
+  if (hd) b.push(amLbl(AM_HOLD, hd.cat).toLowerCase() + " placed " + fmtD(hd.at));
+  return b;
+}
+const amStatus = (m) => (m.deletedAt ? "Expired · mapping deleted" : amHoldOf(m) ? "On hold" : amExpires(m) && amExpires(m) <= now() ? "Deletion blocked" : "Active");
+Object.assign(SC, { "Expired · mapping deleted": "p-grey", "On hold": "p-amber", "Deletion blocked": "p-amber", "Notice deferred": "p-amber", "Notice sent": "p-teal" });
+// Alias.Expire → AliasExpired. Runs on load and when the register opens; a scheduled job in production.
+function amSweep() {
+  let n = 0;
+  amAll().forEach((m) => {
+    if (m.deletedAt) return;
+    const e = amExpires(m);
+    if (!e || e > now() || amBlocks(m).length) return;
+    Object.assign(m, { deletedAt: now(), expiredAt: e, disclosed: m.disclosed ? { ...m.disclosed, ended: now() } : null });
+    S.audit.unshift({ at: now(), by: null, ctx: m.ctx, a: "Sponsor alias expired; mapping deleted", o: m.id, d: m.alias + " · " + AM_KEEP_MONTHS + " months after the project closed", r: "ok" });
+    n++;
+  });
+  return n;
+}
+// Every sponsor project and dispute gets its mapping record (backfill for browsers seeded before JF-42).
+function amBackfill() {
+  S.projects.filter(isSpP).forEach((p) => amIssue(p.alias, "project", p, null, p.at));
+  (S.disputes || []).forEach((dp) => {
+    const p = byId("projects", dp.pr);
+    if (!p || !dp.aliases) return;
+    amIssue(dp.aliases.sponsor, "sponsor", p, dp.id, dp.at);
+    amIssue(dp.aliases.team, "team", p, dp.id, dp.at);
+  });
+  amSweep();
+}
+// Who stands behind an alias. Built only for a recorded resolution, or for the team after the Sponsor's disclosure.
+function amIdentity(m) {
+  const p = amProjOf(m);
+  if (m.kind === "team") return spOwners(p).map(nm).join(", ") + ' <span class="cap">(project owner) and the project team</span>';
+  const o = S.orgs.find((x) => x.id === P(p.sponsor).org);
+  return nm(p.sponsor) + (o ? ' <span class="cap">· ' + h(o.name) + "</span>" : "");
+}
+const amParties = (m) => (m.kind === "team" ? spOwners(amProjOf(m)) : [amProjOf(m).sponsor]);
+const amWhyTxt = (r) => amLbl(AM_WHY, r.cat) + (r.dsp && byId("disputes", r.dsp) ? " (" + byId("disputes", r.dsp).ref + ")" : "");
+function amNotify(m, r) {
+  const p = amProjOf(m);
+  amParties(m).forEach((pid) =>
+    notify(pid, "Your alias “" + m.alias + "” on “" + p.title + "” was resolved to your identity by an Organization Admin on " + fmtD(r.at) + ". Reason: " + amWhyTxt(r) + ".", pid === p.sponsor ? "sponsorproject" : "project", { id: p.id }),
+  );
+}
+
+// ---- mutual introduction: the team the Sponsor selected, and the Sponsor's own disclosure to it
+const spIntroduced = (p) => isSpP(p) && !spListing(p) && spOwners(p).length > 0;
+const spSelected = (p) => [...new Set(p.team ? p.team.map((t) => t.pid) : [...spOwners(p), ...spShortlist(p).filter((s) => s.sel !== "Not selected").map((s) => s.pid)])].filter((pid) => pid !== p.sponsor);
+const spDisclosedTo = (p, pid = myId()) => {
+  const m = amProj(p);
+  return amLive(m) && !!m.disclosed && m.disclosed.to.includes(pid);
+};
+// The alias, with the Sponsor's name added for a selected team member once the Sponsor disclosed it.
+const spAliasFor = (p, pid = myId()) => h(p.alias) + (pid !== p.sponsor && spDisclosedTo(p, pid) ? ' <span class="cap">(' + nm(p.sponsor) + ")</span>" : "");
+const spAliasTxt = (p, pid = myId()) => p.alias + (pid !== p.sponsor && spDisclosedTo(p, pid) ? " (" + P(p.sponsor).name + ")" : "");
+// The Sponsor's card on their project: how the alias is governed, and the disclosure choice after the team is final.
+function spIdCard(p) {
+  const m = amProj(p);
+  const res = m ? m.res.filter((r) => r.notice === "Sent") : [];
+  const exp = m && amExpires(m);
+  const disc = m && m.disclosed;
+  const status = !m
+    ? ""
+    : m.deletedAt
+      ? banner("info", "This alias has expired", "The link between the alias and you was deleted on " + fmtD(m.deletedAt) + ". Nobody can resolve it any more.")
+      : disc
+        ? banner("ok", "Disclosed to the selected team", "On " + fmtD(disc.at) + " you disclosed your name to " + disc.to.map(nm).join(", ") + ". Everyone else still sees the alias.")
+        : spIntroduced(p)
+          ? `<p class="cap">The team is final. You may disclose your name and organisation to the people you selected. It is your choice and cannot be undone.</p>`
+          : `<p class="cap">Once you finalize the team, you may choose to disclose your name and organisation to the people you selected.</p>`;
+  return card(
+    "Your identity on this project",
+    "A controlled pseudonym, not full anonymity",
+    `<p class="muted">Everyone else sees <span class="sp-alias">${ic("shield", 12)}${h(p.alias)}</span>. Your name, organisation and contact details are not shown on the listing, in the chat room, in the team’s spaces or in notices to applicants.</p>` +
+      status +
+      dl([
+        ["Who can resolve it", "Only an Organization Admin in " + h(ctxName(p.ctx)) + ", with written reasons. Each resolution is recorded in the audit log."],
+        ["Only for", AM_WHY.map(([, l]) => l.replace(/^A /, "a ")).join("; ")],
+        ["You are told", "When it is resolved, with the reason. For suspected fraud or a legal or safety obligation the notice can be deferred while it is investigated."],
+        ["Kept until", m && m.deletedAt ? "Deleted " + fmtD(m.deletedAt) : exp ? fmtD(exp) + (amBlocks(m).length ? " · later while " + h(amBlocks(m).join("; ")) : "") : AM_KEEP_MONTHS + " months after the project closes, then deleted"],
+        res.length && ["Resolutions", res.map((r) => fmtD(r.at) + " · " + h(amWhyTxt(r))).join("<br>")],
+      ]) +
+      `<p class="cap">${L("Preview the listing", "sponsorlisting", { id: p.id })}</p>`,
+    spSponsor(p) && spIntroduced(p) && amLive(m) && !disc ? B(ic("user", 14) + "Disclose to the team", "spDisclose", { id: p.id }) : "",
+  );
+}
+A.spDisclose = (d) => {
+  const p = byId("projects", d.id);
+  const o = S.orgs.find((x) => x.id === P(p.sponsor).org);
+  clearF("spdx");
+  modal("Disclose your identity to the selected team", () =>
+    `<form data-f="spdx" class="col fgap" novalidate>${errSum("spdx")}<input type="hidden" name="id" value="${p.id}">${dl([
+      ["Shown to", spSelected(p).map(nm).join(", ") || "—"],
+      ["What they see", h(p.alias) + " (" + nm(p.sponsor) + (o ? " · " + h(o.name) : "") + ")"],
+      ["Still not shown to", "The Explore board, people who were not selected, anyone who joins the team later, and dispute Stewards. Disputes keep their own aliases."],
+    ])}${banner("warn", "This cannot be undone", "Once the team has seen your name you cannot hide it from them again. The disclosure is recorded in the audit log.")}${fi("spdx", "ack", "I choose to disclose my name and organisation to the selected team", { type: "checkbox" })}<div class="actions">${B("Cancel", "closeM")}<button class="btn btn-p" type="submit">Disclose</button></div></form>`,
+  );
+};
+F.spdx = (d) => {
+  if (!validate("spdx", d, { ack: [["req", "Confirm that you choose to disclose your identity."]] })) return render();
+  const p = byId("projects", d.id);
+  const m = amProj(p);
+  m.disclosed = { at: now(), by: myId(), to: spSelected(p) };
+  m.disclosed.to.forEach((pid) => notify(pid, "The sponsor of “" + p.title + "” (" + p.alias + ") disclosed their identity to the team: " + P(p.sponsor).name + ".", "project", { id: p.id }));
+  spLog(p, "The sponsor disclosed their identity to the selected team");
+  audit("Sponsor identity disclosed to team", m.id, m.disclosed.to.length + " selected team member(s)");
+  UI.modal = null;
+  clearF("spdx");
+  toast("Disclosed to the selected team. Everyone else still sees the alias.");
+  ok();
+};
+
+// ---- Alias.Resolve: an Organization Admin, for a dispute, suspected fraud or a legal or safety obligation
+A.amResolve = (d) => {
+  const m = byId("aliasMaps", d.id);
+  const p = amProjOf(m);
+  const dsps = (S.disputes || []).filter((x) => x.pr === p.id);
+  clearF("amr");
+  UI.form.amr = { id: m.id, cat: d.dsp ? "dispute" : "", dsp: d.dsp || (m.dsp || ""), notice: "now" };
+  modal("Resolve alias · " + h(m.alias), () =>
+    `<form data-f="amr" class="col fgap" novalidate>${errSum("amr")}<input type="hidden" name="id" value="${m.id}">${dl([
+      ["Alias", h(m.alias) + ' <span class="cap">· ' + h(AM_KIND[m.kind]) + "</span>"],
+      ["Project", h(p.title)],
+    ])}${fi("amr", "cat", "Reason", { type: "select", req: true, ph: "Choose a reason", opts: AM_WHY, help: "An alias is resolved only for one of these reasons." })}${fi("amr", "dsp", "Dispute", { type: "select", ph: dsps.length ? "Choose the dispute" : "No disputes about this project", opts: dsps.map((x) => [x.id, x.ref + " · " + x.status]), help: "Needed when the reason is a dispute." })}${fi("amr", "why", "Justification", { type: "textarea", rows: 3, req: true, max: 2000, help: "At least 40 characters. Why the identity is needed, and what it will be used for. Kept in the audit record; not sent to the person." })}${fi("amr", "notice", "Notice to the person behind the alias", { type: "select", opts: [["now", "Tell them now"], ["defer", "Defer the notice (suspected fraud or a legal or safety obligation only)"]] })}${fi("amr", "deferWhy", "Why the notice is deferred", { type: "textarea", rows: 2, max: 1000, help: "Needed when you defer. At least 20 characters." })}${banner("info", "Recorded in the audit log", "Your name, the reason and the justification are recorded. The identity is shown to you on this screen only.")}<div class="actions">${B("Cancel", "closeM")}<button class="btn btn-p" type="submit">Resolve</button></div></form>`,
+  );
+};
+F.amr = (d) => {
+  const m = byId("aliasMaps", d.id);
+  const p = amProjOf(m);
+  const defer = d.notice === "defer";
+  if (
+    !validate("amr", d, {
+      cat: [["req", "Choose a reason."], ["fn", { f: (v) => AM_WHY.some(([k]) => k === v), m: "Choose a reason." }]],
+      dsp: [["fn", { f: (v) => d.cat !== "dispute" || (S.disputes || []).some((x) => x.id === v && x.pr === p.id), m: "Choose the dispute about this project." }]],
+      why: ["req", ["min", 40]],
+      notice: [["fn", { f: () => !defer || AM_DEFER_OK.includes(d.cat), m: "A notice can be deferred only for suspected fraud or a legal or safety obligation." }]],
+      deferWhy: [["fn", { f: (v) => !defer || v.length >= 20, m: "Say why the notice is deferred (at least 20 characters)." }]],
+    })
+  )
+    return render();
+  const r = { id: uid("amr"), by: myId(), at: now(), cat: d.cat, dsp: d.cat === "dispute" ? d.dsp : null, why: d.why.trim(), notice: defer ? "Deferred" : "Sent", deferWhy: defer ? d.deferWhy.trim() : "", noticeAt: defer ? null : now() };
+  m.res.push(r);
+  if (!defer) amNotify(m, r);
+  UI.amShown = { ...(UI.amShown || {}), [m.id]: r.id };
+  audit("Sponsor alias resolved", m.id, amWhyTxt(r) + (defer ? " · notice deferred" : " · notice sent"));
+  UI.modal = null;
+  clearF("amr");
+  toast("Resolved. This is recorded in the audit log.");
+  ok();
+};
+A.amHide = (d) => {
+  UI.amShown = { ...(UI.amShown || {}), [d.id]: null };
+  render();
+};
+A.amNotice = (d) => {
+  const m = byId("aliasMaps", d.id);
+  const r = m.res.find((x) => x.id === d.r);
+  Object.assign(r, { notice: "Sent", noticeAt: now(), noticeBy: myId() });
+  amNotify(m, r);
+  audit("Deferred alias notice sent", m.id, amWhyTxt(r));
+  toast("Notice sent.");
+  ok();
+};
+// A fraud review or legal hold stops the mapping being deleted at the end of its retention period.
+A.amHold = (d) => {
+  const m = byId("aliasMaps", d.id);
+  clearF("amh");
+  modal("Place a hold · " + h(amProjOf(m).title), () =>
+    `<form data-f="amh" class="col fgap" novalidate>${errSum("amh")}<input type="hidden" name="id" value="${m.id}">${fi("amh", "cat", "Kind of hold", { type: "select", req: true, ph: "Choose", opts: AM_HOLD })}${fi("amh", "why", "Reason", { type: "textarea", rows: 3, req: true, max: 1000, help: "At least 20 characters. Recorded in the audit log." })}${banner("info", "", "A hold covers every alias of this project. While it is in place the mappings are kept past their retention date. Release it when the review or legal matter ends.")}<div class="actions">${B("Cancel", "closeM")}<button class="btn btn-p" type="submit">Place hold</button></div></form>`,
+  );
+};
+F.amh = (d) => {
+  if (!validate("amh", d, { cat: [["req", "Choose the kind of hold."]], why: ["req", ["min", 20]] })) return render();
+  const pm = amProj(amProjOf(byId("aliasMaps", d.id)));
+  pm.hold = { cat: d.cat, why: d.why.trim(), by: myId(), at: now() };
+  pm.holds.push({ ...pm.hold, t: "placed" });
+  audit("Sponsor alias hold placed", pm.id, amLbl(AM_HOLD, d.cat));
+  UI.modal = null;
+  clearF("amh");
+  toast("Hold placed. The mappings are kept until it is released.");
+  ok();
+};
+A.amHoldEnd = (d) => {
+  const pm = amProj(amProjOf(byId("aliasMaps", d.id)));
+  pm.holds.push({ ...pm.hold, t: "released", releasedBy: myId(), releasedAt: now() });
+  pm.hold = null;
+  audit("Sponsor alias hold released", pm.id, "");
+  const n = amSweep();
+  toast(n ? "Hold released. The retention period had ended, so the mappings were deleted." : "Hold released.");
+  ok();
+};
+
+// ---- The register: every alias in the programme (Organization Admin)
+function amRows(list) {
+  return table(
+    ["Alias", "Kind", "Project", "Status", "Kept until", "Resolved", ""],
+    list.map((m) => {
+      const p = amProjOf(m);
+      const dp = m.dsp && byId("disputes", m.dsp);
+      const e = amExpires(m);
+      return [
+        `<span class="sp-alias">${ic("shield", 12)}${h(m.alias)}</span>`,
+        h(AM_KIND[m.kind]) + (dp ? ' <span class="cap">· ' + h(dp.ref) + "</span>" : ""),
+        L(h(p.title), "project", { id: p.id }),
+        pill(amStatus(m)),
+        m.deletedAt ? "Deleted " + fmtD(m.deletedAt) : e ? fmtD(e) : '<span class="cap">Project open</span>',
+        m.res.length ? m.res.length + (m.res.some((r) => r.notice === "Deferred") ? " · " + pill("Notice deferred") : "") : "—",
+        L("Open", "sponsoralias", { id: m.id }, "btn btn-s btn-sm"),
+      ];
+    }),
+    "No sponsor aliases in this programme yet.",
+  );
+}
+const amPolicy = () =>
+  card(
+    "How sponsor aliases are governed",
+    "JF-42 · a controlled pseudonym, not full anonymity",
+    dl([
+      ["Per-project alias", "Every sponsor project gets its own alias, and every dispute two new ones. An alias is never reused, so posts by one sponsor cannot be linked through it."],
+      ["Who can resolve", "An Organization Admin in this programme, with a reason and a written justification. Stewards, project teams and applicants cannot."],
+      ["Only for", AM_WHY.map(([, l]) => l).join("; ") + "."],
+      ["Sponsor’s own choice", "After finalizing the team, the Sponsor may disclose their identity to the selected team only."],
+      ["Notice", "The people behind the alias are told the reason and date. For suspected fraud or a legal or safety obligation the notice can be deferred, with a recorded reason, and sent later."],
+      ["Retention", "Until " + AM_KEEP_MONTHS + " months after the project closes or its listing is withdrawn. Then the alias expires and the mapping is deleted, unless a dispute about the project is open or a fraud review or legal hold applies."],
+    ]),
+  );
+route("sponsoraliases", "any", () => {
+  if (role() !== "A") return deniedView("sponsoraliases");
+  if (amSweep()) save();
+  const list = amAll().filter(inCtx);
+  const deferred = list.flatMap((m) => m.res.filter((r) => r.notice === "Deferred").map((r) => [m, r]));
+  return (
+    head("Sponsor aliases", "Who stands behind each sponsor alias is resolved here, only for a dispute, suspected fraud or a legal or safety obligation. Every step is recorded in the audit log.") +
+    (deferred.length
+      ? banner("warn", deferred.length + " deferred notice" + (deferred.length > 1 ? "s" : ""), "Send each notice once the fraud review or legal matter allows it. " + deferred.map(([m, r]) => L(h(m.alias), "sponsoralias", { id: m.id })).join(", ")) + '<div class="section-gap"></div>'
+      : "") +
+    hmCols(card("Aliases in " + h(ctxName(ctxId())), "", amRows(list.slice().sort((a, b) => String(b.issuedAt).localeCompare(String(a.issuedAt)))), "", "sp-tbl"), amPolicy())
+  );
+});
+route("sponsoralias", "any", () => {
+  const m = byId("aliasMaps", UI.p.id);
+  if (role() !== "A" || !m || !inCtx(m)) return deniedView("sponsoraliases");
+  const p = amProjOf(m);
+  const dp = m.dsp && byId("disputes", m.dsp);
+  const shown = (UI.amShown || {})[m.id];
+  const e = amExpires(m);
+  const bl = amBlocks(m);
+  const hold = amHoldOf(m);
+  const ident = card(
+    "Identity behind the alias (restricted)",
+    "For a dispute, suspected fraud or a legal or safety obligation only",
+    m.deletedAt
+      ? '<p class="cap">The mapping was deleted on ' + fmtD(m.deletedAt) + " at the end of its retention period. This alias can no longer be resolved.</p>"
+      : shown
+        ? dl([[h(m.alias), amIdentity(m)]]) + '<p class="cap">Shown for the resolution you just recorded. It is hidden again when you leave or hide it.</p>'
+        : '<p class="cap">Hidden. Resolving it needs a reason and a justification, and is recorded in the audit log.</p>',
+    m.deletedAt ? "" : shown ? B("Hide", "amHide", { id: m.id }) : B(ic("shield", 14) + "Resolve", "amResolve", { id: m.id, dsp: m.dsp || "" }, "btn-p btn-sm"),
+    "accent",
+  );
+  const log = card(
+    "Resolutions",
+    "Alias.Resolve records. They are kept after the mapping is deleted.",
+    table(
+      ["When", "By", "Reason", "Justification", "Notice"],
+      m.res
+        .slice()
+        .reverse()
+        .map((r) => [
+          fmtD(r.at),
+          nm(r.by),
+          h(amWhyTxt(r)),
+          spText(r.why),
+          r.notice === "Deferred" ? pill("Notice deferred") + `<div class="cap">${h(r.deferWhy)}</div>` + CB("Send notice now", "amNotice", { id: m.id, r: r.id }, "Send the deferred notice to " + amParties(m).map((x) => P(x).name).join(", ") + "?") : pill("Notice sent") + `<div class="cap">${fmtD(r.noticeAt)}</div>`,
+        ]),
+      "Never resolved.",
+    ),
+  );
+  const disc =
+    m.kind === "project"
+      ? card(
+          "Sponsor’s disclosure to the team",
+          "",
+          m.disclosed ? '<p class="cap">Disclosed by the sponsor on ' + fmtD(m.disclosed.at) + " to " + m.disclosed.to.length + " selected team member(s)" + (m.disclosed.ended ? ", ended when the mapping was deleted" : "") + ".</p>" : '<p class="cap">Not disclosed. ' + (spIntroduced(p) ? "The sponsor may still choose to disclose it to the selected team." : "The sponsor may choose to once the team is finalized.") + "</p>",
+        )
+      : "";
+  const ret = card(
+    "Retention",
+    "",
+    dl([
+      ["Issued", fmtD(m.issuedAt)],
+      ["Project closed", spClosedAt(p) ? fmtD(spClosedAt(p)) : "Not yet"],
+      ["Kept until", m.deletedAt ? "Deleted " + fmtD(m.deletedAt) : e ? fmtD(e) : AM_KEEP_MONTHS + " months after the project closes"],
+      bl.length && !m.deletedAt && ["Deletion blocked while", h(bl.join("; "))],
+      hold && ["Hold", h(amLbl(AM_HOLD, hold.cat)) + " · " + fmtD(hold.at) + " by " + nm(hold.by) + `<div class="cap">${h(hold.why)}</div>`],
+    ]),
+    m.deletedAt ? "" : hold ? CB("Release hold", "amHoldEnd", { id: m.id }, "Release the " + amLbl(AM_HOLD, hold.cat).toLowerCase() + " on every alias of “" + p.title + "”? If the retention period has ended, the mappings are deleted.") : B("Place hold", "amHold", { id: m.id }),
+  );
+  return (
+    crumbsHtml([["Sponsor aliases", "sponsoraliases"], [h(m.alias)]]) +
+    head(h(m.alias), h(AM_KIND[m.kind]) + " · " + h(p.title) + (dp ? " · " + L(h(dp.ref), "dispute", { id: dp.id }) : ""), pill(amStatus(m))) +
+    hmCols(ident + log + disc, ret)
+  );
+});
+
 // ---------- THE SPONSOR'S VIEW OF THE ACTION WORKSPACE: milestones, payments and disputes only ----------
 route("sproom", "funding", () => {
   const x = byId("rooms", UI.p.id);
@@ -2259,14 +2652,422 @@ route("sproom", "funding", () => {
     UI.p.tab,
     { label: WL() + " sections", icons: { ms: "flag", pay: "coin", dsp: "shield" } },
   );
-  const body = t.cur === "pay" ? spPayTab(x, p) : t.cur === "dsp" ? spDspTab(x, p) : spMsList(x, p);
+  const body = t.cur === "pay" ? spPayTab(x, p) : t.cur === "dsp" ? spDspTab(x, p) : spMsList(x, p) + (spFunded(p) ? '<div class="section-gap"></div>' + spxMsCard(p, x, "All project milestones") : "");
   return (
-    crumbsHtml([["My projects", "sponsorprojects"], [h(p.title), "sponsorproject", { id: p.id }], [h(x.name)]]) +
+    crumbsHtml(spFunded(p) ? [["Explore projects", "spexplore"], [h(p.title), "spexp", { id: p.id }], [h(x.name)]] : [["My projects", "sponsorprojects"], [h(p.title), "sponsorproject", { id: p.id }], [h(x.name)]]) +
     wsBar("rooms", x) +
     banner("info", "Your view of this " + WL(), "You see this project’s milestones, the evidence the team attaches to them, payment status and disputes. You are not a member: the team’s tasks, discussion, members and other evidence stay with the team.", "lock") +
     withSubnav(t, body)
   );
 });
+
+// ---------- SPONSOR: FUNDING INTEREST IN PROJECTS THE SPONSOR DID NOT CREATE ----------
+// An additional flow for programme projects created by someone else. Steps:
+//   1. The Sponsor sends a funding interest request (status "Requested"). Many sponsors may request the same project.
+//   2. The project owner accepts ("Accepted") or rejects ("Rejected") each request on its own.
+//   3. On an accepted request the owner proposes the expected funding in USD with its terms. Either side may then revise
+//      it; the other side agrees to the latest proposal. Talks with several accepted sponsors may run in parallel.
+//   4. When both agree ("Agreed") that sponsor funds the project: p.sponsor, p.alias, p.spVia = "offer" and the agreed
+//      amount as p.brief.budget. A project has one funding sponsor, so other open requests close and their sponsors are told.
+//   5. From then on the existing Team Delivery flow runs unchanged: sponsor milestones in the project's workspace,
+//      milestone review, payment status and disputes. Nothing here creates milestones or payments.
+// Sponsor-created projects (p.spVia unset) are not affected by anything in this section.
+const spFunded = (p) => isSpP(p) && p.spVia === "offer";
+const SPI_OPEN = ["Requested", "Accepted"];
+const SPI_CUR = "USD"; // funding agreed through this flow is always in US dollars
+const SPI_PILL = { Requested: "p-navy", Accepted: "p-amber", Agreed: "p-green", Rejected: "p-grey", Withdrawn: "p-grey", Closed: "p-grey" };
+const SPI_LABEL = { Requested: "Awaiting owner", Accepted: "Agreeing amount", Agreed: "Funding agreed", Rejected: "Rejected", Withdrawn: "Withdrawn", Closed: "Closed" };
+const spiPill = (i) => pill(SPI_LABEL[i.status] || i.status, SPI_PILL[i.status]);
+const spiAll = (p) => (p && p.spInterest) || [];
+const spiOpen = (p) => spiAll(p).filter((i) => SPI_OPEN.includes(i.status));
+const spiMine = (p) => spiAll(p).find((i) => i.by === myId() && SPI_OPEN.includes(i.status)) || null;
+const spiLast = (p) => spiAll(p).filter((i) => i.by === myId()).slice(-1)[0] || null;
+const spiOf = (p, id) => spiAll(p).find((i) => i.id === id) || null;
+const spiUsd = (n) => money(SPI_CUR, n);
+// Earlier browser data used Interested/Offered/Accepted/Declined and per-milestone offers in any currency. Map them
+// once: open records go back to "Requested" (the old offer is kept for reference only), the rest keep their outcome.
+function spiNorm() {
+  S.projects.forEach((p) =>
+    spiAll(p).forEach((i) => {
+      if (i.status === "Interested" || i.status === "Offered") {
+        if (i.offer) i.legacyOffer = i.offer;
+        i.status = "Requested";
+      } else if (i.status === "Accepted") i.status = "Agreed";
+      else if (i.status === "Declined") i.status = "Rejected";
+      delete i.offer;
+      i.rounds = i.rounds || [];
+      if (i.terms === undefined) i.terms = null;
+    }),
+  );
+}
+// The programme's projects a Sponsor may explore: past Draft, not rejected or closed, not hidden from them, and not a
+// listing another sponsor created. Projects already funded through this flow stay visible.
+const spxSees = (p) =>
+  role() === "S" && !!p && inCtx(p) && !!p.owner && p.owner !== myId() && (!isSpP(p) || spFunded(p)) && !spHidden(p) &&
+  (p.sponsor === myId() || (!["Draft", "Rejected"].includes(p.status) && p.stage !== "Closed"));
+const spxRoom = (p) => (p && p.room && byId("rooms", p.room)) || null;
+const spxCanInterest = (p) => spxSees(p) && !isSpP(p) && !spiMine(p);
+const spxOwner = (p) => !!p && role() !== "S" && p.owner === myId();
+// Which side of a request the signed-in person is on, if any.
+const spiSide = (p, i) => (!p || !i ? null : spxOwner(p) ? "owner" : role() === "S" && i.by === myId() ? "sponsor" : null);
+// The owner proposes the amount first; after that either side may revise it until one agrees to the other's proposal.
+const spiCanTerms = (p, i) => {
+  const s = spiSide(p, i);
+  return !!s && !isSpP(p) && i.status === "Accepted" && (s === "owner" || !!i.terms);
+};
+const spiCanAgree = (p, i) => {
+  const s = spiSide(p, i);
+  return !!s && !isSpP(p) && i.status === "Accepted" && !!i.terms && i.terms.by !== s;
+};
+// Whose move it is on an open request: what the nav counts and the next-step lines show.
+const spiTurn = (i) => (i.status === "Requested" ? "owner" : i.status !== "Accepted" ? null : !i.terms ? "owner" : i.terms.by === "owner" ? "sponsor" : "owner");
+// Open requests waiting for the signed-in person: the owner's on their projects, or the Sponsor's own.
+const spiWaiting = () =>
+  S.projects
+    .filter((p) => inCtx(p) && !isSpP(p))
+    .flatMap((p) => spiOpen(p).map((i) => [p, i]))
+    .filter(([p, i]) => {
+      const s = spiSide(p, i);
+      return !!s && spiTurn(i) === s;
+    });
+const spiWho = (p, i, by) => (by === "owner" ? (spxOwner(p) ? "you" : "the project owner") : i.by === myId() ? "you" : h(i.alias));
+// The current proposal and earlier rounds, shown to both sides the same way.
+function spiTermsHtml(p, i) {
+  if (!i.terms) return "";
+  const t = i.terms;
+  const earlier = (i.rounds || []).slice(0, -1).reverse();
+  return (
+    `<div class="sp-sub"><div class="row wrap sp-sub-h"><b>${spiUsd(t.amount)}</b><span class="cap">proposed by ${spiWho(p, i, t.by)} · ${fmtD(t.at)}</span></div><p>${spText(t.note)}</p></div>` +
+    (earlier.length
+      ? `<details class="ws-done"><summary class="cap">${earlier.length} earlier proposal${earlier.length === 1 ? "" : "s"}</summary><div class="col fgap">${earlier.map((r) => `<div class="cap">${spiUsd(r.amount)} · by ${spiWho(p, i, r.by)} · ${fmtD(r.at)}<br>${spText(r.note)}</div>`).join("")}</div></details>`
+      : "")
+  );
+}
+const spxProgress = (x) => {
+  const ms = (x && x.milestones) || [];
+  return ms.length ? ms.filter((m) => m.status === "Achieved").length + " of " + ms.length + " milestones achieved" : "No milestones yet";
+};
+// Every milestone of the project's workspace, read-only: what the Sponsor tracks before and after funding.
+function spxMsCard(p, x, title) {
+  if (!x)
+    return card(title, "", empty("flag", "No milestones yet", "The project owner adds milestones in the project's " + WL() + " once the work starts."));
+  const funded = spFunded(p) && p.sponsor === myId();
+  const rows = x.milestones.map((m) => [
+    `<b>${h(m.t)}</b>`,
+    m.due ? fmtD(m.due) + dueTag(m.due, m.status === "Achieved") : '<span class="cap">No deadline</span>',
+    pill(m.status || "Not started"),
+    m.sp ? (funded ? pill(srLabel(m)) + " " + money(spCur(p), m.sp.amount) : pill("Sponsored", "p-purple")) : '<span class="cap">—</span>',
+  ]);
+  return card(
+    title,
+    spxProgress(x) + ". Milestones are created and managed by the project owner.",
+    table(["Milestone", "Due", "Progress", "Sponsor funding"], rows, "The project owner has not added milestones yet."),
+  );
+}
+route("spexplore", "funding", () => {
+  if (role() !== "S") return spNotS();
+  const all = S.projects.filter(spxSees);
+  const mine = all.filter((p) => spFunded(p) && p.sponsor === myId());
+  const rest = all.filter((p) => !mine.includes(p));
+  const st = (p) => (isSpP(p) ? "Funded" : spiMine(p) ? spiMine(p).status : "Open");
+  return (
+    head("Explore projects", "Projects in this programme that you did not create. Send a funding interest request; if the project owner accepts it, you agree the funding amount in US dollars together. The team sees you under an alias.") +
+    (mine.length
+      ? card(
+          "Projects you fund",
+          "Funding agreed with the project owner. Review milestones, record payments and raise disputes from each project.",
+          mine.map((p) => hrow("coin", h(p.title), h(p.alias) + " · " + spiUsd(p.brief.budget) + " agreed · " + spxProgress(spxRoom(p)), L("Open", "spexp", { id: p.id }, "btn btn-s btn-sm"), "t-teal")).join(""),
+        ) + '<div class="section-gap"></div>'
+      : "") +
+    card(
+      "Programme projects",
+      "",
+      dataView("spx:all", {
+        label: "projects",
+        items: rest,
+        search: (p) => [p.title, p.type, (p.tags || []).join(" "), p.area, P(p.owner).name].join(" "),
+        quick: {
+          label: "Your request",
+          options: [
+            ["Open", "Not contacted"],
+            ["Requested", "Awaiting owner"],
+            ["Accepted", "Agreeing amount"],
+            ["Funded", "Funded by another sponsor"],
+          ],
+          test: (p, v) => st(p) === v,
+        },
+        sorts: [
+          ["title", "Title", (a, b) => a.title.localeCompare(b.title)],
+          ["need", "Funding need", (a, b) => (+b.fundingNeed || 0) - (+a.fundingNeed || 0)],
+        ],
+        row: (p) => {
+          const mi = spiMine(p);
+          return {
+            lead: `<span class="tile t-soft" aria-hidden="true">${ic("folder", 18)}</span>`,
+            title: L(h(p.title), "spexp", { id: p.id }, "dv-link"),
+            sub: [h(p.type), p.area ? h(p.area) : "", "Owner " + nm(p.owner)].filter(Boolean).join(" · "),
+            meta: [spxProgress(spxRoom(p)), p.fundingNeed ? "Funding need " + spiUsd(p.fundingNeed) : "", mi && mi.terms ? "Proposed " + spiUsd(mi.terms.amount) : ""],
+            badges: pill(p.stage ? stageLabel(p.stage) : p.status) + (isSpP(p) ? pill("Funded by another sponsor", "p-grey") : mi ? spiPill(mi) : ""),
+            primary: L("View", "spexp", { id: p.id }, "btn btn-s btn-sm"),
+          };
+        },
+        empty: ["folder", "No projects to explore", "Projects appear here once their owners submit them in this programme.", ""],
+      }),
+    )
+  );
+});
+route("spexp", "funding", () => {
+  const p = byId("projects", UI.p.id);
+  if (!spxSees(p)) return spGone();
+  const x = spxRoom(p);
+  const mineFunded = spFunded(p) && p.sponsor === myId();
+  const info = card(
+    "Project",
+    "What the programme shares with sponsors. The team's private discussion, profiles and evidence are not shown.",
+    dl([
+      ["Starting with", h(p.type || "Project")],
+      (p.tags || []).length && ["Areas", `<span class="rec-tags">${p.tags.map((t) => `<span class="rec-tag">${h(t)}</span>`).join("")}</span>`],
+      ["Where", h([p.country, p.area].filter(Boolean).join(" · ") || "—")],
+      ["Project owner", nm(p.owner)],
+      ["Status", pill(p.stage ? stageLabel(p.stage) : p.status)],
+      p.fundingNeed && ["Stated funding need", spiUsd(p.fundingNeed)],
+    ]),
+  );
+  let side;
+  if (mineFunded)
+    side = card(
+      "Your funding",
+      "You fund this project as " + h(p.alias),
+      dl([
+        ["Agreed funding", spiUsd(p.brief.budget)],
+        p.brief.terms && ["Terms", spText(p.brief.terms)],
+        ["Agreed on", fmtD(p.spFundedAt)],
+        x && ["Sponsor milestones", spMs(x).filter((m) => SR_AGREED.includes(m.sp.sr)).length + " agreed · " + spMs(x).filter((m) => m.sp.sr === "Approved").length + " approved"],
+        x && ["Paid offline", money(spCur(p), spSum(x, "Paid Offline"))],
+      ]) +
+        `<p class="cap">${x ? "The project owner proposes sponsor milestones within the agreed amount; you approve each one. Reviews, payment status and disputes follow the same process as your own projects." : "Milestones, payment status and disputes start once the project owner links the project's " + WL() + "."}</p>`,
+      x ? L("Funding, milestones & payments", "sproom", { id: x.id, tab: "ms" }, "btn btn-p btn-sm") : "",
+    );
+  else if (isSpP(p)) side = card("Funding", "", '<p class="cap">This project is already funded by another sponsor.</p>');
+  else {
+    const mi = spiMine(p);
+    const last = spiLast(p);
+    let body;
+    if (mi) {
+      const next =
+        mi.status === "Requested"
+          ? "Waiting for the project owner to accept or reject your request."
+          : !mi.terms
+            ? "The owner accepted your request. Waiting for them to propose the funding amount."
+            : mi.terms.by === "owner"
+              ? "Review the owner's proposal. Agree to it, or propose a revised amount."
+              : "Waiting for the project owner to agree to your proposal or revise it.";
+      body =
+        dl([
+          ["Status", spiPill(mi)],
+          ["Shown to the owner as", h(mi.alias)],
+          ["Your request", spText(mi.note)],
+          mi.reply && ["Owner's reply", spText(mi.reply)],
+        ]) +
+        (mi.terms ? `<div class="col fgap"><b>Funding proposal</b>${spiTermsHtml(p, mi)}</div>` : "") +
+        `<p class="cap">${next}</p>`;
+    } else
+      body =
+        (last && ["Rejected", "Closed"].includes(last.status) ? `<p class="cap">Your last request was ${h(last.status.toLowerCase())}${last.decided && last.decided.note ? ": “" + h(last.decided.note) + "”" : ""}. You can send a new one.</p>` : "") +
+        '<p class="cap">Tell the project owner you are interested in funding this project. You appear under an alias. If they accept, you agree the amount in US dollars together.</p>';
+    const acts =
+      (spxCanInterest(p) ? B(ic("megaphone", 14) + "Send funding interest", "spiNew", { id: p.id }, "btn-p btn-sm") : "") +
+      (mi && spiCanAgree(p, mi) ? CB(ic("check", 14) + "Agree to " + spiUsd(mi.terms.amount), "spiAgree", { id: p.id, i: mi.id }, "Agree to fund “" + p.title + "” with " + SPI_CUR + " " + (+mi.terms.amount).toLocaleString("en-US") + " on the stated terms? The project owner has already proposed this amount, so the agreement is final and you become this project's sponsor.", "btn-p btn-sm", "Agree") : "") +
+      (mi && spiCanTerms(p, mi) ? B(ic("edit", 14) + (mi.terms.by === "sponsor" ? "Change your proposal" : "Propose a revised amount"), "spiTerms", { id: p.id, i: mi.id }) : "") +
+      (mi ? CB("Withdraw", "spiWithdraw", { id: p.id }, "Withdraw your funding interest in “" + p.title + "”? The project owner is told.") : "");
+    side = card("Your funding request", "", body, acts ? `<div class="row wrap">${acts}</div>` : "");
+  }
+  return (
+    crumbsHtml([["Explore projects", "spexplore"], [h(p.title)]]) +
+    head(h(p.title), mineFunded ? "Funded by you as " + h(p.alias) : "Project in " + h(ctxName(p.ctx))) +
+    hmCols(info + '<div class="section-gap"></div>' + spxMsCard(p, x, "Milestones and progress"), side + banner("info", "Recorded, never processed", SP_OFFLINE, "coin"))
+  );
+});
+// ---- the Sponsor's side: send and withdraw a request
+A.spiNew = (d) => {
+  const p = byId("projects", d.id);
+  clearF("spi");
+  modal("Send funding interest for “" + h(p.title) + "”", () =>
+    `<form data-f="spi" class="col fgap" novalidate>${errSum("spi")}<input type="hidden" name="id" value="${p.id}">${fi("spi", "note", "Why you are interested", { type: "textarea", rows: 4, req: true, max: 1500, help: "The project owner reads this. Say what you could fund and anything you would need from the team." })}${banner("info", "", "The owner sees you under an alias, not your name. Nothing is agreed until the owner accepts your request and you both agree the funding amount in US dollars.")}<div class="actions">${B("Cancel", "closeM")}<button class="btn btn-p" type="submit">Send request</button></div></form>`,
+  );
+};
+F.spi = (d) => {
+  if (!validate("spi", d, { note: ["req", ["min", 20]] })) return render();
+  const p = byId("projects", d.id);
+  const i = { id: uid("spi"), by: myId(), alias: spAlias("Sponsor"), at: now(), note: d.note.trim(), status: "Requested", reply: "", terms: null, rounds: [], decided: null };
+  (p.spInterest = p.spInterest || []).push(i);
+  p.history.push({ at: today(), t: "Funding interest request received from " + i.alias });
+  notify(p.owner, i.alias + " sent a funding interest request for “" + p.title + "”. Accept or reject it.", "project", { id: p.id });
+  audit("Sponsor funding interest sent", p.id, i.alias);
+  UI.modal = null;
+  clearF("spi");
+  toast("Request sent to the project owner.");
+  ok();
+};
+A.spiWithdraw = (d) => {
+  const p = byId("projects", d.id);
+  const i = spiMine(p);
+  i.status = "Withdrawn";
+  i.decided = { at: now(), by: myId(), note: "" };
+  p.history.push({ at: today(), t: i.alias + " withdrew their funding interest" });
+  notify(p.owner, i.alias + " withdrew their funding interest in “" + p.title + "”", "project", { id: p.id });
+  audit("Sponsor funding interest withdrawn", p.id, i.alias);
+  toast("Request withdrawn.");
+  ok();
+};
+// ---- the project owner's side: shown on the project page, one row per request, each answered on its own
+function spOfferCard(p) {
+  if (!spxOwner(p) || !spiAll(p).length || (isSpP(p) && !spFunded(p))) return "";
+  const open = spiOpen(p);
+  const done = spiAll(p).filter((i) => !SPI_OPEN.includes(i.status));
+  const row = (i) => {
+    const live = SPI_OPEN.includes(i.status) && !isSpP(p);
+    const acts = !live
+      ? ""
+      : i.status === "Requested"
+        ? B(ic("check", 14) + "Accept", "spiDecide", { id: p.id, i: i.id, v: "accept" }, "btn-p btn-sm") + B("Reject", "spiDecide", { id: p.id, i: i.id, v: "reject" })
+        : (spiCanAgree(p, i) ? CB(ic("check", 14) + "Agree to " + spiUsd(i.terms.amount), "spiAgree", { id: p.id, i: i.id }, "Agree to " + SPI_CUR + " " + (+i.terms.amount).toLocaleString("en-US") + " from " + i.alias + " on the stated terms? This sponsor then funds “" + p.title + "” and any other open requests close.", "btn-p btn-sm", "Agree") : "") +
+          B(ic("coin", 14) + (!i.terms ? "Propose funding amount" : i.terms.by === "owner" ? "Change your proposal" : "Propose a revised amount"), "spiTerms", { id: p.id, i: i.id }, !i.terms ? "btn-p btn-sm" : "btn-s btn-sm") +
+          B("End talks", "spiDecide", { id: p.id, i: i.id, v: "reject" });
+    const next =
+      i.status === "Accepted"
+        ? !i.terms
+          ? "Next: propose the funding amount you expect, in US dollars."
+          : i.terms.by === "owner"
+            ? "Waiting for the sponsor to agree or propose a revised amount."
+            : "The sponsor proposed a revised amount. Agree to it, or propose another."
+        : "";
+    return `<div class="sp-sub"><div class="row wrap sp-sub-h"><b>${h(i.alias)}</b>${spiPill(i)}<span class="cap">${fmtD(i.at)}</span></div><p>${spText(i.note)}</p>${i.legacyOffer ? '<p class="cap">Sent before amounts were agreed in US dollars; any earlier milestone offer is not carried over.</p>' : ""}${spiTermsHtml(p, i)}${i.decided && i.decided.note ? `<p class="cap">${h(i.decided.note)}</p>` : ""}${next ? `<p class="cap">${next}</p>` : ""}${acts ? `<div class="row wrap">${acts}</div>` : ""}</div>`;
+  };
+  const agreed = spFunded(p) ? spiAll(p).find((i) => i.status === "Agreed") : null;
+  return card(
+    "Funding interest from sponsors",
+    agreed
+      ? "Funded by " + h(p.alias) + ": " + spiUsd(p.brief.budget) + " agreed. Propose sponsor milestones within this amount in the project's " + WL() + "."
+      : "Sponsors appear under an alias. Accept or reject each request on its own; with accepted sponsors you agree the funding amount in US dollars. Agreeing with one sponsor closes the other open requests, because a project has one funding sponsor.",
+    `<div class="col fgap">${open.map(row).join("") || '<p class="cap">No open requests.</p>'}${done.length ? `<details class="ws-done"><summary class="cap">${done.length} earlier</summary><div class="col fgap">${done.map(row).join("")}</div></details>` : ""}</div>`,
+    "",
+    "prj-panel",
+  );
+}
+// Accept or reject a request. Rejecting also ends talks on an accepted request that has not been agreed yet.
+// Accepting may include the first funding proposal, so the owner does not need a second step.
+A.spiDecide = (d) => {
+  const p = byId("projects", d.id);
+  const i = spiOf(p, d.i);
+  clearF("spid");
+  if (d.v !== "accept")
+    return modal(i.status === "Accepted" ? "End funding talks with " + h(i.alias) : "Reject funding interest", () =>
+      `<form data-f="spid" class="col fgap" novalidate><input type="hidden" name="id" value="${p.id}"><input type="hidden" name="i" value="${i.id}"><input type="hidden" name="v" value="reject">${fi("spid", "note", "Reason (optional)", { type: "textarea", rows: 2, max: 500, help: h(i.alias) + " sees this." })}<div class="actions">${B("Cancel", "closeM")}<button class="btn btn-p" type="submit">${i.status === "Accepted" ? "End talks" : "Reject"}</button></div></form>`,
+    );
+  modal("Accept funding interest from " + h(i.alias), () =>
+    `<form data-f="spid" class="col fgap" novalidate>${errSum("spid")}<input type="hidden" name="id" value="${p.id}"><input type="hidden" name="i" value="${i.id}"><input type="hidden" name="v" value="accept"><p class="cap">Accepting opens funding talks with this sponsor only; other requests stay as they are. Nothing is agreed until you both agree an amount.</p>${fi("spid", "reply", "Message to the sponsor (optional)", { type: "textarea", rows: 2, max: 1000 })}<fieldset class="col fgap"><legend><b>Funding you expect</b> <span class="cap">(optional now, needed before agreement)</span></legend>${fi("spid", "amount", "Amount (USD $)", { type: "number", min: 0, step: "0.01" })}${fi("spid", "terms", "Terms", { type: "textarea", rows: 3, max: 2000, help: "What the funding covers, how it is split across milestones, timing, reporting. Milestone amounts are then agreed one by one in the project's " + WL() + "." })}</fieldset><div class="actions">${B("Cancel", "closeM")}<button class="btn btn-p" type="submit">Accept request</button></div></form>`,
+  );
+};
+// One proposal round: the owner's first proposal or either side's revision. Always US dollars.
+const spiPropose = (p, i, side, amount, note) => {
+  i.terms = { amount: +amount, note: note.trim(), by: side, at: now() };
+  (i.rounds = i.rounds || []).push({ ...i.terms });
+  const to = side === "owner" ? i.by : p.owner;
+  const who = side === "owner" ? "The project owner" : i.alias;
+  notify(to, who + " proposed " + SPI_CUR + " " + (+amount).toLocaleString("en-US") + " to fund “" + p.title + "”. Agree or propose a revised amount.", side === "owner" ? "spexp" : "project", { id: p.id });
+  p.history.push({ at: today(), t: who + " proposed " + SPI_CUR + " " + (+amount).toLocaleString("en-US") + " in funding talks with " + i.alias });
+  audit("Sponsor funding amount proposed", p.id, i.alias + " · " + side + " · " + SPI_CUR + " " + amount);
+};
+const SPI_AMT = [["fn", { f: (v) => !!v && +v > 0, m: "Enter an amount in US dollars greater than 0." }]];
+F.spid = (d) => {
+  const p = byId("projects", d.id);
+  const i = spiOf(p, d.i);
+  if (d.v !== "accept") {
+    const wasOpen = i.status === "Accepted";
+    i.status = "Rejected";
+    i.decided = { at: now(), by: myId(), note: (d.note || "").trim() };
+    p.history.push({ at: today(), t: (wasOpen ? "Funding talks with " + i.alias + " ended" : "Funding interest from " + i.alias + " rejected") });
+    notify(i.by, "The owner of “" + p.title + "” " + (wasOpen ? "ended funding talks with you" : "rejected your funding interest request"), "spexp", { id: p.id });
+    audit(wasOpen ? "Sponsor funding talks ended" : "Sponsor funding interest rejected", p.id, i.alias);
+    UI.modal = null;
+    clearF("spid");
+    toast((wasOpen ? "Talks ended." : "Rejected.") + " The sponsor is told.");
+    return ok();
+  }
+  const hasAmt = !!(d.amount || "").trim();
+  const hasTerms = !!(d.terms || "").trim();
+  const rules = hasAmt || hasTerms ? { amount: SPI_AMT, terms: ["req", ["min", 10]] } : {};
+  if (!validate("spid", d, rules)) return render();
+  i.status = "Accepted";
+  i.reply = (d.reply || "").trim();
+  i.acceptedAt = now();
+  p.history.push({ at: today(), t: "Funding interest from " + i.alias + " accepted" });
+  notify(i.by, "The owner of “" + p.title + "” accepted your funding interest request" + (hasAmt ? " and proposed an amount" : ""), "spexp", { id: p.id });
+  audit("Sponsor funding interest accepted", p.id, i.alias);
+  if (hasAmt) spiPropose(p, i, "owner", d.amount, d.terms);
+  UI.modal = null;
+  clearF("spid");
+  toast(hasAmt ? "Accepted. The sponsor reviews your proposed amount next." : "Accepted. Propose the funding amount next.");
+  ok();
+};
+A.spiTerms = (d) => {
+  const p = byId("projects", d.id);
+  const i = spiOf(p, d.i);
+  const side = spiSide(p, i);
+  clearF("spit");
+  UI.form.spit = i.terms ? { amount: String(i.terms.amount), terms: i.terms.note } : {};
+  modal(
+    !i.terms ? "Propose funding amount" : i.terms.by === side ? "Change your proposal" : "Propose a revised amount",
+    () =>
+      `<form data-f="spit" class="col fgap" novalidate>${errSum("spit")}<input type="hidden" name="id" value="${p.id}"><input type="hidden" name="i" value="${i.id}">${i.terms && i.terms.by !== side ? `<p class="cap">Current proposal: ${spiUsd(i.terms.amount)} by ${spiWho(p, i, i.terms.by)}.</p>` : ""}${fi("spit", "amount", "Amount (USD $)", { type: "number", req: true, min: 0, step: "0.01", help: side === "owner" ? "The total funding you expect from this sponsor." : "The total you are prepared to fund." })}${fi("spit", "terms", "Terms", { type: "textarea", rows: 4, req: true, max: 2000, help: "What the funding covers, how it is split across milestones, timing, reporting." })}${banner("info", "", (side === "owner" ? h(i.alias) : "The project owner") + " agrees to this or proposes a revised amount. Milestone amounts are agreed one by one in the project's " + WL() + " afterwards. " + SP_OFFLINE)}<div class="actions">${B("Cancel", "closeM")}<button class="btn btn-p" type="submit">Send proposal</button></div></form>`,
+  );
+};
+F.spit = (d) => {
+  if (!validate("spit", d, { amount: SPI_AMT, terms: ["req", ["min", 10]] })) return render();
+  const p = byId("projects", d.id);
+  const i = spiOf(p, d.i);
+  spiPropose(p, i, spiSide(p, i), d.amount, d.terms);
+  UI.modal = null;
+  clearF("spit");
+  toast("Proposal sent.");
+  ok();
+};
+// Both sides agree: the side that did not make the latest proposal accepts it. The project gains its sponsor and the
+// existing Team Delivery flow takes over. Other open requests close; their sponsors are told.
+A.spiAgree = (d) => {
+  const p = byId("projects", d.id);
+  const i = spiOf(p, d.i);
+  const x = spxRoom(p);
+  const t = i.terms;
+  Object.assign(p, {
+    sponsor: i.by,
+    alias: i.alias,
+    spVia: "offer",
+    spFundedAt: now(),
+    owners: p.owners && p.owners.length ? p.owners : [p.owner],
+    brief: { problem: "", objectives: "", outcomes: "", needs: "", eligibility: "", budget: t.amount, currency: SPI_CUR, closes: "", terms: t.note },
+  });
+  i.status = "Agreed";
+  i.decided = { at: now(), by: myId(), note: "" };
+  spiOpen(p).forEach((o) => {
+    o.status = "Closed";
+    o.decided = { at: now(), by: myId(), note: "The project agreed funding with another sponsor." };
+    notify(o.by, "“" + p.title + "” agreed funding with another sponsor; your request is closed", "spexp", { id: p.id });
+  });
+  const am = amIssue(i.alias, "project", p);
+  const amt = SPI_CUR + " " + (+t.amount).toLocaleString("en-US");
+  p.history.push({ at: today(), t: "Funding of " + amt + " agreed with " + i.alias });
+  const other = spiSide(p, i) === "owner" ? i.by : p.owner;
+  const msg = "Funding of " + amt + " for “" + p.title + "” is agreed. " + (x ? "Sponsor milestones are proposed next in the project's " + WL() + "." : "Sponsor milestones start once the project's " + WL() + " is linked.");
+  if (x && other === i.by) spTell(p, x, [i.by], msg, "ms");
+  else notify(other, msg, other === i.by ? "spexp" : "project", { id: p.id });
+  if (x) sysMsg(x, "Funding of " + amt + " agreed with " + i.alias + ". The project owner proposes sponsor milestones; the sponsor approves each one.");
+  audit("Sponsor funding agreed", p.id, i.alias + " · " + amt);
+  audit("Sponsor alias issued", am.id, i.alias + " · project alias");
+  toast("Funding agreed. Sponsor milestones are proposed next.");
+  ok();
+};
 
 // ---------- MIGRATION AND SEED ----------
 // Earlier browser data held sponsor projects as Open Challenges (S.challenges). They become sponsor projects in
@@ -2320,6 +3121,7 @@ function spFromChallenges() {
 }
 function spMigrate() {
   S.disputes = S.disputes || [];
+  spiNorm(); // funding-interest records from before USD amount agreement (see spiNorm)
   S.spchats = S.spchats || [];
   // Collaborators see the sponsor projects they shortlisted in Projects: the system role gains view access once.
   const rc = roleRec("C");
@@ -2334,7 +3136,10 @@ function spMigrate() {
   // Browsers seeded twice hold two disputes per id; byId() then finds the wrong copy. Keep the first of each.
   const seen = new Set();
   S.disputes = S.disputes.filter((d) => !seen.has(d.id) && seen.add(d.id));
-  if (S.spSeeded) return spdSeed();
+  if (S.spSeeded) {
+    spdSeed();
+    return amBackfill();
+  }
   S.spSeeded = true;
   allLinks();
   const t = (d, h_ = "09:00") => d + "T" + h_;
@@ -2592,6 +3397,7 @@ function spMigrate() {
   y3.status = "Disputed";
   y3.hist.push(H(t("2026-10-19"), "p1", "Pending", "Disputed", undefined, "Automatic: dispute DSP-0002 raised"));
   spdSeed();
+  amBackfill();
 }
 // Detail for the Sponsor's project page on the seeded funded project, added once (also to browsers seeded earlier):
 // what each applicant wrote about availability and experience, the sponsor's private fit ratings, the closed chat room

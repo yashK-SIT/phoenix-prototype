@@ -235,6 +235,14 @@ function ensurePlatformData() {
   S.roles.forEach((r) => {
     if (LEGACY_ROLE_NAMES[r.name]) r.name = LEGACY_ROLE_NAMES[r.name];
   });
+  // Collaborators now see Rope Teams (view within scope). Stored data seeded before that keeps "no access" on the
+  // Collaborator role; lift it once. A level the Platform Administrator sets later is kept.
+  const rc = roleRec("C");
+  if (rc && rc.system && rc.perms && !rc.ropeView) {
+    if ((rc.perms.ropeteams || "-") === "-")
+      rc.perms.ropeteams = normPerm(MX.ropeteams.C);
+    rc.ropeView = true;
+  }
   S.packs.forEach((p) =>
     Object.keys(p.roleNames || {}).forEach((k) => {
       const v = LEGACY_ROLE_NAMES[p.roleNames[k]];

@@ -792,6 +792,11 @@ A.roomItem = (d) => {
   const mem = x.members
     .filter((m) => m.status === "Active")
     .map((m) => [m.pid, P(m.pid).name]);
+  // A task can go to anyone on the team, including people invited who have not joined yet; they accept it once in.
+  // Decisions and risks keep active members only.
+  const team = x.members
+    .filter((m) => ["Active", "Invited"].includes(m.status))
+    .map((m) => [m.pid, P(m.pid).name + (m.status === "Invited" ? " (invited)" : "")]);
   modal(
     {
       tasks: isLead(x) || role() === "A" ? "Create task" : "Propose task",
@@ -803,7 +808,7 @@ A.roomItem = (d) => {
       wins: "Record a visible win",
     }[k],
     () =>
-      `<form data-f="ri" class="col" style="gap:14px" novalidate><input type="hidden" name="r" value="${x.id}"><input type="hidden" name="k" value="${k}"><input type="hidden" name="st" value="${d.st || ""}"><input type="hidden" name="ms" value="${h(d.ms || "")}">${msFor ? banner("info", "For sponsor milestone " + msFor.sp.n, h(msFor.t) + " · " + h(spClip(msFor.sp.deliv, 160))) : ""}${fi("ri", "t", k === "deps" ? "Dependent activity / resource" : "Title", { req: true })}${["tasks", "decisions", "risks"].includes(k) ? fi("ri", "owner", k === "tasks" ? "Assignee" : "Owner", { type: "select", req: true, opts: mem, value: d.owner || myId(), help: k === "tasks" ? "Any active member of this " + WL() + "." : "" }) : ""}${["tasks", "milestones"].includes(k) ? fi("ri", "due", "Due date", { type: "date", req: true }) : ""}${k === "tasks" ? fi("ri", "prio", "Priority", { type: "select", opts: TASK_PRIOS, value: "Medium" }) + fi("ri", "desc", "Description", { type: "textarea", rows: 3 }) + msel("ri", "partners", "Collaborators / contributors", roomActive(x).map((m) => ({ pid: m.pid, sub: spaceRole("rooms", x, m.pid) || "" })), [], { help: "People who contribute to this deliverable besides the assignee." }) + fi("ri", "req", "Required deliverable — must be done before evidence upload and the Learning Harvest", { type: "checkbox", value: "yes" }) : ""}${k === "deps" ? fi("ri", "on", "Depends on (party)", { req: true }) : ""}${k === "resources" ? fi("ri", "from", "Provided by", { req: true }) : ""}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save</button></div></form>`,
+      `<form data-f="ri" class="col" style="gap:14px" novalidate><input type="hidden" name="r" value="${x.id}"><input type="hidden" name="k" value="${k}"><input type="hidden" name="st" value="${d.st || ""}"><input type="hidden" name="ms" value="${h(d.ms || "")}">${msFor ? banner("info", "For sponsor milestone " + msFor.sp.n, h(msFor.t) + " · " + h(spClip(msFor.sp.deliv, 160))) : ""}${fi("ri", "t", k === "deps" ? "Dependent activity / resource" : "Title", { req: true })}${["tasks", "decisions", "risks"].includes(k) ? fi("ri", "owner", k === "tasks" ? "Assignee" : "Owner", { type: "select", req: true, opts: k === "tasks" ? team : mem, value: d.owner || myId(), help: k === "tasks" ? "Anyone on this " + WL() + "’s team, including invited members who have not joined yet." : "" }) : ""}${["tasks", "milestones"].includes(k) ? fi("ri", "due", "Due date", { type: "date", req: true }) : ""}${k === "tasks" ? fi("ri", "prio", "Priority", { type: "select", opts: TASK_PRIOS, value: "Medium" }) + fi("ri", "desc", "Description", { type: "textarea", rows: 3 }) + msel("ri", "partners", "Collaborators / contributors", roomActive(x).map((m) => ({ pid: m.pid, sub: spaceRole("rooms", x, m.pid) || "" })), [], { help: "People who contribute to this deliverable besides the assignee." }) + fi("ri", "req", "Required deliverable — must be done before evidence upload and the Learning Harvest", { type: "checkbox", value: "yes" }) : ""}${k === "deps" ? fi("ri", "on", "Depends on (party)", { req: true }) : ""}${k === "resources" ? fi("ri", "from", "Provided by", { req: true }) : ""}<div class="actions"><span></span><button class="btn btn-p" type="submit">Save</button></div></form>`,
   );
 };
 F.ri = (d) => {

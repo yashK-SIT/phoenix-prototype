@@ -55,7 +55,9 @@ const createdNote = (p) => {
     as.map((a) => roleName(a.role, a.ctx)).join(", ") || "No role yet",
     p.createdVia === "admin"
       ? "added by an administrator"
-      : p.createdVia === "registration"
+      : p.createdVia === "invitation"
+        ? "joined by invitation"
+        : p.createdVia === "registration"
         ? "registered"
         : "created earlier",
     !p.verified && "email not verified",
@@ -373,14 +375,18 @@ F.reg = (d) => {
     );
     return render();
   }
+  // Only an invitation an Organization Admin sent from Invitations gets the shorter invited setup. Access requests
+  // (people who registered on their own, then were approved) and Platform Administrator appointments keep route A.
+  const byAdmin = invByOrgAdmin(inv);
   const p = {
     id: uid("p"),
     name: d.name.trim(),
     display: d.display.trim(),
     email: d.email.trim(),
     ageConfirmed: today(),
-    verified: false,
-    createdVia: "registration",
+    // The single-use invitation link was sent to this address, so opening it proves the email: no second check.
+    verified: byAdmin,
+    createdVia: byAdmin ? "invitation" : "registration",
     createdAt: now(),
     status: "Active",
     ...(inv && inv.org ? { org: inv.org } : {}),
@@ -404,6 +410,8 @@ F.reg = (d) => {
       compass: role !== "P",
     },
     ...(inv && inv.preApproved ? { preApproved: inv.preApproved } : {}),
+    // Invited people follow the invited onboarding order (views/onboarding.js): profile first, then the agreement.
+    ...(byAdmin ? { viaInvite: inv.id } : {}),
   };
   S.assign.push(a);
   S.consents[p.id] = { history: [] };
@@ -413,10 +421,38 @@ F.reg = (d) => {
   }
   audit("Account registered", p.id, ROLE[role] + " · " + cx);
   clearF("reg");
+  if (byAdmin) {
+    // Invited by an Organization Admin: the role comes from the invitation and activates now (a sensitive role still
+    // waits for approval, as before). Setup continues straight into onboarding; no verify-email screen.
+    audit("Email verified", p.id, p.email + " · by invitation link");
+    regActivate(p, a);
+    S.session = { pid: p.id, aid: a.id };
+    UI.pre = null;
+    save();
+    go("home");
+    return toast("Account created. Finish setting up your profile.");
+  }
   UI.pre = { verifyPid: p.id, aid: a.id };
   save();
   go("verify");
 };
+// An invitation sent by an Organization Admin of its own context (Invitations), not one issued for an approved
+// access request or a Platform Administrator appointment.
+const invByOrgAdmin = (inv) =>
+  !!inv && !inv.fromRequest && !inv.preApproved && S.assign.some((x) => x.pid === inv.by && x.ctx === inv.ctx && roleBase(x.role) === "A");
+// The role becomes Active once the email is confirmed, or waits for approval when it is sensitive and was not
+// appointed in advance. Used by Verify email and by account creation from an invitation link.
+function regActivate(p, a) {
+  if (!a) return;
+  a.status = roleNeedsApproval(roleBase(a.role)) && !a.preApproved ? "Pending role approval" : "Active";
+  if (a.preApproved) a.approval = [{ at: now(), by: a.preApproved, note: "Appointed by the Platform Administrator" }];
+  if (a.status !== "Active") {
+    a.approval = [{ at: now(), by: "system", note: "Sensitive role — approval requested" }];
+    S.assign
+      .filter((x) => roleBase(x.role) === "A")
+      .forEach((x) => notify(x.pid, `Role approval requested: ${p.name} — ${roleName(a.role, a.ctx)}`, "admin", { tab: "users" }));
+  }
+}
 // ---------- JF-06 invitation lifecycle: one check, used at every step ----------
 // The same rule applies on the link page, at account creation and at sign-in acceptance, so an invitation that
 // expired, was revoked, was used or was replaced by a resend can never be accepted at a later step.
@@ -606,39 +642,7 @@ A.doVerify = () => {
   const a = S.assign
     .filter((x) => x.pid === p.id)
     .find((x) => x.status === "Registered (email unverified)");
-  if (a) {
-    a.status =
-      roleNeedsApproval(roleBase(a.role)) && !a.preApproved
-        ? "Pending role approval"
-        : "Active";
-    if (a.preApproved)
-      a.approval = [
-        {
-          at: now(),
-          by: a.preApproved,
-          note: "Appointed by the Platform Administrator",
-        },
-      ];
-    if (a.status !== "Active") {
-      a.approval = [
-        {
-          at: now(),
-          by: "system",
-          note: "Sensitive role — approval requested",
-        },
-      ];
-      S.assign
-        .filter((x) => roleBase(x.role) === "A")
-        .forEach((x) =>
-          notify(
-            x.pid,
-            `Role approval requested: ${p.name} — ${roleName(a.role, a.ctx)}`,
-            "admin",
-            { tab: "users" },
-          ),
-        );
-    }
-  }
+  regActivate(p, a);
   audit("Email verified", p.id, p.email);
   S.session = {
     pid: p.id,

@@ -23,7 +23,12 @@ const spaSees = (c) => !!c && inCtx(c) && ((role() === "S" && c.sponsor === myId
 const spaOwnerOk = (p, pid) => roleBase(ctxRole(pid, p.ctx) || "") === "P";
 const spaRoleNm = (p, pid) => roleName(ctxRole(pid, p.ctx), p.ctx) || "";
 // Who a message is from: the Sponsor under the project's alias (to everyone but themselves), members by name.
-const spaWho = (c, pid) => (pid === c.sponsor ? (pid === myId() ? "You (as " + h(c.alias) + ")" : h(c.alias)) + ' <span class="cap">(sponsor)</span>' : nm(pid));
+// A selected team member also sees the Sponsor's name once the Sponsor disclosed it (JF-42, sponsor.js).
+const spaWho = (c, pid) => {
+  if (pid !== c.sponsor) return nm(pid);
+  const p = byId("projects", c.pr);
+  return (pid === myId() ? "You (as " + h(c.alias) + ")" : p ? spAliasFor(p) : h(c.alias)) + ' <span class="cap">(sponsor)</span>';
+};
 function spaChatClose(p, why) {
   const c = spaChat(p);
   if (!c || c.state !== "Active") return;

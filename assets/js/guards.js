@@ -1954,6 +1954,8 @@ const spLive = (x, p) => !!x && !!p && x.state === "Active";
 const spMsNewOk = (d) => {
   const [x, p, m] = spMsOf(d);
   if (!spLive(x, p) || !spSide(p)) return "only the sponsor and the project owner(s) propose or revise sponsor milestones";
+  // A project funded through a sponsor's offer: its milestones are created and managed by the project owner only.
+  if (spFunded(p) && spSponsor(p)) return "the project owner creates and manages this project's milestones";
   if (!d.m) return true;
   return (
     (!!m &&
@@ -2018,6 +2020,20 @@ const spPayRecvOk = (d) => {
   return !!spdRec(p, y, "sponsor") || y.status === "Due" || !!y.ow || "a payment is confirmed once the sponsor marks it sent or it is due";
 };
 const spDsp = (d) => byId("disputes", d.id);
+const amM = (d) => byId("aliasMaps", d.id);
+const amAdmin = (d) => role() === "A" && !!amM(d) && inCtx(amM(d));
+const amResolveOk = (d) => {
+  if (!amAdmin(d)) return "only an Organization Admin in this programme resolves a sponsor alias";
+  return amLive(amM(d)) || "this alias expired and its mapping was deleted, so it can no longer be resolved";
+};
+const spDiscloseOk = (d) => {
+  const p = spP(d);
+  const m = amProj(p);
+  if (!spSponsor(p)) return "only the sponsor discloses their own identity";
+  if (!spIntroduced(p)) return "the sponsor may disclose their identity only after finalizing the team";
+  if (!amLive(m)) return "this alias expired and its mapping was deleted";
+  return !m.disclosed || "the identity was already disclosed to the selected team";
+};
 const spListingOk = (p) => spSponsor(p) && spListing(p) && p.status !== "Withdrawn";
 // The sponsor records a payment made against a due payment (or a new advance), never against a disputed one.
 const spdPayOk = (d) => {
@@ -2036,6 +2052,27 @@ const spAdminDsp = (d) => {
   if (role() !== "A" || !dp || !inCtx(dp)) return "only an Organization Admin in this programme assigns a Steward";
   return dp.status === "Awaiting Steward assignment" || "a Steward is assigned only while the dispute awaits one";
 };
+// Funding interest in projects the Sponsor did not create (views/sponsor.js, "Explore projects"). The owner answers
+// each request on its own; the amount is agreed in USD before the project gains its sponsor.
+const spiReq = (d) => { const p = spP(d); return [p, p && spiOf(p, d.i)]; };
+const spiDecideOk = (d) => {
+  const [p, i] = spiReq(d);
+  if (!spxOwner(p) || !i || isSpP(p)) return "only the project owner answers funding interest, before the project has a sponsor";
+  if (d.v === "accept") return i.status === "Requested" || "only a new request is accepted";
+  return SPI_OPEN.includes(i.status) || "this request is already closed";
+};
+const spiTermsOk = (d) => { const [p, i] = spiReq(d); return (!!i && spiCanTerms(p, i)) || "the project owner proposes the amount first; then either side revises it until both agree"; };
+const spiAgreeOk = (d) => { const [p, i] = spiReq(d); return (!!i && spiCanAgree(p, i)) || "you agree to the other side’s latest proposal, before the project has a sponsor"; };
+Object.assign(G, {
+  spiNew: (d) => spxCanInterest(spP(d)) || "only a Sponsor sends funding interest for a programme project they did not create, once at a time",
+  spi: (d) => spxCanInterest(spP(d)) || "only a Sponsor sends funding interest for a programme project they did not create, once at a time",
+  spiWithdraw: (d) => (role() === "S" && !!spiMine(spP(d)) && !isSpP(spP(d))) || "only the sponsor withdraws their own open request",
+  spiDecide: spiDecideOk,
+  spid: spiDecideOk,
+  spiTerms: spiTermsOk,
+  spit: spiTermsOk,
+  spiAgree: spiAgreeOk,
+});
 Object.assign(G, {
   spsl: (d) => spCanShort(spP(d)) || "only Participants and Collaborators apply to a sponsor project, once each, while it accepts applications",
   spUnshort: (d) => (!!spShort(spP(d)) && spListing(spP(d))) || "you can withdraw only your own application, before the owner is chosen",
@@ -2111,7 +2148,16 @@ Object.assign(G, {
   spdn: spDspNewOk,
   spDspAssign: spAdminDsp,
   spda: spAdminDsp,
-  spDspReveal: (d) => (role() === "A" && !!spDsp(d) && inCtx(spDsp(d))) || "only an Organization Admin in this programme sees who is behind the aliases",
+  // JF-42: the Sponsor alias is a controlled pseudonym (sponsor.js). Only an Organization Admin of the programme
+  // resolves one, and only while its mapping exists; the Sponsor alone discloses to the team they selected.
+  amResolve: amResolveOk,
+  amr: amResolveOk,
+  amNotice: (d) => (amAdmin(d) && amM(d).res.some((r) => r.id === d.r && r.notice === "Deferred")) || "only an Organization Admin in this programme sends a deferred notice",
+  amHold: (d) => (amAdmin(d) && amLive(amM(d)) && !amHoldOf(amM(d))) || "only an Organization Admin in this programme places a hold, once, while the mapping exists",
+  amh: (d) => (amAdmin(d) && amLive(amM(d)) && !amHoldOf(amM(d))) || "only an Organization Admin in this programme places a hold, once, while the mapping exists",
+  amHoldEnd: (d) => (amAdmin(d) && !!amHoldOf(amM(d))) || "only an Organization Admin in this programme releases a hold",
+  spDisclose: spDiscloseOk,
+  spdx: spDiscloseOk,
   spdsa: (d) => (role() === "F" && !!spDsp(d) && spDsp(d).steward === myId() && spDsp(d).status === "Awaiting Steward acceptance") || "only the assigned Steward accepts or declines",
   spds: (d) => {
     const dp = spDsp(d);

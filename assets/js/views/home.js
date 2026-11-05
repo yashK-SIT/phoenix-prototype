@@ -1876,7 +1876,7 @@ function homeS() {
   // Sponsor Alpha (BF-08, Doc 1 §6.6): sponsor projects and approved evidence summaries. Seat utilisation, approved
   // initiatives, funder-safe reports and invoices are not part of the Sponsor role. Counts below 5 are suppressed.
   const ev = sponsorCleared();
-  const chs = S.projects.filter((p) => isSpP(p) && inCtx(p) && p.sponsor === myId());
+  const chs = S.projects.filter((p) => isSpP(p) && inCtx(p) && p.sponsor === myId() && !spFunded(p));
   const todo = spTodo();
   return (
     head(

@@ -58,6 +58,7 @@ function inviteTable(scopeCtx) {
       title: `<span class="adm-em">${h(i.email)}</span>`,
       sub: `${roleName(i.role, i.ctx)} · ${h(cn(i))}`,
       meta: [
+        ...(i.token && ["Pending", "Resent"].includes(i.status) ? [`Invitation code <b class="mono">${h(i.token)}</b>`] : []),
         `Sent ${fmt(i.sent)}`,
         i.decided
           ? `${i.status} ${fmt(i.decided)}`
@@ -94,7 +95,7 @@ function inviteTable(scopeCtx) {
           ids
             .map((id) => byId("invites", id))
             .filter((i) => i && canResend(i))
-            .forEach((i) => A.invAct({ id: i.id, v: "Resent" })),
+            .forEach((i) => A.invAct({ id: i.id, v: "Resent", bulk: 1 })),
       },
       {
         label: "Revoke",
@@ -125,7 +126,10 @@ A.invAct = (d) => {
     e.setDate(e.getDate() + S.settings.inviteValidityDays);
     i.expires = e.toISOString().slice(0, 10);
     if (i.kind === "member") tinvNotify(i);
-    else i.token = "TKN-" + uid("R"); // the old link stops working
+    else {
+      i.token = "TKN-" + uid("R"); // the old link stops working
+      if (!d.bulk) invCodes([i]);
+    }
     delete i.renew;
   }
   if (d.v === "Revoked") delete i.renew;
@@ -172,6 +176,7 @@ F.inv = (d) => {
   e.setDate(e.getDate() + +d.days);
   let dup = 0,
     mem = 0;
+  const made = []; // link invitations created now: their codes are shown to the admin (prototype: no email is sent)
   [...new Set(list.map((em) => em.toLowerCase()))].forEach((em) => {
     const p = personByEmail(em);
     // one membership per person and tenant: existing members are not invited again
@@ -212,17 +217,29 @@ F.inv = (d) => {
     };
     S.invites.push(iv);
     if (p) tinvNotify(iv);
+    else made.push(iv);
   });
   const sent = new Set(list.map((em) => em.toLowerCase())).size - dup - mem;
   audit("Invitations created", d.ctx, sent + " × " + ROLE[d.role]);
   UI.modal = null;
   clearF("inv");
+  if (made.length) invCodes(made);
   toast(
     `${sent} invitation(s) sent${dup ? ", " + dup + " already pending" : ""}${mem ? ", " + mem + " already member(s) of this tenant" : ""}.`,
     sent ? "ok" : "warn",
   );
   ok();
 };
+// Prototype only: PHOENIX sends no email here, so the admin sees each new invitation code and passes it on. The person
+// enters it at Sign in → "I have an invitation link". In production the code travels in the invitation email only.
+function invCodes(list) {
+  modal("Invitation codes", () =>
+    `<div class="col adm-form">${banner("info", "Prototype: no email is sent", "Give each person their code. They open Sign in → <b>I have an invitation link</b>, enter the code and create their account. Each code works once, until it expires.")}${table(
+      ["Email", "Role", "Invitation code", "Valid until"],
+      list.map((i) => [h(i.email), roleName(i.role, i.ctx), `<b class="mono">${h(i.token)}</b>`, fmt(i.expires)]),
+    )}<div class="actions"><span></span>${B("Done", "closeM", {}, "btn-p")}</div></div>`,
+  );
+}
 // ---------- TENANT INVITATIONS (a tenant asks a registered person to join) ----------
 // An invitation is addressed to the person, not to one of their roles, so its notice shows in every tenant.
 function notifyPerson(pid, t, r, p) {

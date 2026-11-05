@@ -312,15 +312,25 @@ function onbTop(cur, steps) {
 }
 // Onboarding route A: invitation -> verify email -> required agreement -> separate optional permissions ->
 // minimum profile -> minimum Purpose Compass (participants) -> role activates -> My PHOENIX with a first next action.
+// Everyone, including people invited by an Organization Admin, follows one order after the account step:
+// agreement, optional permissions, profile, then the Purpose Compass (participants only).
+const ONB_ORDER = ['agreement', 'consents', 'profile', 'compass'];
+const ONB_LABEL = { agreement: 'Agreement', consents: 'Optional permissions', profile: 'Profile', compass: 'Purpose Compass' };
+const onbOrder = a => ONB_ORDER.filter(k => k !== 'compass' || roleBase(a.role) === 'P');
+// The step before k in this person's order (for Back), or null on the first step after the account.
+const onbPrev = (a, k) => onbOrder(a)[onbOrder(a).indexOf(k) - 1] || null;
+const onbBackBtn = (a, k) => (onbPrev(a, k) ? B(ic('chevl', 16) + 'Back', 'onbBack', { s: onbPrev(a, k) }, 'btn-g') : '<span></span>');
 function ONB() {
   const a = asg();
-  const isP = roleBase(a.role) === 'P';
-  const steps = ['Account', 'Agreement', 'Optional permissions', 'Profile'].concat(isP ? ['Purpose Compass'] : []);
-  const cur = !a.onb.agreement ? 1 : !a.onb.consents ? 2 : !a.onb.profile ? 3 : 4;
+  const order = onbOrder(a);
+  const steps = ['Account'].concat(order.map(k => ONB_LABEL[k]));
+  const key = order.find(k => !a.onb[k]) || order[order.length - 1];
+  const cur = order.indexOf(key) + 1;
+  const stepOf = `Step ${cur + 1} of ${steps.length}`;
   let body;
-  if (cur === 2) {
-    body = consentStep(steps);
-  } else if (cur === 1) {
+  if (key === 'consents') {
+    body = consentStep(stepOf, onbBackBtn(a, key));
+  } else if (key === 'agreement') {
     const g = agrFor(a.ctx, roleBase(a.role));
     if (!g) {
       a.onb.agreement = true;
@@ -328,23 +338,23 @@ function ONB() {
       return ONB();
     }
     const f = 'agr';
-    body = `<div class="col onb-h"><p class="over">Step 2 of ${steps.length}</p><h1 class="h1">Review your agreement</h1><p class="sub">This agreement applies to your role in ${h(ctxName(a.ctx))}. Optional uses of your information are separate choices on the next step.</p></div>
+    body = `<div class="col onb-h"><p class="over">${stepOf}</p><h1 class="h1">Review your agreement</h1><p class="sub">This agreement applies to your role in ${h(ctxName(a.ctx))}. Optional uses of your information are separate choices on the next step.</p></div>
   <section class="card col onb-card"><div class="kv onb-meta"><div class="col"><span class="cap">Agreement</span><b>${h(g.type)}</b></div><div class="col"><span class="cap">Version</span><b>v${g.ver}</b></div><div class="col"><span class="cap">Effective</span><b>${fmt(g.effective)}</b></div></div>
   <div class="scrollbox" tabindex="0" aria-label="Agreement text"><div class="col onb-pol">${polBody(g)}<p class="cap">Published by the Platform Administrator for this programme.</p></div></div>
   <div class="row wrap onb-tools">${B(ic('download', 16) + 'Download policy', 'polDownload', { id: g.id })}</div>
   <form data-f="agr" class="col onb-agr" id="agrf" novalidate>${fi(f, 'a1', `I have read and accept <b>${h(g.type)} v${g.ver}</b>.`, { type: 'checkbox', req: true })}${fi(f, 'a2', 'I accept the PHOENIX service terms.', { type: 'checkbox', req: true })}<input type="hidden" name="g" value="${g.id}"><span class="help">A dated receipt of your acceptance is stored in Privacy & agreements.</span>
-  <div class="actions"><button class="btn btn-p" type="submit">Accept and continue</button></div></form></section>`;
-  } else if (cur === 3) {
+  <div class="actions">${onbPrev(a, key) ? onbBackBtn(a, key) : ''}<button class="btn btn-p" type="submit">Accept and continue</button></div></form></section>`;
+  } else if (key === 'profile') {
     const f = 'prof';
     const pr = S.profiles[myId()] || {};
-    body = `<div class="col onb-h"><p class="over">Step 4 of ${steps.length}</p><h1 class="h1">Your minimum profile</h1><p class="sub">Just the basics. Each field shows who can see it. Every save creates a version.</p></div>${errSum(f)}
+    body = `<div class="col onb-h"><p class="over">${stepOf}</p><h1 class="h1">Your minimum profile</h1><p class="sub">Just the basics. Each field shows who can see it. Every save creates a version.</p></div>${errSum(f)}
   <form data-f="prof" class="card col onb-card" novalidate><div class="f2">${fi(f, 'name', 'Full name', { value: me().name, ro: true, vis: 'You and authorised administration' })}${fi(f, 'display', 'Display name', { value: me().display, ro: true, vis: 'Your collaboration contexts', help: 'Set when your account was created.' })}</div>
   ${me().org ? fi(f, 'aff', 'Organisation / affiliation', { value: S.orgs.find(o => o.id === me().org).name, ro: true, vis: 'Context-visible' }) : ''}
   ${fi(f, 'bio', 'Short biography', { type: 'textarea', rows: 3, max: 400, value: pr.bio, help: 'Optional · up to 400 characters', vis: 'Your choice — default: your collaboration contexts' })}
   ${fi(f, 'interests', 'Interests', { value: '', ph: 'Comma-separated, e.g. urban heat, food resilience', help: 'Optional' })}
   ${role() === 'S' ? fi(f, 'sponsorInt', 'Funding interests', { req: true, ph: 'e.g. Urban heat, tree canopy', help: 'Used to show you matching projects. Not shared with participants.' }) : ''}
   ${banner('info', '', 'Skills, availability and other details are asked for later, only when a workflow needs them.')}
-  <div class="actions">${B(ic('chevl', 16) + 'Back', 'onbBack', { s: 'consents' }, 'btn-g')}<button class="btn btn-p" type="submit">Save and continue</button></div></form>`;
+  <div class="actions">${onbBackBtn(a, key)}<button class="btn btn-p" type="submit">Save and continue</button></div></form>`;
   } else {
     const f = 'pc';
     const ans = S.compass[myId()] || {};
@@ -362,13 +372,13 @@ function ONB() {
     }
     const st = Math.max(0, Math.min(UI.tab.pcStep || 0, n - 1));
     const set = sets[st];
-    body = `<div class="col onb-h"><p class="over">Step 5 of 5 · Purpose Compass</p><h1 class="h1">Set your current direction</h1><p class="sub">Six short questions about what matters to you now. Your answers guide your pathway and opportunities.</p></div>
+    body = `<div class="col onb-h"><p class="over">${stepOf} · Purpose Compass</p><h1 class="h1">Set your current direction</h1><p class="sub">Six short questions about what matters to you now. Your answers guide your pathway and opportunities.</p></div>
   <div class="col onb-prog"><div class="row onb-prog-h"><span class="lbl">Set ${st + 1} of ${n}</span><span class="cap">${Math.round((st / n) * 100)}% complete</span></div><div class="progress"><span class="bar" style="width:${(st / n) * 100}%"></span></div></div>
   ${errSum(f)}<form data-f="pc" class="card col onb-card" novalidate><input type="hidden" name="set" value="${st}"><div class="col onb-h"><span class="over">Question set ${st + 1}</span><h2 class="h2">${h(set.n)}</h2>${set.d ? `<p class="cap">${h(set.d)}</p>` : ''}</div>
   ${set.q.map(q => blField(f, q, ans)).join('')}
   ${st === 0 ? `<div class="col onb-have"><span class="lbl">Already in your profile</span>${dl([['Interests', h(claimVals(myId(), 'Interests') || '—')], ['Role assignments', `<div class="col onb-roles">${blRoles(myId())}</div>`]])}<span class="help">Role assignments are set by your administrator.</span></div>` : ''}
   ${st === n - 1 ? banner('ok', '', 'Your answers appear on My PHOENIX as “My purpose / current direction”, self-declared. Strengths, learning interests, support needs and opportunity preferences are asked later, only when they help. Change anything in Profile → Purpose Compass.') : ''}
-  <div class="actions">${st ? B(ic('chevl', 16) + 'Previous', 'pcPrev', {}, 'btn-g') : B(ic('chevl', 16) + 'Back', 'onbBack', { s: 'profile' }, 'btn-g')}<button class="btn btn-p" type="submit">${st === n - 1 ? 'Finish and go to My PHOENIX' : 'Next'}</button></div></form>`;
+  <div class="actions">${st ? B(ic('chevl', 16) + 'Previous', 'pcPrev', {}, 'btn-g') : onbBackBtn(a, key)}<button class="btn btn-p" type="submit">${st === n - 1 ? 'Finish and go to My PHOENIX' : 'Next'}</button></div></form>`;
   }
   return `<div class="onb">${onbTop(cur, steps)}<main class="onb-body">${body}</main></div>`;
 }
@@ -502,14 +512,14 @@ const consentChoice = (f, k, l, t, cur) =>
   `<fieldset class="cons-row${fe(f, k) ? ' err' : ''}"><legend><b>${h(l)}</b></legend><p class="cap">${h(t)}</p><div class="cons-seg" role="radiogroup" aria-label="${h(l)}">${['Granted', 'Declined']
     .map(v => `<label class="cons-opt"><input type="radio" name="${k}" value="${v}" ${fv(f, k, cur[k] === 'Granted' || cur[k] === 'Declined' ? cur[k] : '') === v ? 'checked' : ''}><span>${v === 'Granted' ? 'Allow' : 'Do not allow'}</span></label>`)
     .join('')}</div>${fe(f, k) ? `<span class="emsg" role="alert">${ic('alert', 14)}${fe(f, k)}</span>` : ''}</fieldset>`;
-function consentStep(steps) {
+function consentStep(stepOf, back) {
   const f = 'cons';
   const cur = S.consents[myId()] || {};
-  return `<div class="col onb-h"><p class="over">Step 3 of ${steps.length}</p><h1 class="h1">Your optional permissions</h1><p class="sub">These are separate from your agreement. Choose each one yourself. Saying no never blocks your pathway, Circles, Rope Teams, tasks or evidence (only a pathway step that itself needs a permission waits for it), and you can change any choice later in My records & consent.</p></div>${errSum(f)}
+  return `<div class="col onb-h"><p class="over">${stepOf}</p><h1 class="h1">Your optional permissions</h1><p class="sub">These are separate from your agreement. Choose each one yourself. Saying no never blocks your pathway, Circles, Rope Teams, tasks or evidence (only a pathway step that itself needs a permission waits for it), and you can change any choice later in My records & consent.</p></div>${errSum(f)}
   <form data-f="cons" class="card col onb-card" novalidate><h2 class="h3">Five optional purposes</h2>${OPT_PURPOSES.map(([k, l, t]) => consentChoice(f, k, l, t, cur)).join('')}
   <h2 class="h3">Matching</h2>${consentChoice(f, 'matching', 'Matching visibility', 'Lets a steward consider the profile fields you allow when suggesting a Match Brief. Contact details are never shared before both sides consent.', cur)}
   <span class="help">Each choice is stored with a date and kept in your consent history.</span>
-  <div class="actions">${B(ic('chevl', 16) + 'Back', 'onbBack', { s: 'agreement' }, 'btn-g')}<button class="btn btn-p" type="submit">Save my choices</button></div></form>`;
+  <div class="actions">${back}<button class="btn btn-p" type="submit">Save my choices</button></div></form>`;
 }
 F.cons = d => {
   const keys = [...OPT_PURPOSES.map(x => x[0]), 'matching'];

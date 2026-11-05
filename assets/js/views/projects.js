@@ -128,7 +128,7 @@ route('projects', 'projects', () => {
         row: p => ({
           lead: `<span class="tile t-navy" aria-hidden="true">${ic('folder', 18)}</span>`,
           title: L(h(p.title), 'project', { id: p.id }, 'dv-link'),
-          sub: (isSpP(p) ? 'Sponsor project · ' + spWho(p) + ' · ' : '') + h(p.type) + (p.country ? ' · ' + h(p.country) : '') + (p.area ? ' · ' + h(p.area) : ''),
+          sub: (isSpP(p) ? (spFunded(p) ? 'Sponsored by ' : 'Sponsor project · ') + spWho(p) + ' · ' : '') + h(p.type) + (p.country ? ' · ' + h(p.country) : '') + (p.area ? ' · ' + h(p.area) : ''),
           meta: [
             r !== 'P' ? (p.owner ? 'Owner <b>' + nm(p.owner) + '</b>' : 'Owner not chosen yet') : '',
             'Steward <b>' + (p.stewards.map(nm).join(', ') || 'not assigned') + '</b>',
@@ -302,7 +302,8 @@ route('project', 'projects', () => {
   const own = p.owner === myId();
   if ((r === 'P' || r === 'C') && !own && !spSees(p)) return deniedView('projects');
   // A sponsor project skips submission and review: it starts once the Sponsor chooses its owner (sponsor.js).
-  const spSteps = isSpP(p) && ['Listed by sponsor', 'Owner chosen', 'Linked spaces', 'Final review', 'Closed'];
+  // A project funded through a sponsor's offer keeps its own lifecycle (it was submitted and reviewed as usual).
+  const spSteps = isSpP(p) && !spFunded(p) && ['Listed by sponsor', 'Owner chosen', 'Linked spaces', 'Final review', 'Closed'];
   const steps = spSteps || [
     'Draft',
     'Submitted',
@@ -377,7 +378,7 @@ route('project', 'projects', () => {
       ['Projects', 'projects'],
       [h(p.title)],
     ]) +
-    `<div class="shead-main prj-head"><span class="tile" aria-hidden="true">${ic('folder', 20)}</span><div class="shead-t"><div class="shead-kind">${isSpP(p) ? 'Sponsor project' : 'Project'} · ${h(p.stage ? stageLabel(p.stage) : spListing(p) ? spLabel(p) : p.status)}</div><div class="row wrap prj-ttl"><h1 class="h1">${h(p.title)}</h1>${spListing(p) ? pill(spShort(p) ? 'Shortlisted' : spLabel(p)) : pill(p.status)}</div><div class="shead-meta"><span>${h(p.type)}</span>${isSpP(p) ? `<span>Sponsor · ${spWho(p)}</span>` : ''}<span>${p.owner ? (spOwners(p).length > 1 ? 'Owners · ' + spOwners(p).map(nm).join(', ') : 'Owner · ' + nm(p.owner)) : 'Owner not chosen yet'}</span><span>${p.stewards.length ? 'Steward · ' + p.stewards.map(nm).join(', ') : 'No reviewer yet'}</span>${p.country ? `<span>Country · ${h(p.country)}</span>` : ''}${p.area ? `<span>${h(p.area)}</span>` : ''}</div>${(p.tags || []).length ? `<div class="rec-tags prj-tags">${p.tags.map(x => `<span class="rec-tag">${h(x)}</span>`).join('')}</div>` : ''}</div>${actions.trim() ? `<div class="shead-a">${actions}</div>` : ''}</div>` +
+    `<div class="shead-main prj-head"><span class="tile" aria-hidden="true">${ic('folder', 20)}</span><div class="shead-t"><div class="shead-kind">${isSpP(p) && !spFunded(p) ? 'Sponsor project' : spFunded(p) ? 'Sponsored project' : 'Project'} · ${h(p.stage ? stageLabel(p.stage) : spListing(p) ? spLabel(p) : p.status)}</div><div class="row wrap prj-ttl"><h1 class="h1">${h(p.title)}</h1>${spListing(p) ? pill(spShort(p) ? 'Shortlisted' : spLabel(p)) : pill(p.status)}</div><div class="shead-meta"><span>${h(p.type)}</span>${isSpP(p) ? `<span>Sponsor · ${spWho(p)}</span>` : ''}<span>${p.owner ? (spOwners(p).length > 1 ? 'Owners · ' + spOwners(p).map(nm).join(', ') : 'Owner · ' + nm(p.owner)) : 'Owner not chosen yet'}</span><span>${p.stewards.length ? 'Steward · ' + p.stewards.map(nm).join(', ') : 'No reviewer yet'}</span>${p.country ? `<span>Country · ${h(p.country)}</span>` : ''}${p.area ? `<span>${h(p.area)}</span>` : ''}</div>${(p.tags || []).length ? `<div class="rec-tags prj-tags">${p.tags.map(x => `<span class="rec-tag">${h(x)}</span>`).join('')}</div>` : ''}</div>${actions.trim() ? `<div class="shead-a">${actions}</div>` : ''}</div>` +
     tl +
     projRoomBar(p, 'projects') +
     stageTrack(p, 'projects') +
@@ -415,6 +416,7 @@ route('project', 'projects', () => {
      )}</div>
  <aside class="c4 col prj-side">${own && ['Draft', 'Clarification requested'].includes(p.status) ? card('Before you submit', '', `<form data-f="submitProj" class="col prj-submit" novalidate><input type="hidden" name="id" value="${p.id}">${!ready ? banner('warn', '', 'All 8 sections must be accepted or edited first.') : ''}${fi('sp', 'c1', 'I have reviewed every AI-drafted section and accept responsibility for the content.', { type: 'checkbox', req: true })}${fi('sp', 'c2', 'I understand reviewers in this programme will see this project.', { type: 'checkbox', req: true })}${p.status === 'Clarification requested' ? fi('sp', 'note', 'What you changed (optional)', { type: 'textarea', rows: 3, max: 2000, help: 'Added to the review conversation.' }) : ''}<button class="btn btn-p btn-block" type="submit" ${ready ? '' : 'disabled'}>${p.status === 'Clarification requested' ? 'Resubmit for review' : 'Submit for review'}</button></form>`, '', 'accent') : ''}
  ${spProjCard(p)}
+ ${spOfferCard(p)}
  ${p.status === 'Draft' || spListing(p) ? '' : linkCard('projects', p)}
  ${pubCard(p)}
  ${projMovesCard(p)}
@@ -696,6 +698,7 @@ A.finalReview = d => {
   const rm = byId('rooms', p.room);
   const hv = S.harvests.find(x => x.scope === p.room && ['Approved', 'Released'].includes(x.state));
   p.stage = 'Closed';
+  p.closedAt = now(); // JF-42: starts the retention clock of a sponsor project's aliases (views/sponsor.js)
   p.history.push({ at: today(), t: 'Deliverables approved; project closed' });
   if (rm) {
     rm.state = 'Closed';

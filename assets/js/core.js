@@ -101,8 +101,8 @@ const MX = {
     P: "C",
     F: "C",
     M: "C",
-    C: "-",
-   
+    C: "V",
+
     S: "-",
     A: "VM",
     T: "-",
@@ -1193,18 +1193,12 @@ function navItems() {
   } else if (r === "C") {
     // Doc 1 §6.4 — mandate + workspaces first, then discovery, then records
     add(null, "mandate", "Organisation & mandate", "building");
+    // Same work modules as a Participant: Projects, Circles, Rope Teams and Action Workspaces are always listed.
+    // What each page shows and allows is still decided by the module level and the page's own rules.
+    add("projects", "projects", "Projects", "folder");
+    add("circles", "circles", "Circles", "users");
+    add("ropeteams", "ropeteams", "Rope Teams", "route");
     add("rooms", "rooms", W + "s", "room");
-    add(
-      "projects",
-      "projects",
-      "Projects",
-      "folder",
-      S.projects.some(
-        (p) =>
-          inCtx(p) &&
-          (p.owner === myId() || (p.partners || []).includes(myId()) || spSees(p)),
-      ),
-    );
     add("opportunities", "opportunities", "Opportunities", "megaphone");
     add("matching", "matches", "Match Briefs", "link");
     add(null, "board", "Explore board", "grid");
@@ -1219,6 +1213,8 @@ function navItems() {
     items.push(
       ["sponsorprojects", "My projects", "megaphone"],
       ["sponsorapps", "Applications", "inbox"],
+      // Programme projects the Sponsor did not create: express interest and offer milestone funding (sponsor.js).
+      ["spexplore", "Explore projects", "search"],
       ["board", "Explore board", "grid"],
     );
     add("evidence", "evidence", "Approved evidence", "award");
@@ -1227,6 +1223,7 @@ function navItems() {
     items.push(
       ["admin:requests", "Approval inbox", "inbox"],
       ["disputes", "Disputes", "shield"],
+      ["sponsoraliases", "Sponsor aliases", "lock"],
       ["admin:invites", "Invitations", "mail"],
       ["admin:users", "Users & roles", "users"],
       ["admin:packs", "Pack configuration", "settings"],
@@ -1256,7 +1253,9 @@ const PARENT = {
   sproom: "sponsorprojects",
   sponsorlisting: "board",
   spchat: "sponsorapps",
+  spexp: "spexplore",
   dispute: "disputes",
+  sponsoralias: "sponsoraliases",
   collab: "relations",
 };
 const GROUP = {
@@ -1275,6 +1274,7 @@ const GROUP = {
   board: "Discover",
   sponsorprojects: "Sponsorship",
   sponsorapps: "Sponsorship",
+  spexplore: "Sponsorship",
   relations: "Discover",
   evidence: "Records",
   documents: "Records",
@@ -1284,6 +1284,7 @@ const GROUP = {
   org: "Organisation",
   admin: "Administration",
   disputes: "Administration",
+  sponsoraliases: "Administration",
   metrics: "Administration",
   audit: "Administration",
   policies: "Specialist",
@@ -1338,6 +1339,9 @@ function navCount(r, tb) {
   }
   if (r === "inbox")
     return typeof inboxItems === "function" ? inboxItems().length : 0;
+  // Funding interest waiting for this person: the Sponsor on Explore projects, the owner on Projects (views/sponsor.js).
+  if (r === "spexplore") return spiWaiting().length;
+  if (r === "projects" && ["P", "C"].includes(role())) return spiWaiting().length;
   if (r === "sponsorprojects") return spTodo().filter((t) => t[2] !== "sponsorapps").length;
   if (r === "sponsorapps")
     return S.projects.filter((p) => spaOpen(p) && inCtx(p)).reduce((a, p) => a + spaNew(p).length, 0);
@@ -1350,6 +1354,9 @@ function navCount(r, tb) {
           : d.steward === pid &&
             ["Awaiting Steward acceptance", "Under review"].includes(d.status)),
     ).length;
+  // JF-42: alias-resolution notices an Admin deferred and has not sent yet (views/sponsor.js)
+  if (r === "sponsoraliases")
+    return (S.aliasMaps || []).filter(inCtx).reduce((a, m) => a + m.res.filter((x) => x.notice === "Deferred").length, 0);
   if (r === "ropeteams" && role() === "M")
     return S.mentorReqs.filter(
       (m) => m.to === pid && m.status === "Pending" && mentorReqVisible(m),
@@ -1426,6 +1433,7 @@ const SHORT = {
   board: "Board",
   sponsorprojects: "Projects",
   sponsorapps: "Apps",
+  spexplore: "Explore",
   disputes: "Disputes",
   relations: "Links",
   evidence: "Evidence",
@@ -1487,6 +1495,7 @@ const CTX_OBJ = {
   sponsorapps: "projects",
   spchat: "spchats",
   dispute: "disputes",
+  sponsoralias: "aliasMaps",
 };
 // The object a detail route opens, when it belongs to a different context than the active one.
 function ctxObj() {
