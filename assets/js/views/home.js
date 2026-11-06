@@ -579,7 +579,7 @@ function nextAction() {
     const i = S.incidents.find((x) => incOwnerOf(x) && x.state !== "Closed");
     if (i)
       return [
-        "Concern from an Organization Admin",
+        i.to === "platform" ? "Concern from an Organization Admin" : "Forwarded concern waiting",
         h(i.kind) + " · " + h(ctxName(i.ctx)),
         "incidents",
         { id: i.id },

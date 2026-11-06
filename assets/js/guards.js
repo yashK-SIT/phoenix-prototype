@@ -843,6 +843,13 @@ const G = {
       "only an Organization Admin of this context manages cases, never their own report"
     );
   },
+  incfwd: (d) => {
+    const i = byId("incidents", d.id);
+    return (
+      (role() === "A" && incOwnerOf(i) && i.to !== "platform" && !i.fwd && i.state !== "Closed") ||
+      "only an Organization Admin of this context can forward a member’s open case, once"
+    );
+  },
   incPause: (d) =>
     incOwnerOf(byId("incidents", d.id)) ||
     "only an Organization Admin of this context applies an emergency pause",

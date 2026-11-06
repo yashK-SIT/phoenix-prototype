@@ -21,7 +21,7 @@ route("incidents", "governance", () => {
     head(
       "Report a concern",
       plat
-        ? "Concerns Organization Admins reported, from every tenant. Reports are confidential. No automated sanctions."
+        ? "Concerns Organization Admins reported, and members’ concerns they forwarded because they could not resolve them, from every tenant. Reports are confidential. No automated sanctions."
         : "Reports are confidential. No automated sanctions.",
       plat ? "" : B(ic("plus", 16) + "Report an incident", "incNew", {}, "btn-p"),
     ) +
@@ -53,7 +53,8 @@ function incList(key, list, own) {
       { key: "kind", label: "Category", options: uniq(list.map((i) => i.kind)), test: (i, v) => i.kind === v },
       { key: "state", label: "State", options: INC_STATES.filter((s) => list.some((i) => i.state === s)).map((s) => [s, s]), test: (i, v) => i.state === v },
       { key: "pause", label: "Emergency pause", options: [["yes", "Applied"], ["no", "Not applied"]], test: (i, v) => (v === "yes" ? !!i.paused : !i.paused) },
-    ],
+      plat && { key: "via", label: "Received as", options: [["admin", "From an Organization Admin"], ["fwd", "Forwarded"]], test: (i, v) => (v === "admin") === (i.to === "platform") },
+    ].filter(Boolean),
     sorts: [
       ["new", "Newest reported", (a, b) => rep(b).localeCompare(rep(a))],
       ["old", "Oldest reported", (a, b) => rep(a).localeCompare(rep(b))],
@@ -64,8 +65,8 @@ function incList(key, list, own) {
       lead: `<span class="tile${i.state === "Closed" ? " t-soft" : ""}" aria-hidden="true">${ic("shield", 18)}</span>`,
       title: L(h(i.kind), "incidents", { id: i.id }, ""),
       sub: h(i.desc.slice(0, 80)),
-      meta: [plat && h(ctxName(i.ctx)), plat && "By " + nm(i.by), h(i.where), "Reported " + fmt(rep(i)), `<span class="mono">${h(i.id)}</span>`].filter(Boolean),
-      badges: pill(i.state) + (i.paused ? pill("Emergency pause", "p-red") : ""),
+      meta: [plat && h(ctxName(i.ctx)), plat && "By " + nm(i.by), plat && i.fwd && "Forwarded by " + nm(i.fwd.by), h(i.where), "Reported " + fmt(rep(i)), `<span class="mono">${h(i.id)}</span>`].filter(Boolean),
+      badges: pill(i.state) + (i.paused ? pill("Emergency pause", "p-red") : "") + (own && i.fwd ? pill("Forwarded", "p-navy") : ""),
       primary: L("Open", "incidents", { id: i.id }, "btn btn-s btn-sm"),
     }),
     empty: ["shield", own ? "No incidents." : "You have not reported anything.", "", ""],
@@ -85,17 +86,46 @@ function incDetail(i, own) {
         ["Description", h(i.desc)],
         ["Reported by", own ? nm(i.by) : "You"],
         ["Organization", h(ctxName(i.ctx))],
-        ["Handled by", i.to === "platform" ? "Platform Administrator" : "Organization Admins of " + h(ctxName(i.ctx))],
+        ["Handled by", i.to === "platform" ? "Platform Administrator" : "Organization Admins of " + h(ctxName(i.ctx)) + (i.fwd ? " · forwarded to the Platform Administrator" : "")],
         ["Assigned to", i.owner ? nm(i.owner) : "Unassigned"],
         ["Emergency pause", i.paused ? "Applied" : "No"],
         ["Decision / remedy", h(i.decision || "—")],
       ]),
     )}</div>
  <div class="c4 col inc-side">${own ? card("Actions", "A human decides every outcome.", `<div class="inc-acts">${acts || '<span class="cap">No action is due in this state.</span>'}</div>`, "", "accent") : ""}
+ ${own ? incFwdCard(i) : ""}
  ${!own && i.state === "Decision recorded" ? card("Appeal", "You can appeal or ask for reconsideration.", B("Appeal decision", "incAct", { id: i.id, v: "Appealed" }, "btn-p btn-sm"), "", "accent") : ""}
  ${card("Timeline", "", `<ol class="timeline inc-tl">${i.timeline.map((x) => `<li class="tl"><b>${h(x.t)}</b><span class="cap">${fmt(x.at)}</span></li>`).join("")}</ol>`)}</div></div>`
   );
 }
+// Forwarding mirrors Support requests (views/freeze.js sqFwdCard): optional and one-way. The Organization Admin keeps
+// the case and can still act on it; the Platform Administrator can then act on it too. The reporter sees that it was
+// passed on (Handled by, Timeline), never the reason, which is written for the Platform Administrator.
+function incFwdCard(i) {
+  if (i.fwd)
+    return card("Forwarded to the Platform Administrator", `${role() === "T" ? "By " + nm(i.fwd.by) + " · " : ""}${fmt(i.fwd.at)}`, i.fwd.why ? `<p class="sq-msg">${h(i.fwd.why)}</p>` : '<p class="cap">No reason given.</p>');
+  if (role() !== "A" || i.to === "platform" || i.state === "Closed") return "";
+  const f = "incfwd";
+  return card(
+    "Cannot resolve this?",
+    "Forward it to the Platform Administrator. You keep it too, and can still act on it.",
+    `${errSum(f)}<form data-f="incfwd" class="col fgap" novalidate><input type="hidden" name="id" value="${i.id}">${fi(f, "why", "What you tried and what is needed", { type: "textarea", rows: 3, req: true, max: 1000, vis: "Platform Administrator only" })}<div class="actions"><span></span><button class="btn btn-s btn-sm" type="submit">${ic("send", 14)}Forward to Platform Administrator</button></div></form>`,
+  );
+}
+F.incfwd = (d) => {
+  if (!validate("incfwd", d, { why: ["req"] })) return render();
+  const i = byId("incidents", d.id);
+  i.fwd = { at: today(), by: myId(), why: d.why.trim() };
+  i.conf = "Restricted to Organization Admin and Platform Administrator";
+  i.timeline.push({ at: i.fwd.at, t: "Forwarded to the Platform Administrator" });
+  platformAdmins().forEach((p) =>
+    notify(p, `Concern forwarded from ${ctxName(i.ctx)} by ${me().name}: ${i.kind}`, "incidents", { id: i.id }),
+  );
+  audit("Incident forwarded to Platform Administrator", i.id, i.kind);
+  clearF("incfwd");
+  toast("Forwarded to the Platform Administrator.");
+  ok();
+};
 A.incNew = () => {
   clearF("inc");
   modal(

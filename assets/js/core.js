@@ -237,11 +237,14 @@ const safetyOwners = (c) => ctxAdmins(c || ctxId());
 // Organization Admins (Tenant Admins) of the context they sent it in; an Organization Admin's go to the Platform
 // Administrator, never back to their own tenant's admins or to another tenant's. Records without `to` are "tenant".
 const routeTo = () => (role() === "A" ? "platform" : "tenant");
-// An incident is handled by whoever it was routed to, never by the person who reported it.
+// An incident is handled by whoever it was routed to, never by the person who reported it. A member's report the
+// Organization Admin forwarded (i.fwd) is handled by the Platform Administrator too; the Organization Admin keeps it.
 const incOwnerOf = (i) =>
   !!i &&
   i.by !== myId() &&
-  (i.to === "platform" ? role() === "T" : isSafetyOwner() && inCtx(i));
+  (i.to === "platform"
+    ? role() === "T"
+    : (isSafetyOwner() && inCtx(i)) || (role() === "T" && !!i.fwd));
 const platformAdmins = () => [
   ...new Set(
     S.assign
